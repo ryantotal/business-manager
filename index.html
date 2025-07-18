@@ -4933,4 +4933,10 @@ window.documentManager = {
     }
 };
 </script></body>
+<div style="background: red; color: white; padding: 10px;">
+  TEST: <span id="test">JavaScript is broken</span>
+</div>
+<script>
+  document.getElementById('test').innerHTML = 'JavaScript works!';
+</script>
 </html>
