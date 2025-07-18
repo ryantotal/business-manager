@@ -8,6 +8,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <div id="root"></div>
@@ -3391,7 +3392,7 @@
           </select>
           <input type="file" id="doc-file" className="block" accept=".pdf,.doc,.docx" />
           <input type="text" id="doc-title" placeholder="Document Title" className="px-3 py-2 border rounded w-full max-w-xs" />
-          <button onClick={() => console.log('Upload document')} className="bg-blue-500 text-white px-4 py-2 rounded">
+          <button onClick={() => window.documentManager.uploadDocument()} className="bg-blue-500 text-white px-4 py-2 rounded">
             Upload Document
           </button>
         </div>
@@ -4875,5 +4876,61 @@
         // Render the app
         ReactDOM.render(<WasteManagementDemo />, document.getElementById('root'));
     </script>
-</body>
+<script>
+// Initialize Supabase
+const SUPABASE_URL = 'https://ykpbnrjlqlhckmgcoulv.supabase.co'; // Replace with your URL
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrcGJucmpscWxoY2ttZ2NvdWx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI4MzE0OTAsImV4cCI6MjA2ODQwNzQ5MH0.YSt9xxYSskCp98iJDN0iQ5nNDRbI_EQWNnImcBxVBRU'; // Replace with your key
+const supabase = window.supabase.createClient alert('Supabase loaded successfully!');(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Document upload function
+window.documentManager = {
+    async uploadDocument() {
+        const docType = document.getElementById('doc-category')?.value;
+        const docTitle = document.getElementById('doc-title')?.value;
+        const fileInput = document.getElementById('doc-file');
+        const file = fileInput?.files[0];
+
+        if (!docType || !docTitle || !file) {
+            alert('Please fill all fields');
+            return;
+        }
+
+        try {
+            const fileName = `${Date.now()}_${file.name}`;
+            const { data: fileData, error: fileError } = await supabase.storage
+                .from('documents')
+                .upload(fileName, file);
+
+            if (fileError) throw fileError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('documents')
+                .getPublicUrl(fileName);
+
+            const { data, error } = await supabase
+                .from('documents')
+                .insert([{
+                    name: docTitle,
+                    file_path: fileName,
+                    file_url: publicUrl,
+                    file_type: docType,
+                    file_size: file.size,
+                    category: 'TEXT',
+                    uploaded_by: 'System Administrator'
+                }])
+                .select();
+
+            if (error) throw error;
+
+            document.getElementById('doc-title').value = '';
+            document.getElementById('doc-file').value = '';
+            
+            alert('Document uploaded successfully!');
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error: ' + error.message);
+        }
+    }
+};
+</script></body>
 </html>
