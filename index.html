@@ -9,6 +9,39 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+    /* Custom CSS Variables for theming */
+    :root {
+        --primary-color: #2563eb;
+        --primary-hover: #1d4ed8;
+        --primary-light: #dbeafe;
+    }
+
+    /* Apply primary color to common elements */
+    .bg-blue-600 {
+        background-color: var(--primary-color) !important;
+    }
+
+    .text-blue-600 {
+        color: var(--primary-color) !important;
+    }
+
+    .border-blue-500 {
+        border-color: var(--primary-color) !important;
+    }
+
+    .bg-blue-500 {
+        background-color: var(--primary-color) !important;
+    }
+
+    .text-blue-500 {
+        color: var(--primary-color) !important;
+    }
+
+    .hover\:bg-blue-700:hover {
+        background-color: var(--primary-hover) !important;
+    }
+</style>
 </head>
 <body>
     <div id="root"></div>
@@ -47,6 +80,8 @@
                 Filter: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>,
                 ChevronDown: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="6 9 12 15 18 9"></polyline></svg>,
                 ChevronUp: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="18 15 12 9 6 15"></polyline></svg>,
+                ChevronUp: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="18 15 12 9 6 15"></polyline></svg>,
+                Menu: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>,  
                 Repeat: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>,
                 Maximize2: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>,
                 Package: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>,
@@ -85,6 +120,7 @@
         const Filter = (props) => <LucideIcon icon="Filter" {...props} />;
         const ChevronDown = (props) => <LucideIcon icon="ChevronDown" {...props} />;
         const ChevronUp = (props) => <LucideIcon icon="ChevronUp" {...props} />;
+        const Menu = (props) => <LucideIcon icon="Menu" {...props} />;
         const Repeat = (props) => <LucideIcon icon="Repeat" {...props} />;
         const Package = (props) => <LucideIcon icon="Package" {...props} />;
         const Maximize2 = (props) => <LucideIcon icon="Maximize2" {...props} />;
@@ -250,16 +286,36 @@
           const [isLoading, setIsLoading] = useState(false);
 
           const login = async (email, password) => {
-            setIsLoading(true);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            const foundUser = demoUsers.find(u => u.email === email && u.password === password);
-            if (foundUser) {
-              setUser(foundUser);
-              return true;
-            }
-            throw new Error('Invalid credentials');
-          };
+  setIsLoading(true);
+  try {
+    const { data, error } = await window.supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .eq('password', password)
+      .single();
+    
+    if (error || !data) {
+      throw new Error('Invalid credentials');
+    }
+    
+    // Split the name into first and last for compatibility
+    const nameParts = data.name.split(' ');
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    
+    setUser({
+      id: data.id,
+      email: data.email,
+      firstName: firstName,
+      lastName: lastName,
+      role: data.role
+    });
+    return true;
+  } catch (err) {
+    throw new Error('Invalid credentials');
+  }
+};
 
           const logout = () => {
             setUser(null);
@@ -348,11 +404,23 @@
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
               <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
                 <div className="text-center mb-8">
-                  <div className="w-16 h-16 bg-blue-600 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                    <Recycle className="w-8 h-8 text-white" />
-                  </div>
-                  <h1 className="text-2xl font-bold text-gray-900">Total Waste Services</h1>
-                  <p className="text-gray-600">Demo System Login</p>
+                  <div className="w-16 h-16 mx-auto mb-4">
+  {localStorage.getItem('companyLogo') ? (
+    <img 
+      src={localStorage.getItem('companyLogo')} 
+      alt="Company Logo" 
+      className="w-full h-full object-contain"
+    />
+  ) : (
+    <div className="w-full h-full bg-blue-600 rounded-lg flex items-center justify-center">
+      <Recycle className="w-8 h-8 text-white" />
+    </div>
+  )}
+</div>
+                  <h1 className="text-2xl font-bold text-gray-900">
+  {localStorage.getItem('companyName') || 'Total Waste Services'}
+</h1>
+                  <p className="text-gray-600">System Login</p>
                 </div>
 
                 {error && (
@@ -369,7 +437,7 @@
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="admin@totalwaste.co.uk"
+                      placeholder=""
                     />
                   </div>
 
@@ -381,7 +449,7 @@
                       onChange={(e) => setPassword(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="demo123"
+                      placeholder=""
                     />
                   </div>
 
@@ -395,14 +463,7 @@
                   </button>
                 </div>
 
-                <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-2">Demo Accounts:</h3>
-                  <div className="space-y-2 text-sm">
-                    <div><strong>Admin:</strong> admin@totalwaste.co.uk / demo123</div>
-                    <div><strong>Manager:</strong> manager@totalwaste.co.uk / demo123</div>
-                    <div><strong>Broker:</strong> broker@totalwaste.co.uk / demo123</div>
-                  </div>
-                </div>
+                
               </div>
             </div>
           );
@@ -537,8 +598,8 @@
           );
 
           return (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
                 <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                   <h2 className="text-xl font-bold">{job ? 'Edit Job' : 'Add New Job'}</h2>
                   <button onClick={onClose}>
@@ -572,7 +633,7 @@
                   {/* Job Details Tab */}
                   {activeTab === 'details' && (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
                           <select
@@ -598,7 +659,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Supplier *</label>
                           <select
@@ -625,7 +686,7 @@
                       </div>
 
                       {formData.jobType === 'Aggregates' && (
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Haulier</label>
                             <select
@@ -642,7 +703,7 @@
                         </div>
                       )}
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Job Type *</label>
                           <select
@@ -674,7 +735,7 @@
                       </div>
 
                       {formData.jobType === 'Skip Hire' && (
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Skip Size</label>
                             <select
@@ -705,7 +766,7 @@
                       )}
 
                       {formData.jobType === 'Roll-on Roll-off' && (
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">RoRo Size</label>
                             <select
@@ -767,7 +828,7 @@
                         </div>
                       )}
 
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
                             Quantity * 
@@ -812,7 +873,7 @@
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Date *</label>
                           <input
@@ -897,7 +958,7 @@
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Site Contact Name</label>
                           <input
@@ -958,7 +1019,7 @@
                   {/* Financial & Status Tab */}
                   {activeTab === 'financial' && (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Customer Unit Price (£) *</label>
                           <input
@@ -981,7 +1042,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">VAT Rate (%)</label>
                           <select
@@ -1018,7 +1079,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Payment Status</label>
                           <select
@@ -1080,7 +1141,7 @@
                       {formData.customerUnitPrice > 0 && formData.supplierUnitPrice > 0 && (
                         <div className="bg-green-50 p-4 rounded-lg">
                           <h4 className="font-medium text-green-900 mb-3">Profit Calculation</h4>
-                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                             <div>
                               <span className="text-green-700">Customer Total:</span>
                               <p className="font-semibold">£{formData.customerFinalPrice.toFixed(2)}</p>
@@ -1257,13 +1318,13 @@
                 <p className="text-gray-600">Overview of your waste management operations</p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {metrics.map((metric, index) => {
                   const Icon = metric.icon === 'Activity' ? Activity : 
                                metric.icon === 'DollarSign' ? DollarSign :
                                metric.icon === 'TrendingUp' ? TrendingUp : Users;
                   return (
-                    <div key={index} className="bg-white rounded-xl border border-gray-200 p-6">
+                    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm text-gray-600">{metric.label}</p>
@@ -1278,7 +1339,7 @@
                 })}
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-white rounded-lg border border-gray-200">
                   <div className="p-6 border-b border-gray-200">
                     <h3 className="text-lg font-semibold">Recent Jobs</h3>
@@ -1565,102 +1626,103 @@
                   <p className="text-gray-600">{filteredJobs.length} jobs found</p>
                 </div>
                 <button 
-                  onClick={onAddJob}
-                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  <Plus size={16} className="mr-2" />
-                  Add Job
-                </button>
+  onClick={onAddJob}
+  className="flex items-center px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm sm:text-base"
+>
+  <Plus size={16} className="mr-1 sm:mr-2" />
+  <span className="hidden sm:inline">Add Job</span>
+  <span className="sm:hidden">Add</span>
+</button>
               </div>
 
               {/* Filters */}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <Filter size={16} className="text-gray-600" />
-                    <input
-                      type="text"
-                      placeholder="Search jobs..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                    <select
-                      value={filters.jobType}
-                      onChange={(e) => setFilters({...filters, jobType: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
-                    >
-                      <option value="">All Job Types</option>
-                      <option value="Skip Hire">Skip Hire</option>
-                      <option value="Aggregates">Aggregates</option>
-                      <option value="Waste Collection">Waste Collection</option>
-                      <option value="Grab Hire">Grab Hire</option>
-                      <option value="Muck Away">Muck Away</option>
-                      <option value="Roll-on Roll-off">Roll-on Roll-off</option>
-                    </select>
-                    <select
-                      value={filters.status}
-                      onChange={(e) => setFilters({...filters, status: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
-                    >
-                      <option value="">All Statuses</option>
-                      <option value="CONFIRMED">Confirmed</option>
-                      <option value="IN_PROGRESS">In Progress</option>
-                      <option value="COLLECTED">Collected</option>
-                      <option value="COMPLETED">Completed</option>
-                      <option value="CANCELLED">Cancelled</option>
-                    </select>
-                    <select
-                      value={filters.priority}
-                      onChange={(e) => setFilters({...filters, priority: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
-                    >
-                      <option value="">All Priorities</option>
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                      <option value="Urgent">Urgent</option>
-                    </select>
-                    <button
-                      onClick={() => {
-                        setSearchQuery('');
-                        setFilters({ jobType: '', status: '', priority: '' });
-                      }}
-                      className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => setViewMode('grid')}
-                      className={`p-2 rounded ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
-                    >
-                      <Grid size={16} />
-                    </button>
-                    <button
-                      onClick={() => setViewMode('list')}
-                      className={`p-2 rounded ${viewMode === 'list' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
-                    >
-                      <Layout size={16} />
-                    </button>
-                    <button
-                      onClick={() => setViewMode('calendar')}
-                      className={`p-2 rounded ${viewMode === 'calendar' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
-                    >
-                      <Calendar size={16} />
-                    </button>
-                  </div>
-                </div>
-              </div>
+  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
+      <Filter size={16} className="text-gray-600 hidden sm:block" />
+      <input
+        type="text"
+        placeholder="Search jobs..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
+      />
+      <select
+        value={filters.jobType}
+        onChange={(e) => setFilters({...filters, jobType: e.target.value})}
+        className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
+      >
+        <option value="">All Job Types</option>
+        <option value="Skip Hire">Skip Hire</option>
+        <option value="Aggregates">Aggregates</option>
+        <option value="Waste Collection">Waste Collection</option>
+        <option value="Grab Hire">Grab Hire</option>
+        <option value="Muck Away">Muck Away</option>
+        <option value="Roll-on Roll-off">Roll-on Roll-off</option>
+      </select>
+      <select
+        value={filters.status}
+        onChange={(e) => setFilters({...filters, status: e.target.value})}
+        className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
+      >
+        <option value="">All Statuses</option>
+        <option value="CONFIRMED">Confirmed</option>
+        <option value="IN_PROGRESS">In Progress</option>
+        <option value="COLLECTED">Collected</option>
+        <option value="COMPLETED">Completed</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+      <select
+        value={filters.priority}
+        onChange={(e) => setFilters({...filters, priority: e.target.value})}
+        className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
+      >
+        <option value="">All Priorities</option>
+        <option value="Low">Low</option>
+        <option value="Medium">Medium</option>
+        <option value="High">High</option>
+        <option value="Urgent">Urgent</option>
+      </select>
+      <button
+        onClick={() => {
+          setSearchQuery('');
+          setFilters({ jobType: '', status: '', priority: '' });
+        }}
+        className="w-full sm:w-auto px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+      >
+        Clear
+      </button>
+    </div>
+    
+    <div className="flex items-center justify-end gap-2">
+      <button
+        onClick={() => setViewMode('grid')}
+        className={`p-2 rounded ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
+      >
+        <Grid size={16} />
+      </button>
+      <button
+        onClick={() => setViewMode('list')}
+        className={`p-2 rounded ${viewMode === 'list' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
+      >
+        <Layout size={16} />
+      </button>
+      <button
+        onClick={() => setViewMode('calendar')}
+        className={`p-2 rounded ${viewMode === 'calendar' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
+      >
+        <Calendar size={16} />
+      </button>
+    </div>
+  </div>
+</div>
 
               <div className="bg-white rounded-lg border border-gray-200">
                 <div className="p-6">
                   {viewMode === 'calendar' ? (
                     <CalendarView />
                   ) : viewMode === 'grid' ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 sm:grid-cols-3 gap-6">
                       {filteredJobs.map(job => (
                         <JobCard
                           key={job.id}
@@ -1773,8 +1835,8 @@
               </div>
 
               {selectedJob && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+  <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
                     <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                       <div>
                         <h2 className="text-xl font-bold">{selectedJob.jobNumber}</h2>
@@ -1830,7 +1892,7 @@
                     </div>
                     
                     <div className="p-6">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
                           <h3 className="font-semibold mb-4">Job Details</h3>
                           <div className="space-y-3">
@@ -2196,7 +2258,7 @@
                       <div className="space-y-4">
                         <div>
                           <h3 className="font-semibold mb-4">Customer Information</h3>
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                               <span className="text-sm text-gray-600">Customer:</span>
                               <p className="font-medium">{selectedQuote.customerName}</p>
@@ -2218,7 +2280,7 @@
 
                         <div>
                           <h3 className="font-semibold mb-4">Quote Details</h3>
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                               <span className="text-sm text-gray-600">Quantity:</span>
                               <p className="font-medium">{selectedQuote.quantity} {selectedQuote.unit}</p>
@@ -2390,7 +2452,7 @@
               <div className="bg-white rounded-lg border border-gray-200">
                 <div className="p-6">
                   {viewMode === 'grid' ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 sm:grid-cols-3 gap-6">
                       {filteredCustomers.map(customer => (
                         <div
                           key={customer.id}
@@ -2544,7 +2606,7 @@
                     </div>
                     
                     <div className="p-6">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
                           <h3 className="font-semibold mb-4">Contact Information</h3>
                           <div className="space-y-3">
@@ -2755,7 +2817,7 @@
               <div className="bg-white rounded-lg border border-gray-200">
                 <div className="p-6">
                   {viewMode === 'grid' ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 sm:grid-cols-3 gap-6">
                       {filteredSuppliers.map(supplier => (
                         <div
                           key={supplier.id}
@@ -2919,7 +2981,7 @@
                     </div>
                     
                     <div className="p-6">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
                           <h3 className="font-semibold mb-4">Contact Information</h3>
                           <div className="space-y-3">
@@ -2997,7 +3059,7 @@
           );
         };
 
-        // Simple Admin Panel
+// Simple Admin Panel
         const AdminPanel = () => {
           const { wasteTypes, updateWasteTypes, addWasteType, deleteWasteType } = useWasteTypes();
           const [configSection, setConfigSection] = useState('general');
@@ -3005,6 +3067,130 @@
           const [primaryColor, setPrimaryColor] = useState('#2563eb');
           const [editingJobType, setEditingJobType] = useState('');
           const [newType, setNewType] = useState('');
+          const [logo, setLogo] = useState(localStorage.getItem('companyLogo') || '');
+          
+          // Load saved settings when component loads
+useEffect(() => {
+  const loadSettings = async () => {
+    try {
+      const { data, error } = await window.supabase
+        .from('company_settings')
+        .select('*');
+      
+      if (data) {
+        data.forEach(setting => {
+          if (setting.setting_name === 'company_name') {
+            setCompanyName(setting.setting_value);
+          } else if (setting.setting_name === 'primary_color') {
+            setPrimaryColor(setting.setting_value);
+            document.documentElement.style.setProperty('--primary-color', setting.setting_value);
+          } else if (setting.setting_name === 'logo_url' && setting.setting_value) {
+            setLogo(setting.setting_value);
+          }
+             
+});
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  };
+  
+  loadSettings();
+  
+}, []);
+
+// Function to handle color changes
+const handleColorChange = (color) => {
+  setPrimaryColor(color);
+  document.documentElement.style.setProperty('--primary-color', color);
+};
+
+// Handle logo upload
+const handleLogoUpload = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const handleThemeToggle = (theme) => {
+  const isDark = theme === 'Dark Mode';
+  setDarkMode(isDark);
+  if (isDark) {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+  localStorage.setItem('darkMode', isDark.toString());
+};
+  
+  try {
+    // Delete old logo if exists
+    const { data: existingFiles } = await window.supabase.storage
+      .from('logo')
+      .list();
+    
+    if (existingFiles && existingFiles.length > 0) {
+      await window.supabase.storage
+        .from('logo')
+        .remove(existingFiles.map(f => f.name));
+    }
+    
+    // Upload new logo
+    const fileName = `company-logo.${file.name.split('.').pop()}`;
+    const { data, error } = await window.supabase.storage
+      .from('logo')
+      .upload(fileName, file, { upsert: true });
+    
+    if (error) throw error;
+    
+    // Get public URL
+    const { data: { publicUrl } } = window.supabase.storage
+      .from('logo')
+      .getPublicUrl(fileName);
+    
+    setLogo(publicUrl);
+    localStorage.setItem('companyLogo', publicUrl); // Keep local cache
+    alert('Logo uploaded successfully!');
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Error uploading logo');
+  }
+};
+          const [newUserData, setNewUserData] = useState({
+            firstName: '',
+            lastName: '',
+            email: '',
+            password: '',
+            role: 'BROKER'
+          });
+          const [users, setUsers] = useState([]);
+
+// Add this useEffect to load users
+useEffect(() => {
+  loadUsers();
+}, []);
+
+const loadUsers = async () => {
+  try {
+    const { data, error } = await window.supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (data) {
+      setUsers(data.map(u => {
+        const nameParts = u.name.split(' ');
+        return {
+          id: u.id,
+          email: u.email,
+          firstName: nameParts[0] || '',
+          lastName: nameParts.slice(1).join(' ') || '',
+          role: u.role
+        };
+      }));
+    }
+  } catch (error) {
+    console.error('Error loading users:', error);
+  }
+};
+          const [editingUser, setEditingUser] = useState(null);
 
           const sections = [
             { id: 'general', name: 'General Settings', icon: 'Settings' },
@@ -3026,6 +3212,107 @@
               deleteWasteType(jobType, type);
             }
           };
+
+          const handleSaveSettings = async () => {
+  try {
+    // Save all settings to Supabase
+    const updates = [
+  { setting_name: 'company_name', setting_value: companyName },
+  { setting_name: 'primary_color', setting_value: primaryColor },
+  { setting_name: 'logo_url', setting_value: logo },
+];
+    
+    for (const update of updates) {
+      await window.supabase
+        .from('company_settings')
+        .upsert(update, { onConflict: 'setting_name' });
+    }
+    
+    // Also update localStorage for immediate effect
+    localStorage.setItem('companyName', companyName);
+    localStorage.setItem('primaryColor', primaryColor);
+    localStorage.setItem('companyLogo', logo);
+    
+    alert('Settings saved successfully for all users!');
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    alert('Error saving settings');
+  }
+};
+          const handleAddUser = async () => {
+  if (!newUserData.firstName || !newUserData.email || !newUserData.password) {
+    alert('Please fill in all required fields');
+    return;
+  }
+  
+  try {
+    const fullName = `${newUserData.firstName} ${newUserData.lastName || ''}`.trim();
+    
+    const { data, error } = await window.supabase
+      .from('users')
+      .insert([{
+        email: newUserData.email,
+        password: newUserData.password,
+        name: fullName,
+        role: newUserData.role
+      }])
+      .select();
+    
+    if (error) throw error;
+    
+    await loadUsers(); // Refresh the list
+    setNewUserData({
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      role: 'BROKER'
+    });
+    alert('User added successfully!');
+  } catch (error) {
+    console.error('Error adding user:', error);
+    alert('Error adding user: ' + error.message);
+  }
+};
+
+          const handleDeleteUser = async (userId) => {
+  if (confirm('Are you sure you want to delete this user?')) {
+    try {
+      const { error } = await window.supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+      
+      if (error) throw error;
+      await loadUsers(); // Refresh the list
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Error deleting user');
+    }
+  }
+};
+
+          const handleUpdateUser = async (updatedUser) => {
+  try {
+    const fullName = `${updatedUser.firstName} ${updatedUser.lastName || ''}`.trim();
+    
+    const { error } = await window.supabase
+      .from('users')
+      .update({
+        email: updatedUser.email,
+        name: fullName,
+        role: updatedUser.role
+      })
+      .eq('id', updatedUser.id);
+    
+    if (error) throw error;
+    await loadUsers(); // Refresh the list
+    setEditingUser(null);
+  } catch (error) {
+    console.error('Error updating user:', error);
+    alert('Error updating user');
+  }
+};
 
           return (
             <div className="space-y-6">
@@ -3065,7 +3352,7 @@
                     {configSection === 'general' && (
                       <div className="space-y-6">
                         <h3 className="text-lg font-semibold">General Settings</h3>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
                             <input
@@ -3080,11 +3367,35 @@
                             <input
                               type="color"
                               value={primaryColor}
-                              onChange={(e) => setPrimaryColor(e.target.value)}
-                              className="w-full h-10 border border-gray-300 rounded-lg"
+                              onChange={(e) => handleColorChange(e.target.value)}
+                              className="w-full h-10 border border-gray-300 rounded-lg cursor-pointer"
                             />
                           </div>
                         </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Default VAT Rate (%)</label>
+                            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                              <option value="20">20% (Standard)</option>
+                              <option value="5">5% (Reduced)</option>
+                              <option value="0">0% (Zero)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
+                            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                              <option value="GBP">GBP (£)</option>
+                              <option value="EUR">EUR (€)</option>
+                              <option value="USD">USD ($)</option>
+                            </select>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={handleSaveSettings}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        >
+                          Save Settings
+                        </button>
                       </div>
                     )}
 
@@ -3116,6 +3427,7 @@
                                     onChange={(e) => setNewType(e.target.value)}
                                     placeholder="New type name"
                                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                    onKeyPress={(e) => e.key === 'Enter' && handleAddType()}
                                   />
                                   <button
                                     onClick={handleAddType}
@@ -3152,8 +3464,31 @@
                       <div className="space-y-6">
                         <h3 className="text-lg font-semibold">Form Configuration</h3>
                         <p className="text-gray-600">Configure form fields and validation rules</p>
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                          <p className="text-blue-800 text-sm">✨ In the full version, you can add/remove form fields, change field types, set validation rules, and customize the entire form layout without touching code!</p>
+                        <div className="space-y-4">
+                          <div className="border border-gray-200 rounded-lg p-4">
+                            <h4 className="font-medium mb-3">Job Form Fields</h4>
+                            <div className="space-y-2">
+                              <label className="flex items-center">
+                                <input type="checkbox" defaultChecked className="mr-2" />
+                                <span className="text-sm">Customer PO Number (Optional)</span>
+                              </label>
+                              <label className="flex items-center">
+                                <input type="checkbox" defaultChecked className="mr-2" />
+                                <span className="text-sm">Waste Transfer Note</span>
+                              </label>
+                              <label className="flex items-center">
+                                <input type="checkbox" defaultChecked className="mr-2" />
+                                <span className="text-sm">Hazardous Waste Options</span>
+                              </label>
+                              <label className="flex items-center">
+                                <input type="checkbox" className="mr-2" />
+                                <span className="text-sm">Photos Upload</span>
+                              </label>
+                            </div>
+                          </div>
+                          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                            Save Form Configuration
+                          </button>
                         </div>
                       </div>
                     )}
@@ -3162,8 +3497,37 @@
                       <div className="space-y-6">
                         <h3 className="text-lg font-semibold">Appearance Settings</h3>
                         <p className="text-gray-600">Customize the look and feel of your system</p>
-                        <div className="bg-purple-50 p-4 rounded-lg">
-                          <p className="text-purple-800 text-sm">🎨 Upload logos, change colors, customize email templates, and modify the entire UI appearance through this panel!</p>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Logo Upload</label>
+                            <div className="flex items-center space-x-4">
+                        <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleLogoUpload}
+                         className="block" 
+                          />
+                        {logo && (
+                        <img src={logo} alt="Company Logo" className="h-12 w-auto" />
+                         )}
+                          </div>
+                          </div>
+                          <div>
+<label className="block text-sm font-medium text-gray-700 mb-2">Font Size</label>
+  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+  <option>Small</option>
+  <option>Medium</option>
+  <option>Large</option>
+</select>
+</div>
+                          <button 
+  onClick={() => handleSaveSettings()}
+  style={{ backgroundColor: 'var(--primary-color)' }}
+  className="px-4 py-2 text-white rounded-lg hover:opacity-90 mt-4"
+  type="button"
+>
+  Save Appearance Settings
+</button>
                         </div>
                       </div>
                     )}
@@ -3171,23 +3535,140 @@
                     {configSection === 'users' && (
                       <div className="space-y-6">
                         <h3 className="text-lg font-semibold">User Management</h3>
-                        <div className="space-y-4">
-                          {demoUsers.map(user => (
-                            <div key={user.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                              <div>
-                                <p className="font-medium">{user.firstName} {user.lastName}</p>
-                                <p className="text-sm text-gray-600">{user.email}</p>
+                        
+                        {!editingUser && (
+                          <>
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                              <h4 className="font-medium mb-3">Add New User</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <input
+                                  type="text"
+                                  placeholder="First Name"
+                                  value={newUserData.firstName}
+                                  onChange={(e) => setNewUserData({...newUserData, firstName: e.target.value})}
+                                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Last Name"
+                                  value={newUserData.lastName}
+                                  onChange={(e) => setNewUserData({...newUserData, lastName: e.target.value})}
+                                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                                />
+                                <input
+                                  type="email"
+                                  placeholder="Email"
+                                  value={newUserData.email}
+                                  onChange={(e) => setNewUserData({...newUserData, email: e.target.value})}
+                                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                                />
+                                <input
+                                  type="password"
+                                  placeholder="Password"
+                                  value={newUserData.password}
+                                  onChange={(e) => setNewUserData({...newUserData, password: e.target.value})}
+                                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                                />
+                                <select
+                                  value={newUserData.role}
+                                  onChange={(e) => setNewUserData({...newUserData, role: e.target.value})}
+                                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                                >
+                                  <option value="ADMIN">Admin</option>
+                                  <option value="MANAGER">Manager</option>
+                                  <option value="BROKER">Broker</option>
+                                </select>
+                                <button
+                                  onClick={handleAddUser}
+                                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                >
+                                  Add User
+                                </button>
                               </div>
-                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                user.role === 'ADMIN' ? 'bg-red-100 text-red-700' :
-                                user.role === 'MANAGER' ? 'bg-blue-100 text-blue-700' :
-                                'bg-green-100 text-green-700'
-                              }`}>
-                                {user.role}
-                              </span>
                             </div>
-                          ))}
-                        </div>
+
+                            <div className="space-y-4">
+                              {users.map(user => (
+                                <div key={user.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                                  <div>
+                                    <p className="font-medium">{user.firstName} {user.lastName}</p>
+                                    <p className="text-sm text-gray-600">{user.email}</p>
+                                  </div>
+                                  <div className="flex items-center space-x-3">
+                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                      user.role === 'ADMIN' ? 'bg-red-100 text-red-700' :
+                                      user.role === 'MANAGER' ? 'bg-blue-100 text-blue-700' :
+                                      'bg-green-100 text-green-700'
+                                    }`}>
+                                      {user.role}
+                                    </span>
+                                    <button
+                                      onClick={() => setEditingUser(user)}
+                                      className="text-blue-600 hover:text-blue-800"
+                                    >
+                                      <Edit3 size={16} />
+                                    </button>
+                                    {user.id !== '1' && (
+                                      <button
+                                        onClick={() => handleDeleteUser(user.id)}
+                                        className="text-red-600 hover:text-red-800"
+                                      >
+                                        <Trash2 size={16} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+
+                        {editingUser && (
+                          <div className="bg-gray-50 p-4 rounded-lg">
+                            <h4 className="font-medium mb-3">Edit User</h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <input
+                                type="text"
+                                value={editingUser.firstName}
+                                onChange={(e) => setEditingUser({...editingUser, firstName: e.target.value})}
+                                className="px-3 py-2 border border-gray-300 rounded-lg"
+                              />
+                              <input
+                                type="text"
+                                value={editingUser.lastName}
+                                onChange={(e) => setEditingUser({...editingUser, lastName: e.target.value})}
+                                className="px-3 py-2 border border-gray-300 rounded-lg"
+                              />
+                              <input
+                                type="email"
+                                value={editingUser.email}
+                                onChange={(e) => setEditingUser({...editingUser, email: e.target.value})}
+                                className="px-3 py-2 border border-gray-300 rounded-lg"
+                              />
+                              <select
+                                value={editingUser.role}
+                                onChange={(e) => setEditingUser({...editingUser, role: e.target.value})}
+                                className="px-3 py-2 border border-gray-300 rounded-lg"
+                              >
+                                <option value="ADMIN">Admin</option>
+                                <option value="MANAGER">Manager</option>
+                                <option value="BROKER">Broker</option>
+                              </select>
+                              <button
+                                onClick={() => handleUpdateUser(editingUser)}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                              >
+                                Save Changes
+                              </button>
+                              <button
+                                onClick={() => setEditingUser(null)}
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -3196,11 +3677,212 @@
             </div>
           );
         };
+        // Documents View Component
+        const DocumentsView = ({ user }) => {
+          const [documents, setDocuments] = useState([]);
+          const [loading, setLoading] = useState(true);
+          const [activeCategory, setActiveCategory] = useState('policies');
 
+          useEffect(() => {
+            loadDocuments();
+          }, []);
+
+          const loadDocuments = async () => {
+            try {
+              setLoading(true);
+              const { data, error } = await window.supabase
+                .from('documents')
+                .select('*')
+                .order('created_at', { ascending: false });
+              
+              if (error) {
+                console.error('Error loading documents:', error);
+                return;
+              }
+              
+              setDocuments(data || []);
+            } catch (error) {
+              console.error('Error:', error);
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          const uploadDocument = async () => {
+            const docType = document.getElementById('doc-category')?.value;
+            const docTitle = document.getElementById('doc-title')?.value;
+            const fileInput = document.getElementById('doc-file');
+            const file = fileInput?.files[0];
+            
+            if (!docType || !docTitle || !file) {
+              alert('Please fill all fields');
+              return;
+            }
+            
+            try {
+              const fileName = `${Date.now()}_${file.name}`;
+              const { data: fileData, error: fileError } = await window.supabase.storage
+                .from('documents')
+                .upload(fileName, file);
+              
+              if (fileError) throw fileError;
+              
+              const { data: { publicUrl } } = window.supabase.storage
+                .from('documents')
+                .getPublicUrl(fileName);
+              
+              const { data, error } = await window.supabase
+                .from('documents')
+                .insert([{
+                  name: docTitle,
+                  file_type: docType,
+                  file_path: fileName,
+                  file_url: publicUrl,
+                  file_size: file.size
+                }])
+                .select();
+              
+              if (error) throw error;
+              
+              alert('Document uploaded successfully!');
+              document.getElementById('doc-title').value = '';
+              document.getElementById('doc-file').value = '';
+              loadDocuments();
+            } catch (error) {
+              console.error('Error:', error);
+              alert('Error: ' + error.message);
+            }
+          };
+
+          const deleteDocument = async (docId) => {
+            if (!confirm('Are you sure you want to delete this document?')) return;
+            
+            try {
+              const { error } = await window.supabase
+                .from('documents')
+                .delete()
+                .eq('id', docId);
+              
+              if (error) throw error;
+              loadDocuments();
+            } catch (error) {
+              console.error('Error deleting document:', error);
+              alert('Error deleting document');
+            }
+          };
+
+               const filteredDocuments = documents.filter(doc => 
+                 doc.file_type?.toLowerCase() === activeCategory
+               );
+
+          return (
+            <div className="p-6">
+              <h2 className="text-2xl font-bold mb-6">Company Documents</h2>
+              
+              {user?.role === 'ADMIN' && (
+                <div className="bg-gray-100 p-4 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold mb-4">Upload New Document</h3>
+                  <div className="space-y-4">
+                    <select id="doc-category" className="px-3 py-2 border rounded">
+                      <option value="policies">Policies</option>
+                      <option value="procedures">Procedures</option>
+                    </select>
+                    <input type="file" id="doc-file" className="block" accept=".pdf,.doc,.docx" />
+                    <input type="text" id="doc-title" placeholder="Document Title" className="px-3 py-2 border rounded w-full max-w-xs" />
+                    <button onClick={uploadDocument} className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                      Upload Document
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex gap-4 mb-6">
+                <button 
+                  onClick={() => setActiveCategory('policies')}
+                  className={`px-4 py-2 rounded ${activeCategory === 'policies' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                >
+                  Policies
+                </button>
+                <button 
+                  onClick={() => setActiveCategory('procedures')}
+                  className={`px-4 py-2 rounded ${activeCategory === 'procedures' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                >
+                  Procedures
+                </button>
+              </div>
+              
+              {loading ? (
+                <div className="text-center py-8">
+                  <Loader className="mx-auto h-8 w-8 animate-spin text-blue-500" />
+                  <p className="mt-2 text-gray-500">Loading documents...</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 sm:grid-cols-3 gap-4">
+                  {filteredDocuments.length === 0 ? (
+                    <div className="col-span-full text-center py-8 text-gray-500">
+                      No {activeCategory} found
+                    </div>
+                  ) : (
+                    filteredDocuments.map(doc => (
+                      <div key={doc.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
+                        <h4 className="font-semibold">{doc.name || 'Untitled'}</h4>
+                        <p className="text-sm text-gray-600">Uploaded: {new Date(doc.created_at).toLocaleDateString()}</p>
+                        <div className="mt-2 flex gap-2">
+                          <a 
+                            href={doc.file_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-500 hover:text-blue-700"
+                          >
+                            View/Download
+                          </a>
+                          {user?.role === 'ADMIN' && (
+                            <button 
+                              onClick={() => deleteDocument(doc.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        };
         // Main Application
         const App = () => {
+          // Load company settings on app start
+useEffect(() => {
+  const loadGlobalSettings = async () => {
+    try {
+      const { data } = await window.supabase
+        .from('company_settings')
+        .select('*');
+      
+      if (data) {
+        data.forEach(setting => {
+          if (setting.setting_name === 'primary_color') {
+            document.documentElement.style.setProperty('--primary-color', setting.setting_value);
+            localStorage.setItem('primaryColor', setting.setting_value);
+          } else if (setting.setting_name === 'logo_url') {
+            localStorage.setItem('companyLogo', setting.setting_value);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error loading global settings:', error);
+    }
+  };
+  
+  loadGlobalSettings();
+}, []);
           const { user, logout } = useAuth();
           const [activeTab, setActiveTab] = useState('jobs');
+          const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
           
           // State for data management
           const [jobs, setJobs] = useState(initialJobs);
@@ -3309,112 +3991,125 @@
           return (
             <div className="min-h-screen bg-gray-50">
               <div className="bg-white border-b border-gray-200">
-                <div className="px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                          <Recycle className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h1 className="text-xl font-bold text-gray-900">Total Waste Services</h1>
-                          <p className="text-sm text-gray-600">Professional Waste Management Platform</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                        <span className="text-sm text-gray-600">Demo Mode</span>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-                          <User size={16} />
-                        </div>
-                        <div className="text-sm">
-                          <div className="font-medium">{user.firstName} {user.lastName}</div>
-                          <div className="text-gray-600">{user.role}</div>
-                        </div>
-                        <button
-                          onClick={logout}
-                          className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                        >
-                          <LogOut size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="px-6">
-                  <div className="flex space-x-8">
-                    {tabs.map(tab => {
-                      const Icon = tab.icon === 'BarChart3' ? BarChart3 :
-                                   tab.icon === 'Grid' ? Grid :
-                                   tab.icon === 'Users' ? Users :
-                                   tab.icon === 'Truck' ? Truck :
-                                   tab.icon === 'FileText' ? FileText : Settings;
-                      return (
-                        <button
-                          key={tab.id}
-                          onClick={() => setActiveTab(tab.id)}
-                          className={`flex items-center space-x-2 px-4 py-3 border-b-2 font-medium text-sm transition-all ${
-                            activeTab === tab.id
-                              ? 'border-blue-500 text-blue-600'
-                              : 'border-transparent text-gray-500 hover:text-gray-700'
-                          }`}
-                        >
-                          <Icon size={16} />
-                          <span>{tab.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+  <div className="px-4 sm:px-6 py-4">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center space-x-4">
+        {/* Mobile menu button */}
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="sm:hidden p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
+        >
+          <Menu size={24} />
+        </button>
+        
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10">
+            {localStorage.getItem('companyLogo') ? (
+              <img 
+                src={localStorage.getItem('companyLogo')} 
+                alt="Company Logo" 
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <div className="w-full h-full bg-blue-600 rounded-lg flex items-center justify-center">
+                <Recycle className="w-6 h-6 text-white" />
               </div>
-
-              <div className="p-6">
-                {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} />}
-                {activeTab === 'documents' && (
-  <div className="p-6">
-    <h2 className="text-2xl font-bold mb-6">Company Documents</h2>
-    
-    {/* Upload Section - Admin Only */}
-    {user?.role === 'ADMIN' && (
-      <div className="bg-gray-100 p-4 rounded-lg mb-6">
-        <h3 className="text-lg font-semibold mb-4">Upload New Document</h3>
-        <div className="space-y-4">
-          <select id="doc-category" className="px-3 py-2 border rounded">
-            <option value="policies">Policies</option>
-            <option value="procedures">Procedures</option>
-          </select>
-          <input type="file" id="doc-file" className="block" accept=".pdf,.doc,.docx" />
-          <input type="text" id="doc-title" placeholder="Document Title" className="px-3 py-2 border rounded w-full max-w-xs" />
-          <button onClick={() => window.documentManager.uploadDocument()} className="bg-blue-500 text-white px-4 py-2 rounded">
-            Upload Document
+            )}
+          </div>
+          <div className="hidden sm:block">
+            <h1 className="text-xl font-bold text-gray-900">Total Waste Services</h1>
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex items-center space-x-2 sm:space-x-4">
+        <div className="hidden sm:flex items-center space-x-2">
+          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+          <span className="text-sm text-gray-600">Live</span>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <div className="hidden sm:block w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
+            <User size={16} />
+          </div>
+          <div className="text-sm">
+            <div className="font-medium">{user.firstName}</div>
+            <div className="text-gray-600 hidden sm:block">{user.role}</div>
+          </div>
+          <button
+            onClick={logout}
+            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+          >
+            <LogOut size={16} />
           </button>
         </div>
       </div>
-    )}
-    
-    {/* Document Categories */}
-    <div className="flex gap-4 mb-6">
-      <button className="px-4 py-2 bg-blue-500 text-white rounded">Policies</button>
-      <button className="px-4 py-2 bg-gray-200 rounded">Procedures</button>
-    </div>
-    
-    {/* Documents List */}
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <div className="border rounded-lg p-4">
-        <h4 className="font-semibold">Sample Policy Document</h4>
-        <p className="text-sm text-gray-600">Uploaded: 01/01/2024</p>
-        <button className="mt-2 text-blue-500">View/Download</button>
-      </div>
     </div>
   </div>
-)}
+
+  {/* Desktop tabs */}
+  <div className="hidden sm:block px-6">
+    <div className="flex space-x-8">
+      {tabs.map(tab => {
+        const Icon = tab.icon === 'BarChart3' ? BarChart3 :
+                     tab.icon === 'Grid' ? Grid :
+                     tab.icon === 'Users' ? Users :
+                     tab.icon === 'Truck' ? Truck :
+                     tab.icon === 'FileText' ? FileText : Settings;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center space-x-2 px-4 py-3 border-b-2 font-medium text-sm transition-all ${
+              activeTab === tab.id
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Icon size={16} />
+            <span>{tab.name}</span>
+          </button>
+        );
+      })}
+    </div>
+  </div>
+
+  {/* Mobile menu */}
+  {mobileMenuOpen && (
+    <div className="sm:hidden px-4 py-2 space-y-1">
+      {tabs.map(tab => {
+        const Icon = tab.icon === 'BarChart3' ? BarChart3 :
+                     tab.icon === 'Grid' ? Grid :
+                     tab.icon === 'Users' ? Users :
+                     tab.icon === 'Truck' ? Truck :
+                     tab.icon === 'FileText' ? FileText : Settings;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => {
+              setActiveTab(tab.id);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
+              activeTab === tab.id
+                ? 'bg-blue-50 text-blue-600'
+                : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <Icon size={20} />
+            <span>{tab.name}</span>
+          </button>
+        );
+      })}
+    </div>
+  )}
+</div>
+
+              <div className="p-4 sm:p-6">
+                {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} />}
+                {activeTab === 'documents' && (
+                  <DocumentsView user={user} />
+                )}
                 {activeTab === 'jobs' && (
                   <JobsView 
                     jobs={jobs} 
@@ -3544,8 +4239,8 @@
           };
 
           return (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
                 <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                   <h2 className="text-xl font-bold">{customer ? 'Edit Customer' : 'Add New Customer'}</h2>
                   <button onClick={onClose}>
@@ -3573,13 +4268,22 @@
                   >
                     Financial & Compliance
                   </button>
+                  <button
+                   onClick={() => {
+                        setActiveTab('documents');
+
+                     }}
+                     className={`px-6 py-3 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                  >
+                     Documents
+        </button>
                 </div>
 
                 <div className="p-6">
                   {/* Company Details Tab */}
                   {activeTab === 'company' && (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
                           <input
@@ -3602,7 +4306,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Company Registration Number</label>
                           <input
@@ -3625,7 +4329,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Business Type</label>
                           <select
@@ -3702,7 +4406,7 @@
                   {/* Contact Information Tab */}
                   {activeTab === 'contact' && (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Primary Contact Name *</label>
                           <input
@@ -3725,7 +4429,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Office Phone</label>
                           <input
@@ -3748,7 +4452,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Primary Email *</label>
                           <input
@@ -3771,7 +4475,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Contact Method</label>
                           <select
@@ -3813,7 +4517,7 @@
                   {/* Financial & Compliance Tab */}
                   {activeTab === 'financial' && (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Credit Rating</label>
                           <select
@@ -3840,7 +4544,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms (days)</label>
                           <select
@@ -3867,7 +4571,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Waste Carrier License</label>
                           <input
@@ -4005,8 +4709,8 @@
           };
 
           return (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
                 <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                   <h2 className="text-xl font-bold">{supplier ? 'Edit Supplier' : 'Add New Supplier'}</h2>
                   <button onClick={onClose}>
@@ -4040,7 +4744,7 @@
                   {/* Company Details Tab */}
                   {activeTab === 'company' && (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
                           <input
@@ -4063,7 +4767,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Company Registration Number</label>
                           <input
@@ -4086,7 +4790,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Primary Contact Name *</label>
                           <input
@@ -4109,7 +4813,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Office Phone</label>
                           <input
@@ -4132,7 +4836,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Primary Email *</label>
                           <input
@@ -4155,7 +4859,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Rating</label>
                           <select
@@ -4216,7 +4920,7 @@
                     <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Primary Services</label>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {['Skip Hire', 'Waste Collection', 'Aggregates Supply', 'Recycling', 'Hazardous Waste', 
                             'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Tipper Hire', 'Plant Hire', 'Haulage', 'Transport'].map(service => (
                             <label key={service} className="flex items-center">
@@ -4234,7 +4938,7 @@
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Service Areas</label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           {['London', 'South East', 'South West', 'Midlands', 'North West', 'North East', 
                             'Scotland', 'Wales', 'Northern Ireland', 'National Coverage'].map(area => (
                             <label key={area} className="flex items-center">
@@ -4250,7 +4954,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Fleet Size</label>
                           <select
@@ -4280,7 +4984,7 @@
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Skip Sizes Available</label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           {['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed', 
                             '12 yard', '12 yard enclosed', '14 yard', '14 yard enclosed', '16 yard', '16 yard enclosed'].map(size => (
                             <label key={size} className="flex items-center">
@@ -4304,7 +5008,7 @@
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Aggregate Types</label>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {['Type 1 Sub Base', 'Type 2 Sub Base', 'Ballast', 'Sharp Sand', 'Building Sand', 
                             'Topsoil', 'Shingle', 'Crushed Concrete', 'Scalping', 'Gabion Stone'].map(type => (
                             <label key={type} className="flex items-center">
@@ -4342,7 +5046,7 @@
                   {/* Compliance & Financial Tab */}
                   {activeTab === 'compliance' && (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Waste Carrier License *</label>
                           <input
@@ -4375,7 +5079,7 @@
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Public Liability Insurance</label>
                           <input
@@ -4414,7 +5118,7 @@
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Certifications & Accreditations</label>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {['ISO 9001', 'ISO 14001', 'ISO 45001', 'FORS Bronze', 'FORS Silver', 'FORS Gold', 
                             'CHAS', 'SafeContractor', 'Constructionline', 'CLOCS'].map(cert => (
                             <label key={cert} className="flex items-center">
@@ -4432,7 +5136,7 @@
 
                       <div className="pt-4 border-t">
                         <h4 className="font-medium text-gray-900 mb-3">Bank Details</h4>
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
                             <input
@@ -4465,7 +5169,7 @@
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms (days)</label>
                           <select
@@ -4579,7 +5283,7 @@
                 </div>
 
                 <div className="p-6 space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name *</label>
                       <select
@@ -4613,7 +5317,7 @@
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                       <input
@@ -4634,7 +5338,7 @@
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Job Type *</label>
                       <select
@@ -4662,7 +5366,7 @@
                   </div>
 
                   {formData.jobType === 'Skip Hire' && (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Skip Size</label>
                         <select
@@ -4693,7 +5397,7 @@
                   )}
 
                   {formData.jobType === 'Roll-on Roll-off' && (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">RoRo Size</label>
                         <select
@@ -4755,7 +5459,7 @@
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
                       <input
@@ -4877,66 +5581,155 @@
         ReactDOM.render(<WasteManagementDemo />, document.getElementById('root'));
     </script>
 <script>
-// Initialize Supabase
-const SUPABASE_URL = 'https://ykpbnrjlqlhckmgcoulv.supabase.co'; // Replace with your URL
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrcGJucmpscWxoY2ttZ2NvdWx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI4MzE0OTAsImV4cCI6MjA2ODQwNzQ5MH0.YSt9xxYSskCp98iJDN0iQ5nNDRbI_EQWNnImcBxVBRU'; // Replace with your key
-const supabase = window.supabase.createClient alert('Supabase loaded successfully!');(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Document upload function
-window.documentManager = {
-    async uploadDocument() {
-        const docType = document.getElementById('doc-category')?.value;
-        const docTitle = document.getElementById('doc-title')?.value;
-        const fileInput = document.getElementById('doc-file');
-        const file = fileInput?.files[0];
+// Wait for Supabase to load
+if (typeof window.supabase === 'undefined') {
+    console.error('Supabase library not loaded!');
+    alert('Supabase library not loaded!');
+} else {
+    // Initialize Supabase
+    const SUPABASE_URL = 'https://ykpbnrjlqlhckmgcoulv.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrcGJucmpscWxoY2ttZ2NvdWx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI4MzE0OTAsImV4cCI6MjA2ODQwNzQ5MH0.YSt9xxYSskCp98iJDN0iQ5nNDRbI_EQWNnImcBxVBRU';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    window.supabase = supabase;
+    // Add this after line 4921 (window.supabase = supabase;)
 
-        if (!docType || !docTitle || !file) {
-            alert('Please fill all fields');
+// Function to load documents from Supabase
+window.loadDocumentsFromSupabase = async function() {
+    try {
+        console.log('Loading documents from Supabase...');
+        
+        const { data, error } = await supabase
+            .from('documents')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            console.error('Error loading documents:', error);
             return;
         }
-
-        try {
-            const fileName = `${Date.now()}_${file.name}`;
-            const { data: fileData, error: fileError } = await supabase.storage
-                .from('documents')
-                .upload(fileName, file);
-
-            if (fileError) throw fileError;
-
-            const { data: { publicUrl } } = supabase.storage
-                .from('documents')
-                .getPublicUrl(fileName);
-
-            const { data, error } = await supabase
-                .from('documents')
-                .insert([{
-                    name: docTitle,
-                    file_path: fileName,
-                    file_url: publicUrl,
-                    file_type: docType,
-                    file_size: file.size,
-                    category: 'TEXT',
-                    uploaded_by: 'System Administrator'
-                }])
-                .select();
-
-            if (error) throw error;
-
-            document.getElementById('doc-title').value = '';
-            document.getElementById('doc-file').value = '';
+        
+        if (data && data.length > 0) {
+            console.log(`Loaded ${data.length} documents`);
             
-            alert('Document uploaded successfully!');
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error: ' + error.message);
+            // Find the documents list container
+            const docsList = document.querySelector('#docs-list');
+            if (docsList) {
+                // Clear existing content except the sample
+                docsList.innerHTML = '';
+                
+                // Add each document
+                data.forEach(doc => {
+                    const docDiv = document.createElement('div');
+                    docDiv.className = 'bg-white p-4 rounded-lg shadow hover:shadow-lg transition-shadow';
+                    docDiv.innerHTML = `
+                        <h3 class="text-lg font-semibold mb-2">${doc.name || 'Untitled'}</h3>
+                        <p class="text-gray-600 text-sm mb-3">${doc.type || 'Document'}</p>
+                        <div class="flex gap-2">
+                            <a href="${doc.file_url}" target="_blank" 
+                               class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
+                                View
+                            </a>
+                            <button onclick="deleteDocument('${doc.id}')" 
+                                    class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600">
+                                Delete
+                            </button>
+                        </div>
+                    `;
+                    docDiv.setAttribute('data-type', doc.type?.toLowerCase() || '');
+                    docsList.appendChild(docDiv);
+                });
+            }
+        } else {
+            console.log('No documents found');
         }
+    } catch (error) {
+        console.error('Error in loadDocumentsFromSupabase:', error);
     }
 };
-</script></body>
-<div style="background: red; color: white; padding: 10px;">
-  TEST: <span id="test">JavaScript is broken</span>
-</div>
-<script>
-  document.getElementById('test').innerHTML = 'JavaScript works!';
+
+// Load documents when user is authenticated
+supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session) {
+        console.log('User is authenticated, loading documents...');
+        window.loadDocumentsFromSupabase();
+    }
+});
+// Also modify your upload function to refresh the list after upload
+// Find your uploadDocument function and add this at the end of the success case:
+// window.loadDocumentsFromSupabase();
+    // Document upload function
+    window.documentManager = {
+   async uploadDocument() {
+    const docType = document.getElementById('doc-category')?.value;
+    const docTitle = document.getElementById('doc-title')?.value;
+    const fileInput = document.getElementById('doc-file');
+    const file = fileInput?.files[0];
+    
+    if (!docType || !docTitle || !file) {
+        alert('Please fill all fields');
+        return;
+    }
+    
+    try {
+        const fileName = `${Date.now()}_${file.name}`;
+        const { data: fileData, error: fileError } = await supabase.storage
+            .from('documents')
+            .upload(fileName, file);
+        
+        if (fileError) throw fileError;
+        
+        const { data: { publicUrl } } = supabase.storage
+            .from('documents')
+            .getPublicUrl(fileName);
+        
+        const { data, error } = await supabase
+            .from('documents')
+            .insert([{
+                name: docTitle,
+                file_path: fileName,
+                file_url: publicUrl,
+                file_type: docType,
+                file_size: file.size,
+                category: 'TEXT'
+            }])
+            .select();
+        
+        if (error) throw error;
+        // Show success message
+alert('Document uploaded successfully!');
+
+// Update the display directly
+const container = document.getElementById('docs-list');
+if (container) {
+  const docDiv = document.createElement('div');
+  docDiv.className = 'border rounded-lg p-4';
+  docDiv.innerHTML = 
+    '<h4 class="font-semibold">' + docTitle + '</h4>' +
+    '<p class="text-sm text-gray-600">Type: ' + docType + '</p>' +
+    '<p class="text-sm text-gray-600">Uploaded: ' + new Date().toLocaleDateString() + '</p>' +
+    '<a href="' + publicUrl + '" target="_blank" class="text-blue-500">View/Download</a>';
+  container.appendChild(docDiv);
+  
+  // Hide the sample document
+  const sample = document.querySelector('h4.font-semibold');
+  if (sample && sample.textContent.includes('Sample Policy')) {
+    sample.parentElement.style.display = 'none';
+  }
+}
+        document.getElementById('doc-title').value = '';
+        document.getElementById('doc-file').value = '';
+        
+       if (window.refreshDocuments) window.refreshDocuments();
+        
+        // Refresh the page to show the new document
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error: ' + error.message);
+    }
+}
+    };
+}
 </script>
+</body>
 </html>
