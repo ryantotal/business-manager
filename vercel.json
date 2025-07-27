@@ -1,12 +1,11 @@
 {
-  "functions": {
-    "api/*.js": {
-      "maxDuration": 30
-    }
-  },
   "rewrites": [
     {
-      "source": "/sage-callback",
+      "source": "/api/sage-callback",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
