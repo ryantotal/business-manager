@@ -6,7 +6,7 @@
   },
   "rewrites": [
     {
-      "source": "/api/sage-callback",
+      "source": "/sage-callback",
       "destination": "/index.html"
     }
   ]
