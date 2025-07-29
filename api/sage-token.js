@@ -72,6 +72,7 @@ if (req.body && typeof req.body === 'string') {
   }
 
   if (req.method === 'POST') {
+    req.body = JSON.parse(req.body);
     console.log('Received body:', req.body);
     console.log('Body type:', typeof req.body);
 
