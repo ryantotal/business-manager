@@ -8,7 +8,5 @@ export default async function handler(req, res) {
   });
   
   const authUrl = `https://www.sageone.com/oauth2/auth?${params.toString()}`;
-  
-  console.log('Redirecting to:', authUrl); // This will show in Vercel logs
   res.redirect(authUrl);
 }
