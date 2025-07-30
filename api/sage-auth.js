@@ -4,9 +4,10 @@ export default async function handler(req, res) {
     response_type: 'code',
     redirect_uri: 'https://portal.totalwasteservicesltd.com/api/sage-callback',
     scope: 'full_access',
-    state: Math.random().toString(36).substring(7)
+    state: Math.random().toString(36).substring(7),
+    filter: 'apiv3.1'
   });
   
-  const authUrl = `https://www.sageone.com/oauth2/auth?${params.toString()}`;
+  const authUrl = `https://www.sageone.com/oauth2/auth/central?${params.toString()}`;
   res.redirect(authUrl);
 }
