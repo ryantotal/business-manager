@@ -1728,10 +1728,75 @@ siteNotes: '',
             return true;
           });
 
-          const handleJobClick = (job) => {
+         const handleJobClick = (job) => {
   setSelectedJob(job);
   if (job && job.id) {
-    window.loadJobAttachments(job.id);
+    loadJobAttachments(job.id);
+  }
+};
+
+// Add loadJobAttachments function
+const loadJobAttachments = async (jobId) => {
+  try {
+    const { data, error } = await window.supabase
+      .from('job_attachments')
+      .select('*')
+      .eq('job_id', jobId)
+      .order('uploaded_at', { ascending: false });
+
+    if (error) throw error;
+    setJobAttachments(data || []);
+  } catch (error) {
+    console.error('Error loading job attachments:', error);
+    setJobAttachments([]);
+  }
+};
+
+// Add uploadJobAttachment function
+const uploadJobAttachment = async () => {
+  const attachmentType = document.getElementById('attachment-type')?.value;
+  const fileInput = document.getElementById('attachment-file');
+  const file = fileInput?.files[0];
+
+  if (!attachmentType || !file || !selectedJob) {
+    alert('Please select attachment type, file, and ensure a job is selected');
+    return;
+  }
+
+  try {
+    const fileName = `job_${selectedJob.id}_${Date.now()}_${file.name}`;
+    const { data: fileData, error: fileError } = await window.supabase.storage
+      .from('documents')
+      .upload(fileName, file);
+
+    if (fileError) throw fileError;
+
+    const { data: { publicUrl } } = window.supabase.storage
+      .from('documents')
+      .getPublicUrl(fileName);
+
+    // Save to job_attachments table
+    const { data, error } = await window.supabase
+      .from('job_attachments')
+      .insert([{
+        job_id: selectedJob.id,
+        file_name: file.name,
+        file_url: publicUrl,
+        file_type: attachmentType,
+        file_size: file.size,
+        uploaded_by: user?.email
+      }]);
+
+    if (error) throw error;
+
+    alert('Job attachment uploaded successfully!');
+    loadJobAttachments(selectedJob.id);
+    
+    // Clear the form
+    document.getElementById('attachment-file').value = '';
+  } catch (error) {
+    console.error('Error uploading job attachment:', error);
+    alert('Error uploading job attachment');
   }
 };
 
@@ -5239,6 +5304,7 @@ useEffect(() => {
 const [customers, setCustomers] = useState([]);
 const [suppliers, setSuppliers] = useState([]);
 const [jobAttachments, setJobAttachments] = useState([]);
+const [selectedJob, setSelectedJob] = useState(null);
           // Load suppliers from Supabase when app starts
 useEffect(() => {
   const loadSuppliersFromSupabase = async () => {
