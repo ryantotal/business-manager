@@ -6116,6 +6116,9 @@ setEditingJob(null);
 
     setJobs(jobs.map(job => job.id === updatedJob.id ? updatedJob : job));
     setEditingJob(null);
+setShowJobForm(false);
+setShowFullPageJob(updatedJob);
+alert('Job updated successfully!');
   } catch (error) {
     console.error('Error updating job:', error);
     alert('Error updating job: ' + error.message);
