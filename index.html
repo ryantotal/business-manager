@@ -1798,10 +1798,6 @@ const uploadJobAttachment = async () => {
   }
 };
 
-          const handleEditJob = (job) => {
-            onEditJob(job);
-            setSelectedJob(null);
-          };
 
           const handleDuplicateJob = (job) => {
             const duplicatedJob = { ...job, id: null, jobNumber: null };
