@@ -556,7 +556,7 @@ const getFilteredProducts = () => {
         // Job Form Component
         const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts }) => {
           const { wasteTypes } = useWasteTypes();
-          const [uploadFile, setUploadFile] = useState(null);
+         const [uploadFile, setUploadFile] = React.useState(null);
 const [attachmentType, setAttachmentType] = useState('Waste Transfer Note');
 const handleDeleteAttachment = async (attachmentId) => {
   if (!window.confirm('Are you sure you want to delete this attachment?')) {
