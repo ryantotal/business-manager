@@ -6110,6 +6110,9 @@ setEditingJob(null);
             onAddJob(exchangeJob);
             setSelectedJob(null);
           };
+          const handleCollection = (job) => {
+  console.log('Collection job:', job);
+};
           const handleDeleteJob = async (jobId) => {
   try {
     // Delete from Supabase database
