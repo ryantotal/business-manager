@@ -1728,8 +1728,9 @@ siteNotes: '',
             return true;
           });
 
-         const handleJobClick = (job) => {
-  setSelectedJob(job);
+    const handleJobClick = (job) => {
+  setShowFullPageJob(job); // ADD THIS LINE - opens full page view
+  setSelectedJob(job); // KEEP THIS - keeps modal working too
   if (job && job.id) {
     loadJobAttachments(job.id);
   }
@@ -2847,6 +2848,566 @@ job.status.replace('_', ' ')}
             </div>
           );
         };
+
+        // Add this RIGHT AFTER the JobsView component (around line 2800)
+
+// SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
+// This works with your existing code structure and won't break anything
+
+const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, user }) => {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [jobAttachments, setJobAttachments] = useState([]);
+
+  // Load attachments when component mounts
+  useEffect(() => {
+    if (job?.id) {
+      loadJobAttachments(job.id);
+    }
+  }, [job?.id]);
+
+  const loadJobAttachments = async (jobId) => {
+    try {
+      const { data, error } = await window.supabase
+        .from('job_attachments')
+        .select('*')
+        .eq('job_id', jobId)
+        .order('uploaded_at', { ascending: false });
+
+      if (error) throw error;
+      setJobAttachments(data || []);
+    } catch (error) {
+      console.error('Error loading job attachments:', error);
+      setJobAttachments([]);
+    }
+  };
+
+  const uploadJobAttachment = async () => {
+    const attachmentType = document.getElementById('attachment-type')?.value;
+    const fileInput = document.getElementById('attachment-file');
+    const file = fileInput?.files[0];
+
+    if (!attachmentType || !file || !job) {
+      alert('Please select attachment type, file, and ensure a job is selected');
+      return;
+    }
+
+    try {
+      const fileName = `job_${job.id}_${Date.now()}_${file.name}`;
+      const { data: fileData, error: fileError } = await window.supabase.storage
+        .from('documents')
+        .upload(fileName, file);
+
+      if (fileError) throw fileError;
+
+      const { data: { publicUrl } } = window.supabase.storage
+        .from('documents')
+        .getPublicUrl(fileName);
+
+      const { data, error } = await window.supabase
+        .from('job_attachments')
+        .insert([{
+          job_id: job.id,
+          file_name: file.name,
+          file_url: publicUrl,
+          file_type: attachmentType,
+          file_size: file.size,
+          uploaded_by: user?.email
+        }]);
+
+      if (error) throw error;
+
+      alert('Job attachment uploaded successfully!');
+      loadJobAttachments(job.id);
+      
+      document.getElementById('attachment-file').value = '';
+    } catch (error) {
+      console.error('Error uploading job attachment:', error);
+      alert('Error uploading job attachment');
+    }
+  };
+
+  if (!job) return null;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header Section */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+            >
+              <LucideIcon icon="ChevronUp" size={24} className="rotate-90" />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{job.jobNumber}</h1>
+              <p className="text-gray-600">{job.jobType}</p>
+            </div>
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+              job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
+              job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
+              job.isCancelled ? 'bg-red-100 text-red-800' :
+              'bg-blue-100 text-blue-800'
+            }`}>
+              {job.status === 'COLLECTED' ? 'Collected' :
+               job.isCompleted ? 'Completed' : 
+               job.isCancelled ? 'Cancelled' : 
+               job.status}
+            </span>
+            {job.priority && (
+              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                job.priority === 'High' || job.priority === 'Urgent' ? 'bg-red-100 text-red-700' :
+                job.priority === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
+                'bg-green-100 text-green-700'
+              }`}>
+                {job.priority} Priority
+              </span>
+            )}
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => onEdit(job)}
+              className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
+              title="Edit Job"
+            >
+              <Edit3 size={20} />
+            </button>
+            <button
+              onClick={() => onDuplicate(job)}
+              className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
+              title="Duplicate Job"
+            >
+              <Copy size={20} />
+            </button>
+            {(job.jobType === 'Skip Hire' || job.jobType === 'Roll-on Roll-off') && 
+             !job.isCompleted && job.status !== 'COLLECTED' && (
+              <>
+                <button
+                  onClick={() => onExchange(job)}
+                  className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg"
+                  title="Exchange"
+                >
+                  <Repeat size={20} />
+                </button>
+                <button
+                  onClick={() => onCollection(job)}
+                  className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
+                  title="Mark as Collected"
+                >
+                  <Package size={20} />
+                </button>
+              </>
+            )}
+            {user?.role === 'ADMIN' && (
+              <button
+                onClick={() => onDelete(job)}
+                className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
+                title="Delete Job"
+              >
+                <Trash2 size={20} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="px-6">
+          <nav className="flex space-x-8">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+                activeTab === 'overview'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Job Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('financial')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+                activeTab === 'financial'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Financial & Billing
+            </button>
+            <button
+              onClick={() => setActiveTab('documents')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+                activeTab === 'documents'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Documents & Notes
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        
+        {/* Job Overview Tab */}
+        {activeTab === 'overview' && (
+          <div className="space-y-8">
+            
+            {/* Job & Customer Information */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Job & Customer Information</h2>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Customer:</span>
+                      <span className="font-semibold text-gray-900">{job.customerName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Customer PO:</span>
+                      <span className="text-gray-900">{job.customerPO || 'Not provided'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Supplier:</span>
+                      <span className="text-gray-900">{job.supplierName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Supplier Reference:</span>
+                      <span className="text-gray-900">{job.supplierRef || 'Not provided'}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Job Type:</span>
+                      <span className="text-gray-900">{job.jobType}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Created Date:</span>
+                      <span className="text-gray-900">{new Date(job.jobDate).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Delivery Date:</span>
+                      <span className="text-gray-900 font-semibold">{new Date(job.jobDate).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Quantity:</span>
+                      <span className="text-gray-900">{job.quantity} {job.unit}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Site & Logistics */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Site & Logistics</h2>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-gray-600 font-medium block mb-1">Site Address:</span>
+                      <div className="text-gray-900">
+                        <div>{job.siteAddress1}</div>
+                        {job.siteAddress2 && <div>{job.siteAddress2}</div>}
+                        <div>{job.sitePostcode}</div>
+                      </div>
+                    </div>
+                    {job.siteContact && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Site Contact:</span>
+                        <span className="text-gray-900">{job.siteContact}</span>
+                      </div>
+                    )}
+                    {job.sitePhone && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Contact Phone:</span>
+                        <span className="text-gray-900">{job.sitePhone}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-4">
+                    {job.haulierName && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Haulier:</span>
+                        <span className="text-gray-900">{job.haulierName}</span>
+                      </div>
+                    )}
+                    {job.timeSlot && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Time Slot:</span>
+                        <span className="text-gray-900">{job.timeSlot}</span>
+                      </div>
+                    )}
+                    {job.deliveryInstructions && (
+                      <div>
+                        <span className="text-gray-600 font-medium block mb-1">Delivery Instructions:</span>
+                        <span className="text-gray-900">{job.deliveryInstructions}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Products & Services Summary */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Products & Services</h2>
+              </div>
+              <div className="p-6">
+                {job.lineItems && job.lineItems.length > 0 ? (
+                  <div className="space-y-4">
+                    {job.lineItems.map((item, index) => (
+                      <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Product/Service</div>
+                            <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
+                            {item.item_code && (
+                              <div className="text-sm text-gray-600">Code: {item.item_code}</div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Description</div>
+                            <div className="text-gray-900">{item.description || 'No description'}</div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              Type: <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                              }`}>
+                                {item.type || 'product'}
+                              </span>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Quantity</div>
+                            <div className="text-gray-900">
+                              <div className="font-semibold">{item.quantity || 1}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <div className="text-sm text-blue-600 font-medium">Total Items</div>
+                        <div className="text-2xl font-bold text-blue-900">{job.lineItems.length}</div>
+                      </div>
+                      <div className="bg-green-50 p-4 rounded-lg">
+                        <div className="text-sm text-green-600 font-medium">Total Quantity</div>
+                        <div className="text-2xl font-bold text-green-900">{job.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}</div>
+                      </div>
+                      <div className="bg-purple-50 p-4 rounded-lg">
+                        <div className="text-sm text-purple-600 font-medium">Job Value</div>
+                        <div className="text-2xl font-bold text-purple-900">£{job.customerFinalPrice?.toFixed(2) || '0.00'}</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <div className="text-lg font-medium">No products or services specified</div>
+                    <div className="text-sm">Job Type: {job.jobType}</div>
+                    {job.quantity && <div className="text-sm">Quantity: {job.quantity} {job.unit}</div>}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Special Information */}
+            {(job.parentJobId || (job.linkedJobs && job.linkedJobs.length > 0)) && (
+              <div className="space-y-4">
+                {job.parentJobId && (
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-orange-900 mb-2">Exchange Information</h3>
+                    <p className="text-orange-700">This is an exchange job from: <span className="font-semibold">{job.parentJobId}</span></p>
+                  </div>
+                )}
+
+                {job.linkedJobs && job.linkedJobs.length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-blue-900 mb-2">Linked Jobs</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {job.linkedJobs.map(jobId => (
+                        <span key={jobId} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                          {jobId}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {/* Financial & Billing Tab */}
+        {activeTab === 'financial' && (
+          <div className="space-y-8">
+            
+            {/* Financial Summary */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Financial Summary</h2>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600 font-medium">Customer Price</div>
+                    <div className="text-2xl font-bold text-blue-600">£{job.customerFinalPrice?.toFixed(2) || '0.00'}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600 font-medium">Supplier Cost</div>
+                    <div className="text-2xl font-bold text-red-600">£{job.supplierFinalPrice?.toFixed(2) || '0.00'}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600 font-medium">Gross Profit</div>
+                    <div className="text-2xl font-bold text-green-600">£{job.grossProfit?.toFixed(2) || '0.00'}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600 font-medium">Profit Margin</div>
+                    <div className="text-2xl font-bold text-purple-600">{job.profitMargin?.toFixed(1) || '0.0'}%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Invoice Information */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Invoice & Payment Status</h2>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Invoice Number:</span>
+                      <span className="text-gray-900">{job.invoiceNumber || 'Not invoiced'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Invoice Status:</span>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        job.invoiceStatus === 'Invoiced' ? 'bg-green-100 text-green-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {job.invoiceStatus || 'Not Invoiced'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Payment Status:</span>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        job.paymentStatus === 'Paid' ? 'bg-green-100 text-green-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {job.paymentStatus || 'Not Paid'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">VAT Rate:</span>
+                      <span className="text-gray-900">{job.vatRate || 20}%</span>
+                    </div>
+                    {job.wasteTransferNote && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Waste Transfer Note:</span>
+                        <span className="text-gray-900">{job.wasteTransferNote}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* Documents Tab */}
+        {activeTab === 'documents' && (
+          <div className="space-y-8">
+            
+            {/* Job Attachments */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Job Attachments</h2>
+              </div>
+              <div className="p-6">
+                
+                {/* Upload Section */}
+                <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                  <h4 className="font-medium text-gray-800 mb-4">Upload New Attachment</h4>
+                  <div className="space-y-4">
+                    <select id="attachment-type" className="px-3 py-2 border rounded">
+                      <option value="receipt">Receipt</option>
+                      <option value="wtn">Waste Transfer Note</option>
+                      <option value="invoice">Invoice</option>
+                      <option value="photo">Photo</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <input type="file" id="attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" />
+                    <button
+                      onClick={uploadJobAttachment}
+                      className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                    >
+                      Upload Attachment
+                    </button>
+                  </div>
+                </div>
+
+                {/* Attachments List */}
+                <div className="space-y-4">
+                  {jobAttachments.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p className="mt-2">No attachments yet</p>
+                      <p className="text-sm">Upload documents, photos, or receipts related to this job</p>
+                    </div>
+                  ) : (
+                    jobAttachments.map(attachment => (
+                      <div key={attachment.id} className="flex justify-between items-center bg-white p-2 rounded border">
+                        <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
+                        <button
+                          onClick={() => window.open(attachment.file_url)}
+                          className="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                          View
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Job Notes */}
+            {job.notes && (
+              <div className="bg-white rounded-lg border border-gray-200">
+                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                  <h2 className="text-lg font-semibold text-gray-800">Job Notes</h2>
+                </div>
+                <div className="p-6">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <p className="text-yellow-800">{job.notes}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+};
 
         // Customers View Component
           const CustomersView = ({ customers, onAddCustomer, onUpdateCustomer, onDeleteCustomer, user }) => {
@@ -5269,6 +5830,7 @@ const [customers, setCustomers] = useState([]);
 const [suppliers, setSuppliers] = useState([]);
 const [jobAttachments, setJobAttachments] = useState([]);
 const [selectedJob, setSelectedJob] = useState(null);
+const [showFullPageJob, setShowFullPageJob] = useState(null);
           // Load suppliers from Supabase when app starts
 useEffect(() => {
   const loadSuppliersFromSupabase = async () => {
@@ -5790,7 +6352,19 @@ const { error } = await window.supabase
     </div>
   )}
 </div>
-
+{/* Full Page Job View - Add this BEFORE the tab content */}
+{showFullPageJob && (
+  <FullPageJobView 
+    job={showFullPageJob}
+    onClose={() => setShowFullPageJob(null)}
+    onEdit={handleEditJob}
+    onDuplicate={handleDuplicateJob}
+    onDelete={handleDeleteJob}
+    onExchange={handleExchange}
+    onCollection={handleCollection}
+    user={user}
+  />
+)}
               <div className="p-4 sm:p-6">
                 {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} />}
                 {activeTab === 'documents' && (
