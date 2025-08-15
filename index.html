@@ -556,6 +556,68 @@ const getFilteredProducts = () => {
         // Job Form Component
         const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts }) => {
           const { wasteTypes } = useWasteTypes();
+          const [uploadFile, setUploadFile] = useState(null);
+const [attachmentType, setAttachmentType] = useState('Waste Transfer Note');
+const handleDeleteAttachment = async (attachmentId) => {
+  if (!window.confirm('Are you sure you want to delete this attachment?')) {
+    return;
+  }
+  
+  try {
+    const { error } = await window.supabase
+      .from('job_attachments')
+      .delete()
+      .eq('id', attachmentId);
+    
+    if (error) throw error;
+    
+    alert('Attachment deleted successfully!');
+    // Refresh attachments or update state here
+  } catch (error) {
+    console.error('Error deleting attachment:', error);
+    alert('Error deleting attachment: ' + error.message);
+  }
+};
+const handleUploadInForm = async () => {
+  if (!uploadFile || !job?.id) {
+    alert('Please select a file and ensure job exists');
+    return;
+  }
+  
+  const fileName = `job_${job.id}_${Date.now()}_${uploadFile.name}`;
+  
+  try {
+    const { data: fileData, error: fileError } = await window.supabase.storage
+      .from('documents')
+      .upload(fileName, uploadFile);
+    
+    if (fileError) throw fileError;
+    
+    const { data: { publicUrl } } = window.supabase.storage
+      .from('documents')
+      .getPublicUrl(fileName);
+    
+    const { error } = await window.supabase
+      .from('job_attachments')
+      .insert([{
+        job_id: job.id,
+        file_name: uploadFile.name,
+        file_url: publicUrl,
+        file_type: attachmentType,
+        file_size: uploadFile.size,
+        uploaded_by: sageProducts?.email
+      }]);
+    
+    if (error) throw error;
+    
+    alert('File uploaded successfully!');
+    setUploadFile(null);
+    document.getElementById('attachment-file').value = '';
+  } catch (error) {
+    console.error('Error uploading:', error);
+    alert('Error uploading file: ' + error.message);
+  }
+};
           const [formData, setFormData] = useState(job || {
             customerName: '',
             id: job?.id,
@@ -1421,11 +1483,12 @@ siteNotes: '',
         </div>
         
         <button
-          type="button"
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-        >
-          Upload Attachment
-        </button>
+  type="button"
+  onClick={handleUploadInForm}
+  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+>
+  Upload Attachment
+</button>
       </div>
     </div>
   </div>
@@ -2499,7 +2562,7 @@ job.status.replace('_', ' ')}
 {/* Display existing attachments */}
     <div className="mt-4 space-y-2">
       {[].map(attachment => (
-        <div key={attachment.id} className="flex justify-between items-center bg-white p-2 rounded border">
+        <div key={attachment.id} className="flex items-center bg-white p-2 rounded border">
           <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
           <button
             onClick={() => window.open(attachment.file_url)}
@@ -3389,7 +3452,7 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
                     </div>
                   ) : (
                     jobAttachments.map(attachment => (
-                      <div key={attachment.id} className="flex justify-between items-center bg-white p-2 rounded border">
+                      <div key={attachment.id} className="flex items-center bg-white p-2 rounded">
                         <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
                         <button
                           onClick={() => window.open(attachment.file_url)}
