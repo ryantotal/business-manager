@@ -579,13 +579,12 @@ const handleDeleteAttachment = async (attachmentId) => {
   }
 };
 const handleUploadInForm = async () => {
-  console.log('Job object in handleUploadInForm:', job);
   if (!uploadFile || !job?.id) {
     alert('Please select a file and ensure job exists');
     return;
   }
   
-  const fileName = `job_${job?.id || 'unknown'}_${Date.now()}_${uploadFile.name}`;
+  const fileName = `job_${job.id}_${Date.now()}_${uploadFile.name}`;
   
   try {
     const { data: fileData, error: fileError } = await window.supabase.storage
@@ -2587,7 +2586,7 @@ job.status.replace('_', ' ')}
       </select>
       <input type="file" id="attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" onChange={(e) => setUploadFile(e.target.files[0])} />
       <button
-       onClick={handleUploadInForm}
+        onClick={uploadJobAttachment}
         className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
       >
         Upload Attachment
@@ -3434,7 +3433,7 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
                       <option value="photo">Photo</option>
                       <option value="other">Other</option>
                     </select>
-                    <input type="file" id="attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" onChange={(e) => setUploadFile(e.target.files[0])} />
+                    
                     <button
                       onClick={uploadJobAttachment}
                       className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
