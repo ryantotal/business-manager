@@ -2819,7 +2819,7 @@ job.status.replace('_', ' ')}
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
-const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, user }) => {
+const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
 
@@ -2977,7 +2977,7 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
             )}
             {user?.role === 'ADMIN' && (
               <button
-                onClick={() => onDelete(job)}
+                onClick={() => onDelete(job.id)}
                 className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
                 title="Delete Job"
               >
