@@ -6063,15 +6063,60 @@ setEditingJob(null);
 }
 };
 
-          const handleUpdateJob = async (updatedJob) => {
+ const handleUpdateJob = async (updatedJob) => {
   try {
+    // Convert camelCase to snake_case for database
+    const jobForDatabase = {
+      customer_name: updatedJob.customerName,
+      customer_po: updatedJob.customerPO,
+      supplier_name: updatedJob.supplierName,
+      supplier_ref: updatedJob.supplierRef,
+      haulier_name: updatedJob.haulierName,
+      job_type: updatedJob.jobType,
+      waste_type: updatedJob.wasteType,
+      skip_size: updatedJob.skipSize,
+      aggregate_type: updatedJob.aggregateType,
+      quantity: updatedJob.quantity || 1,
+      unit: updatedJob.unit || 'skip',
+      weight: updatedJob.weight,
+      customer_unit_price: updatedJob.customerUnitPrice || 0,
+      customer_final_price: updatedJob.customerFinalPrice || 0,
+      supplier_unit_price: updatedJob.supplierUnitPrice || 0,
+      supplier_final_price: updatedJob.supplierFinalPrice || 0,
+      vat_rate: updatedJob.vatRate || 20,
+      gross_profit: updatedJob.grossProfit || 0,
+      profit_margin: updatedJob.profitMargin || 0,
+      job_value: updatedJob.jobValue || 0,
+      site_address: updatedJob.siteAddress,
+      site_address1: updatedJob.siteAddress1,
+      site_address2: updatedJob.siteAddress2,
+      site_city: updatedJob.siteCity,
+      site_postcode: updatedJob.sitePostcode,
+      site_contact: updatedJob.siteContact,
+      site_phone: updatedJob.sitePhone,
+      site_notes: updatedJob.siteNotes,
+      delivery_instructions: updatedJob.deliveryInstructions,
+      time_slot: updatedJob.timeSlot,
+      collection_date: updatedJob.collectionDate,
+      status: updatedJob.status || 'CONFIRMED',
+      priority: updatedJob.priority || 'Medium',
+      is_completed: updatedJob.isCompleted || false,
+      is_cancelled: updatedJob.isCancelled || false,
+      waste_transfer_note: updatedJob.wasteTransferNote,
+      hazardous_waste: updatedJob.hazardousWaste || false,
+      consignment_note: updatedJob.consignmentNote,
+      invoice_number: updatedJob.invoiceNumber,
+      invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
+      payment_status: updatedJob.paymentStatus || 'Not Paid'
+    };
+
     const { error } = await window.supabase
       .from('jobs')
-      .update(updatedJob)
+      .update(jobForDatabase)
       .eq('id', updatedJob.id);
-    
+
     if (error) throw error;
-    
+
     setJobs(jobs.map(job => job.id === updatedJob.id ? updatedJob : job));
     setEditingJob(null);
   } catch (error) {
@@ -6418,7 +6463,7 @@ const { error } = await window.supabase
                     setShowJobForm(false);
                     setEditingJob(null);
                   }}
-                  onSave={editingJob?.id ? handleUpdateJob : handleAddJob}
+                  onSave={handleAddJob}
                   customers={customers}
                   suppliers={suppliers}
                   sageProducts={sageProducts}
