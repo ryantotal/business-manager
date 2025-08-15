@@ -556,7 +556,7 @@ const getFilteredProducts = () => {
         // Job Form Component
         const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts }) => {
           const { wasteTypes } = useWasteTypes();
-         const [uploadFile, setUploadFile] = React.useState(null);
+          const [uploadFile, setUploadFile] = useState(null);
 const [attachmentType, setAttachmentType] = useState('Waste Transfer Note');
 const handleDeleteAttachment = async (attachmentId) => {
   if (!window.confirm('Are you sure you want to delete this attachment?')) {
@@ -579,20 +579,18 @@ const handleDeleteAttachment = async (attachmentId) => {
   }
 };
 const handleUploadInForm = async () => {
-  const attachmentType = document.getElementById('attachment-type')?.value;
-  const fileInput = document.getElementById('attachment-file');
-  const file = fileInput?.files[0];
-
-  if (!attachmentType || !file || !job) {
-    alert('Please select attachment type, file, and ensure a job is selected');
+  console.log('Job object in handleUploadInForm:', job);
+  if (!uploadFile || !job?.id) {
+    alert('Please select a file and ensure job exists');
     return;
   }
-
+  
+  const fileName = `job_${job?.id || 'unknown'}_${Date.now()}_${uploadFile.name}`;
+  
   try {
-    const fileName = `job_${job.id}_${Date.now()}_${file.name}`;
     const { data: fileData, error: fileError } = await window.supabase.storage
       .from('documents')
-      .upload(fileName, file);
+      .upload(fileName, uploadFile);
     
     if (fileError) throw fileError;
     
@@ -604,20 +602,21 @@ const handleUploadInForm = async () => {
       .from('job_attachments')
       .insert([{
         job_id: job.id,
-        file_name: file.name,
+        file_name: uploadFile.name,
         file_url: publicUrl,
         file_type: attachmentType,
-        file_size: file.size,
+        file_size: uploadFile.size,
         uploaded_by: sageProducts?.email
       }]);
     
     if (error) throw error;
     
-    alert('Job attachment uploaded successfully!');
+    alert('File uploaded successfully!');
+    setUploadFile(null);
     document.getElementById('attachment-file').value = '';
   } catch (error) {
-    console.error('Error uploading job attachment:', error);
-    alert('Error uploading job attachment');
+    console.error('Error uploading:', error);
+    alert('Error uploading file: ' + error.message);
   }
 };
           const [formData, setFormData] = useState(job || {
