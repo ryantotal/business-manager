@@ -557,6 +557,7 @@ const getFilteredProducts = () => {
           const { wasteTypes } = useWasteTypes();
           const [formData, setFormData] = useState(job || {
             customerName: '',
+            id: job?.id,
             customerPO: '',
             supplierName: '',
             supplierRef: '',
