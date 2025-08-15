@@ -6464,7 +6464,7 @@ const { error } = await window.supabase
                     setShowJobForm(false);
                     setEditingJob(null);
                   }}
-                  onSave={handleAddJob}
+                 onSave={editingJob?.id ? handleUpdateJob : handleAddJob}
                   customers={customers}
                   suppliers={suppliers}
                   sageProducts={sageProducts}
