@@ -579,18 +579,20 @@ const handleDeleteAttachment = async (attachmentId) => {
   }
 };
 const handleUploadInForm = async () => {
-  console.log('Job object in handleUploadInForm:', job);
-  if (!uploadFile || !job?.id) {
-    alert('Please select a file and ensure job exists');
+  const attachmentType = document.getElementById('attachment-type')?.value;
+  const fileInput = document.getElementById('attachment-file');
+  const file = fileInput?.files[0];
+
+  if (!attachmentType || !file || !job) {
+    alert('Please select attachment type, file, and ensure a job is selected');
     return;
   }
-  
-  const fileName = `job_${job?.id || 'unknown'}_${Date.now()}_${uploadFile.name}`;
-  
+
   try {
+    const fileName = `job_${job.id}_${Date.now()}_${file.name}`;
     const { data: fileData, error: fileError } = await window.supabase.storage
       .from('documents')
-      .upload(fileName, uploadFile);
+      .upload(fileName, file);
     
     if (fileError) throw fileError;
     
@@ -601,22 +603,21 @@ const handleUploadInForm = async () => {
     const { error } = await window.supabase
       .from('job_attachments')
       .insert([{
-        job_id: job?.id,
-        file_name: uploadFile.name,
+        job_id: job.id,
+        file_name: file.name,
         file_url: publicUrl,
         file_type: attachmentType,
-        file_size: uploadFile.size,
+        file_size: file.size,
         uploaded_by: sageProducts?.email
       }]);
     
     if (error) throw error;
     
-    alert('File uploaded successfully!');
-    setUploadFile(null);
+    alert('Job attachment uploaded successfully!');
     document.getElementById('attachment-file').value = '';
   } catch (error) {
-    console.error('Error uploading:', error);
-    alert('Error uploading file: ' + error.message);
+    console.error('Error uploading job attachment:', error);
+    alert('Error uploading job attachment');
   }
 };
           const [formData, setFormData] = useState(job || {
