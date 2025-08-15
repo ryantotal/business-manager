@@ -2586,7 +2586,7 @@ job.status.replace('_', ' ')}
       </select>
       <input type="file" id="attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" onChange={(e) => setUploadFile(e.target.files[0])} />
       <button
-        onClick={uploadJobAttachment}
+       onClick={handleUploadInForm}
         className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
       >
         Upload Attachment
