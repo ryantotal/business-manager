@@ -2297,7 +2297,7 @@ job.status.replace('_', ' ')}
                     <div className="p-6">
                       <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
-                          <h3 className="font-semibold mb-4">Job Details</h3>
+                         <h3 className="font-semibold mb-4">Customer & Job Information</h3>
                           <div className="space-y-3">
                            <div className="flex justify-between">
   <span className="text-gray-600">Customer:</span>
@@ -2322,123 +2322,72 @@ job.status.replace('_', ' ')}
     }
   </span>
 </div>
-{/* Site Information */}
-<div className="flex justify-between">
-  <span className="text-gray-600">Site Address:</span>
-  <span className="font-medium">{selectedJob.siteAddress1}</span>
+{/* Site Information Section */}
+<div className="bg-white border border-gray-200 rounded-lg mt-4">
+  <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+    <h3 className="font-semibold text-gray-800">Site Information</h3>
+  </div>
+  <div className="p-4 space-y-3">
+    <div className="flex justify-between">
+      <span className="text-gray-600">Site Address:</span>
+      <span className="font-medium">{selectedJob.siteAddress1}</span>
+    </div>
+    <div className="flex justify-between">
+      <span className="text-gray-600">Site Postcode:</span>
+      <span className="font-medium">{selectedJob.sitePostcode}</span>
+    </div>
+    {selectedJob.siteContact && (
+      <div className="flex justify-between">
+        <span className="text-gray-600">Site Contact:</span>
+        <span className="font-medium">{selectedJob.siteContact}</span>
+      </div>
+    )}
+    {selectedJob.sitePhone && (
+      <div className="flex justify-between">
+        <span className="text-gray-600">Contact Phone:</span>
+        <span className="font-medium">{selectedJob.sitePhone}</span>
+      </div>
+    )}
+  </div>
 </div>
-{selectedJob.siteAddress2 && (
-  <div className="flex justify-between">
-    <span className="text-gray-600"></span>
-    <span className="font-medium">{selectedJob.siteAddress2}</span>
+{/* Job Details Section */}
+<div className="bg-white border border-gray-200 rounded-lg mt-4">
+  <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+    <h3 className="font-semibold text-gray-800">Job Details</h3>
   </div>
-)}
-<div className="flex justify-between">
-  <span className="text-gray-600">Site Postcode:</span>
-  <span className="font-medium">{selectedJob.sitePostcode}</span>
-</div>
-{selectedJob.siteCity && (
-  <div className="flex justify-between">
-    <span className="text-gray-600">Site City:</span>
-    <span className="font-medium">{selectedJob.siteCity}</span>
-  </div>
-)}
-{selectedJob.siteContactName && (
-  <div className="flex justify-between">
-    <span className="text-gray-600">Site Contact:</span>
-    <span className="font-medium">{selectedJob.siteContactName}</span>
-  </div>
-)}
-{selectedJob.siteContactPhone && (
-  <div className="flex justify-between">
-    <span className="text-gray-600">Contact Phone:</span>
-    <span className="font-medium">{selectedJob.siteContactPhone}</span>
-  </div>
-)}
-{selectedJob.siteNotes && (
-  <div className="flex justify-between">
-    <span className="text-gray-600">Site Notes:</span>
-    <span className="font-medium">{selectedJob.siteNotes}</span>
-  </div>
-)}
-{selectedJob.deliveryInstructions && (
-  <div className="flex justify-between">
-    <span className="text-gray-600">Delivery Instructions:</span>
-    <span className="font-medium">{selectedJob.deliveryInstructions}</span>
-  </div>
-)}
-{selectedJob.accessRestrictions && (
-  <div className="flex justify-between">
-    <span className="text-gray-600">Access Restrictions:</span>
-    <span className="font-medium">{selectedJob.accessRestrictions}</span>
-  </div>
-)}
-{selectedJob.additionalNotes && (
-  <div className="flex justify-between">
-    <span className="text-gray-600">Additional Notes:</span>
-    <span className="font-medium">{selectedJob.additionalNotes}</span>
-  </div>
-)}
-
-    {/* Display existing attachments */}
-    <div className="mt-4 space-y-2">
-      {[].map(attachment => (
-        <div key={attachment.id} className="flex justify-between items-center bg-white p-2 rounded border">
-          <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
-          <button
-            onClick={() => window.open(attachment.file_url)}
-            className="text-blue-600 hover:text-blue-800 text-sm"
-          >
-            View
-          </button>
-        </div>
-      ))}
+  <div className="p-4 space-y-3">
+    <div className="flex justify-between">
+      <span className="text-gray-600">Job Type:</span>
+      <span className="font-medium">{selectedJob.jobType}</span>
+    </div>
+    <div className="flex justify-between">
+      <span className="text-gray-600">Date:</span>
+      <span className="font-medium">{new Date(selectedJob.jobDate).toLocaleDateString()}</span>
+    </div>
+    <div className="flex justify-between">
+      <span className="text-gray-600">Quantity:</span>
+      <span className="font-medium">{selectedJob.quantity} {selectedJob.unit}</span>
+    </div>
+    <div className="flex justify-between">
+      <span className="text-gray-600">Status:</span>
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+        selectedJob.status === 'COLLECTED' ? 'bg-purple-100 text-purple-700' :
+        selectedJob.isCompleted ? 'bg-emerald-100 text-emerald-700' :
+        selectedJob.isCancelled ? 'bg-red-100 text-red-700' :
+        'bg-blue-100 text-blue-700'
+      }`}>
+        {selectedJob.status === 'COLLECTED' ? 'Collected' :
+         selectedJob.isCompleted ? 'Completed' : 
+         selectedJob.isCancelled ? 'Cancelled' : 
+         selectedJob.status}
+      </span>
     </div>
   </div>
 </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Date:</span>
-                              <span className="font-medium">{new Date(selectedJob.jobDate).toLocaleDateString()}</span>
-                            </div>
-                    
-
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Quantity:</span>
-                              <span className="font-medium">{selectedJob.quantity} {selectedJob.unit}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Priority:</span>
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                selectedJob.priority === 'High' || selectedJob.priority === 'Urgent' ? 'bg-red-100 text-red-700' :
-                                selectedJob.priority === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
-                                'bg-green-100 text-green-700'
-                              }`}>
-                                {selectedJob.priority}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Status:</span>
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                selectedJob.status === 'COLLECTED' ? 'bg-purple-100 text-purple-700' :
-                                selectedJob.isCompleted ? 'bg-emerald-100 text-emerald-700' :
-                                selectedJob.isCancelled ? 'bg-red-100 text-red-700' :
-                                'bg-blue-100 text-blue-700'
-                              }`}>
-                                {selectedJob.status === 'COLLECTED' ? 'Collected' :
-                                 selectedJob.isCompleted ? 'Completed' : 
-                                 selectedJob.isCancelled ? 'Cancelled' : 
-                                 selectedJob.status}
-                              </span>
-                            </div>
-                            {selectedJob.invoiceNumber && (
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Invoice:</span>
-                                <span className="font-medium">{selectedJob.invoiceNumber}</span>
-                              </div>
-                            )}
-                          </div>
+  </div>
+</div>
+                       </div>
                         </div>
-                        
                         <div>
                           </div>
 
@@ -2492,31 +2441,8 @@ job.status.replace('_', ' ')}
 )}
 
 <div>
-                          <h3 className="font-semibold mb-4">Financial Summary</h3>
-                          <div className="space-y-3">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Customer Price:</span>
-                              <span className="font-medium text-blue-600">£{selectedJob.customerFinalPrice?.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Supplier Cost:</span>
-                              <span className="font-medium text-red-600">£{selectedJob.supplierFinalPrice?.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Gross Profit:</span>
-                              <span className="font-medium text-green-600">£{selectedJob.grossProfit?.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Margin:</span>
-                              <span className="font-medium text-purple-600">{selectedJob.profitMargin?.toFixed(1)}%</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Total Value:</span>
-                              <span className="font-medium text-blue-600">£{selectedJob.jobValue?.toFixed(2)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+</div>
+</div>
     
                       {selectedJob.parentJobId && (
                         <div className="mt-6 p-4 bg-orange-50 rounded-lg">
@@ -2537,6 +2463,45 @@ job.status.replace('_', ' ')}
                           </div>
                         </div>
                       )}
+
+                      {/* Financial Summary Section */}
+<div className="bg-white border border-gray-200 rounded-lg mt-4">
+  <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+    <h3 className="font-semibold text-gray-800">Financial Summary</h3>
+  </div>
+  <div className="p-4 space-y-3">
+    <div className="flex justify-between">
+      <span className="text-gray-600">Customer Price:</span>
+      <span className="font-medium text-blue-600">£{selectedJob.customerFinalPrice?.toFixed(2)}</span>
+    </div>
+    <div className="flex justify-between">
+      <span className="text-gray-600">Supplier Cost:</span>
+      <span className="font-medium text-red-600">£{selectedJob.supplierFinalPrice?.toFixed(2)}</span>
+    </div>
+    <div className="flex justify-between">
+      <span className="text-gray-600">Gross Profit:</span>
+      <span className="font-medium text-green-600">£{selectedJob.grossProfit?.toFixed(2)}</span>
+    </div>
+    <div className="flex justify-between">
+      <span className="text-gray-600">Profit Margin:</span>
+      <span className="font-medium text-purple-600">{selectedJob.profitMargin?.toFixed(1)}%</span>
+    </div>
+  </div>
+</div>
+{/* Display existing attachments */}
+    <div className="mt-4 space-y-2">
+      {[].map(attachment => (
+        <div key={attachment.id} className="flex justify-between items-center bg-white p-2 rounded border">
+          <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
+          <button
+            onClick={() => window.open(attachment.file_url)}
+            className="text-blue-600 hover:text-blue-800 text-sm"
+          >
+            View
+          </button>
+        </div>
+      ))}
+    </div>
                       {/* Job Attachments Section */}
 <div className="space-y-3 mt-6 pt-4 border-t border-gray-200">
   <h4 className="font-semibold text-gray-800">Job Attachments</h4>
