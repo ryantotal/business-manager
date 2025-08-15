@@ -1836,35 +1836,6 @@ const uploadJobAttachment = async () => {
     }
   }
 };
-
-
-          const handleExchange = (job) => {
-            // Create new exchange job - duplicate all details
-            const exchangeJob = {
-              ...job,
-              id: null,
-              jobNumber: null,
-              parentJobId: job.id,
-              isCompleted: false,
-              isCancelled: false,
-              status: 'CONFIRMED',
-              notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
-              jobDate: new Date().toISOString().split('T')[0], // Set to today
-              linkedJobs: []
-            };
-            
-            // Remove the old id and jobNumber completely
-            delete exchangeJob.id;
-            delete exchangeJob.jobNumber;
-            
-            // Mark original job as collected
-            onUpdateJob({ ...job, status: 'COLLECTED', isCompleted: true });
-            
-            // Add the exchange job
-            onAddJob(exchangeJob);
-            setSelectedJob(null);
-          };
-
           const handleCollection = (job) => {
             onUpdateJob({ ...job, status: 'COLLECTED', isCompleted: true });
             setSelectedJob(null);
@@ -6113,7 +6084,32 @@ setEditingJob(null);
     alert('Error updating job: ' + error.message);
   }
 };
-
+  const handleExchange = (job) => {
+            // Create new exchange job - duplicate all details
+            const exchangeJob = {
+              ...job,
+              id: null,
+              jobNumber: null,
+              parentJobId: job.id,
+              isCompleted: false,
+              isCancelled: false,
+              status: 'CONFIRMED',
+              notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
+              jobDate: new Date().toISOString().split('T')[0], // Set to today
+              linkedJobs: []
+            };
+            
+            // Remove the old id and jobNumber completely
+            delete exchangeJob.id;
+            delete exchangeJob.jobNumber;
+            
+            // Mark original job as collected
+            onUpdateJob({ ...job, status: 'COLLECTED', isCompleted: true });
+            
+            // Add the exchange job
+            onAddJob(exchangeJob);
+            setSelectedJob(null);
+          };
           const handleDeleteJob = async (jobId) => {
   try {
     // Delete from Supabase database
