@@ -1730,10 +1730,6 @@ siteNotes: '',
 
     const handleJobClick = (job) => {
   setShowFullPageJob(job); // ADD THIS LINE - opens full page view
-  setSelectedJob(job); // KEEP THIS - keeps modal working too
-  if (job && job.id) {
-    loadJobAttachments(job.id);
-  }
 };
 
 // Add loadJobAttachments function
