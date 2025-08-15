@@ -1606,7 +1606,7 @@ siteNotes: '',
         };
 
         // Jobs Management Component
-          const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user }) => {
+          const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setShowFullPageJob }) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
@@ -6381,6 +6381,7 @@ const { error } = await window.supabase
                     customers={customers}
                     suppliers={suppliers}
                     user={user}
+                    setShowFullPageJob={setShowFullPageJob}
                   />
                 )}
                 {activeTab === 'customers' && (
