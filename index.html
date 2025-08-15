@@ -6135,6 +6135,26 @@ alert('Job updated successfully!');
     alert('Error updating job: ' + error.message);
   }
 };
+const handleCompleteJob = async (job) => {
+  try {
+    const { error } = await window.supabase
+      .from('jobs')
+      .update({ 
+        status: 'COMPLETED',
+        is_completed: true 
+      })
+      .eq('id', job.id);
+
+    if (error) throw error;
+
+    setJobs(jobs.map(j => j.id === job.id ? { ...j, status: 'COMPLETED', isCompleted: true } : j));
+    setShowFullPageJob({ ...job, status: 'COMPLETED', isCompleted: true });
+    alert('Job marked as completed!');
+  } catch (error) {
+    console.error('Error completing job:', error);
+    alert('Error completing job: ' + error.message);
+  }
+};
   const handleExchange = (job) => {
             // Create new exchange job - duplicate all details
             const exchangeJob = {
@@ -6178,6 +6198,7 @@ alert('Job updated successfully!');
     setJobs(jobs.filter(job => job.id !== jobId));
     
     console.log('Job deleted from database:', jobId);
+    setShowFullPageJob(null);
   } catch (error) {
     console.error('Error deleting job:', error);
     alert('Error deleting job: ' + error.message);
@@ -6412,7 +6433,7 @@ const { error } = await window.supabase
     onDelete={handleDeleteJob}
     onExchange={handleExchange}
     onCollection={handleCollection}
-    onComplete={handleUpdateJob}
+    onComplete={handleCompleteJob}
     user={user}
   />
 )}
