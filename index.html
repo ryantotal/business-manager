@@ -579,12 +579,13 @@ const handleDeleteAttachment = async (attachmentId) => {
   }
 };
 const handleUploadInForm = async () => {
+  console.log('Job object in handleUploadInForm:', job);
   if (!uploadFile || !job?.id) {
     alert('Please select a file and ensure job exists');
     return;
   }
   
-  const fileName = `job_${job.id}_${Date.now()}_${uploadFile.name}`;
+  const fileName = `job_${job?.id || 'unknown'}_${Date.now()}_${uploadFile.name}`;
   
   try {
     const { data: fileData, error: fileError } = await window.supabase.storage
@@ -600,7 +601,7 @@ const handleUploadInForm = async () => {
     const { error } = await window.supabase
       .from('job_attachments')
       .insert([{
-        job_id: job.id,
+        job_id: job?.id,
         file_name: uploadFile.name,
         file_url: publicUrl,
         file_type: attachmentType,
