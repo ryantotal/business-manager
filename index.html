@@ -717,6 +717,12 @@ siteNotes: '',
                   >
                     Pricing & Status
                   </button>
+                  <button
+  onClick={() => setActiveTab('documents')}
+  className={`px-6 py-3 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+>
+  Documents
+</button>
                 </div>
 
                 <div className="p-6">
@@ -1387,7 +1393,43 @@ siteNotes: '',
                     </div>
                   )}
                 </div>
-
+{/* Documents Tab */}
+{activeTab === 'documents' && (
+  <div className="space-y-4">
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">Upload Job Attachments</h3>
+      
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Attachment Type</label>
+          <select className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+            <option value="Waste Transfer Note">Waste Transfer Note</option>
+            <option value="Invoice">Invoice</option>
+            <option value="Receipt">Receipt</option>
+            <option value="Photo">Photo</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Choose File</label>
+          <input
+            type="file"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+          />
+        </div>
+        
+        <button
+          type="button"
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+        >
+          Upload Attachment
+        </button>
+      </div>
+    </div>
+  </div>
+)}
                 <div className="p-6 border-t border-gray-200 flex justify-end space-x-4">
                   <button
                     onClick={onClose}
@@ -2819,7 +2861,7 @@ job.status.replace('_', ' ')}
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
-const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, user }) => {
+const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
 
@@ -3020,7 +3062,7 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              Documents & Notes
+              Documents
             </button>
           </nav>
         </div>
@@ -3355,6 +3397,15 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
                         >
                           View
                         </button>
+                        {user?.role === 'ADMIN' && (
+  <button
+    onClick={() => handleDeleteAttachment(attachment)}
+    className="text-red-600 hover:text-red-800 text-sm"
+    title="Delete Attachment"
+  >
+    Delete
+  </button>
+)}
                       </div>
                     ))
                   )}
@@ -6155,6 +6206,33 @@ const handleCompleteJob = async (job) => {
     alert('Error completing job: ' + error.message);
   }
 };
+const handleDeleteAttachment = async (attachment) => {
+  if (!confirm(`Are you sure you want to delete ${attachment.file_name}?`)) return;
+  
+  try {
+    // Delete from storage
+    const { error: storageError } = await window.supabase.storage
+      .from('documents')
+      .remove([attachment.file_name]);
+    
+    if (storageError) throw storageError;
+    
+    // Delete from database
+    const { error: dbError } = await window.supabase
+      .from('job_attachments')
+      .delete()
+      .eq('id', attachment.id);
+    
+    if (dbError) throw dbError;
+    
+    // Update UI
+    setJobAttachments(jobAttachments.filter(att => att.id !== attachment.id));
+    alert('Attachment deleted successfully!');
+  } catch (error) {
+    console.error('Error deleting attachment:', error);
+    alert('Error deleting attachment: ' + error.message);
+  }
+};
   const handleExchange = (job) => {
             // Create new exchange job - duplicate all details
             const exchangeJob = {
@@ -6435,6 +6513,7 @@ const { error } = await window.supabase
     onCollection={handleCollection}
     onComplete={handleCompleteJob}
     user={user}
+    onDeleteAttachment={handleDeleteAttachment}
   />
 )}
               <div className="p-4 sm:p-6">
