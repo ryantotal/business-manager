@@ -2584,7 +2584,7 @@ job.status.replace('_', ' ')}
         <option value="invoice">Invoice</option>
         <option value="other">Other</option>
       </select>
-      <input type="file" id="attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" />
+      <input type="file" id="attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" onChange={(e) => setUploadFile(e.target.files[0])} />
       <button
         onClick={uploadJobAttachment}
         className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
@@ -3433,7 +3433,7 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
                       <option value="photo">Photo</option>
                       <option value="other">Other</option>
                     </select>
-                    <input type="file" id="attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" />
+                    <input type="file" id="attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" onChange={(e) => setUploadFile(e.target.files[0])} />
                     <button
                       onClick={uploadJobAttachment}
                       className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
