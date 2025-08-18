@@ -1890,12 +1890,20 @@ siteNotes: '',
             });
 
           const filteredJobs = sortedJobs.filter(job => {
-            if (searchQuery && 
-                !job.jobNumber.toLowerCase().includes(searchQuery.toLowerCase()) &&
-                !job.customerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
-                !job.supplierName.toLowerCase().includes(searchQuery.toLowerCase())) {
-              return false;
-            }
+  if (searchQuery) {
+    const query = searchQuery.toLowerCase();
+    const matchesJobNumber = job.jobNumber.toLowerCase().includes(query);
+    const matchesCustomer = job.customerName.toLowerCase().includes(query);
+    const matchesSupplier = job.supplierName.toLowerCase().includes(query);
+    const matchesPostcode = (job.sitePostcode && job.sitePostcode.toLowerCase().includes(query)) ||
+                           (job.postcode && job.postcode.toLowerCase().includes(query));
+    const matchesAddress = (job.siteAddress1 && job.siteAddress1.toLowerCase().includes(query)) ||
+                          (job.siteAddress && job.siteAddress.toLowerCase().includes(query));
+    
+    if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
+      return false;
+    }
+  }
             if (filters.jobType && job.jobType !== filters.jobType) return false;
             if (filters.status) {
               if (filters.status === 'COMPLETED' && !job.isCompleted) return false;
@@ -2175,7 +2183,7 @@ const uploadJobAttachment = async () => {
       <Filter size={16} className="text-gray-600 hidden sm:block" />
       <input
         type="text"
-        placeholder="Search jobs..."
+        placeholder="Search jobs, customers, postcodes..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
