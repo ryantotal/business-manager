@@ -2681,324 +2681,210 @@ job.status.replace('_', ' ')}
           );
         };
 
-        // Quotes View Component
-        const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertToJob, customers, suppliers, sageProducts, user }) => {
-          const [selectedQuote, setSelectedQuote] = useState(null);
-          const [searchQuery, setSearchQuery] = useState('');
-          const [filters, setFilters] = useState({
-            status: '',
-            jobType: ''
-          });
+        // REPLACE the entire QuotesView component (around line 1700-1900) with this:
+const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertToJob, onSendQuote, onAcceptQuote, onRejectQuote, onDeleteQuote, customers, suppliers, user, setShowFullPageQuote }) => {
+  const [selectedQuote, setSelectedQuote] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState({
+    status: '',
+    jobType: ''
+  });
 
-        // Sort quotes by quote number descending (newest first)        
-        const sortedQuotes = [...quotes].sort((a, b) => {
-            const aNum = parseInt(a.quoteNumber.split('-').pop());
-            const bNum = parseInt(b.quoteNumber.split('-').pop());
-            return bNum - aNum;
-        });
-          const filteredQuotes = sortedQuotes.filter(quote => {
-            if (searchQuery && 
-                !quote.quoteNumber.toLowerCase().includes(searchQuery.toLowerCase()) &&
-                !quote.customerName.toLowerCase().includes(searchQuery.toLowerCase())) {
-              return false;
-            }
-            if (filters.status && quote.status !== filters.status) return false;
-            if (filters.jobType && quote.jobType !== filters.jobType) return false;
-            return true;
-          });
+  // Sort quotes by quote number descending (newest first)        
+  const sortedQuotes = [...quotes].sort((a, b) => {
+    const aNum = parseInt(a.quoteNumber.split('-').pop());
+    const bNum = parseInt(b.quoteNumber.split('-').pop());
+    return bNum - aNum;
+  });
+  
+  const filteredQuotes = sortedQuotes.filter(quote => {
+    if (searchQuery && 
+        !quote.quoteNumber.toLowerCase().includes(searchQuery.toLowerCase()) &&
+        !quote.customerName.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return false;
+    }
+    if (filters.status && quote.status !== filters.status) return false;
+    if (filters.jobType && quote.jobType !== filters.jobType) return false;
+    return true;
+  });
 
-          const handleConvertToJob = (quote) => {
-            // Convert quote to job
-            const newJob = {
-              customerName: quote.customerName,
-              customerPO: '',
-              supplierName: '',
-              supplierRef: '',
-              jobType: quote.jobType,
-              wasteType: quote.wasteType,
-              skipSize: quote.skipSize,
-              aggregateType: quote.aggregateType,
-              quantity: quote.quantity,
-              unit: quote.unit,
-              customerUnitPrice: quote.price,
-              customerFinalPrice: quote.totalPrice,
-              supplierUnitPrice: 0,
-              supplierFinalPrice: 0,
-              vatRate: 20,
-              jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
-              status: 'CONFIRMED',
-              priority: 'Medium',
-              siteAddress: quote.siteAddress,
-              sitePostcode: quote.sitePostcode,
-              siteContact: quote.customerContact,
-              sitePhone: quote.customerPhone,
-              notes: `Converted from quote ${quote.quoteNumber}`,
-              invoiceNumber: '',
-              invoiceStatus: 'Not Invoiced',
-              paymentStatus: 'Not Paid',
-              isCompleted: false,
-              isCancelled: false
-            };
-            
-            onConvertToJob(newJob);
-            onUpdateQuote({ ...quote, status: 'ACCEPTED' });
-            setSelectedQuote(null);
-          };
+  const handleQuoteClick = (quote) => {
+    setShowFullPageQuote(quote);
+  };
 
-          return (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Quotes</h2>
-                  <p className="text-gray-600">{filteredQuotes.length} quotes found</p>
-                </div>
-                <button 
-                  onClick={onAddQuote}
-                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  <Plus size={16} className="mr-2" />
-                  New Quote
-                </button>
-              </div>
+  const isExpired = (quote) => new Date(quote.validUntil) < new Date() && quote.status !== 'ACCEPTED';
 
-              {/* Filters */}
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <div className="flex items-center space-x-4">
-                  <Filter size={16} className="text-gray-600" />
-                  <input
-                    type="text"
-                    placeholder="Search quotes..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                  <select
-                    value={filters.status}
-                    onChange={(e) => setFilters({...filters, status: e.target.value})}
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value="">All Statuses</option>
-                    <option value="PENDING">Pending</option>
-                    <option value="SENT">Sent</option>
-                    <option value="ACCEPTED">Accepted</option>
-                    <option value="REJECTED">Rejected</option>
-                    <option value="EXPIRED">Expired</option>
-                  </select>
-                  <select
-                    value={filters.jobType}
-                    onChange={(e) => setFilters({...filters, jobType: e.target.value})}
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value="">All Job Types</option>
-                    <option value="Skip Hire">Skip Hire</option>
-                    <option value="Aggregates">Aggregates</option>
-                    <option value="Waste Collection">Waste Collection</option>
-                    <option value="Grab Hire">Grab Hire</option>
-                    <option value="Muck Away">Muck Away</option>
-                    <option value="Roll-on Roll-off">Roll-on Roll-off</option>
-                  </select>
-                  <button
-                    onClick={() => {
-                      setSearchQuery('');
-                      setFilters({ status: '', jobType: '' });
-                    }}
-                    className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Quotes</h2>
+          <p className="text-gray-600">{filteredQuotes.length} quotes found</p>
+        </div>
+        <button 
+          onClick={onAddQuote}
+          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          <Plus size={16} className="mr-2" />
+          New Quote
+        </button>
+      </div>
 
-              <div className="bg-white rounded-lg border border-gray-200">
-                <div className="p-6">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quote Number</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valid Until</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredQuotes.map(quote => {
-                          const statusColors = {
-                            'PENDING': 'bg-yellow-100 text-yellow-800',
-                            'SENT': 'bg-blue-100 text-blue-800',
-                            'ACCEPTED': 'bg-green-100 text-green-800',
-                            'REJECTED': 'bg-red-100 text-red-800',
-                            'EXPIRED': 'bg-gray-100 text-gray-800'
-                          };
-                          
-                          const isExpired = new Date(quote.validUntil) < new Date() && quote.status !== 'ACCEPTED';
-                          
-                          return (
-                            <tr 
-                              key={quote.id} 
-                              className="hover:bg-gray-50 cursor-pointer"
-                              onClick={() => setSelectedQuote(quote)}
-                            >
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">{quote.quoteNumber}</div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div>
-                                  <div className="text-sm text-gray-900">{quote.customerName}</div>
-                                  <div className="text-sm text-gray-500">{quote.customerContact}</div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {quote.jobType}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {new Date(quote.createdDate).toLocaleDateString('en-GB')}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {new Date(quote.validUntil).toLocaleDateString('en-GB')}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                                  isExpired && quote.status === 'PENDING' ? statusColors['EXPIRED'] : statusColors[quote.status]
-                                }`}>
-                                  {isExpired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                £{quote.totalPrice?.toFixed(2)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                                  <button
-                                    onClick={() => onEditQuote(quote)}
-                                    className="text-blue-600 hover:text-blue-900"
-                                  >
-                                    <Edit3 size={16} />
-                                  </button>
-                                  {quote.status === 'PENDING' || quote.status === 'SENT' ? (
-                                    <button
-                                      onClick={() => handleConvertToJob(quote)}
-                                      className="text-green-600 hover:text-green-900"
-                                      title="Convert to Job"
-                                    >
-                                      <Package size={16} />
-                                    </button>
-                                  ) : null}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+      {/* Filters */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center space-x-4">
+          <Filter size={16} className="text-gray-600" />
+          <input
+            type="text"
+            placeholder="Search quotes..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <select
+            value={filters.status}
+            onChange={(e) => setFilters({...filters, status: e.target.value})}
+            className="px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="">All Statuses</option>
+            <option value="PENDING">Pending</option>
+            <option value="SENT">Sent</option>
+            <option value="ACCEPTED">Accepted</option>
+            <option value="REJECTED">Rejected</option>
+            <option value="EXPIRED">Expired</option>
+          </select>
+          <select
+            value={filters.jobType}
+            onChange={(e) => setFilters({...filters, jobType: e.target.value})}
+            className="px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="">All Job Types</option>
+            <option value="Skip Hire">Skip Hire</option>
+            <option value="Aggregates">Aggregates</option>
+            <option value="Waste Collection">Waste Collection</option>
+            <option value="Grab Hire">Grab Hire</option>
+            <option value="Muck Away">Muck Away</option>
+            <option value="Roll-on Roll-off">Roll-on Roll-off</option>
+          </select>
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setFilters({ status: '', jobType: '' });
+            }}
+            className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-6">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quote Number</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valid Until</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredQuotes.map(quote => {
+                  const statusColors = {
+                    'PENDING': 'bg-yellow-100 text-yellow-800',
+                    'SENT': 'bg-blue-100 text-blue-800',
+                    'ACCEPTED': 'bg-green-100 text-green-800',
+                    'REJECTED': 'bg-red-100 text-red-800',
+                    'EXPIRED': 'bg-gray-100 text-gray-800'
+                  };
                   
-                  {filteredQuotes.length === 0 && (
-                    <div className="text-center py-8">
-                      <FileText className="mx-auto h-12 w-12 text-gray-400" />
-                      <p className="mt-2 text-gray-500">No quotes found</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {selectedQuote && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                    <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-                      <div>
-                        <h2 className="text-xl font-bold">{selectedQuote.quoteNumber}</h2>
-                        <p className="text-gray-600">{selectedQuote.jobType}</p>
-                      </div>
-                      <button onClick={() => setSelectedQuote(null)}>
-                        <X size={24} />
-                      </button>
-                    </div>
-                    
-                    <div className="p-6">
-                      <div className="space-y-4">
+                  const expired = isExpired(quote);
+                  
+                  return (
+                    <tr 
+                      key={quote.id} 
+                      className={`hover:bg-gray-50 cursor-pointer ${
+                        quote.status === 'REJECTED' || expired ? 'opacity-75' : ''
+                      }`}
+                      onClick={() => handleQuoteClick(quote)}
+                    >
+                      <td className={`px-6 py-4 whitespace-nowrap ${
+                        quote.status === 'REJECTED' ? 'line-through decoration-red-500' : 
+                        expired ? 'line-through decoration-gray-500' : ''
+                      }`}>
+                        <div className="text-sm font-medium text-gray-900">{quote.quoteNumber}</div>
+                      </td>
+                      <td className={`px-6 py-4 whitespace-nowrap ${
+                        quote.status === 'REJECTED' ? 'line-through decoration-red-500' : 
+                        expired ? 'line-through decoration-gray-500' : ''
+                      }`}>
                         <div>
-                          <h3 className="font-semibold mb-4">Customer Information</h3>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <span className="text-sm text-gray-600">Customer:</span>
-                              <p className="font-medium">{selectedQuote.customerName}</p>
-                            </div>
-                            <div>
-                              <span className="text-sm text-gray-600">Contact:</span>
-                              <p className="font-medium">{selectedQuote.customerContact}</p>
-                            </div>
-                            <div>
-                              <span className="text-sm text-gray-600">Email:</span>
-                              <p className="font-medium">{selectedQuote.customerEmail}</p>
-                            </div>
-                            <div>
-                              <span className="text-sm text-gray-600">Phone:</span>
-                              <p className="font-medium">{selectedQuote.customerPhone}</p>
-                            </div>
-                          </div>
+                          <div className="text-sm text-gray-900">{quote.customerName}</div>
+                          <div className="text-sm text-gray-500">{quote.customerContact}</div>
                         </div>
-
-                        <div>
-                          <h3 className="font-semibold mb-4">Quote Details</h3>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <span className="text-sm text-gray-600">Quantity:</span>
-                              <p className="font-medium">{selectedQuote.quantity} {selectedQuote.unit}</p>
-                            </div>
-                            <div>
-                              <span className="text-sm text-gray-600">Unit Price:</span>
-                              <p className="font-medium">£{selectedQuote.price?.toFixed(2)}</p>
-                            </div>
-                            <div>
-                              <span className="text-sm text-gray-600">Total Value:</span>
-                              <p className="font-medium text-blue-600">£{selectedQuote.totalPrice?.toFixed(2)}</p>
-                            </div>
-                            <div>
-                              <span className="text-sm text-gray-600">Valid Until:</span>
-                              <p className="font-medium">{new Date(selectedQuote.validUntil).toLocaleDateString('en-GB')}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {selectedQuote.siteAddress && (
-                          <div>
-                            <h3 className="font-semibold mb-4">Site Information</h3>
-                            <p>{selectedQuote.siteAddress}</p>
-                            {selectedQuote.sitePostcode && <p className="text-gray-600">{selectedQuote.sitePostcode}</p>}
-                          </div>
-                        )}
-
-                        {selectedQuote.notes && (
-                          <div>
-                            <h3 className="font-semibold mb-4">Notes</h3>
-                            <p className="text-gray-700">{selectedQuote.notes}</p>
-                          </div>
-                        )}
-
-                        {(selectedQuote.status === 'PENDING' || selectedQuote.status === 'SENT') && (
-                          <div className="pt-4 border-t">
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {quote.jobType}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {new Date(quote.createdDate).toLocaleDateString('en-GB')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {new Date(quote.validUntil).toLocaleDateString('en-GB')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                          expired && quote.status === 'PENDING' ? statusColors['EXPIRED'] : statusColors[quote.status]
+                        }`}>
+                          {expired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        £{quote.totalPrice?.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => onEditQuote(quote)}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          {(quote.status === 'PENDING' || quote.status === 'SENT') && !expired ? (
                             <button
-                              onClick={() => handleConvertToJob(selectedQuote)}
-                              className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center"
+                              onClick={() => onConvertToJob(quote)}
+                              className="text-green-600 hover:text-green-900"
+                              title="Convert to Job"
                             >
-                              <Package size={20} className="mr-2" />
-                              Convert to Job
+                              <Package size={16} />
                             </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          
+          {filteredQuotes.length === 0 && (
+            <div className="text-center py-8">
+              <FileText className="mx-auto h-12 w-12 text-gray-400" />
+              <p className="mt-2 text-gray-500">No quotes found</p>
             </div>
-          );
-        };
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
         // Add this RIGHT AFTER the JobsView component (around line 2800)
 
@@ -3606,7 +3492,509 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
 </div>
 );
 };
+// Full Page Quote View Component - Add this RIGHT AFTER FullPageJobView (around line 3400)
+const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user }) => {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [quoteAttachments, setQuoteAttachments] = useState([]);
 
+  // Load attachments when component mounts
+  useEffect(() => {
+    if (quote?.id) {
+      loadQuoteAttachments(quote.id);
+    }
+  }, [quote?.id]);
+
+  const loadQuoteAttachments = async (quoteId) => {
+    try {
+      const { data, error } = await window.supabase
+        .from('quote_attachments')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .order('uploaded_at', { ascending: false });
+
+      if (error) throw error;
+      setQuoteAttachments(data || []);
+    } catch (error) {
+      console.error('Error loading quote attachments:', error);
+      setQuoteAttachments([]);
+    }
+  };
+
+  const uploadQuoteAttachment = async () => {
+    const attachmentType = document.getElementById('quote-attachment-type')?.value;
+    const fileInput = document.getElementById('quote-attachment-file');
+    const file = fileInput?.files[0];
+
+    if (!attachmentType || !file || !quote) {
+      alert('Please select attachment type and file');
+      return;
+    }
+
+    try {
+      const fileName = `quote_${quote.id}_${Date.now()}_${file.name}`;
+      const { data: fileData, error: fileError } = await window.supabase.storage
+        .from('documents')
+        .upload(fileName, file);
+
+      if (fileError) throw fileError;
+
+      const { data: { publicUrl } } = window.supabase.storage
+        .from('documents')
+        .getPublicUrl(fileName);
+
+      const { data, error } = await window.supabase
+        .from('quote_attachments')
+        .insert([{
+          quote_id: quote.id,
+          file_name: file.name,
+          file_url: publicUrl,
+          file_type: attachmentType,
+          file_size: file.size,
+          uploaded_by: user?.email
+        }]);
+
+      if (error) throw error;
+
+      alert('Quote attachment uploaded successfully!');
+      loadQuoteAttachments(quote.id);
+      
+      document.getElementById('quote-attachment-file').value = '';
+    } catch (error) {
+      console.error('Error uploading quote attachment:', error);
+      alert('Error uploading quote attachment');
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId) => {
+    if (!confirm('Are you sure you want to delete this attachment?')) return;
+    
+    try {
+      const { error } = await window.supabase
+        .from('quote_attachments')
+        .delete()
+        .eq('id', attachmentId);
+      
+      if (error) throw error;
+      
+      setQuoteAttachments(prevAttachments => 
+        prevAttachments.filter(att => att.id !== attachmentId)
+      );
+      
+      alert('Attachment deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting attachment:', error);
+      alert('Error deleting attachment: ' + error.message);
+    }
+  };
+
+  if (!quote) return null;
+
+  const isExpired = new Date(quote.validUntil) < new Date() && quote.status !== 'ACCEPTED';
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header Section */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+            >
+              <LucideIcon icon="ChevronUp" size={24} className="rotate-90" />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{quote.quoteNumber}</h1>
+              <p className="text-gray-600">{quote.jobType}</p>
+            </div>
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+              isExpired && quote.status === 'PENDING' ? 'bg-gray-100 text-gray-800' :
+              quote.status === 'ACCEPTED' ? 'bg-green-100 text-green-800' :
+              quote.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
+              quote.status === 'SENT' ? 'bg-blue-100 text-blue-800' :
+              'bg-yellow-100 text-yellow-800'
+            }`}>
+              {isExpired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
+            </span>
+            {quote.validUntil && (
+              <span className="text-sm text-gray-600">
+                Valid until: {new Date(quote.validUntil).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            {quote.status === 'PENDING' && (
+              <button
+                onClick={() => onSend(quote)}
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+                title="Send to Customer"
+              >
+                <Mail size={16} className="mr-2" />
+                Send to Customer
+              </button>
+            )}
+            {quote.status === 'SENT' && !isExpired && (
+              <>
+                <button
+                  onClick={() => onAccept(quote)}
+                  className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+                  title="Accept Quote"
+                >
+                  <LucideIcon icon="CheckCircle" size={16} className="mr-2" />
+                  Accept Quote
+                </button>
+                <button
+                  onClick={() => onReject(quote)}
+                  className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
+                  title="Reject Quote"
+                >
+                  <X size={16} className="mr-2" />
+                  Reject
+                </button>
+              </>
+            )}
+            {(quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired && (
+              <button
+                onClick={() => onConvertToJob(quote)}
+                className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
+                title="Convert to Job"
+              >
+                <Package size={16} className="mr-2" />
+                Convert to Job
+              </button>
+            )}
+            <button
+              onClick={() => onEdit(quote)}
+              className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
+              title="Edit Quote"
+            >
+              <Edit3 size={20} />
+            </button>
+            <button
+              onClick={() => onDuplicate(quote)}
+              className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
+              title="Duplicate Quote"
+            >
+              <Copy size={20} />
+            </button>
+            {user?.role === 'ADMIN' && (
+              <button
+                onClick={() => onDelete(quote.id)}
+                className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
+                title="Delete Quote"
+              >
+                <Trash2 size={20} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="px-6">
+          <nav className="flex space-x-8">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+                activeTab === 'overview'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Quote Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('financial')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+                activeTab === 'financial'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Pricing Details
+            </button>
+            <button
+              onClick={() => setActiveTab('documents')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+                activeTab === 'documents'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Documents
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        
+        {/* Quote Overview Tab */}
+        {activeTab === 'overview' && (
+          <div className="space-y-8">
+            
+            {/* Customer Information */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Customer Information</h2>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Customer:</span>
+                      <span className="font-semibold text-gray-900">{quote.customerName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Contact:</span>
+                      <span className="text-gray-900">{quote.customerContact || 'Not provided'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Email:</span>
+                      <span className="text-gray-900">{quote.customerEmail || 'Not provided'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Phone:</span>
+                      <span className="text-gray-900">{quote.customerPhone || 'Not provided'}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Quote Type:</span>
+                      <span className="text-gray-900">{quote.jobType}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Created Date:</span>
+                      <span className="text-gray-900">{new Date(quote.createdDate).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Valid Until:</span>
+                      <span className={`font-semibold ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
+                        {new Date(quote.validUntil).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {quote.deliveryDate && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Proposed Delivery:</span>
+                        <span className="text-gray-900">{new Date(quote.deliveryDate).toLocaleDateString()}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Site Information */}
+            {(quote.siteAddress || quote.sitePostcode) && (
+              <div className="bg-white rounded-lg border border-gray-200">
+                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                  <h2 className="text-lg font-semibold text-gray-800">Site Information</h2>
+                </div>
+                <div className="p-6">
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-gray-600 font-medium block mb-1">Site Address:</span>
+                      <div className="text-gray-900">
+                        {quote.siteAddress && <div>{quote.siteAddress}</div>}
+                        {quote.sitePostcode && <div>{quote.sitePostcode}</div>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Products & Services */}
+            {quote.lineItems && quote.lineItems.length > 0 && (
+              <div className="bg-white rounded-lg border border-gray-200">
+                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                  <h2 className="text-lg font-semibold text-gray-800">Products & Services</h2>
+                </div>
+                <div className="p-6">
+                  <div className="space-y-4">
+                    {quote.lineItems.map((item, index) => (
+                      <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Product/Service</div>
+                            <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
+                            {item.item_code && (
+                              <div className="text-sm text-gray-600">Code: {item.item_code}</div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Description</div>
+                            <div className="text-gray-900">{item.description || 'No description'}</div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Quantity</div>
+                            <div className="text-gray-900">
+                              <div className="font-semibold">{item.quantity || 1}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            {quote.notes && (
+              <div className="bg-white rounded-lg border border-gray-200">
+                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                  <h2 className="text-lg font-semibold text-gray-800">Quote Notes</h2>
+                </div>
+                <div className="p-6">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <p className="text-yellow-800">{quote.notes}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {/* Pricing Details Tab */}
+        {activeTab === 'financial' && (
+          <div className="space-y-8">
+            
+            {/* Pricing Summary */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Pricing Summary</h2>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600 font-medium">Quantity</div>
+                    <div className="text-2xl font-bold text-gray-900">{quote.quantity} {quote.unit}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600 font-medium">Unit Price</div>
+                    <div className="text-2xl font-bold text-blue-600">£{quote.price?.toFixed(2) || '0.00'}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600 font-medium">Total Quote Value</div>
+                    <div className="text-2xl font-bold text-green-600">£{quote.totalPrice?.toFixed(2) || '0.00'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quote Details */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Quote Details</h2>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 font-medium">Service Type:</span>
+                    <span className="text-gray-900">{quote.jobType}</span>
+                  </div>
+                  {quote.wasteType && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Waste Type:</span>
+                      <span className="text-gray-900">{quote.wasteType}</span>
+                    </div>
+                  )}
+                  {quote.skipSize && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Skip Size:</span>
+                      <span className="text-gray-900">{quote.skipSize}</span>
+                    </div>
+                  )}
+                  {quote.aggregateType && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Aggregate Type:</span>
+                      <span className="text-gray-900">{quote.aggregateType}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* Documents Tab */}
+        {activeTab === 'documents' && (
+          <div className="space-y-8">
+            
+            {/* Quote Attachments */}
+            <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Quote Attachments</h2>
+              </div>
+              <div className="p-6">
+                
+                {/* Upload Section */}
+                <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                  <h4 className="font-medium text-gray-800 mb-4">Upload New Attachment</h4>
+                  <div className="space-y-4">
+                    <select id="quote-attachment-type" className="px-3 py-2 border rounded">
+                      <option value="Quote Document">Quote Document</option>
+                      <option value="Supporting Document">Supporting Document</option>
+                      <option value="Terms & Conditions">Terms & Conditions</option>
+                      <option value="Other">Other</option>
+                    </select>
+                    <input type="file" id="quote-attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" />
+                    <button
+                      onClick={uploadQuoteAttachment}
+                      className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                    >
+                      Upload Attachment
+                    </button>
+                  </div>
+                </div>
+
+                {/* Attachments List */}
+                <div className="space-y-4">
+                  {quoteAttachments.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p className="mt-2">No attachments yet</p>
+                      <p className="text-sm">Upload quote documents or supporting files</p>
+                    </div>
+                  ) : (
+                    quoteAttachments.map(attachment => (
+                      <div key={attachment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => window.open(attachment.file_url)}
+                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                          >
+                            View
+                          </button>
+                          {user?.role === 'ADMIN' && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAttachment(attachment.id)}
+                              className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
         // Customers View Component
           const CustomersView = ({ customers, onAddCustomer, onUpdateCustomer, onDeleteCustomer, user }) => {
           const { hasPermission } = useAuth();
@@ -6185,6 +6573,7 @@ useEffect(() => {
   loadJobsFromSupabase();
 }, []);
           const [quotes, setQuotes] = useState([]);
+          const [showFullPageQuote, setShowFullPageQuote] = useState(null);
           
           // Form states
           const [showJobForm, setShowJobForm] = useState(false);
@@ -6557,7 +6946,204 @@ const { error } = await window.supabase
             setShowJobForm(true);
             setActiveTab('jobs');
           };
+// ADD these NEW quote management functions after line 6947
 
+const handleDuplicateQuote = (quoteTemplate) => {
+  const duplicatedQuote = { ...quoteTemplate, id: null, quoteNumber: null };
+  delete duplicatedQuote.id;
+  delete duplicatedQuote.quoteNumber;
+  setEditingQuote(duplicatedQuote);
+  setShowQuoteForm(true);
+};
+
+const handleDeleteQuote = async (quoteId) => {
+  if (confirm('Are you sure you want to delete this quote?')) {
+    try {
+      const { error } = await window.supabase
+        .from('quotes')
+        .delete()
+        .eq('id', quoteId);
+      
+      if (error) throw error;
+      
+      setQuotes(quotes.filter(quote => quote.id !== quoteId));
+      setShowFullPageQuote(null);
+      alert('Quote deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting quote:', error);
+      alert('Error deleting quote: ' + error.message);
+    }
+  }
+};
+
+const handleSendQuote = async (quote) => {
+  try {
+    const updatedQuote = {
+      ...quote,
+      status: 'SENT',
+      sent_date: new Date().toISOString()
+    };
+    
+    const { error } = await window.supabase
+      .from('quotes')
+      .update({ 
+        status: 'SENT',
+        sent_date: new Date().toISOString()
+      })
+      .eq('id', quote.id);
+    
+    if (error) throw error;
+    
+    setQuotes(quotes.map(q => q.id === quote.id ? updatedQuote : q));
+    setShowFullPageQuote(updatedQuote);
+    alert('Quote sent to customer!');
+  } catch (error) {
+    console.error('Error sending quote:', error);
+    alert('Error sending quote: ' + error.message);
+  }
+};
+
+const handleAcceptQuote = async (quote) => {
+  try {
+    // Create job from quote
+    const newJob = {
+      customerName: quote.customerName,
+      customerPO: '',
+      supplierName: quote.supplierName || '',
+      supplierRef: '',
+      jobType: quote.jobType,
+      wasteType: quote.wasteType || '',
+      skipSize: quote.skipSize || '',
+      aggregateType: quote.aggregateType || '',
+      quantity: quote.quantity,
+      unit: quote.unit,
+      customerUnitPrice: quote.price,
+      customerFinalPrice: quote.totalPrice,
+      supplierUnitPrice: 0,
+      supplierFinalPrice: 0,
+      vatRate: 20,
+      jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
+      status: 'CONFIRMED',
+      priority: 'Medium',
+      siteAddress1: quote.siteAddress || '',
+      sitePostcode: quote.sitePostcode || '',
+      siteContact: quote.customerContact || '',
+      sitePhone: quote.customerPhone || '',
+      notes: `Created from accepted quote ${quote.quoteNumber}. ${quote.notes || ''}`.trim(),
+      invoiceNumber: '',
+      invoiceStatus: 'Not Invoiced',
+      paymentStatus: 'Not Paid',
+      isCompleted: false,
+      isCancelled: false,
+      lineItems: quote.lineItems || []
+    };
+    
+    // Save job
+    await handleAddJob(newJob);
+    
+    // Update quote status
+    const updatedQuote = {
+      ...quote,
+      status: 'ACCEPTED',
+      accepted_date: new Date().toISOString()
+    };
+    
+    const { error } = await window.supabase
+      .from('quotes')
+      .update({ 
+        status: 'ACCEPTED',
+        accepted_date: new Date().toISOString()
+      })
+      .eq('id', quote.id);
+    
+    if (error) throw error;
+    
+    setQuotes(quotes.map(q => q.id === quote.id ? updatedQuote : q));
+    setShowFullPageQuote(null);
+    setActiveTab('jobs');
+    alert(`Quote ${quote.quoteNumber} accepted and job created!`);
+  } catch (error) {
+    console.error('Error accepting quote:', error);
+    alert('Error accepting quote: ' + error.message);
+  }
+};
+
+const handleRejectQuote = async (quote) => {
+  const reason = prompt('Please provide a reason for rejection (optional):');
+  
+  try {
+    const updatedQuote = {
+      ...quote,
+      status: 'REJECTED',
+      rejected_reason: reason || '',
+      rejected_date: new Date().toISOString()
+    };
+    
+    const { error } = await window.supabase
+      .from('quotes')
+      .update({ 
+        status: 'REJECTED',
+        rejected_reason: reason || '',
+        rejected_date: new Date().toISOString()
+      })
+      .eq('id', quote.id);
+    
+    if (error) throw error;
+    
+    setQuotes(quotes.map(q => q.id === quote.id ? updatedQuote : q));
+    setShowFullPageQuote(updatedQuote);
+    alert('Quote rejected!');
+  } catch (error) {
+    console.error('Error rejecting quote:', error);
+    alert('Error rejecting quote: ' + error.message);
+  }
+};
+
+const handleConvertQuoteToJob = async (quote) => {
+  try {
+    // Create job from quote
+    const newJob = {
+      customerName: quote.customerName,
+      customerPO: '',
+      supplierName: quote.supplierName || '',
+      supplierRef: '',
+      jobType: quote.jobType,
+      wasteType: quote.wasteType || '',
+      skipSize: quote.skipSize || '',
+      aggregateType: quote.aggregateType || '',
+      quantity: quote.quantity,
+      unit: quote.unit,
+      customerUnitPrice: quote.price,
+      customerFinalPrice: quote.totalPrice,
+      supplierUnitPrice: 0,
+      supplierFinalPrice: 0,
+      vatRate: 20,
+      jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
+      status: 'CONFIRMED',
+      priority: 'Medium',
+      siteAddress1: quote.siteAddress || '',
+      sitePostcode: quote.sitePostcode || '',
+      siteContact: quote.customerContact || '',
+      sitePhone: quote.customerPhone || '',
+      notes: `Created from quote ${quote.quoteNumber}. ${quote.notes || ''}`.trim(),
+      invoiceNumber: '',
+      invoiceStatus: 'Not Invoiced',
+      paymentStatus: 'Not Paid',
+      isCompleted: false,
+      isCancelled: false,
+      lineItems: quote.lineItems || []
+    };
+    
+    // Set editing job and show form
+    setEditingJob(newJob);
+    setShowJobForm(true);
+    setShowFullPageQuote(null);
+    alert('Please complete the job details and save to create the job.');
+  } catch (error) {
+    console.error('Error converting quote:', error);
+    alert('Error converting quote: ' + error.message);
+  }
+};
           return (
             <div className="min-h-screen bg-gray-50">
               <div className="bg-white border-b border-gray-200">
@@ -6689,6 +7275,21 @@ const { error } = await window.supabase
     onDeleteAttachment={handleDeleteAttachment}
   />
 )}
+{/* Full Page Quote View - ADD this RIGHT AFTER showFullPageJob section */}
+{showFullPageQuote && (
+  <FullPageQuoteView 
+    quote={showFullPageQuote}
+    onClose={() => setShowFullPageQuote(null)}
+    onEdit={handleEditQuote}
+    onDuplicate={handleDuplicateQuote}
+    onDelete={handleDeleteQuote}
+    onSend={handleSendQuote}
+    onAccept={handleAcceptQuote}
+    onReject={handleRejectQuote}
+    onConvertToJob={handleConvertQuoteToJob}
+    user={user}
+  />
+)}
               <div className="p-4 sm:p-6">
                 {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} />}
                 {activeTab === 'documents' && (
@@ -6732,11 +7333,15 @@ const { error } = await window.supabase
     onAddQuote={() => setShowQuoteForm(true)}
     onUpdateQuote={handleUpdateQuote}
     onEditQuote={handleEditQuote}
-    onConvertToJob={handleConvertToJob}
+    onConvertToJob={handleConvertQuoteToJob}
+    onSendQuote={handleSendQuote}
+    onAcceptQuote={handleAcceptQuote}
+    onRejectQuote={handleRejectQuote}
+    onDeleteQuote={handleDeleteQuote}
     customers={customers}
     suppliers={suppliers}
-    sageProducts={sageProducts}  // ADD THIS LINE
-    user={user}  // ADD THIS LINE
+    user={user}
+    setShowFullPageQuote={setShowFullPageQuote}
   />
 )}
                 {activeTab === 'admin' && <AdminPanel user={user} />}
