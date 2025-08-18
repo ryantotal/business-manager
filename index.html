@@ -7030,10 +7030,47 @@ const { error } = await window.supabase
   }
 };
 
-          const handleUpdateQuote = (updatedQuote) => {
-            setQuotes(quotes.map(quote => quote.id === updatedQuote.id ? updatedQuote : quote));
-            setEditingQuote(null);
-          };
+          const handleUpdateQuote = async (updatedQuote) => {
+  try {
+    const quoteForDatabase = {
+      customer_name: updatedQuote.customerName,
+      customer_contact: updatedQuote.customerContact || '',
+      customer_email: updatedQuote.customerEmail || '',
+      customer_phone: updatedQuote.customerPhone || '',
+      supplier_name: updatedQuote.supplierName || '',
+      job_type: updatedQuote.jobType,
+      waste_type: updatedQuote.wasteType || '',
+      skip_size: updatedQuote.skipSize || '',
+      aggregate_type: updatedQuote.aggregateType || '',
+      quantity: updatedQuote.quantity || 1,
+      unit: updatedQuote.unit || 'skip',
+      price: updatedQuote.price || 0,
+      total_price: updatedQuote.totalPrice || 0,
+      valid_until: updatedQuote.validUntil,
+      delivery_date: updatedQuote.deliveryDate || null,
+      site_address: updatedQuote.siteAddress || '',
+      site_postcode: updatedQuote.sitePostcode || '',
+      notes: updatedQuote.notes || '',
+      status: updatedQuote.status || 'PENDING',
+      line_items: JSON.stringify(updatedQuote.lineItems || [])
+    };
+
+    const { error } = await window.supabase
+      .from('quotes')
+      .update(quoteForDatabase)
+      .eq('id', updatedQuote.id);
+
+    if (error) throw error;
+
+    setQuotes(quotes.map(quote => quote.id === updatedQuote.id ? updatedQuote : quote));
+    setEditingQuote(null);
+    setShowQuoteForm(false);
+    alert('Quote updated successfully!');
+  } catch (error) {
+    console.error('Error updating quote:', error);
+    alert('Error updating quote: ' + error.message);
+  }
+};
 
           const handleEditQuote = (quote) => {
             setEditingQuote(quote);
