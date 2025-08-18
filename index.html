@@ -557,6 +557,28 @@ const getFilteredProducts = () => {
         const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts }) => {
           const { wasteTypes } = useWasteTypes();
           const [uploadFile, setUploadFile] = useState(null);
+          const [jobAttachments, setJobAttachments] = useState([]);
+          // Load attachments when job changes
+useEffect(() => {
+  if (job?.id) {
+    loadJobAttachments(job.id);
+  }
+}, [job?.id]);
+
+const loadJobAttachments = async (jobId) => {
+  try {
+    const { data, error } = await window.supabase
+      .from('job_attachments')
+      .select('*')
+      .eq('job_id', jobId)
+      .order('uploaded_at', { ascending: false });
+    
+    if (error) throw error;
+    setJobAttachments(data || []);
+  } catch (error) {
+    console.error('Error loading attachments:', error);
+  }
+};
 const [attachmentType, setAttachmentType] = useState('Waste Transfer Note');
 const handleDeleteAttachment = async (attachmentId) => {
   if (!window.confirm('Are you sure you want to delete this attachment?')) {
@@ -625,6 +647,8 @@ const handleUploadInForm = async () => {
     if (error) throw error;
 
     alert('Attachment uploaded successfully!');
+    // Reload attachments to show the new one immediately
+await loadJobAttachments(job.id);
     
     // Clear the file input
     if (fileInput) fileInput.value = '';
@@ -1507,6 +1531,27 @@ siteNotes: '',
         >
           Upload Attachment
         </button>
+        {/* Display existing attachments */}
+        {jobAttachments.length > 0 && (
+          <div className="mt-6">
+            <h4 className="font-medium text-gray-800 mb-3">Existing Attachments</h4>
+            <div className="space-y-2">
+              {jobAttachments.map(attachment => (
+                <div key={attachment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
+                  <a 
+                    href={attachment.file_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 text-sm"
+                  >
+                    View
+                  </a>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   </div>
