@@ -579,14 +579,23 @@ const handleDeleteAttachment = async (attachmentId) => {
   }
 };
 
-// WITH THIS WORKING FUNCTION (copied from FullPageJobView):
 const handleUploadInForm = async () => {
-  const attachmentType = document.getElementById('attachment-type')?.value;
-  const fileInput = document.getElementById('attachment-file');
+  // Get the select element for attachment type
+  const attachmentTypeSelect = document.querySelector('#attachment-type');
+  const attachmentType = attachmentTypeSelect ? attachmentTypeSelect.value : 'Waste Transfer Note';
+  
+  // Get the file input
+  const fileInput = document.querySelector('#attachment-file');
   const file = fileInput?.files[0];
 
-  if (!attachmentType || !file || !job) {  // ✅ Use job prop directly
-    alert('Please select attachment type, file, and ensure a job is selected');
+  if (!file) {
+    alert('Please select a file');
+    return;
+  }
+
+  // Use the job prop directly - it's already available
+  if (!job) {
+    alert('No job selected');
     return;
   }
 
@@ -616,7 +625,9 @@ const handleUploadInForm = async () => {
     if (error) throw error;
 
     alert('Attachment uploaded successfully!');
-    // Refresh attachments or update state here
+    
+    // Clear the file input
+    if (fileInput) fileInput.value = '';
     
   } catch (error) {
     console.error('Error uploading attachment:', error);
@@ -1461,6 +1472,7 @@ siteNotes: '',
                   )}
                 </div>
 {/* Documents Tab */}
+{/* Documents Tab */}
 {activeTab === 'documents' && (
   <div className="space-y-4">
     <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -1469,7 +1481,7 @@ siteNotes: '',
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Attachment Type</label>
-          <select className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+          <select id="attachment-type" className="w-full px-3 py-2 border border-gray-300 rounded-lg">
             <option value="Waste Transfer Note">Waste Transfer Note</option>
             <option value="Invoice">Invoice</option>
             <option value="Receipt">Receipt</option>
@@ -1481,6 +1493,7 @@ siteNotes: '',
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Choose File</label>
           <input
+            id="attachment-file"
             type="file"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
@@ -1488,12 +1501,12 @@ siteNotes: '',
         </div>
         
         <button
-  type="button"
-  onClick={handleUploadInForm}
-  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
->
-  Upload Attachment
-</button>
+          type="button"
+          onClick={handleUploadInForm}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+        >
+          Upload Attachment
+        </button>
       </div>
     </div>
   </div>
@@ -6637,26 +6650,25 @@ const { error } = await window.supabase
               </div>
 
               {/* Forms */}
-              {showJobForm && (
-               <JobForm
-  job={editingJob}  // ✅ This should be the actual job data
-  onSave={handleUpdateJob}
-  onCancel={() => {
-    setShowJobForm(false);
-    setEditingJob(null);
-  }}
-  customers={customers}
-  suppliers={suppliers}
-  sageProducts={sageProducts}
-/>
-              )}
-
-              {showCustomerForm && (
-                <CustomerForm 
-                  onClose={() => setShowCustomerForm(false)}
-                  onSave={handleAddCustomer}
-                />
-              )}
+  {showJobForm && (
+  <JobForm
+    job={editingJob}
+    onClose={() => {
+      setShowJobForm(false);
+      setEditingJob(null);
+    }}
+    onSave={(jobData) => {
+      if (editingJob) {
+        handleUpdateJob(jobData);
+      } else {
+        handleAddJob(jobData);
+      }
+    }}
+    customers={customers}
+    suppliers={suppliers}
+    sageProducts={sageProducts}
+  />
+)}
 
               {showSupplierForm && (
                 <SupplierForm 
