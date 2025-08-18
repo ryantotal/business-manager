@@ -602,22 +602,12 @@ const handleDeleteAttachment = async (attachmentId) => {
 };
 
 const handleUploadInForm = async () => {
- // Get attachment type
-  const attachmentTypeSelect = document.getElementById('attachment-type');
-  const attachmentType = attachmentTypeSelect?.value || 'Waste Transfer Note';
-  
- // Get the file input specifically by ID
+  const attachmentType = document.getElementById('attachment-type')?.value || 'Waste Transfer Note';
   const fileInput = document.getElementById('attachment-file');
-  const file = fileInput?.files?.[0];
+  const file = fileInput?.files[0];
 
-  if (!file) {
-    alert('Please select a file');
-    return;
-  }
-
-  // Use the job prop directly - it's already available
- if (!job || !job.id) {
-    alert('No job selected');
+  if (!attachmentType || !file || !job) {
+    alert('Please select attachment type, file, and ensure a job is selected');
     return;
   }
 
@@ -647,12 +637,9 @@ const handleUploadInForm = async () => {
     if (error) throw error;
 
     alert('Attachment uploaded successfully!');
-// Reload attachments to show the new one immediately
-    await loadJobAttachments(job.id);
     
-    // Clear the file input
-    if (fileInput) fileInput.value = '';
-
+    // Only addition - reload attachments
+    await loadJobAttachments(job.id);
     
   } catch (error) {
     console.error('Error uploading attachment:', error);
