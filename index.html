@@ -2839,92 +2839,109 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
   </tr>
 </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredQuotes.map(quote => {
-                  const statusColors = {
-                    'PENDING': 'bg-yellow-100 text-yellow-800',
-                    'SENT': 'bg-blue-100 text-blue-800',
-                    'ACCEPTED': 'bg-green-100 text-green-800',
-                    'REJECTED': 'bg-red-100 text-red-800',
-                    'EXPIRED': 'bg-gray-100 text-gray-800'
-                  };
-                  
-                  const expired = isExpired(quote);
-                  
-                  return (
-                    <tr 
-  key={quote.id} 
-  className={`hover:bg-gray-50 cursor-pointer ${
-    quote.status === 'REJECTED' || expired ? 'opacity-75' : ''
-  }`}
-  onClick={() => handleQuoteClick(quote)}
->
-  <td className={`px-6 py-4 whitespace-nowrap ${
-    quote.status === 'REJECTED' ? 'line-through decoration-red-500' : 
-    expired ? 'line-through decoration-gray-500' : ''
-  }`}>
-    <div className="text-sm font-medium text-gray-900">{quote.quoteNumber}</div>
-  </td>
-  <td className={`px-6 py-4 whitespace-nowrap ${
-    quote.status === 'REJECTED' ? 'line-through decoration-red-500' : 
-    expired ? 'line-through decoration-gray-500' : ''
-  }`}>
-    <div>
-      <div className="text-sm text-gray-900">{quote.customerName}</div>
-      <div className="text-sm text-gray-500">{quote.customerContact}</div>
-    </div>
-  </td>
-  <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
-    quote.status === 'REJECTED' ? 'line-through decoration-red-500' : 
-    expired ? 'line-through decoration-gray-500' : ''
-  }`}>
-    {quote.jobType}
-  </td>
-  <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
-    quote.status === 'REJECTED' ? 'line-through decoration-red-500' : 
-    expired ? 'line-through decoration-gray-500' : ''
-  }`}>
-    {new Date(quote.createdDate).toLocaleDateString('en-GB')}
-  </td>
-  <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
-    quote.status === 'REJECTED' ? 'line-through decoration-red-500' : 
-    expired ? 'line-through decoration-gray-500' : ''
-  }`}>
-    {new Date(quote.validUntil).toLocaleDateString('en-GB')}
-  </td>
-  <td className="px-6 py-4 whitespace-nowrap">
-    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-      expired && quote.status === 'PENDING' ? statusColors['EXPIRED'] : statusColors[quote.status]
-    }`}>
-      {expired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
-    </span>
-  </td>
-  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 ${
-    quote.status === 'REJECTED' ? 'line-through decoration-red-500' : 
-    expired ? 'line-through decoration-gray-500' : ''
-  }`}>
-    £{quote.totalPrice?.toFixed(2)}
-  </td>
-  <td className="px-6 py-4 whitespace-nowrap text-sm">
-    <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-      <button
-        onClick={() => onEditQuote(quote)}
-        className="text-blue-600 hover:text-blue-900"
+     <tbody className="bg-white divide-y divide-gray-200">
+  {filteredQuotes.map(quote => {
+    const statusColors = {
+      'PENDING': 'bg-yellow-100 text-yellow-800',
+      'SENT': 'bg-blue-100 text-blue-800',
+      'ACCEPTED': 'bg-green-100 text-green-800',
+      'REJECTED': 'bg-red-100 text-red-800',
+      'EXPIRED': 'bg-gray-100 text-gray-800'
+    };
+    const expired = isExpired(quote);
+    return (
+      <tr
+        key={quote.id}
+        className={`hover:bg-gray-50 cursor-pointer ${
+          quote.status === 'REJECTED' || expired ? 'opacity-75' : ''
+        }`}
+        onClick={() => handleQuoteClick(quote)}
       >
-        <Edit3 size={16} />
-      </button>
-      {(quote.status === 'PENDING' || quote.status === 'SENT') && !expired ? (
-        <button
-          onClick={() => onConvertToJob(quote)}
-          className="text-green-600 hover:text-green-900"
-          title="Convert to Job"
-        >
-          <Package size={16} />
-        </button>
-      ) : null}
-    </div>
-  </td>
-</tr>
+        <td className={`px-6 py-4 whitespace-nowrap ${
+          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+          expired ? 'line-through decoration-gray-500' : ''
+        }`}>
+          <div className="text-sm font-medium text-gray-900">{quote.quoteNumber}</div>
+          <div className="text-xs text-gray-500">{new Date(quote.createdDate).toLocaleDateString('en-GB')}</div>
+        </td>
+        <td className={`px-6 py-4 whitespace-nowrap ${
+          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+          expired ? 'line-through decoration-gray-500' : ''
+        }`}>
+          <div>
+            <div className="text-sm text-gray-900">{quote.customerName}</div>
+            <div className="text-sm text-gray-500">{quote.customerContact}</div>
+          </div>
+        </td>
+        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
+          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+          expired ? 'line-through decoration-gray-500' : ''
+        }`}>
+          {quote.supplierName || '-'}
+        </td>
+        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
+          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+          expired ? 'line-through decoration-gray-500' : ''
+        }`}>
+          {quote.wasteType || quote.aggregateType || quote.jobType || '-'}
+        </td>
+        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
+          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+          expired ? 'line-through decoration-gray-500' : ''
+        }`}>
+          {quote.siteAddress || quote.siteAddress1 || '-'}
+        </td>
+        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
+          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+          expired ? 'line-through decoration-gray-500' : ''
+        }`}>
+          {quote.sitePostcode || quote.postcode || '-'}
+        </td>
+        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
+          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+          expired ? 'line-through decoration-gray-500' : ''
+        }`}>
+          {quote.jobType}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap">
+          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+            expired && quote.status === 'PENDING' ? statusColors['EXPIRED'] : statusColors[quote.status]
+          }`}>
+            {expired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
+          </span>
+        </td>
+        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
+          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+          expired ? 'line-through decoration-gray-500' : ''
+        }`}>
+          {quote.status === 'REJECTED' ? (quote.rejected_reason || '-') : '-'}
+        </td>
+        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 ${
+          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+          expired ? 'line-through decoration-gray-500' : ''
+        }`}>
+          £{quote.totalPrice?.toFixed(2)}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm">
+          <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => onEditQuote(quote)}
+              className="text-blue-600 hover:text-blue-900"
+            >
+              <Edit3 size={16} />
+            </button>
+            {(quote.status === 'PENDING' || quote.status === 'SENT') && !expired ? (
+              <button
+                onClick={() => onConvertToJob(quote)}
+                className="text-green-600 hover:text-green-900"
+                title="Convert to Job"
+              >
+                <Package size={16} />
+              </button>
+            ) : null}
+          </div>
+        </td>
+      </tr>
                   );
                 })}
               </tbody>
