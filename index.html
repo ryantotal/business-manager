@@ -1546,6 +1546,13 @@ siteNotes: '',
                   >
                     View
                   </a>
+                  <button
+  type="button"
+  onClick={() => handleDeleteAttachment(attachment.id)}
+  className="ml-2 px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+>
+  Delete
+</button>
                 </div>
               ))}
             </div>
