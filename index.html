@@ -3701,6 +3701,13 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             >
               <Copy size={20} />
             </button>
+            <button
+  onClick={() => onReject(quote)}
+  className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
+  title="Reject Quote"
+>
+  <X size={20} />
+</button>
             {user?.role === 'ADMIN' && (
               <button
                 onClick={() => onDelete(quote.id)}
