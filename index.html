@@ -6978,10 +6978,10 @@ const { error } = await window.supabase
             setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
           };
 
-         const handleAddQuote = async (newQuote) => {
+        const handleAddQuote = async (newQuote) => {
   try {
     const quoteForDatabase = {
-      // id: newQuote.id,  // Remove this - let Supabase generate it
+      // DO NOT include 'id' field - let Supabase generate it
       quote_number: newQuote.quoteNumber,
       customer_name: newQuote.customerName,
       customer_contact: newQuote.customerContact || '',
@@ -6991,29 +6991,22 @@ const { error } = await window.supabase
       job_type: newQuote.jobType,
       waste_type: newQuote.wasteType || '',
       skip_size: newQuote.skipSize || '',
-      aggregate_type: newQuote.aggregateType || '',  // You have this column
+      aggregate_type: newQuote.aggregateType || '',
       quantity: newQuote.quantity || 1,
       unit: newQuote.unit || 'skip',
-      price: newQuote.customerUnitPrice || 0,  // Using 'price' column
+      price: newQuote.customerUnitPrice || 0,
       total_price: newQuote.customerFinalPrice || 0,
-      supplier_unit_price: newQuote.supplierUnitPrice || 0,  // Add this column
-      supplier_final_price: newQuote.supplierFinalPrice || 0,  // Add this column
-      vat_rate: newQuote.vatRate || 20,  // Add this column
+      supplier_unit_price: newQuote.supplierUnitPrice || 0,
+      supplier_final_price: newQuote.supplierFinalPrice || 0,
+      vat_rate: newQuote.vatRate || 20,
       valid_until: newQuote.validUntil,
       delivery_date: newQuote.deliveryDate || null,
       site_address: newQuote.siteAddress || newQuote.siteAddress1 || '',
       site_postcode: newQuote.sitePostcode || '',
       notes: newQuote.notes || '',
       status: newQuote.status || 'PENDING',
-      line_items: JSON.stringify(newQuote.lineItems || [])  // You already have this
-      // DO NOT include created_date - use created_at instead
+      line_items: JSON.stringify(newQuote.lineItems || [])
     };
-
-    // Only add line_items if your quotes table has this column
-    // Check your Supabase table structure
-    if (newQuote.lineItems && newQuote.lineItems.length > 0) {
-      quoteForDatabase.line_items = JSON.stringify(newQuote.lineItems);
-    }
 
     const { data, error } = await window.supabase
       .from('quotes')
@@ -7022,8 +7015,13 @@ const { error } = await window.supabase
     
     if (error) throw error;
     
-    // Add to local state
-    setQuotes(prevQuotes => [newQuote, ...prevQuotes]);
+    // Add to local state with the returned ID from database
+    const savedQuote = {
+      ...newQuote,
+      id: data[0].id  // Use the UUID that Supabase generated
+    };
+    
+    setQuotes(prevQuotes => [savedQuote, ...prevQuotes]);
     setShowQuoteForm(false);
     setEditingQuote(null);
     
@@ -9283,11 +9281,11 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
   };
 
   const handleSubmit = () => {
-    const newQuoteNumber = quote?.id || generateQuoteNumber();
+    const newQuoteNumber = quote?.quoteNumber || generateQuoteNumber();
     const newQuote = {
       ...formData,
-      id: newQuoteNumber,
-      quoteNumber: quote?.quoteNumber || newQuoteNumber,
+      id: quote?.id || undefined,
+      quoteNumber: newQuoteNumber,
       createdDate: quote?.createdDate || new Date().toISOString().split('T')[0],
       totalPrice: formData.customerFinalPrice,
       customerEmail: formData.customerEmail || customers.find(c => c.companyName === formData.customerName)?.email || '',
@@ -9863,7 +9861,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
             </div>
           )}
 
-          // In QuoteForm, update the Financial tab section:
+         
 {activeTab === 'financial' && (
   <div className="space-y-4">
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -9889,7 +9887,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       </div>
     </div>
     
-    // ... rest of the financial fields
+    
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
