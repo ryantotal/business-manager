@@ -6573,6 +6573,59 @@ useEffect(() => {
   loadJobsFromSupabase();
 }, []);
           const [quotes, setQuotes] = useState([]);
+          // Load quotes from Supabase when app starts
+useEffect(() => {
+  const loadQuotesFromSupabase = async () => {
+    try {
+      const { data, error } = await window.supabase
+        .from('quotes')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        // Convert snake_case from database to camelCase for React
+        const quotesWithCamelCase = data.map(quote => ({
+          id: quote.id,
+          quoteNumber: quote.quote_number,
+          customerName: quote.customer_name,
+          customerContact: quote.customer_contact,
+          customerEmail: quote.customer_email,
+          customerPhone: quote.customer_phone,
+          supplierName: quote.supplier_name,
+          jobType: quote.job_type,
+          wasteType: quote.waste_type,
+          skipSize: quote.skip_size,
+          aggregateType: quote.aggregate_type,
+          quantity: quote.quantity || 1,
+          unit: quote.unit || 'skip',
+          price: quote.price || 0,
+          totalPrice: quote.total_price || 0,
+          validUntil: quote.valid_until,
+          deliveryDate: quote.delivery_date,
+          siteAddress: quote.site_address,
+          sitePostcode: quote.site_postcode,
+          notes: quote.notes,
+          status: quote.status || 'PENDING',
+          rejectedReason: quote.rejected_reason,
+          sentDate: quote.sent_date,
+          acceptedDate: quote.accepted_date,
+          rejectedDate: quote.rejected_date,
+          lineItems: quote.line_items ? JSON.parse(quote.line_items) : [],
+          createdDate: quote.created_date
+        }));
+        
+        setQuotes(quotesWithCamelCase);
+        console.log('Loaded', data.length, 'quotes from Supabase');
+      }
+    } catch (error) {
+      console.error('Error loading quotes:', error);
+    }
+  };
+  
+  loadQuotesFromSupabase();
+}, []);
           const [showFullPageQuote, setShowFullPageQuote] = useState(null);
           
           // Form states
@@ -6925,11 +6978,57 @@ const { error } = await window.supabase
             setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
           };
 
-          const handleAddQuote = (newQuote) => {
-            setQuotes([...quotes, newQuote]);
-            setShowQuoteForm(false);
-            setEditingQuote(null);
-          };
+          const handleAddQuote = async (newQuote) => {
+  try {
+    // Save to Supabase database
+    const quoteForDatabase = {
+      id: newQuote.id,
+      quote_number: newQuote.quoteNumber,
+      customer_name: newQuote.customerName,
+      customer_contact: newQuote.customerContact || '',
+      customer_email: newQuote.customerEmail || '',
+      customer_phone: newQuote.customerPhone || '',
+      supplier_name: newQuote.supplierName || '',
+      job_type: newQuote.jobType,
+      waste_type: newQuote.wasteType || '',
+      skip_size: newQuote.skipSize || '',
+      aggregate_type: newQuote.aggregateType || '',
+      quantity: newQuote.quantity || 1,
+      unit: newQuote.unit || 'skip',
+      price: newQuote.price || 0,
+      total_price: newQuote.totalPrice || 0,
+      valid_until: newQuote.validUntil,
+      delivery_date: newQuote.deliveryDate || null,
+      site_address: newQuote.siteAddress || '',
+      site_postcode: newQuote.sitePostcode || '',
+      notes: newQuote.notes || '',
+      status: newQuote.status || 'PENDING',
+      rejected_reason: newQuote.rejectedReason || '',
+      sent_date: newQuote.sentDate || null,
+      accepted_date: newQuote.acceptedDate || null,
+      rejected_date: newQuote.rejectedDate || null,
+      line_items: JSON.stringify(newQuote.lineItems || []),
+      created_date: newQuote.createdDate || new Date().toISOString().split('T')[0]
+    };
+
+    const { data, error } = await window.supabase
+      .from('quotes')
+      .insert([quoteForDatabase])
+      .select();
+    
+    if (error) throw error;
+    
+    // Add to local state
+    setQuotes(prevQuotes => [newQuote, ...prevQuotes]);
+    setShowQuoteForm(false);
+    setEditingQuote(null);
+    
+    console.log('Quote saved to database:', data);
+  } catch (error) {
+    console.error('Error saving quote:', error);
+    alert('Error saving quote: ' + error.message);
+  }
+};
 
           const handleUpdateQuote = (updatedQuote) => {
             setQuotes(quotes.map(quote => quote.id === updatedQuote.id ? updatedQuote : quote));
