@@ -6978,11 +6978,10 @@ const { error } = await window.supabase
             setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
           };
 
-          const handleAddQuote = async (newQuote) => {
+         const handleAddQuote = async (newQuote) => {
   try {
-    // Save to Supabase database - mirror the jobs structure
     const quoteForDatabase = {
-      id: newQuote.id,
+      // id: newQuote.id,  // Remove this - let Supabase generate it
       quote_number: newQuote.quoteNumber,
       customer_name: newQuote.customerName,
       customer_contact: newQuote.customerContact || '',
@@ -6992,17 +6991,22 @@ const { error } = await window.supabase
       job_type: newQuote.jobType,
       waste_type: newQuote.wasteType || '',
       skip_size: newQuote.skipSize || '',
+      aggregate_type: newQuote.aggregateType || '',  // You have this column
       quantity: newQuote.quantity || 1,
       unit: newQuote.unit || 'skip',
-      price: newQuote.price || 0,
-      total_price: newQuote.totalPrice || 0,
+      price: newQuote.customerUnitPrice || 0,  // Using 'price' column
+      total_price: newQuote.customerFinalPrice || 0,
+      supplier_unit_price: newQuote.supplierUnitPrice || 0,  // Add this column
+      supplier_final_price: newQuote.supplierFinalPrice || 0,  // Add this column
+      vat_rate: newQuote.vatRate || 20,  // Add this column
       valid_until: newQuote.validUntil,
       delivery_date: newQuote.deliveryDate || null,
       site_address: newQuote.siteAddress || newQuote.siteAddress1 || '',
       site_postcode: newQuote.sitePostcode || '',
       notes: newQuote.notes || '',
       status: newQuote.status || 'PENDING',
-      created_date: newQuote.createdDate || new Date().toISOString().split('T')[0]
+      line_items: JSON.stringify(newQuote.lineItems || [])  // You already have this
+      // DO NOT include created_date - use created_at instead
     };
 
     // Only add line_items if your quotes table has this column
@@ -9859,30 +9863,33 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
             </div>
           )}
 
-          {/* Financial & Status Tab - MODIFIED FOR QUOTES */}
-          {activeTab === 'financial' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer Unit Price (£) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.customerUnitPrice}
-                    onChange={(e) => setFormData({...formData, customerUnitPrice: parseFloat(e.target.value) || 0})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until Date *</label>
-                  <input
-                    type="date"
-                    value={formData.validUntil}
-                    onChange={(e) => setFormData({...formData, validUntil: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-              </div>
+          // In QuoteForm, update the Financial tab section:
+{activeTab === 'financial' && (
+  <div className="space-y-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Customer Unit Price (£) *</label>
+        <input
+          type="number"
+          step="0.01"
+          value={formData.customerUnitPrice}
+          onChange={(e) => setFormData({...formData, customerUnitPrice: parseFloat(e.target.value) || 0})}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Unit Cost (£)</label>
+        <input
+          type="number"
+          step="0.01"
+          value={formData.supplierUnitPrice}
+          onChange={(e) => setFormData({...formData, supplierUnitPrice: parseFloat(e.target.value) || 0})}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        />
+      </div>
+    </div>
+    
+    // ... rest of the financial fields
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
