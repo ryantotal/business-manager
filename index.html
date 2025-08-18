@@ -3639,6 +3639,11 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             }`}>
               {isExpired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
             </span>
+            {quote.status === 'REJECTED' && quote.rejectedReason && (
+  <div className="ml-4 text-sm text-red-600">
+    Reason: {quote.rejectedReason}
+  </div>
+)}
             {quote.validUntil && (
               <span className="text-sm text-gray-600">
                 Valid until: {new Date(quote.validUntil).toLocaleDateString()}
@@ -7099,8 +7104,9 @@ const { error } = await window.supabase
 
     setQuotes(quotes.map(quote => quote.id === updatedQuote.id ? updatedQuote : quote));
     setEditingQuote(null);
-    setShowQuoteForm(false);
-    alert('Quote updated successfully!');
+setShowQuoteForm(false);
+setShowFullPageQuote(updatedQuote);
+alert('Quote updated successfully!');
   } catch (error) {
     console.error('Error updating quote:', error);
     alert('Error updating quote: ' + error.message);
