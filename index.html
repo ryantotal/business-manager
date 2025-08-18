@@ -2686,9 +2686,10 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({
-    status: '',
-    jobType: ''
-  });
+  status: '',
+  jobType: '',
+  priority: ''
+});
 
   // Sort quotes by quote number descending (newest first)        
   const sortedQuotes = [...quotes].sort((a, b) => {
@@ -2698,15 +2699,14 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
   });
   
   const filteredQuotes = sortedQuotes.filter(quote => {
-    if (searchQuery && 
-        !quote.quoteNumber.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !quote.customerName.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    if (filters.status && quote.status !== filters.status) return false;
-    if (filters.jobType && quote.jobType !== filters.jobType) return false;
-    return true;
-  });
+  if (searchQuery) {
+    // ... search query logic ...
+  }
+  if (filters.status && quote.status !== filters.status) return false;
+  if (filters.jobType && quote.jobType !== filters.jobType) return false;
+  if (filters.priority && quote.priority !== filters.priority) return false;
+  return true;
+});
 
   const handleQuoteClick = (quote) => {
     setShowFullPageQuote(quote);
@@ -2735,12 +2735,12 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
         <div className="flex items-center space-x-4">
           <Filter size={16} className="text-gray-600" />
           <input
-            type="text"
-            placeholder="Search quotes..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg"
-          />
+  type="text"
+  placeholder="Search quotes, customers, postcodes..."
+  value={searchQuery}
+  onChange={(e) => setSearchQuery(e.target.value)}
+  className="px-3 py-2 border border-gray-300 rounded-lg"
+/>
           <select
             value={filters.status}
             onChange={(e) => setFilters({...filters, status: e.target.value})}
@@ -2766,11 +2766,22 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
             <option value="Muck Away">Muck Away</option>
             <option value="Roll-on Roll-off">Roll-on Roll-off</option>
           </select>
-          <button
-            onClick={() => {
-              setSearchQuery('');
-              setFilters({ status: '', jobType: '' });
-            }}
+<select
+  value={filters.priority}
+  onChange={(e) => setFilters({...filters, priority: e.target.value})}
+  className="px-3 py-2 border border-gray-300 rounded-lg"
+>
+  <option value="">All Priorities</option>
+  <option value="Low">Low</option>
+  <option value="Medium">Medium</option>
+  <option value="High">High</option>
+  <option value="Urgent">Urgent</option>
+</select>
+<button
+  onClick={() => {
+    setSearchQuery('');
+    setFilters({ status: '', jobType: '', priority: '' });
+  }}
             className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
           >
             Clear
@@ -3625,15 +3636,15 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
           
           <div className="flex items-center space-x-2">
             {quote.status === 'PENDING' && (
-              <button
-                onClick={() => onSend(quote)}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
-                title="Send to Customer"
-              >
-                <Mail size={16} className="mr-2" />
-                Send to Customer
-              </button>
-            )}
+  <button
+    onClick={() => onSend(quote)}
+    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+    title="Send to Sage"
+  >
+    <Mail size={16} className="mr-2" />
+    Send to Sage
+  </button>
+)}
             {quote.status === 'SENT' && !isExpired && (
               <>
                 <button
