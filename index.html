@@ -3706,13 +3706,15 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             >
               <Copy size={20} />
             </button>
-            <button
-  onClick={() => onReject(quote)}
-  className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
-  title="Reject Quote"
->
-  <X size={20} />
-</button>
+            {quote.status !== 'REJECTED' && (
+  <button
+    onClick={() => onReject(quote)}
+    className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
+    title="Reject Quote"
+  >
+    <X size={20} />
+  </button>
+)}
             {user?.role === 'ADMIN' && (
               <button
                 onClick={() => onDelete(quote.id)}
@@ -7252,6 +7254,8 @@ const handleRejectQuote = async (quote) => {
     const updatedQuote = {
       ...quote,
       status: 'REJECTED',
+      isDeclined: true,  // ADD THIS to sync with checkbox
+      rejectedReason: reason || '',
       rejected_reason: reason || '',
       rejected_date: new Date().toISOString()
     };
