@@ -3658,35 +3658,35 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
   </button>
 )}
             {quote.status === 'SENT' && !isExpired && (
-              <>
-                <button
-                  onClick={() => onAccept(quote)}
-                  className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
-                  title="Accept Quote"
-                >
-                  <LucideIcon icon="CheckCircle" size={16} className="mr-2" />
-                  Accept Quote
-                </button>
-                <button
-                  onClick={() => onReject(quote)}
-                  className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
-                  title="Reject Quote"
-                >
-                  <X size={16} className="mr-2" />
-                  Reject
-                </button>
-              </>
-            )}
-            {(quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired && (
-              <button
-                onClick={() => onConvertToJob(quote)}
-                className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
-                title="Convert to Job"
-              >
-                <Package size={16} className="mr-2" />
-                Convert to Job
-              </button>
-            )}
+  <>
+    <button
+      onClick={() => onAccept(quote)}
+      className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+      title="Accept Quote"
+    >
+      <LucideIcon icon="CheckCircle" size={16} className="mr-2" />
+      Accept Quote
+    </button>
+    <button
+      onClick={() => onReject(quote)}
+      className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
+      title="Reject Quote"
+    >
+      <X size={16} className="mr-2" />
+      Reject
+    </button>
+  </>
+)}
+{(quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired && (
+  <button
+    onClick={() => onConvertToJob(quote)}
+    className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
+    title="Convert to Job"
+  >
+    <Package size={16} className="mr-2" />
+    Convert to Job
+  </button>
+)}
             <button
               onClick={() => onEdit(quote)}
               className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
