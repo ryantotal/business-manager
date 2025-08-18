@@ -2682,7 +2682,7 @@ job.status.replace('_', ' ')}
         };
 
         // Quotes View Component
-        const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertToJob, customers, suppliers }) => {
+        const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertToJob, customers, suppliers, sageProducts, user }) => {
           const [selectedQuote, setSelectedQuote] = useState(null);
           const [searchQuery, setSearchQuery] = useState('');
           const [filters, setFilters] = useState({
@@ -6727,16 +6727,18 @@ const { error } = await window.supabase
                   />
                 )}
                 {activeTab === 'quotes' && (
-                  <QuotesView 
-                    quotes={quotes}
-                    onAddQuote={() => setShowQuoteForm(true)}
-                    onUpdateQuote={handleUpdateQuote}
-                    onEditQuote={handleEditQuote}
-                    onConvertToJob={handleConvertToJob}
-                    customers={customers}
-                    suppliers={suppliers}
-                  />
-                )}
+  <QuotesView 
+    quotes={quotes}
+    onAddQuote={() => setShowQuoteForm(true)}
+    onUpdateQuote={handleUpdateQuote}
+    onEditQuote={handleEditQuote}
+    onConvertToJob={handleConvertToJob}
+    customers={customers}
+    suppliers={suppliers}
+    sageProducts={sageProducts}  // ADD THIS LINE
+    user={user}  // ADD THIS LINE
+  />
+)}
                 {activeTab === 'admin' && <AdminPanel user={user} />}
               </div>
 
@@ -6770,17 +6772,19 @@ const { error } = await window.supabase
               )}
 
               {showQuoteForm && (
-                <QuoteForm 
-                  quote={editingQuote}
-                  onClose={() => {
-                    setShowQuoteForm(false);
-                    setEditingQuote(null);
-                  }}
-                  onSave={editingQuote?.id ? handleUpdateQuote : handleAddQuote}
-                  customers={customers}
-                  suppliers={suppliers}
-                />
-              )}
+  <QuoteForm 
+    quote={editingQuote}
+    onClose={() => {
+      setShowQuoteForm(false);
+      setEditingQuote(null);
+    }}
+    onSave={editingQuote?.id ? handleUpdateQuote : handleAddQuote}
+    customers={customers}
+    suppliers={suppliers}
+    sageProducts={sageProducts}  // ADD THIS LINE
+    user={user}  // ADD THIS LINE
+  />
+)}
             </div>
           );
         };
@@ -8361,7 +8365,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
        // Replace the existing QuoteForm component (around line 7141) with this FULLY TESTED version:
 
-const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts, user }) => {
+const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user }) => {
   const { wasteTypes } = useWasteTypes();
   const [uploadFile, setUploadFile] = useState(null);
   const [quoteAttachments, setQuoteAttachments] = useState([]);
