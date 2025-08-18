@@ -578,44 +578,49 @@ const handleDeleteAttachment = async (attachmentId) => {
     alert('Error deleting attachment: ' + error.message);
   }
 };
+
+// WITH THIS WORKING FUNCTION (copied from FullPageJobView):
 const handleUploadInForm = async () => {
-  if (!uploadFile || !job?.id) {
-    alert('Please select a file and ensure job exists');
+  const attachmentType = document.getElementById('attachment-type')?.value;
+  const fileInput = document.getElementById('attachment-file');
+  const file = fileInput?.files[0];
+
+  if (!attachmentType || !file || !job) {  // ✅ Use job prop directly
+    alert('Please select attachment type, file, and ensure a job is selected');
     return;
   }
-  
-  const fileName = `job_${job.id}_${Date.now()}_${uploadFile.name}`;
-  
+
   try {
+    const fileName = `job_${job.id}_${Date.now()}_${file.name}`;
     const { data: fileData, error: fileError } = await window.supabase.storage
       .from('documents')
-      .upload(fileName, uploadFile);
-    
+      .upload(fileName, file);
+
     if (fileError) throw fileError;
-    
+
     const { data: { publicUrl } } = window.supabase.storage
       .from('documents')
       .getPublicUrl(fileName);
-    
+
     const { error } = await window.supabase
       .from('job_attachments')
       .insert([{
         job_id: job.id,
-        file_name: uploadFile.name,
+        file_name: file.name,
         file_url: publicUrl,
         file_type: attachmentType,
-        file_size: uploadFile.size,
-        uploaded_by: sageProducts?.email
+        file_size: file.size,
+        uploaded_by: 'System Admin'
       }]);
-    
+
     if (error) throw error;
+
+    alert('Attachment uploaded successfully!');
+    // Refresh attachments or update state here
     
-    alert('File uploaded successfully!');
-    setUploadFile(null);
-    document.getElementById('attachment-file').value = '';
   } catch (error) {
-    console.error('Error uploading:', error);
-    alert('Error uploading file: ' + error.message);
+    console.error('Error uploading attachment:', error);
+    alert('Error uploading attachment: ' + error.message);
   }
 };
           const [formData, setFormData] = useState(job || {
@@ -2584,9 +2589,9 @@ job.status.replace('_', ' ')}
         <option value="invoice">Invoice</option>
         <option value="other">Other</option>
       </select>
-      <input type="file" id="edit-attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" onChange={(e) => setUploadFile(e.target.files[0])} />
+      <input type="file" id="attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.png" />
       <button
-        onClick={uploadJobAttachment}
+        onClick={handleUploadInForm}
         className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
       >
         Upload Attachment
@@ -6347,9 +6352,10 @@ const handleDeleteAttachment = async (attachment) => {
 };
 
           const handleEditJob = (job) => {
-            setEditingJob(job);
-            setShowJobForm(true);
-          };
+  console.log('Setting editingJob to:', job); // Debug line
+  setEditingJob(job);  // ✅ This must happen first
+  setShowJobForm(true); // ✅ Then show the form
+};
 
           const handleDuplicateJob = (jobTemplate) => {
             const duplicatedJob = { ...jobTemplate, id: null, jobNumber: null };
@@ -6632,17 +6638,17 @@ const { error } = await window.supabase
 
               {/* Forms */}
               {showJobForm && (
-                <JobForm 
-                  job={editingJob}
-                  onClose={() => {
-                    setShowJobForm(false);
-                    setEditingJob(null);
-                  }}
-                 onSave={editingJob?.id ? handleUpdateJob : handleAddJob}
-                  customers={customers}
-                  suppliers={suppliers}
-                  sageProducts={sageProducts}
-                />
+               <JobForm
+  job={editingJob}  // ✅ This should be the actual job data
+  onSave={handleUpdateJob}
+  onCancel={() => {
+    setShowJobForm(false);
+    setEditingJob(null);
+  }}
+  customers={customers}
+  suppliers={suppliers}
+  sageProducts={sageProducts}
+/>
               )}
 
               {showCustomerForm && (
