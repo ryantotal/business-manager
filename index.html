@@ -3538,23 +3538,16 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
     >
       View
     </button>
-    <button
-      type="button"
-      onClick={() => onDeleteAttachment(attachment)}
-      className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
-    >
-      Delete
-    </button>
   </div>
-                        {user?.role === 'ADMIN' && (
-      <button
-        type="button"
-        onClick={() => onDeleteAttachment(attachment)}
-        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
-      >
-        Delete
-      </button>
-    )}
+        {user?.role === 'ADMIN' && (
+  <button
+    type="button"
+    onClick={() => onDeleteAttachment(attachment)}
+    className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+  >
+    Delete
+  </button>
+)}
                       </div>
                     ))
                   )}
