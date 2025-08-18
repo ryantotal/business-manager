@@ -594,6 +594,13 @@ const handleDeleteAttachment = async (attachmentId) => {
     if (error) throw error;
     
     alert('Attachment deleted successfully!');
+    // Refresh the attachments list
+await loadJobAttachments(job.id);
+
+// Also refresh the full page view if it's open
+if (window.refreshFullPageAttachments) {
+  window.refreshFullPageAttachments();
+}
     // Refresh attachments or update state here
   } catch (error) {
     console.error('Error deleting attachment:', error);
@@ -637,6 +644,10 @@ const handleUploadInForm = async () => {
     if (error) throw error;
 
     alert('Attachment uploaded successfully!');
+    // Also refresh the full page view if it's open
+if (window.refreshFullPageAttachments) {
+  window.refreshFullPageAttachments();
+}
     
     // Only addition - reload attachments
     await loadJobAttachments(job.id);
@@ -3089,7 +3100,11 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
           
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => onEdit(job)}
+             onClick={() => {
+  onEdit(job);
+  // Store a reference to reload attachments after edit
+  window.refreshFullPageAttachments = () => loadJobAttachments(job.id);
+}}
               className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
               title="Edit Job"
             >
