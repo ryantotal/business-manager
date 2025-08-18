@@ -6980,7 +6980,7 @@ const { error } = await window.supabase
 
           const handleAddQuote = async (newQuote) => {
   try {
-    // Save to Supabase database
+    // Save to Supabase database - mirror the jobs structure
     const quoteForDatabase = {
       id: newQuote.id,
       quote_number: newQuote.quoteNumber,
@@ -6992,24 +6992,24 @@ const { error } = await window.supabase
       job_type: newQuote.jobType,
       waste_type: newQuote.wasteType || '',
       skip_size: newQuote.skipSize || '',
-      aggregate_type: newQuote.aggregateType || '',
       quantity: newQuote.quantity || 1,
       unit: newQuote.unit || 'skip',
       price: newQuote.price || 0,
       total_price: newQuote.totalPrice || 0,
       valid_until: newQuote.validUntil,
       delivery_date: newQuote.deliveryDate || null,
-      site_address: newQuote.siteAddress || '',
+      site_address: newQuote.siteAddress || newQuote.siteAddress1 || '',
       site_postcode: newQuote.sitePostcode || '',
       notes: newQuote.notes || '',
       status: newQuote.status || 'PENDING',
-      rejected_reason: newQuote.rejectedReason || '',
-      sent_date: newQuote.sentDate || null,
-      accepted_date: newQuote.acceptedDate || null,
-      rejected_date: newQuote.rejectedDate || null,
-      line_items: JSON.stringify(newQuote.lineItems || []),
       created_date: newQuote.createdDate || new Date().toISOString().split('T')[0]
     };
+
+    // Only add line_items if your quotes table has this column
+    // Check your Supabase table structure
+    if (newQuote.lineItems && newQuote.lineItems.length > 0) {
+      quoteForDatabase.line_items = JSON.stringify(newQuote.lineItems);
+    }
 
     const { data, error } = await window.supabase
       .from('quotes')
@@ -7030,7 +7030,7 @@ const { error } = await window.supabase
   }
 };
 
-          const handleUpdateQuote = async (updatedQuote) => {
+         const handleUpdateQuote = async (updatedQuote) => {
   try {
     const quoteForDatabase = {
       customer_name: updatedQuote.customerName,
@@ -7041,19 +7041,22 @@ const { error } = await window.supabase
       job_type: updatedQuote.jobType,
       waste_type: updatedQuote.wasteType || '',
       skip_size: updatedQuote.skipSize || '',
-      aggregate_type: updatedQuote.aggregateType || '',
       quantity: updatedQuote.quantity || 1,
       unit: updatedQuote.unit || 'skip',
       price: updatedQuote.price || 0,
       total_price: updatedQuote.totalPrice || 0,
       valid_until: updatedQuote.validUntil,
       delivery_date: updatedQuote.deliveryDate || null,
-      site_address: updatedQuote.siteAddress || '',
+      site_address: updatedQuote.siteAddress || updatedQuote.siteAddress1 || '',
       site_postcode: updatedQuote.sitePostcode || '',
       notes: updatedQuote.notes || '',
-      status: updatedQuote.status || 'PENDING',
-      line_items: JSON.stringify(updatedQuote.lineItems || [])
+      status: updatedQuote.status || 'PENDING'
     };
+
+    // Only add line_items if your quotes table has this column
+    if (updatedQuote.lineItems) {
+      quoteForDatabase.line_items = JSON.stringify(updatedQuote.lineItems);
+    }
 
     const { error } = await window.supabase
       .from('quotes')
