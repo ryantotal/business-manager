@@ -554,7 +554,7 @@ const getFilteredProducts = () => {
         };
 
         // Job Form Component
-        const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts }) => {
+        const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts, user }) => {
           const { wasteTypes } = useWasteTypes();
           const [uploadFile, setUploadFile] = useState(null);
           const [jobAttachments, setJobAttachments] = useState([]);
@@ -1536,24 +1536,28 @@ siteNotes: '',
             <h4 className="font-medium text-gray-800 mb-3">Existing Attachments</h4>
             <div className="space-y-2">
               {jobAttachments.map(attachment => (
-                <div key={attachment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
-                  <a 
-                    href={attachment.file_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 text-sm"
-                  >
-                    View
-                  </a>
-                  <button
-  type="button"
-  onClick={() => handleDeleteAttachment(attachment.id)}
-  className="ml-2 px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
->
-  Delete
-</button>
-                </div>
+              <div key={attachment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+  <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
+  <div className="flex gap-2">
+    <a 
+      href={attachment.file_url} 
+      target="_blank" 
+      rel="noopener noreferrer"
+      className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+    >
+      View
+    </a>
+    {user?.role === 'ADMIN' && (
+    <button
+      type="button"
+      onClick={() => handleDeleteAttachment(attachment.id)}
+      className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+    >
+      Delete
+    </button>
+  )}
+  </div>
+</div>
               ))}
             </div>
           </div>
@@ -3525,23 +3529,32 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
                     </div>
                   ) : (
                     jobAttachments.map(attachment => (
-                      <div key={attachment.id} className="flex items-center bg-white p-2 rounded">
-                        <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
-                        <button
-                          onClick={() => window.open(attachment.file_url)}
-                          className="text-blue-600 hover:text-blue-800 text-sm"
-                        >
-                          View
-                        </button>
+                      <div key={attachment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                       <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
+  <div className="flex gap-2">
+    <button
+      onClick={() => window.open(attachment.file_url)}
+      className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+    >
+      View
+    </button>
+    <button
+      type="button"
+      onClick={() => onDeleteAttachment(attachment)}
+      className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+    >
+      Delete
+    </button>
+  </div>
                         {user?.role === 'ADMIN' && (
-  <button
-    onClick={() => handleDeleteAttachment(attachment)}
-    className="text-red-600 hover:text-red-800 text-sm"
-    title="Delete Attachment"
-  >
-    Delete
-  </button>
-)}
+      <button
+        type="button"
+        onClick={() => onDeleteAttachment(attachment)}
+        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+      >
+        Delete
+      </button>
+    )}
                       </div>
                     ))
                   )}
@@ -6722,6 +6735,7 @@ const { error } = await window.supabase
     customers={customers}
     suppliers={suppliers}
     sageProducts={sageProducts}
+    user={user}
   />
 )}
 
