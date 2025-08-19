@@ -7148,7 +7148,7 @@ const { error } = await window.supabase
       notes: newQuote.notes || '',
       status: newQuote.status || 'PENDING',
       line_items: JSON.stringify(newQuote.lineItems || []),
-      created_date: newQuote.createdDate || new Date().toISOString().split('T')[0]
+      created_at: newQuote.createdDate || new Date().toISOString()
     };
 
     const { data, error } = await window.supabase
