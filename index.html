@@ -3593,20 +3593,20 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
   }, [quote?.id]);
 
   const loadQuoteAttachments = async (quoteId) => {
-    try {
-      const { data, error } = await window.supabase
-        .from('quote_attachments')
-        .select('*')
-        .eq('quote_id', quoteId)
-        .order('uploaded_at', { ascending: false });
-
-      if (error) throw error;
-      setQuoteAttachments(data || []);
-    } catch (error) {
-      console.error('Error loading quote attachments:', error);
-      setQuoteAttachments([]);
-    }
-  };
+  try {
+    const { data, error } = await window.supabase
+      .from('quote_attachments')
+      .select('*')
+      .eq('quote_id', quoteId)
+      .order('created_at', { ascending: false }); // Changed to created_at
+    
+    if (error) throw error;
+    setQuoteAttachments(data || []);
+  } catch (error) {
+    console.error('Error loading quote attachments:', error);
+    setQuoteAttachments([]);
+  }
+};
 
   const uploadQuoteAttachment = async () => {
     const attachmentType = document.getElementById('quote-attachment-type')?.value;
@@ -7558,7 +7558,13 @@ await handleAddJob(newJob);
         return (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            
+// TO THIS:
+onClick={() => {
+  setActiveTab(tab.id);
+  setShowFullPageJob(null);
+  setShowFullPageQuote(null);
+}}
             className={`flex items-center space-x-2 px-4 py-3 border-b-2 font-medium text-sm transition-all ${
               activeTab === tab.id
                 ? 'border-blue-500 text-blue-600'
@@ -7586,9 +7592,11 @@ await handleAddJob(newJob);
           <button
             key={tab.id}
             onClick={() => {
-              setActiveTab(tab.id);
-              setMobileMenuOpen(false);
-            }}
+  setActiveTab(tab.id);
+  setMobileMenuOpen(false);
+  setShowFullPageJob(null);
+  setShowFullPageQuote(null);
+}}
             className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
               activeTab === tab.id
                 ? 'bg-blue-50 text-blue-600'
