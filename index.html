@@ -833,18 +833,73 @@ siteNotes: '',
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
   <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+  
   <SearchableDropdown
     options={customers.map(c => ({
       ...c,
       name: c.companyName || c.name
     }))}
     value={formData.customerName}
-    onChange={(value) => setFormData({...formData, customerName: value})}
+   onChange={(value) => {
+  const customer = customers.find(c => (c.companyName || c.name) === value);
+  setFormData({
+    ...formData, 
+    customerName: value,
+    // Add these new fields
+    customerReference: customer?.reference || '',
+    customerMobile: customer?.mobile || '',
+    customerMainContact: customer?.main_contact_name || '',
+    customerCreditLimit: customer?.credit_limit || 0,
+    customerCreditDays: customer?.credit_days || 30,
+    customerDeliveryAddress: customer?.delivery_address || null,
+    customerAccountStatus: customer?.account_status || 'Active'
+  });
+}}
     placeholder={`Select Customer (${customers.length} available)`}
     displayField="name"
     valueField="name"
   />
 </div>
+{/* Customer Extended Details - Auto-populated */}
+{formData.customerName && (() => {
+  const customer = customers.find(c => (c.companyName || c.name) === formData.customerName);
+  return customer ? (
+    <div className="col-span-2 bg-gray-50 rounded-lg p-4 mb-4">
+      <h3 className="text-sm font-medium text-gray-700 mb-3">Customer Information</h3>
+      <div className="grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <span className="text-gray-600">Reference:</span>
+          <span className="ml-2 font-medium">{customer.reference || '-'}</span>
+        </div>
+        <div>
+          <span className="text-gray-600">Contact:</span>
+          <span className="ml-2 font-medium">{customer.main_contact_name || '-'}</span>
+        </div>
+        <div>
+          <span className="text-gray-600">Mobile:</span>
+          <span className="ml-2 font-medium">{customer.mobile || '-'}</span>
+        </div>
+        <div>
+          <span className="text-gray-600">Credit:</span>
+          <span className="ml-2 font-medium">
+            £{customer.credit_limit?.toLocaleString() || '0'} / {customer.credit_days || 30} days
+          </span>
+        </div>
+        {customer.delivery_address && (
+          <div className="col-span-2 pt-2 border-t">
+            <span className="text-gray-600">Delivery Address:</span>
+            <span className="ml-2 font-medium">
+              {customer.delivery_address.address_line_1}
+              {customer.delivery_address.address_line_2 && `, ${customer.delivery_address.address_line_2}`}
+              {customer.delivery_address.city && `, ${customer.delivery_address.city}`}
+              {customer.delivery_address.postal_code && ` ${customer.delivery_address.postal_code}`}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
+})()}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Customer PO Number</label>
                           <input
