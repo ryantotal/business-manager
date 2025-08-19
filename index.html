@@ -6764,6 +6764,7 @@ try {
 const jobForDatabase = {
 
   job_number: newJob.jobNumber,
+  quote_reference: newJob.quoteReference || null,
   job_date: newJob.jobDate || null, // Handle empty dates
   customer_name: newJob.customerName,
   customer_po: newJob.customerPO || null,
@@ -7345,55 +7346,71 @@ const handleRejectQuote = async (quote) => {
   }
 };
 
-const handleConvertQuoteToJob = async (quote) => {
+
+   const handleConvertQuoteToJob = async (quote) => {
   try {
     // Generate new job number
     const jobCount = jobs.length + 1;
     const jobNumber = `TWS-${new Date().getFullYear()}-${String(jobCount).padStart(4, '0')}`;
     
-    // Create job from quote
+    // Create job from quote - matching exact fields that handleAddJob expects
     const newJob = {
-      jobNumber: jobNumber,  // New job number
-      quoteReference: quote.quoteNumber,  // Store quote reference
+      jobNumber: jobNumber,
+      quoteReference: quote.quoteNumber,  // This might need to be added to handleAddJob mapping
       customerName: quote.customerName,
       customerPO: '',
       supplierName: quote.supplierName || '',
       supplierRef: '',
+      haulierName: '',  // Add this field
       jobType: quote.jobType,
       wasteType: quote.wasteType || '',
       skipSize: quote.skipSize || '',
-      //aggregateType: quote.aggregateType || '',
-      quantity: quote.quantity,
-      unit: quote.unit,
-      customerUnitPrice: quote.price,
-      customerFinalPrice: quote.totalPrice,
+      aggregateType: quote.aggregateType || '',  // This is correct, gets converted to aggregate_type
+      quantity: quote.quantity || 1,
+      unit: quote.unit || 'skip',
+      weight: null,  // Add this field
+      customerUnitPrice: quote.price || 0,
+      customerFinalPrice: quote.totalPrice || 0,
       supplierUnitPrice: 0,
       supplierFinalPrice: 0,
       vatRate: 20,
+      grossProfit: 0,  // Add this
+      profitMargin: 0,  // Add this
+      jobValue: quote.totalPrice || 0,  // Add this
       jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
+      collectionDate: null,  // Add this
       status: 'CONFIRMED',
       priority: quote.priority || 'Medium',
-      siteAddress1: quote.siteAddress || '',
+      siteAddress: quote.siteAddress || '',
+      siteAddress1: quote.siteAddress1 || '',
+      siteAddress2: '',  // Add this
+      siteCity: '',  // Add this
       sitePostcode: quote.sitePostcode || '',
       siteContact: quote.customerContact || '',
       sitePhone: quote.customerPhone || '',
+      siteNotes: '',  // Add this
+      deliveryInstructions: '',  // Add this
+      accessRestrictions: '',  // Add this
+      timeSlot: '',  // Add this
       notes: `Converted from Quote: ${quote.quoteNumber}. ${quote.notes || ''}`.trim(),
       invoiceNumber: '',
       invoiceStatus: 'Not Invoiced',
       paymentStatus: 'Not Paid',
       isCompleted: false,
       isCancelled: false,
-      lineItems: quote.lineItems || []
+      wasteTransferNote: '',  // Add this
+      hazardousWaste: false,  // Add this
+      consignmentNote: '',  // Add this
+      sageProductId: null,  // Add this
+      sageProductName: null,  // Add this
+      sage_id: null,  // Add this
+      lineItems: quote.lineItems || [],
+      parentJobId: null,  // Add this
+      linkedJobs: []  // Add this
     };
     
-   // Save job to database (let Supabase generate the UUID)
-    const { data: jobData, error: jobError } = await window.supabase
-      .from('jobs')
-      .insert([newJob])
-      .select()
-      .single();
-    
-    if (jobError) throw jobError;
+   // Save job using handleAddJob which handles field conversions
+await handleAddJob(newJob);
     
     // Update quote status to CONVERTED
     const { error: quoteError } = await window.supabase
@@ -7408,7 +7425,6 @@ const handleConvertQuoteToJob = async (quote) => {
     if (quoteError) throw quoteError;
     
     // Update local state
-    setJobs([...jobs, jobData]);
     setQuotes(quotes.map(q => 
       q.id === quote.id 
         ? { ...q, status: 'CONVERTED', job_reference: jobNumber }
