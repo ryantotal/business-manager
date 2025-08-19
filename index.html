@@ -3243,6 +3243,55 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
                 </div>
               </div>
             </div>
+            {/* Customer Extended Information */}
+<div className="bg-white rounded-lg border border-gray-200 p-4 mt-4">
+  <h2 className="text-lg font-semibold text-gray-800 mb-4">Customer Details</h2>
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="space-y-4">
+      <div className="flex justify-between">
+        <span className="text-gray-600 font-medium">Reference:</span>
+        <span className="font-medium text-gray-900">{job.customerReference || 'Not provided'}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-gray-600 font-medium">Main Contact:</span>
+        <span className="font-medium text-gray-900">{job.customerMainContact || 'Not provided'}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-gray-600 font-medium">Mobile:</span>
+        <span className="font-medium text-gray-900">{job.customerMobile || 'Not provided'}</span>
+      </div>
+    </div>
+    <div className="space-y-4">
+      <div className="flex justify-between">
+        <span className="text-gray-600 font-medium">Credit Limit:</span>
+        <span className="font-medium text-gray-900">£{(job.customerCreditLimit || 0).toLocaleString()}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-gray-600 font-medium">Payment Terms:</span>
+        <span className="font-medium text-gray-900">{job.customerCreditDays || 30} days</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-gray-600 font-medium">Account Status:</span>
+        <span className={`font-semibold ${job.customerAccountStatus === 'Active' ? 'text-green-600' : 'text-gray-500'}`}>
+          {job.customerAccountStatus || 'Active'}
+        </span>
+      </div>
+    </div>
+    {job.customerDeliveryAddress && (
+      <div className="col-span-2 pt-4 border-t border-gray-200">
+        <div className="flex justify-between">
+          <span className="text-gray-600 font-medium">Delivery Address:</span>
+          <span className="font-medium text-gray-900 text-right">
+            {job.customerDeliveryAddress.address_line_1}
+            {job.customerDeliveryAddress.address_line_2 && `, ${job.customerDeliveryAddress.address_line_2}`}
+            {job.customerDeliveryAddress.city && `, ${job.customerDeliveryAddress.city}`}
+            {job.customerDeliveryAddress.postal_code && ` ${job.customerDeliveryAddress.postal_code}`}
+          </span>
+        </div>
+      </div>
+    )}
+  </div>
+</div>
 
             {/* Site & Logistics */}
             <div className="bg-white rounded-lg border border-gray-200">
@@ -4136,7 +4185,11 @@ const displayCustomers = filteredCustomers.map(customer => ({
   accountStatus: customer.accountStatus || 'Active',
   vatNumber: customer.vatNumber || customer.vat_number,
   email: customer.email || '',
-  phone: customer.phone || ''
+  reference: customer.reference || '',
+  mobile: customer.mobile || '',
+  credit_days: customer.credit_days || 30,
+  main_contact_name: customer.main_contact_name || '',
+  delivery_address: customer.delivery_address || null
 }));
 
           const handleDeleteCustomer = (customer) => {
@@ -4183,16 +4236,24 @@ const handleApplySync = async () => {
       }
       
       // Save to Supabase with the correct field names
-      const { error } = await window.supabase
-        .from('customers')
-        .insert({
-          name: sageCustomer.name,
-          sage_id: sageCustomer.sage_id,
-          email: sageCustomer.email || '',
-          phone: sageCustomer.phone || '',
-          vat_number: sageCustomer.vat_number || '',
-          address: sageCustomer.address
-        });
+      // Save to Supabase with the correct field names
+const { error } = await window.supabase
+  .from('customers')
+  .insert({
+    name: sageCustomer.name,
+    sage_id: sageCustomer.sage_id,
+    reference: sageCustomer.reference || '',
+    email: sageCustomer.email || '',
+    phone: sageCustomer.phone || '',
+    mobile: sageCustomer.mobile || '',
+    vat_number: sageCustomer.vat_number || '',
+    address: sageCustomer.address || '',
+    credit_limit: sageCustomer.credit_limit || 0,
+    credit_days: sageCustomer.credit_days || 30,
+    account_status: sageCustomer.account_status || 'Active',
+    main_contact_name: sageCustomer.main_contact_name || '',
+    delivery_address: sageCustomer.delivery_address || null
+  });
       
       if (error) {
         console.error('Error inserting customer:', error);
@@ -4381,12 +4442,13 @@ const handleApplySync = async () => {
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Business Type</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Rating</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Limit</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ref</th>
+<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
+<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone/Mobile</th>
+<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit</th>
+<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -4397,40 +4459,31 @@ const handleApplySync = async () => {
                               onClick={() => setSelectedCustomer(customer)}
                             >
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <div>
-                                  <div className="text-sm font-medium text-gray-900">{customer.companyName}</div>
-                                  <div className="text-sm text-gray-500">{customer.vatNumber}</div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div>
-                                  <div className="text-sm text-gray-900">{customer.primaryContact}</div>
-                                  <div className="text-sm text-gray-500">{customer.email}</div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {customer.businessType}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                                  customer.creditRating === 'A+' || customer.creditRating === 'A' ? 'bg-green-100 text-green-700' :
-                                  customer.creditRating === 'B+' || customer.creditRating === 'B' ? 'bg-yellow-100 text-yellow-700' :
-                                  'bg-red-100 text-red-700'
-                                }`}>
-                                  {customer.creditRating}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                £{customer.creditLimit?.toLocaleString() || '0'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                                  customer.accountStatus === 'Active' ? 'bg-green-100 text-green-700' :
-                                  'bg-gray-100 text-gray-700'
-                                }`}>
-                                  {customer.accountStatus || 'Active'}
-                                </span>
-                              </td>
+  <div className="text-sm font-medium text-gray-900">{customer.companyName}</div>
+  <div className="text-xs text-gray-500">{customer.vatNumber}</div>
+</td>
+<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+  {customer.reference || '-'}
+</td>
+<td className="px-6 py-4 whitespace-nowrap">
+  <div className="text-sm text-gray-900">{customer.main_contact_name || '-'}</div>
+  <div className="text-xs text-gray-500">{customer.email}</div>
+</td>
+<td className="px-6 py-4 whitespace-nowrap">
+  <div className="text-sm text-gray-900">{customer.phone || '-'}</div>
+  <div className="text-xs text-gray-500">{customer.mobile || '-'}</div>
+</td>
+<td className="px-6 py-4 whitespace-nowrap">
+  <div className="text-sm font-medium text-gray-900">£{customer.creditLimit?.toLocaleString() || '0'}</div>
+  <div className="text-xs text-gray-500">{customer.credit_days || 30} days</div>
+</td>
+<td className="px-6 py-4 whitespace-nowrap">
+  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+    customer.accountStatus === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+  }`}>
+    {customer.accountStatus || 'Active'}
+  </span>
+</td>
                             </tr>
                           ))}
                         </tbody>
@@ -7973,20 +8026,30 @@ for (const sageCustomer of customerContacts) {
 
     if (!existing) {
         // Map Sage fields to your database fields
-    const mappedCustomer = {
-  name: sageCustomer.displayed_as || sageCustomer.name || sageCustomer.company_name || 'No Name',
-  sage_id: sageCustomer.id,
-  email: sageCustomer.email || '',
-  phone: sageCustomer.main_contact_person?.phone || '',
-  vat_number: sageCustomer.tax_number || '',
-  address: sageCustomer.main_address ? {
-    line1: sageCustomer.main_address.address_line_1 || '',
-    line2: sageCustomer.main_address.address_line_2 || '',
-    city: sageCustomer.main_address.city || '',
-    postcode: sageCustomer.main_address.postal_code || '',
-    country: sageCustomer.main_address.country || ''
-  } : null
-};
+    const mappedCustomers = sageCustomers.map(customer => ({
+      sage_id: customer.id,
+      name: customer.name || '',
+      email: customer.main_contact_email || '',
+      phone: customer.main_contact_telephone || customer.telephone || '',
+      mobile: customer.mobile || customer.main_contact_mobile || '',
+      reference: customer.reference || '',
+      credit_limit: parseFloat(customer.credit_limit) || 0,
+      credit_days: parseInt(customer.credit_days) || 30,
+      account_status: customer.deletable === false ? 'Active' : 'Inactive',
+      main_contact_name: customer.main_contact_name || '',
+      delivery_address: customer.delivery_address ? {
+        address_line_1: customer.delivery_address.address_line_1 || '',
+        address_line_2: customer.delivery_address.address_line_2 || '',
+        city: customer.delivery_address.city || '',
+        region: customer.delivery_address.region || '',
+        postal_code: customer.delivery_address.postal_code || '',
+        country: customer.delivery_address.country?.name || 'United Kingdom'
+      } : null,
+      vat_number: customer.tax_number || '',
+      address: customer.main_address ? 
+        `${customer.main_address.address_line_1 || ''} ${customer.main_address.address_line_2 || ''} ${customer.main_address.city || ''} ${customer.main_address.region || ''} ${customer.main_address.postal_code || ''}`.trim() 
+        : ''
+}));
         syncResults.new.push(mappedCustomer);
     } else {
         // Check if data differs and add to conflicts if needed
