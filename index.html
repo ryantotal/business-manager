@@ -6676,6 +6676,7 @@ useEffect(() => {
 }, []);
           const [quotes, setQuotes] = useState([]);
           // Load quotes from Supabase when app starts
+// Load quotes from Supabase when app starts
 useEffect(() => {
   const loadQuotesFromSupabase = async () => {
     try {
@@ -6715,7 +6716,8 @@ useEffect(() => {
           acceptedDate: quote.accepted_date,
           rejectedDate: quote.rejected_date,
           lineItems: quote.line_items ? JSON.parse(quote.line_items) : [],
-          createdDate: quote.created_date
+          // FIX: Ensure createdDate is properly set
+          createdDate: quote.created_date || quote.created_at || new Date().toISOString().split('T')[0]
         }));
         
         setQuotes(quotesWithCamelCase);
@@ -6984,8 +6986,11 @@ const handleDeleteAttachment = async (attachment) => {
           const handleCollection = (job) => {
   console.log('Collection job:', job);
 };
-          const handleDeleteJob = async (jobId) => {
+   const handleDeleteJob = async (jobId) => {
   try {
+    // First, get the job to check if it was created from a quote
+    const jobToDelete = jobs.find(job => job.id === jobId);
+    
     // Delete from Supabase database
     const { error } = await window.supabase
       .from('jobs')
@@ -6993,6 +6998,35 @@ const handleDeleteAttachment = async (attachment) => {
       .eq('id', jobId);
     
     if (error) throw error;
+    
+    // If this job was created from a quote, revert the quote status
+    if (jobToDelete?.quoteReference) {
+      // Find the quote by quote number
+      const quoteToRevert = quotes.find(q => q.quoteNumber === jobToDelete.quoteReference);
+      
+      if (quoteToRevert) {
+        // Update quote status back to PENDING in database
+        const { error: quoteError } = await window.supabase
+          .from('quotes')
+          .update({ 
+            status: 'PENDING',
+            converted_date: null,
+            job_reference: null
+          })
+          .eq('id', quoteToRevert.id);
+        
+        if (!quoteError) {
+          // Update local state
+          setQuotes(quotes.map(q => 
+            q.id === quoteToRevert.id 
+              ? { ...q, status: 'PENDING', converted_date: null, job_reference: null }
+              : q
+          ));
+          
+          console.log(`Quote ${jobToDelete.quoteReference} reverted to PENDING status`);
+        }
+      }
+    }
     
     // Update local state only if database delete succeeds
     setJobs(jobs.filter(job => job.id !== jobId));
@@ -7113,7 +7147,8 @@ const { error } = await window.supabase
       site_postcode: newQuote.sitePostcode || '',
       notes: newQuote.notes || '',
       status: newQuote.status || 'PENDING',
-      line_items: JSON.stringify(newQuote.lineItems || [])
+      line_items: JSON.stringify(newQuote.lineItems || []),
+      created_date: newQuote.createdDate || new Date().toISOString().split('T')[0]
     };
 
     const { data, error } = await window.supabase
