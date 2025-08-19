@@ -7350,8 +7350,13 @@ const handleRejectQuote = async (quote) => {
    const handleConvertQuoteToJob = async (quote) => {
   try {
     // Generate new job number
-    const jobCount = jobs.length + 1;
-    const jobNumber = `TWS-${new Date().getFullYear()}-${String(jobCount).padStart(4, '0')}`;
+    // Get the highest job number from existing jobs
+const currentYear = new Date().getFullYear();
+const yearJobs = jobs.filter(j => j.jobNumber && j.jobNumber.startsWith(`TWS-${currentYear}`));
+const lastJobNumber = yearJobs.length > 0 
+  ? Math.max(...yearJobs.map(j => parseInt(j.jobNumber.split('-')[2]) || 0))
+  : 0;
+const jobNumber = `TWS-${currentYear}-${String(lastJobNumber + 1).padStart(4, '0')}`;
     
     // Create job from quote - matching exact fields that handleAddJob expects
     const newJob = {
