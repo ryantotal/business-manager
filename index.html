@@ -2318,6 +2318,9 @@ style={{ backgroundColor: jobColors[job.jobType] }}
 <div>
 <div className={`text-sm font-medium text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.jobNumber}
+{job.quoteReference && (
+  <div className="text-xs text-gray-500 mt-1">From Quote: {job.quoteReference}</div>
+)}
 </div>
 <div className={`text-sm text-gray-500 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {new Date(job.jobDate).toLocaleDateString('en-GB')}
@@ -2770,6 +2773,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
       <option value="SENT">Sent</option>
       <option value="ACCEPTED">Accepted</option>
       <option value="REJECTED">Rejected</option>
+      <option value="CONVERTED">Converted</option>
       <option value="EXPIRED">Expired</option>
     </select>
     <select
@@ -2842,12 +2846,13 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
      <tbody className="bg-white divide-y divide-gray-200">
   {filteredQuotes.map(quote => {
     const statusColors = {
-      'PENDING': 'bg-yellow-100 text-yellow-800',
-      'SENT': 'bg-blue-100 text-blue-800',
-      'ACCEPTED': 'bg-green-100 text-green-800',
-      'REJECTED': 'bg-red-100 text-red-800',
-      'EXPIRED': 'bg-gray-100 text-gray-800'
-    };
+  'PENDING': 'bg-yellow-100 text-yellow-800',
+  'SENT': 'bg-blue-100 text-blue-800',
+  'ACCEPTED': 'bg-green-100 text-green-800',
+  'REJECTED': 'bg-red-100 text-red-800',
+  'EXPIRED': 'bg-gray-100 text-gray-800',
+  'CONVERTED': 'bg-green-100 text-green-800'  // Add this line
+};
     const expired = isExpired(quote);
     return (
       <tr
@@ -2858,49 +2863,56 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
         onClick={() => handleQuoteClick(quote)}
       >
         <td className={`px-6 py-4 whitespace-nowrap ${
-          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-          expired ? 'line-through decoration-gray-500' : ''
-        }`}>
+  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  expired ? 'line-through decoration-gray-500' : ''
+}`}>
           <div className="text-sm font-medium text-gray-900">{quote.quoteNumber}</div>
           <div className="text-xs text-gray-500">{new Date(quote.createdDate).toLocaleDateString('en-GB')}</div>
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
-          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-          expired ? 'line-through decoration-gray-500' : ''
-        }`}>
+  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  expired ? 'line-through decoration-gray-500' : ''
+}`}>
           <div>
             <div className="text-sm text-gray-900">{quote.customerName}</div>
             <div className="text-sm text-gray-500">{quote.customerContact}</div>
           </div>
         </td>
-        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
-          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-          expired ? 'line-through decoration-gray-500' : ''
-        }`}>
+        <td className={`px-6 py-4 whitespace-nowrap ${
+  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  expired ? 'line-through decoration-gray-500' : ''
+}`}>
           {quote.supplierName || '-'}
         </td>
-        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
-          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-          expired ? 'line-through decoration-gray-500' : ''
-        }`}>
+        <td className={`px-6 py-4 whitespace-nowrap ${
+  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  expired ? 'line-through decoration-gray-500' : ''
+}`}>
           {quote.wasteType || quote.aggregateType || quote.jobType || '-'}
         </td>
-        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
-          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-          expired ? 'line-through decoration-gray-500' : ''
-        }`}>
+        <td className={`px-6 py-4 whitespace-nowrap ${
+  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  expired ? 'line-through decoration-gray-500' : ''
+}`}>
           {quote.siteAddress || quote.siteAddress1 || '-'}
         </td>
-        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
-          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-          expired ? 'line-through decoration-gray-500' : ''
-        }`}>
+        <td className={`px-6 py-4 whitespace-nowrap ${
+  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  expired ? 'line-through decoration-gray-500' : ''
+}`}>
           {quote.sitePostcode || quote.postcode || '-'}
         </td>
-        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
-          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-          expired ? 'line-through decoration-gray-500' : ''
-        }`}>
+        <td className={`px-6 py-4 whitespace-nowrap ${
+  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  expired ? 'line-through decoration-gray-500' : ''
+}`}>
           {quote.jobType}
         </td>
         <td className="px-6 py-4 whitespace-nowrap">
@@ -2910,16 +2922,18 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
             {expired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
           </span>
         </td>
-        <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${
-          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-          expired ? 'line-through decoration-gray-500' : ''
-        }`}>
+        <td className={`px-6 py-4 whitespace-nowrap ${
+  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  expired ? 'line-through decoration-gray-500' : ''
+}`}>
           {quote.status === 'REJECTED' ? (quote.rejected_reason || '-') : '-'}
         </td>
-        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 ${
-          quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-          expired ? 'line-through decoration-gray-500' : ''
-        }`}>
+        <td className={`px-6 py-4 whitespace-nowrap ${
+  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
+  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  expired ? 'line-through decoration-gray-500' : ''
+}`}>
           £{quote.totalPrice?.toFixed(2)}
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -7333,8 +7347,14 @@ const handleRejectQuote = async (quote) => {
 
 const handleConvertQuoteToJob = async (quote) => {
   try {
+    // Generate new job number
+    const jobCount = jobs.length + 1;
+    const jobNumber = `TWS-${new Date().getFullYear()}-${String(jobCount).padStart(4, '0')}`;
+    
     // Create job from quote
     const newJob = {
+      jobNumber: jobNumber,  // New job number
+      quoteReference: quote.quoteNumber,  // Store quote reference
       customerName: quote.customerName,
       customerPO: '',
       supplierName: quote.supplierName || '',
@@ -7352,12 +7372,12 @@ const handleConvertQuoteToJob = async (quote) => {
       vatRate: 20,
       jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
       status: 'CONFIRMED',
-      priority: 'Medium',
+      priority: quote.priority || 'Medium',
       siteAddress1: quote.siteAddress || '',
       sitePostcode: quote.sitePostcode || '',
       siteContact: quote.customerContact || '',
       sitePhone: quote.customerPhone || '',
-      notes: `Created from quote ${quote.quoteNumber}. ${quote.notes || ''}`.trim(),
+      notes: `Converted from Quote: ${quote.quoteNumber}. ${quote.notes || ''}`.trim(),
       invoiceNumber: '',
       invoiceStatus: 'Not Invoiced',
       paymentStatus: 'Not Paid',
@@ -7366,14 +7386,44 @@ const handleConvertQuoteToJob = async (quote) => {
       lineItems: quote.lineItems || []
     };
     
-    // Set editing job and show form
-    setEditingJob(newJob);
-    setShowJobForm(true);
+   // Save job to database (let Supabase generate the UUID)
+    const { data: jobData, error: jobError } = await window.supabase
+      .from('jobs')
+      .insert([newJob])
+      .select()
+      .single();
+    
+    if (jobError) throw jobError;
+    
+    // Update quote status to CONVERTED
+    const { error: quoteError } = await window.supabase
+      .from('quotes')
+      .update({ 
+        status: 'CONVERTED',
+        converted_date: new Date().toISOString(),
+        job_reference: jobNumber  // Store the new job number
+      })
+      .eq('id', quote.id);
+    
+    if (quoteError) throw quoteError;
+    
+    // Update local state
+    setJobs([...jobs, jobData]);
+    setQuotes(quotes.map(q => 
+      q.id === quote.id 
+        ? { ...q, status: 'CONVERTED', job_reference: jobNumber }
+        : q
+    ));
+    
+    // Close the quote view and switch to jobs tab
     setShowFullPageQuote(null);
-    alert('Please complete the job details and save to create the job.');
+    setActiveTab('jobs');
+    
+    alert(`✅ Quote ${quote.quoteNumber} successfully converted to Job ${jobNumber}!`);
+    
   } catch (error) {
-    console.error('Error converting quote:', error);
-    alert('Error converting quote: ' + error.message);
+    console.error('Error converting quote to job:', error);
+    alert('Error converting quote to job: ' + error.message);
   }
 };
           return (
@@ -10004,6 +10054,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                     <option value="SENT">Sent to Customer</option>
                     <option value="ACCEPTED">Accepted</option>
                     <option value="REJECTED">Rejected</option>
+                    <option value="CONVERTED">Converted</option>
                     <option value="EXPIRED">Expired</option>
                   </select>
                 </div>
