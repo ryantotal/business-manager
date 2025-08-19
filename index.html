@@ -6753,90 +6753,95 @@ useEffect(() => {
             ...(user.role === 'ADMIN' ? [{ id: 'admin', name: 'Admin', icon: 'Settings' }] : [])
           ];
 
-          const handleAddJob = async (newJob) => {
+      const handleAddJob = async (newJob) => {
   // Prevent duplicate submissions
   if (isSubmitting) return;
   setIsSubmitting(true);
   
-try {
+  try {
     // Save to Supabase database
     // Convert camelCase JavaScript fields to snake_case database fields
-const jobForDatabase = {
-
-  job_number: newJob.jobNumber,
-  quote_reference: newJob.quoteReference || null,
-  job_date: newJob.jobDate || null, // Handle empty dates
-  customer_name: newJob.customerName,
-  customer_po: newJob.customerPO || null,
-  supplier_name: newJob.supplierName || null,
-  supplier_ref: newJob.supplierRef || null,
-  haulier_name: newJob.haulierName || null,
-  job_type: newJob.jobType,
-  waste_type: newJob.wasteType || null,
-  skip_size: newJob.skipSize || null,
-  aggregate_type: newJob.aggregateType || null,
-  quantity: newJob.quantity || 1,
-  unit: newJob.unit || 'skip',
-  weight: newJob.weight || null, // Handle empty numbers
-  customer_unit_price: newJob.customerUnitPrice || 0,
-  customer_final_price: newJob.customerFinalPrice || 0,
-  supplier_unit_price: newJob.supplierUnitPrice || 0,
-  supplier_final_price: newJob.supplierFinalPrice || 0,
-  vat_rate: newJob.vatRate || 20,
-  gross_profit: newJob.grossProfit || 0,
-  profit_margin: newJob.profitMargin || 0,
-  job_value: newJob.jobValue || 0,
-  site_address: newJob.siteAddress || null,
-  site_address1: newJob.siteAddress1 || null,
-  site_address2: newJob.siteAddress2 || null,
-  site_city: newJob.siteCity || null,
-  site_postcode: newJob.sitePostcode || null,
-  site_contact: newJob.siteContact || null,
-  site_phone: newJob.sitePhone || null,
-  site_notes: newJob.siteNotes || null,
-  delivery_instructions: newJob.deliveryInstructions || null,
-  access_restrictions: newJob.accessRestrictions || null,
-  time_slot: newJob.timeSlot || null,
-  collection_date: newJob.collectionDate || null, // Handle empty dates
-  status: newJob.status || 'CONFIRMED',
-  priority: newJob.priority || 'Medium',
-  is_completed: newJob.isCompleted || false,
-  is_cancelled: newJob.isCancelled || false,
-  waste_transfer_note: newJob.wasteTransferNote || null,
-  hazardous_waste: newJob.hazardousWaste || false,
-  consignment_note: newJob.consignmentNote || null,
-  invoice_number: newJob.invoiceNumber || null,
-  invoice_status: newJob.invoiceStatus || 'Not Invoiced',
-  payment_status: newJob.paymentStatus || 'Not Paid',
-  sage_product_id: newJob.sageProductId || null,
-  sage_product_name: newJob.sageProductName || null,
-  sage_id: newJob.sage_id || null,
-  line_items: JSON.stringify(newJob.lineItems || []),
-  parent_job_id: newJob.parentJobId || null,
-  linked_jobs: JSON.stringify(newJob.linkedJobs || []),
-  notes: newJob.notes || null
-};
-const { data, error } = await window.supabase
-  .from('jobs')
-  .insert([jobForDatabase])
+    const jobForDatabase = {
+      job_number: newJob.jobNumber,
+      quote_reference: newJob.quoteReference || null,
+      job_date: newJob.jobDate || null,
+      customer_name: newJob.customerName,
+      customer_po: newJob.customerPO || null,
+      supplier_name: newJob.supplierName || null,
+      supplier_ref: newJob.supplierRef || null,
+      haulier_name: newJob.haulierName || null,
+      job_type: newJob.jobType,
+      waste_type: newJob.wasteType || null,
+      skip_size: newJob.skipSize || null,
+      aggregate_type: newJob.aggregateType || null,
+      quantity: newJob.quantity || 1,
+      unit: newJob.unit || 'skip',
+      weight: newJob.weight || null,
+      customer_unit_price: newJob.customerUnitPrice || 0,
+      customer_final_price: newJob.customerFinalPrice || 0,
+      supplier_unit_price: newJob.supplierUnitPrice || 0,
+      supplier_final_price: newJob.supplierFinalPrice || 0,
+      vat_rate: newJob.vatRate || 20,
+      gross_profit: newJob.grossProfit || 0,
+      profit_margin: newJob.profitMargin || 0,
+      job_value: newJob.jobValue || 0,
+      site_address: newJob.siteAddress || null,
+      site_address1: newJob.siteAddress1 || null,
+      site_address2: newJob.siteAddress2 || null,
+      site_city: newJob.siteCity || null,
+      site_postcode: newJob.sitePostcode || null,
+      site_contact: newJob.siteContact || null,
+      site_phone: newJob.sitePhone || null,
+      site_notes: newJob.siteNotes || null,
+      delivery_instructions: newJob.deliveryInstructions || null,
+      access_restrictions: newJob.accessRestrictions || null,
+      time_slot: newJob.timeSlot || null,
+      collection_date: newJob.collectionDate || null,
+      status: newJob.status || 'CONFIRMED',
+      priority: newJob.priority || 'Medium',
+      is_completed: newJob.isCompleted || false,
+      is_cancelled: newJob.isCancelled || false,
+      waste_transfer_note: newJob.wasteTransferNote || null,
+      hazardous_waste: newJob.hazardousWaste || false,
+      consignment_note: newJob.consignmentNote || null,
+      invoice_number: newJob.invoiceNumber || null,
+      invoice_status: newJob.invoiceStatus || 'Not Invoiced',
+      payment_status: newJob.paymentStatus || 'Not Paid',
+      sage_product_id: newJob.sageProductId || null,
+      sage_product_name: newJob.sageProductName || null,
+      sage_id: newJob.sage_id || null,
+      line_items: JSON.stringify(newJob.lineItems || []),
+      parent_job_id: newJob.parentJobId || null,
+      linked_jobs: JSON.stringify(newJob.linkedJobs || []),
+      notes: newJob.notes || null
+    };
+    
+    const { data, error } = await window.supabase
+      .from('jobs')
+      .insert([jobForDatabase])
       .select();
     
     if (error) throw error;
 
+    // IMPORTANT FIX: Use the returned data which includes the generated UUID
+    const savedJob = {
+      ...newJob,
+      id: data[0].id  // This is the generated UUID from Supabase
+    };
 
-    // Add to local jobs state immediately (like it worked before)
-setJobs(prevJobs => [newJob, ...prevJobs]);
+    // Add to local jobs state with the proper ID
+    setJobs(prevJobs => [savedJob, ...prevJobs]);
 
-setShowJobForm(false);
-setEditingJob(null);
+    setShowJobForm(false);
+    setEditingJob(null);
     
-    console.log('Job saved to database:', data);
+    console.log('Job saved to database with ID:', data[0].id);
   } catch (error) {
-  console.error('Error saving job:', error);
-  alert('Error saving job: ' + error.message);
-} finally {
-  setIsSubmitting(false);
-}
+    console.error('Error saving job:', error);
+    alert('Error saving job: ' + error.message);
+  } finally {
+    setIsSubmitting(false);
+  }
 };
 
  const handleUpdateJob = async (updatedJob) => {
