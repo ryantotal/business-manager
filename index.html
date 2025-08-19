@@ -6717,7 +6717,7 @@ useEffect(() => {
           rejectedDate: quote.rejected_date,
           lineItems: quote.line_items ? JSON.parse(quote.line_items) : [],
           // FIX: Ensure createdDate is properly set
-         created_at: newQuote.createdDate || new Date().toISOString().split('T')[0]
+        created_at: quote.created_at || new Date().toISOString().split('T')[0]
         }));
         
         setQuotes(quotesWithCamelCase);
