@@ -4277,26 +4277,13 @@ const handleApplySync = async () => {
     
     // Add new customers directly to database
     for (const sageCustomer of syncResults.new) {
-      // First check if this sage_id already exists
-      const { data: existing, error: checkError } = await window.supabase
-        .from('customers')
-        .select('sage_id')
-        .eq('sage_id', sageCustomer.sage_id)
-        .single();
+    
       
-      if (existing) {
-        console.log(`Skipping duplicate customer: ${sageCustomer.name}`);
-        skipCount++;
-        continue;
-      }
-      
-      // Save to Supabase with the correct field names
       // Save to Supabase with the correct field names
 const { error } = await window.supabase
   .from('customers')
   .insert({
     name: sageCustomer.name,
-    sage_id: sageCustomer.sage_id,
     reference: sageCustomer.reference || '',
     email: sageCustomer.email || '',
     phone: sageCustomer.phone || '',
