@@ -8081,30 +8081,30 @@ for (const sageCustomer of customerContacts) {
 
     if (!existing) {
         // Map Sage fields to your database fields
-    const mappedCustomers = sageCustomers.map(customer => ({
-      sage_id: customer.id,
-      name: customer.name || '',
-      email: customer.main_contact_email || '',
-      phone: customer.main_contact_telephone || customer.telephone || '',
-      mobile: customer.mobile || customer.main_contact_mobile || '',
-      reference: customer.reference || '',
-      credit_limit: parseFloat(customer.credit_limit) || 0,
-      credit_days: parseInt(customer.credit_days) || 30,
-      account_status: customer.deletable === false ? 'Active' : 'Inactive',
-      main_contact_name: customer.main_contact_name || '',
-      delivery_address: customer.delivery_address ? {
-        address_line_1: customer.delivery_address.address_line_1 || '',
-        address_line_2: customer.delivery_address.address_line_2 || '',
-        city: customer.delivery_address.city || '',
-        region: customer.delivery_address.region || '',
-        postal_code: customer.delivery_address.postal_code || '',
-        country: customer.delivery_address.country?.name || 'United Kingdom'
+    const mappedCustomer = {
+      sage_id: sageCustomer.id,
+      name: sageCustomer.name || '',
+      email: sageCustomer.main_contact_email || '',
+      phone: sageCustomer.main_contact_telephone || sageCustomer.telephone || '',
+      mobile: sageCustomer.mobile || sageCustomer.main_contact_mobile || '',
+      reference: sageCustomer.reference || '',
+      credit_limit: parseFloat(sageCustomer.credit_limit) || 0,
+      credit_days: parseInt(sageCustomer.credit_days) || 30,
+      account_status: sageCustomer.deletable === false ? 'Active' : 'Inactive',
+      main_contact_name: sageCustomer.main_contact_name || '',
+      delivery_address: sageCustomer.delivery_address ? {
+        address_line_1: sageCustomer.delivery_address.address_line_1 || '',
+        address_line_2: sageCustomer.delivery_address.address_line_2 || '',
+        city: sageCustomer.delivery_address.city || '',
+        region: sageCustomer.delivery_address.region || '',
+        postal_code: sageCustomer.delivery_address.postal_code || '',
+        country: sageCustomer.delivery_address.country?.name || 'United Kingdom'
       } : null,
-      vat_number: customer.tax_number || '',
-      address: customer.main_address ? 
-        `${customer.main_address.address_line_1 || ''} ${customer.main_address.address_line_2 || ''} ${customer.main_address.city || ''} ${customer.main_address.region || ''} ${customer.main_address.postal_code || ''}`.trim() 
+      vat_number: sageCustomer.tax_number || '',
+      address: sageCustomer.main_address ? 
+        `${sageCustomer.main_address.address_line_1 || ''} ${sageCustomer.main_address.address_line_2 || ''} ${sageCustomer.main_address.city || ''} ${sageCustomer.main_address.region || ''} ${sageCustomer.main_address.postal_code || ''}`.trim() 
         : ''
-}));
+    };
         syncResults.new.push(mappedCustomer);
     } else {
         // Check if data differs and add to conflicts if needed
