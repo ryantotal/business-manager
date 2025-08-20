@@ -8163,16 +8163,21 @@ county: sageCustomer.main_address?.region || '',
 
 // Try to get phone if the method exists
 if (this.getContactPersonDetails && sageCustomer.main_contact_person?.id) {
-    try {
-        const fullContact = await this.getContactPersonDetails(sageCustomer.id);
-        if (fullContact) {
-            mappedCustomer.phone = fullContact.telephone || fullContact.phone || '';
-            mappedCustomer.mobile = fullContact.mobile || '';
-            mappedCustomer.email = fullContact.email || mappedCustomer.email;
-        }
-    } catch (err) {
-        // Silent fail - just use empty phone
+  try {
+    console.log(`📞 Fetching phone for ${sageCustomer.displayed_as}...`);
+    const fullContact = await this.getContactPersonDetails(sageCustomer.id);
+    console.log(`   Result:`, fullContact);
+    if (fullContact) {
+      mappedCustomer.phone = fullContact.telephone || fullContact.phone || '';
+      mappedCustomer.mobile = fullContact.mobile || '';
+      mappedCustomer.email = fullContact.email || mappedCustomer.email;
+      console.log(`   ✓ Set phone: ${mappedCustomer.phone}, mobile: ${mappedCustomer.mobile}`);
     }
+  } catch (err) {
+    console.log(`   ✗ Error: ${err.message}`);
+  }
+} else {
+  console.log(`⚠️ Skipping phone for ${sageCustomer.displayed_as}: No contact person ID`);
 }
 
     if (!existing) {
