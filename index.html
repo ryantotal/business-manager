@@ -8088,6 +8088,38 @@ async createDraftInvoice(invoiceData) {
     
  // Inside the for loop that processes sageCustomers
 for (const sageCustomer of customerContacts) {
+  // DEBUG: Log first 3 customers to see what Sage provides
+if (customerContacts.indexOf(sageCustomer) < 3) {
+    console.log('=== SAGE CUSTOMER #' + customerContacts.indexOf(sageCustomer) + ' ===');
+    console.log('Full object:', sageCustomer);
+    console.log('Field names:', Object.keys(sageCustomer));
+    
+    // Log specific fields we're trying to map
+    console.log('Looking for email:', {
+        main_contact_email: sageCustomer.main_contact_email,
+        email: sageCustomer.email,
+        contact_email: sageCustomer.contact_email
+    });
+    
+    console.log('Looking for phone:', {
+        main_contact_telephone: sageCustomer.main_contact_telephone,
+        telephone: sageCustomer.telephone,
+        phone: sageCustomer.phone,
+        contact_telephone: sageCustomer.contact_telephone
+    });
+    
+    console.log('Looking for address:', {
+        main_address: sageCustomer.main_address,
+        address: sageCustomer.address,
+        delivery_address: sageCustomer.delivery_address
+    });
+    
+    console.log('Looking for credit info:', {
+        credit_limit: sageCustomer.credit_limit,
+        credit_days: sageCustomer.credit_days,
+        payment_terms: sageCustomer.payment_terms
+    });
+}
     const existing = existingCustomers.data?.find(
     c => c.sage_id === sageCustomer.id  // Match by Sage ID instead!
 );
