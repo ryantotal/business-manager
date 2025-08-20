@@ -8104,8 +8104,6 @@ for (const sageCustomer of customerContacts) {
     const existing = existingCustomers.data?.find(
         c => c.vat_number === sageCustomer.tax_number
     );
-
-    if (!existing) {
         // Map Sage fields to your database fields
     const mappedCustomer = {
       sage_id: sageCustomer.id,
@@ -8131,6 +8129,9 @@ for (const sageCustomer of customerContacts) {
         `${sageCustomer.main_address.address_line_1 || ''} ${sageCustomer.main_address.address_line_2 || ''} ${sageCustomer.main_address.city || ''} ${sageCustomer.main_address.region || ''} ${sageCustomer.main_address.postal_code || ''}`.trim() 
         : ''
     };
+
+    if (!existing) {
+    
         syncResults.new.push(mappedCustomer);
     } else {
     // Update existing customer with latest Sage data
