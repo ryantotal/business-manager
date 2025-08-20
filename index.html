@@ -8076,7 +8076,7 @@ async createDraftInvoice(invoiceData) {
  // Inside the for loop that processes sageCustomers
 for (const sageCustomer of customerContacts) {
     const existing = existingCustomers.data?.find(
-        c => c.vatNumber === sageCustomer.tax_number
+        c => c.vat_number === sageCustomer.tax_number
     );
 
     if (!existing) {
