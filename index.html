@@ -8089,8 +8089,8 @@ async createDraftInvoice(invoiceData) {
  // Inside the for loop that processes sageCustomers
 for (const sageCustomer of customerContacts) {
     const existing = existingCustomers.data?.find(
-        c => c.vat_number === sageCustomer.tax_number
-    );
+    c => c.sage_id === sageCustomer.id  // Match by Sage ID instead!
+);
         // Map Sage fields to your database fields
     const mappedCustomer = {
       sage_id: sageCustomer.id,
