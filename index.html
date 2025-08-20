@@ -4318,7 +4318,33 @@ const { error } = await window.supabase
       
       successCount++;
     }
-    
+    // Update existing customers with latest Sage data
+        for (const sageCustomer of syncResults.updated) {
+            const { error: updateError } = await window.supabase
+                .from('customers')
+                .update({
+                    name: sageCustomer.name,
+                    sage_id: sageCustomer.sage_id,
+                    reference: sageCustomer.reference || '',
+                    email: sageCustomer.email || '',
+                    phone: sageCustomer.phone || '',
+                    mobile: sageCustomer.mobile || '',
+                    vat_number: sageCustomer.vat_number || '',
+                    address: sageCustomer.address || '',
+                    credit_limit: sageCustomer.credit_limit,
+                    credit_days: sageCustomer.credit_days,
+                    account_status: sageCustomer.account_status,
+                    delivery_address: sageCustomer.delivery_address,
+                    main_contact_name: sageCustomer.main_contact_name || ''
+                })
+                .eq('id', sageCustomer.id);
+
+            if (!updateError) {
+                successCount++;
+            } else {
+                console.error('Error updating customer:', updateError);
+            }
+        }
     setShowSyncDialog(false);
     setSyncResults(null);
     
@@ -8107,14 +8133,12 @@ for (const sageCustomer of customerContacts) {
     };
         syncResults.new.push(mappedCustomer);
     } else {
-        // Check if data differs and add to conflicts if needed
-        if (existing.companyName !== (sageCustomer.name || sageCustomer.displayed_as)) {
-            syncResults.conflicts.push({
-                sage: sageCustomer,
-                local: existing
-            });
-        }
-    }
+    // Update existing customer with latest Sage data
+    syncResults.updated.push({
+        ...mappedCustomer,
+        id: existing.id  // Preserve the existing database ID
+    });
+}
 }
     
     return syncResults;
