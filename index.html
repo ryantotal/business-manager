@@ -4284,6 +4284,7 @@ const { error } = await window.supabase
   .from('customers')
   .insert({
     name: sageCustomer.name,
+    sage_id: sageCustomer.sage_id,
     reference: sageCustomer.reference || '',
     email: sageCustomer.email || '',
     phone: sageCustomer.phone || '',
@@ -4311,7 +4312,6 @@ const { error } = await window.supabase
                 .from('customers')
                 .update({
                     name: sageCustomer.name,
-                    sage_id: sageCustomer.sage_id,
                     reference: sageCustomer.reference || '',
                     email: sageCustomer.email || '',
                     phone: sageCustomer.phone || '',
