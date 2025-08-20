@@ -8124,30 +8124,36 @@ if (customerContacts.indexOf(sageCustomer) < 3) {
     c => c.sage_id === sageCustomer.id  // Match by Sage ID instead!
 );
         // Map Sage fields to your database fields
-    const mappedCustomer = {
-      sage_id: sageCustomer.id,
-      name: sageCustomer.name || '',
-      email: sageCustomer.main_contact_email || '',
-      phone: sageCustomer.main_contact_telephone || sageCustomer.telephone || '',
-      mobile: sageCustomer.mobile || sageCustomer.main_contact_mobile || '',
-      reference: sageCustomer.reference || '',
-      credit_limit: parseFloat(sageCustomer.credit_limit) || 0,
-      credit_days: parseInt(sageCustomer.credit_days) || 30,
-      account_status: sageCustomer.deletable === false ? 'Active' : 'Inactive',
-      main_contact_name: sageCustomer.main_contact_name || '',
-      delivery_address: sageCustomer.delivery_address ? {
-        address_line_1: sageCustomer.delivery_address.address_line_1 || '',
-        address_line_2: sageCustomer.delivery_address.address_line_2 || '',
-        city: sageCustomer.delivery_address.city || '',
-        region: sageCustomer.delivery_address.region || '',
-        postal_code: sageCustomer.delivery_address.postal_code || '',
-        country: sageCustomer.delivery_address.country?.name || 'United Kingdom'
-      } : null,
-      vat_number: sageCustomer.tax_number || '',
-      address: sageCustomer.main_address ? 
-        `${sageCustomer.main_address.address_line_1 || ''} ${sageCustomer.main_address.address_line_2 || ''} ${sageCustomer.main_address.city || ''} ${sageCustomer.main_address.region || ''} ${sageCustomer.main_address.postal_code || ''}`.trim() 
-        : ''
-    };
+   // Map Sage fields to your database fields
+const mappedCustomer = {
+    sage_id: sageCustomer.id,
+    name: sageCustomer.displayed_as || '',  // ← Use displayed_as
+    email: sageCustomer.contact_email || '',  // ← Use contact_email
+    phone: '',  // We'll try to get this below
+    mobile: '',  
+    reference: sageCustomer.reference || '',
+    credit_limit: parseFloat(sageCustomer.credit_limit) || 0,
+    credit_days: parseInt(sageCustomer.credit_days) || 30,
+    account_status: sageCustomer.deletable === false ? 'Active' : 'Inactive',
+    main_contact_name: '',
+    delivery_address: sageCustomer.delivery_address?.displayed_as || null,
+    vat_number: sageCustomer.tax_number || '',
+    address: sageCustomer.main_address?.displayed_as || ''
+};
+
+// Try to get phone if the method exists
+if (this.getContact && sageCustomer.id) {
+    try {
+        const fullContact = await this.getContact(sageCustomer.id);
+        if (fullContact) {
+            mappedCustomer.phone = fullContact.telephone || fullContact.phone || '';
+            mappedCustomer.mobile = fullContact.mobile || '';
+            mappedCustomer.email = fullContact.email || mappedCustomer.email;
+        }
+    } catch (err) {
+        // Silent fail - just use empty phone
+    }
+}
 
     if (!existing) {
     
