@@ -5045,7 +5045,7 @@ const { data: existing } = await window.supabase
     existing.credit_limit !== sageSupplier.credit_limit ||
     existing.credit_days !== sageSupplier.credit_days;
   
-  if (hasChanges) {
+  if (true) {  // Force update to test
     // Update existing supplier with new data
     const { error: updateError } = await window.supabase
       .from('suppliers')
