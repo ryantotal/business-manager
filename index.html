@@ -4461,7 +4461,21 @@ const { error } = await window.supabase
                         <div
                           key={customer.id}
                           className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
-                          onClick={() => setSelectedCustomer(customer)}
+                          onClick={() => setSelectedCustomer({
+  ...customer,
+  creditLimit: customer.credit_limit,
+  creditDays: customer.credit_days,
+  paymentTerms: customer.credit_days,
+  creditRating: customer.credit_rating,
+  vatNumber: customer.vat_number,
+  accountStatus: customer.account_status,
+  primaryContact: customer.primary_contact,
+  businessType: customer.business_type,
+  companyName: customer.company_name,
+  deliveryAddress: customer.delivery_address,
+  contactPosition: customer.contact_position,
+  mainContactName: customer.main_contact_name
+})}
                         >
                           <div className="flex items-start justify-between mb-4">
                             <div className="flex-1">
@@ -4524,7 +4538,21 @@ const { error } = await window.supabase
                             <tr 
                               key={customer.id} 
                               className="hover:bg-gray-50 cursor-pointer"
-                              onClick={() => setSelectedCustomer(customer)}
+                             onClick={() => setSelectedCustomer({
+  ...customer,
+  creditLimit: customer.credit_limit,
+  creditDays: customer.credit_days,
+  paymentTerms: customer.credit_days,
+  creditRating: customer.credit_rating,
+  vatNumber: customer.vat_number,
+  accountStatus: customer.account_status,
+  primaryContact: customer.primary_contact,
+  businessType: customer.business_type,
+  companyName: customer.company_name,
+  deliveryAddress: customer.delivery_address,
+  contactPosition: customer.contact_position,
+  mainContactName: customer.main_contact_name
+})}
                             >
                               <td className="px-6 py-4 whitespace-nowrap">
   <div className="text-sm font-medium text-gray-900">{customer.companyName}</div>
