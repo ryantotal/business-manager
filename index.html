@@ -8438,6 +8438,24 @@ for (const sageSupplier of supplierContacts) {
   credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
   credit_days: parseInt(sageSupplier.credit_days) || 30,
 };
+// Try to get phone if the method exists
+if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
+  try {
+    console.log(`📞 Fetching phone for ${sageSupplier.displayed_as}...`);
+    const fullContact = await this.getContactPersonDetails(sageSupplier.id);
+    console.log('📞 Result:', fullContact);
+    if (fullContact) {
+      mappedSupplier.phone = fullContact.telephone || fullContact.phone || '';
+      mappedSupplier.mobile = fullContact.mobile || '';
+      mappedSupplier.email = fullContact.email || mappedSupplier.email;
+      console.log(`✓ Set phone: ${mappedSupplier.phone}, mobile: ${mappedSupplier.mobile}`);
+    }
+  } catch (err) {
+    console.log(`✗ Error: ${err.message}`);
+  }
+} else {
+  console.log(`⚠️ Skipping phone for ${sageSupplier.displayed_as}: No contact person ID`);
+}
         syncResults.new.push(mappedSupplier);
     } else {
         // Check if data differs and add to conflicts if needed
