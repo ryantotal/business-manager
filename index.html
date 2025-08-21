@@ -4915,6 +4915,59 @@ billingPostcode: customer.address ? customer.address.split('↵').pop() : '',
 const [showSyncDialog, setShowSyncDialog] = useState(false);
 const [syncResults, setSyncResults] = useState(null);
 const [syncing, setSyncing] = useState(false);
+// Change line 4919 from handleSyncFromSage to:
+const handleSyncFromSage = async () => {
+  setSyncing(true);
+  try {
+    const results = await window.SageAPI.syncSuppliersFromSage();
+    setSyncResults(results);
+    setShowSyncDialog(true);
+  } catch (error) {
+    alert('Failed to sync suppliers from Sage: ' + error.message);
+  } finally {
+    setSyncing(false);
+  }
+};
+
+// Change line 4932 from handleApplySync to:
+const handleApplySupplierSync = async () => {
+  if (!syncResults) return;
+  
+  try {
+    let successCount = 0;
+    let skipCount = 0;
+    
+    // Add new suppliers
+    for (const sageSupplier of syncResults.new) {
+      try {
+        await onAddSupplier(sageSupplier);
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to add supplier ${sageSupplier.companyName}:`, error);
+        skipCount++;
+      }
+    }
+    
+    // Update existing suppliers
+    for (const sageSupplier of syncResults.updated) {
+      try {
+        await onUpdateSupplier(sageSupplier);
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to update supplier ${sageSupplier.companyName}:`, error);
+        skipCount++;
+      }
+    }
+    
+    alert(`Sync complete! ${successCount} suppliers synced, ${skipCount} skipped.`);
+    setShowSyncDialog(false);
+    setSyncResults(null);
+    
+  } catch (error) {
+    console.error('Error applying sync:', error);
+    alert('Failed to apply sync: ' + error.message);
+  }
+};
           const filteredSuppliers = suppliers.filter(supplier => {
             if (searchQuery && 
                 !(supplier.name || supplier.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -4944,7 +4997,7 @@ const [syncing, setSyncing] = useState(false);
               setSelectedSupplier(null);
             }
           };
-          const handleSyncFromSage = async () => {
+          const handleSupplierSyncFromSage = async () => {
   setSyncing(true);
   try {
     const results = await window.SageAPI.syncSuppliersFromSage();
@@ -5043,7 +5096,7 @@ const supplierData = {
   </button>
   {user?.role === 'ADMIN' && (
     <button
-      onClick={handleSyncFromSage}
+      onClick={handleSupplierSyncFromSage}
       disabled={syncing}
       className="flex items-center px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 ml-2 disabled:opacity-50 text-sm sm:text-base"
     >
@@ -7931,7 +7984,75 @@ onClick={() => {
                     onDeleteSupplier={handleDeleteSupplier}
                     user={user}
                   />
-                )}
+                  {showSyncDialog && syncResults && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="p-6 border-b border-gray-200">
+        <h2 className="text-xl font-bold">Supplier Sync Preview</h2>
+        <p className="text-gray-600">Review changes before applying</p>
+      </div>
+      
+      <div className="p-6">
+        {syncResults.new.length > 0 && (
+          <div className="mb-6">
+            <h3 className="font-semibold mb-3 text-green-700">
+              New Suppliers to Import ({syncResults.new.length})
+            </h3>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {syncResults.new.map((supplier, idx) => (
+                <div key={idx} className="p-3 bg-green-50 rounded-lg">
+                  <div className="font-medium">{supplier.companyName}</div>
+                  <div className="text-sm text-gray-600">{supplier.email}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {syncResults.updated && syncResults.updated.length > 0 && (
+          <div className="mb-6">
+            <h3 className="font-semibold mb-3 text-yellow-700">
+              Suppliers to Update ({syncResults.updated.length})
+            </h3>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {syncResults.updated.map((supplier, idx) => (
+                <div key={idx} className="p-3 bg-yellow-50 rounded-lg">
+                  <div className="font-medium">{supplier.companyName}</div>
+                  <div className="text-sm text-gray-600">{supplier.email}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {syncResults.new.length === 0 && (!syncResults.updated || syncResults.updated.length === 0) && (
+          <p className="text-gray-500">No suppliers to sync.</p>
+        )}
+      </div>
+      
+      <div className="p-6 border-t border-gray-200 flex justify-end space-x-4">
+        <button 
+          onClick={() => {
+            setShowSyncDialog(false);
+            setSyncResults(null);
+          }}
+          className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+        {(syncResults.new.length > 0 || (syncResults.updated && syncResults.updated.length > 0)) && (
+          <button 
+            onClick={handleApplySync}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Apply Sync
+          </button>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+              
                 {activeTab === 'quotes' && (
   <QuotesView 
     quotes={quotes}
@@ -8361,16 +8482,29 @@ for (const sageSupplier of supplierContacts) {
     if (!existing) {
         // Map Sage fields to your database fields
         const mappedSupplier = {
-            companyName: sageSupplier.displayed_as || sageSupplier.name || sageSupplier.company_name || 'No Name',
-            vatNumber: sageSupplier.tax_number || '',
-          email: sageSupplier.email || '',
-            phone: sageSupplier.main_contact_person?.phone || '',
-            address: sageSupplier.main_address?.address_line_1 || '',
-            city: sageSupplier.main_address?.city || '',
-            postcode: sageSupplier.main_address?.postal_code || '',
-            creditLimit: sageSupplier.credit_limit || 0,
-            // Add any other fields you need
-        };
+  sage_id: sageSupplier.id,
+  companyName: sageSupplier.displayed_as || sageSupplier.name || sageSupplier.company_name || 'No Name',
+  name: sageSupplier.displayed_as || sageSupplier.name || '', // For consistency
+  tradingName: sageSupplier.trading_name || '',
+  companyNumber: sageSupplier.registered_number || '',
+  vatNumber: sageSupplier.tax_number || '',
+  email: sageSupplier.email || '',
+  accountsEmail: sageSupplier.email || '', // Same as email unless separate field in Sage
+  phone: sageSupplier.main_contact_person?.phone || sageSupplier.phone || '',
+  mobile: sageSupplier.main_contact_person?.mobile || sageSupplier.mobile || '',
+  address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ') || '',
+  city: sageSupplier.main_address?.city || '',
+  postcode: sageSupplier.main_address?.postal_code || '',
+  county: sageSupplier.main_address?.region || '',
+  primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
+  position: '', // Not typically in Sage
+  supplierRating: 'A+', // Default value
+  accountStatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
+  performanceScore: 0, // Default
+  preferredSupplier: false, // Default
+  credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
+  credit_days: parseInt(sageSupplier.credit_days) || 30,
+};
         syncResults.new.push(mappedSupplier);
     } else {
         // Check if data differs and add to conflicts if needed
