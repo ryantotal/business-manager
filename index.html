@@ -5023,7 +5023,7 @@ const handleApplySync = async () => {
       // Check if supplier already exists by sage_id OR name
 const { data: existing } = await window.supabase
   .from('suppliers')
-  .select('id, sage_id, name')
+  .select('*')
   .eq('name', sageSupplier.companyName || sageSupplier.name || sageSupplier.displayed_as)
   .maybeSingle();
       
@@ -5053,7 +5053,7 @@ const { data: existing } = await window.supabase
         companyName: sageSupplier.companyName,
         tradingName: sageSupplier.tradingName,
         email: sageSupplier.email,
-        accountsEmail: sageSupplier.accountsEmail,
+        //accountsEmail: sageSupplier.accountsEmail,
         phone: sageSupplier.phone,
         mobile: sageSupplier.mobile,
         address: sageSupplier.address,
@@ -5062,7 +5062,7 @@ const { data: existing } = await window.supabase
         primaryContact: sageSupplier.primaryContact,
         position: sageSupplier.position,
         supplierRating: sageSupplier.supplierRating,
-        accountStatus: sageSupplier.accountStatus,
+        //accountStatus: sageSupplier.accountStatus,
         credit_limit: sageSupplier.credit_limit,
         credit_days: sageSupplier.credit_days,
       })
