@@ -7984,76 +7984,8 @@ onClick={() => {
                     onDeleteSupplier={handleDeleteSupplier}
                     user={user}
                   />
-              )}
-                  {showSyncDialog && syncResults && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-      <div className="p-6 border-b border-gray-200">
-        <h2 className="text-xl font-bold">Supplier Sync Preview</h2>
-        <p className="text-gray-600">Review changes before applying</p>
-      </div>
-      
-      <div className="p-6">
-        {syncResults.new.length > 0 && (
-          <div className="mb-6">
-            <h3 className="font-semibold mb-3 text-green-700">
-              New Suppliers to Import ({syncResults.new.length})
-            </h3>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {syncResults.new.map((supplier, idx) => (
-                <div key={idx} className="p-3 bg-green-50 rounded-lg">
-                  <div className="font-medium">{supplier.companyName}</div>
-                  <div className="text-sm text-gray-600">{supplier.email}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {syncResults.updated && syncResults.updated.length > 0 && (
-          <div className="mb-6">
-            <h3 className="font-semibold mb-3 text-yellow-700">
-              Suppliers to Update ({syncResults.updated.length})
-            </h3>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {syncResults.updated.map((supplier, idx) => (
-                <div key={idx} className="p-3 bg-yellow-50 rounded-lg">
-                  <div className="font-medium">{supplier.companyName}</div>
-                  <div className="text-sm text-gray-600">{supplier.email}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {syncResults.new.length === 0 && (!syncResults.updated || syncResults.updated.length === 0) && (
-          <p className="text-gray-500">No suppliers to sync.</p>
-        )}
-      </div>
-      
-      <div className="p-6 border-t border-gray-200 flex justify-end space-x-4">
-        <button 
-          onClick={() => {
-            setShowSyncDialog(false);
-            setSyncResults(null);
-          }}
-          className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-        {(syncResults.new.length > 0 || (syncResults.updated && syncResults.updated.length > 0)) && (
-          <button 
-            onClick={handleApplySync}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Apply Sync
-          </button>
-        )}
-      </div>
-    </div>
-  </div>
-)}
-            
+                  
+                )}
                 {activeTab === 'quotes' && (
   <QuotesView 
     quotes={quotes}
