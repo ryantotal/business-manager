@@ -4217,7 +4217,17 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
           const [showSyncDialog, setShowSyncDialog] = useState(false);
 const [syncResults, setSyncResults] = useState(null);
 const [syncing, setSyncing] = useState(false);
-
+// Add auto-sync interval after your other useEffect hooks
+useEffect(() => {
+  // Run quick sync every 30 minutes
+  const interval = setInterval(() => {
+    console.log('Auto-sync check at ' + new Date().toLocaleTimeString());
+    handleQuickSync();
+  }, 30 * 60 * 1000); // 30 minutes
+  
+  // Cleanup on unmount
+  return () => clearInterval(interval);
+}, []);
           const filteredCustomers = customers.filter(customer => {
   if (searchQuery && 
       !(customer.companyName || customer.name || '').toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -4263,6 +4273,59 @@ const displayCustomers = filteredCustomers.map(customer => ({
     setShowSyncDialog(true);
   } catch (error) {
     alert('Failed to sync from Sage: ' + error.message);
+  } finally {
+    setSyncing(false);
+  }
+};
+// Add this new function after handleSyncFromSage (after line 4269)
+const handleQuickSync = async () => {
+  console.log('Quick sync - checking for new customers only...');
+  setSyncing(true);
+  
+  try {
+    // Get all customers from Sage
+    const sageData = await window.SageAPI.getCustomers();
+    
+    // Get existing Sage IDs from database
+    const { data: existingCustomers } = await window.supabase
+      .from('customers')
+      .select('sage_id');
+    
+    const existingSageIds = existingCustomers ? existingCustomers.map(c => c.sage_id) : [];
+    
+    // Filter to only NEW customers
+    const newCustomers = sageData.$items.filter(function(sageCustomer) {
+      return !existingSageIds.includes(sageCustomer.id);
+    });
+    
+    if (newCustomers.length === 0) {
+      console.log('No new customers found');
+      setSyncing(false);
+      return;
+    }
+    
+    console.log('Found ' + newCustomers.length + ' new customers');
+    
+    // Process only new customers through existing sync
+    const partialResults = await window.SageAPI.syncCustomersFromSage();
+    
+    // Filter results to only include new ones
+    const filteredResults = {
+      new: partialResults.new.filter(c => 
+        newCustomers.some(nc => nc.id === c.sage_id)
+      ),
+      updated: []
+    };
+    
+    setSyncResults(filteredResults);
+    setShowSyncDialog(true);
+    
+    // Apply the new customers
+    await handleApplySync();
+    
+  } catch (error) {
+    console.error('Quick sync error:', error);
+    alert('Quick sync failed: ' + error.message);
   } finally {
     setSyncing(false);
   }
@@ -8240,6 +8303,7 @@ if (this.getContactPersonDetails && sageCustomer.main_contact_person?.id) {
     throw error;
   }
 },
+
 async syncSuppliersFromSage() {
   try {
     const sageSuppliers = await this.getSuppliers();
