@@ -5045,7 +5045,7 @@ const { data: existing } = await window.supabase
     existing.credit_limit !== sageSupplier.credit_limit ||
     existing.credit_days !== sageSupplier.credit_days;
   
-  if (true) {  // Force update to test
+ if (hasChanges) {
     // Update existing supplier with new data
     const { error: updateError } = await window.supabase
       .from('suppliers')
@@ -5082,7 +5082,7 @@ const { data: existing } = await window.supabase
      // Map the Sage fields correctly to match your database schema
 const supplierData = {
   name: sageSupplier.companyName || sageSupplier.name || sageSupplier.displayed_as || 'Unknown Supplier',
- sage_id: sageSupplier.companyName + '_' + Date.now(),
+ sage_id: sageSupplier.id,
   email: sageSupplier.email || '',
   phone: sageSupplier.telephone || sageSupplier.phone || '',
   vat_number: sageSupplier.tax_number || '',
@@ -8437,7 +8437,7 @@ async syncSuppliersFromSage() {
     const sageSuppliers = await this.getSuppliers();
     const supplierContacts = sageSuppliers.$items.filter(function(contact) {
   return contact.contact_types && contact.contact_types.some(function(type) {
-    return type.id === 'VENDOR';
+    return type.id === 'SUPPLIER';
   });
 });
     const { data: existingSuppliers, error } = await window.supabase
@@ -8455,8 +8455,8 @@ async syncSuppliersFromSage() {
     // Inside syncSuppliersFromSage - for the supplier processing loop
 for (const sageSupplier of supplierContacts) {
     const existing = existingSuppliers.data?.find(
-        s => s.vatNumber === sageSupplier.tax_number
-    );
+    s => s.sage_id === sageSupplier.id
+);
  const mappedSupplier = {
   sage_id: sageSupplier.id,
   companyName: sageSupplier.displayed_as || sageSupplier.name || sageSupplier.company_name || 'No Name',
