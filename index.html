@@ -5027,36 +5027,57 @@ const { data: existing } = await window.supabase
   .eq('name', sageSupplier.companyName || sageSupplier.name || sageSupplier.displayed_as)
   .maybeSingle();
       
-      if (existing) {
-  // Update existing supplier with new data
-  const { error: updateError } = await window.supabase
-    .from('suppliers')
-    .update({
-      companyName: sageSupplier.companyName,
-      tradingName: sageSupplier.tradingName,
-      email: sageSupplier.email,
-      accountsEmail: sageSupplier.accountsEmail,
-      phone: sageSupplier.phone,
-      mobile: sageSupplier.mobile,
-      address: sageSupplier.address,
-      vatNumber: sageSupplier.vatNumber,
-      companyNumber: sageSupplier.companyNumber,
-      primaryContact: sageSupplier.primaryContact,
-      position: sageSupplier.position,
-      supplierRating: sageSupplier.supplierRating,
-      accountStatus: sageSupplier.accountStatus,
-      credit_limit: sageSupplier.credit_limit,
-      credit_days: sageSupplier.credit_days,
-      // Keep existing sage_id
-    })
-    .eq('sage_id', sageSupplier.sage_id);
-    
-  if (!updateError) {
-    successCount++;
-    console.log(`✅ Updated supplier: ${sageSupplier.companyName}`);
+   if (existing) {
+  // Check if any data has actually changed
+  const hasChanges = 
+    existing.companyName !== sageSupplier.companyName ||
+    existing.email !== sageSupplier.email ||
+    existing.phone !== sageSupplier.phone ||
+    existing.mobile !== sageSupplier.mobile ||
+    existing.address !== sageSupplier.address ||
+    existing.vatNumber !== sageSupplier.vatNumber ||
+    existing.accountsEmail !== sageSupplier.accountsEmail ||
+    existing.tradingName !== sageSupplier.tradingName ||
+    existing.companyNumber !== sageSupplier.companyNumber ||
+    existing.primaryContact !== sageSupplier.primaryContact ||
+    existing.supplierRating !== sageSupplier.supplierRating ||
+    existing.accountStatus !== sageSupplier.accountStatus ||
+    existing.credit_limit !== sageSupplier.credit_limit ||
+    existing.credit_days !== sageSupplier.credit_days;
+  
+  if (hasChanges) {
+    // Update existing supplier with new data
+    const { error: updateError } = await window.supabase
+      .from('suppliers')
+      .update({
+        companyName: sageSupplier.companyName,
+        tradingName: sageSupplier.tradingName,
+        email: sageSupplier.email,
+        accountsEmail: sageSupplier.accountsEmail,
+        phone: sageSupplier.phone,
+        mobile: sageSupplier.mobile,
+        address: sageSupplier.address,
+        vatNumber: sageSupplier.vatNumber,
+        companyNumber: sageSupplier.companyNumber,
+        primaryContact: sageSupplier.primaryContact,
+        position: sageSupplier.position,
+        supplierRating: sageSupplier.supplierRating,
+        accountStatus: sageSupplier.accountStatus,
+        credit_limit: sageSupplier.credit_limit,
+        credit_days: sageSupplier.credit_days,
+      })
+      .eq('sage_id', sageSupplier.sage_id);
+      
+    if (!updateError) {
+      successCount++;
+      console.log(`✅ Updated supplier: ${sageSupplier.companyName}`);
+    } else {
+      console.error(`❌ Failed to update: ${updateError.message}`);
+      skipCount++;
+    }
   } else {
-    console.error(`❌ Failed to update: ${updateError.message}`);
     skipCount++;
+    console.log(`⏭️ No changes for: ${sageSupplier.companyName}`);
   }
   continue;
 }
@@ -8491,6 +8512,7 @@ if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
                 sage: sageSupplier,
                 local: existing
             });
+            syncResults.new.push(mappedSupplier);
         }
     }
 }
