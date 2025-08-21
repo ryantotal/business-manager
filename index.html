@@ -4818,7 +4818,25 @@ const { error } = await window.supabase
             </div>
           </div>
         )}
-        
+        {/* Add this section for UPDATED customers */}
+{syncResults.updated && syncResults.updated.length > 0 && (
+  <div className="mb-6">
+    <h3 className="font-semibold mb-3 text-yellow-700">
+      Customers to Update ({syncResults.updated.length})
+    </h3>
+    <div className="space-y-2 max-h-60 overflow-y-auto">
+      {syncResults.updated.map((customer, idx) => (
+        <div key={idx} className="p-3 bg-yellow-50 rounded-lg">
+          <div className="font-medium">{customer.name}</div>
+          <div className="text-sm text-gray-600">
+            {customer.email && `Email: ${customer.email}`}
+            {customer.address && ` | Address: ${customer.address}`}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
         {/* Conflicts */}
         {syncResults.conflicts.length > 0 && (
           <div className="mb-6">
