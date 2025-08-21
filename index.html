@@ -5019,8 +5019,7 @@ const handleApplySync = async () => {
     
     // Add new suppliers directly to database
     for (const sageSupplier of syncResults.new) {
-      // Check if supplier already exists
-      for (const sageSupplier of syncResults.new) {
+   
   console.log('Processing supplier:', sageSupplier.name, 'Phone:', sageSupplier.phone);  // ADD THIS
 const { data: existing } = await window.supabase
   .from('suppliers')
