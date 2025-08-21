@@ -4471,10 +4471,17 @@ const { error } = await window.supabase
   accountStatus: customer.account_status,
   primaryContact: customer.primary_contact,
   businessType: customer.business_type,
-  companyName: customer.company_name,
-  deliveryAddress: customer.delivery_address,
-  contactPosition: customer.contact_position,
-  mainContactName: customer.main_contact_name
+  companyName: customer.name,  // Note: it's 'name' not 'company_name'
+  phone: customer.phone,
+  email: customer.email,
+  address: customer.address,
+  // Parse address for the delivery address display (lines 3340-3343)
+  customerDeliveryAddress: {
+    address_line_1: customer.address?.split('↵')[0] || '',
+    address_line_2: customer.address?.split('↵')[1] || '',
+    city: customer.address?.split('↵')[2] || '',
+    postal_code: customer.address?.split('↵')[3] || ''
+  }
 })}
                         >
                           <div className="flex items-start justify-between mb-4">
@@ -4548,10 +4555,17 @@ const { error } = await window.supabase
   accountStatus: customer.account_status,
   primaryContact: customer.primary_contact,
   businessType: customer.business_type,
-  companyName: customer.company_name,
-  deliveryAddress: customer.delivery_address,
-  contactPosition: customer.contact_position,
-  mainContactName: customer.main_contact_name
+  companyName: customer.name,  // Note: it's 'name' not 'company_name'
+  phone: customer.phone,
+  email: customer.email,
+  address: customer.address,
+  // Parse address for the delivery address display (lines 3340-3343)
+  customerDeliveryAddress: {
+    address_line_1: customer.address?.split('↵')[0] || '',
+    address_line_2: customer.address?.split('↵')[1] || '',
+    city: customer.address?.split('↵')[2] || '',
+    postal_code: customer.address?.split('↵')[3] || ''
+  }
 })}
                             >
                               <td className="px-6 py-4 whitespace-nowrap">
@@ -8173,7 +8187,7 @@ if (customerContacts.indexOf(sageCustomer) < 3) {
 const mappedCustomer = {
     sage_id: sageCustomer.id,
     name: sageCustomer.displayed_as || '',  // ← Use displayed_as
-    email: sageCustomer.contact_email || '',  // ← Use contact_email
+    email: sageCustomer.email || '',
     phone: '',  // We'll try to get this below
     mobile: '',  
     reference: sageCustomer.reference || '',
