@@ -5028,11 +5028,38 @@ const { data: existing } = await window.supabase
   .maybeSingle();
       
       if (existing) {
-        console.log(`Skipping duplicate supplier: ${sageSupplier.name || sageSupplier.companyName}`);
-        skipCount++;
-        continue;
-      }
-      
+  // Update existing supplier with new data
+  const { error: updateError } = await window.supabase
+    .from('suppliers')
+    .update({
+      companyName: sageSupplier.companyName,
+      tradingName: sageSupplier.tradingName,
+      email: sageSupplier.email,
+      accountsEmail: sageSupplier.accountsEmail,
+      phone: sageSupplier.phone,
+      mobile: sageSupplier.mobile,
+      address: sageSupplier.address,
+      vatNumber: sageSupplier.vatNumber,
+      companyNumber: sageSupplier.companyNumber,
+      primaryContact: sageSupplier.primaryContact,
+      position: sageSupplier.position,
+      supplierRating: sageSupplier.supplierRating,
+      accountStatus: sageSupplier.accountStatus,
+      credit_limit: sageSupplier.credit_limit,
+      credit_days: sageSupplier.credit_days,
+      // Keep existing sage_id
+    })
+    .eq('sage_id', sageSupplier.sage_id);
+    
+  if (!updateError) {
+    successCount++;
+    console.log(`✅ Updated supplier: ${sageSupplier.companyName}`);
+  } else {
+    console.error(`❌ Failed to update: ${updateError.message}`);
+    skipCount++;
+  }
+  continue;
+}
      // Map the Sage fields correctly to match your database schema
 const supplierData = {
   name: sageSupplier.companyName || sageSupplier.name || sageSupplier.displayed_as || 'Unknown Supplier',
