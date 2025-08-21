@@ -4538,6 +4538,9 @@ const { error } = await window.supabase
   phone: customer.phone,
   email: customer.email,
   address: customer.address,
+  // ADD THESE LINES for billing address fields only:
+billingAddress: customer.address ? customer.address.split('↵').slice(0, -1).join(', ') : '',
+billingPostcode: customer.address ? customer.address.split('↵').pop() : '',
   // Parse address for the delivery address display (lines 3340-3343)
   customerDeliveryAddress: {
     address_line_1: customer.address?.split('↵')[0] || '',
@@ -4622,6 +4625,9 @@ const { error } = await window.supabase
   phone: customer.phone,
   email: customer.email,
   address: customer.address,
+  // ADD THESE LINES for billing address fields only:
+billingAddress: customer.address ? customer.address.split('↵').slice(0, -1).join(', ') : '',
+billingPostcode: customer.address ? customer.address.split('↵').pop() : '',
   // Parse address for the delivery address display (lines 3340-3343)
   customerDeliveryAddress: {
     address_line_1: customer.address?.split('↵')[0] || '',
