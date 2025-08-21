@@ -5049,23 +5049,21 @@ const { data: existing } = await window.supabase
     // Update existing supplier with new data
     const { error: updateError } = await window.supabase
       .from('suppliers')
-      .update({
-        companyName: sageSupplier.companyName,
-        tradingName: sageSupplier.tradingName,
-        email: sageSupplier.email,
-        //accountsEmail: sageSupplier.accountsEmail,
-        phone: sageSupplier.phone,
-        mobile: sageSupplier.mobile,
-        address: sageSupplier.address,
-        vatNumber: sageSupplier.vatNumber,
-        companyNumber: sageSupplier.companyNumber,
-        primaryContact: sageSupplier.primaryContact,
-        position: sageSupplier.position,
-        supplierRating: sageSupplier.supplierRating,
-        //accountStatus: sageSupplier.accountStatus,
-        credit_limit: sageSupplier.credit_limit,
-        credit_days: sageSupplier.credit_days,
-      })
+     .update({
+  name: sageSupplier.name || sageSupplier.companyName,
+  email: sageSupplier.email,
+  phone: sageSupplier.phone,
+  address: sageSupplier.address,
+  vat_number: sageSupplier.vatNumber || sageSupplier.vat_number,
+  contact_person: sageSupplier.primaryContact || sageSupplier.contact_person,
+  // These are supplier-specific (not in customers):
+  position: sageSupplier.position,
+  accountstatus: sageSupplier.accountStatus,
+  accountsemail: sageSupplier.accountsEmail,
+  supplierrating: sageSupplier.supplierRating,
+  performancescore: sageSupplier.performanceScore || 0,
+  preferredsupplier: sageSupplier.preferredSupplier || false,
+})
       .eq('sage_id', sageSupplier.sage_id);
       
     if (!updateError) {
