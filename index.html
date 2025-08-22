@@ -9353,7 +9353,7 @@ county: '',    // ADD THIS (optional)
     type="text"
     name="address"
     value={formData.address}
-    onChange={handleInputChange}
+    onChange={(e) => setFormData({...formData, address: e.target.value})}
     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
   />
 </div>
