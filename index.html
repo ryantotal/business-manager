@@ -5279,6 +5279,7 @@ const handleApplySync = async () => {
                                 <div>
                                   <div className="text-sm text-gray-900">{supplier.primaryContact}</div>
                                   <div className="text-sm text-gray-500">{supplier.email}</div>
+                                  <div className="bg-gray-50 px-4 py-2 rounded-lg">{supplier.address}</div>
                                 </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
@@ -8416,7 +8417,12 @@ for (const sageSupplier of supplierContacts) {
   accountsEmail: sageSupplier.email || '', // Same as email unless separate field in Sage
   phone: sageSupplier.main_contact_person?.phone || sageSupplier.phone || '',
   mobile: sageSupplier.main_contact_person?.mobile || sageSupplier.mobile || '',
-  address: sageSupplier.main_address?.displayed_as?.replace(/\n/g, ', ').replace(/↵/g, ', ') || '',
+ address: [
+  sageSupplier.main_address?.address_line_1,
+  sageSupplier.main_address?.city,
+  sageSupplier.main_address?.region,
+  sageSupplier.main_address?.postal_code
+].filter(Boolean).join(', ') || sageSupplier.main_address?.displayed_as || '',
   primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
   position: '', // Not typically in Sage
   supplierRating: 'A+', // Default value
@@ -9181,11 +9187,13 @@ county: '',    // ADD THIS (optional)
             performanceScore: 100,
             dateRegistered: new Date().toISOString().split('T')[0],
             notes: '',
-primaryServices: [],  // ADD THIS
-serviceAreas: [],     // ADD THIS  
-skipSizes: [],        // ADD THIS
-aggregateTypes: [],   // ADD THIS
-          });
+primaryServices: [],     // ADD THIS
+serviceAreas: [],        // ADD THIS  
+skipSizes: [],          // ADD THIS
+aggregateTypes: [],     // ADD THIS
+fleetSize: '',          // ADD THIS
+minimumOrderValue: ''   // ADD THIS
+});
 
           const [activeTab, setActiveTab] = useState('company');
 
