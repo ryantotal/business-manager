@@ -6856,7 +6856,7 @@ useEffect(() => {
     const lastSyncDate = lastSync ? new Date(lastSync) : null;
     
     // Run at 2 AM if not already done today
-    if (hour === 2 && (!lastSyncDate || lastSyncDate.getDate() !== now.getDate())) {
+    if (hour === 15 && (!lastSyncDate || lastSyncDate.getDate() !== now.getDate())) {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       
       if (user.role === 'ADMIN') {
