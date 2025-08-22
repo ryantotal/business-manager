@@ -395,27 +395,7 @@ const getFilteredProducts = () => {
       lastName: lastName,
       role: data.role
     });
-    // Auto-sync for ADMIN users on login
-if (data.role === 'ADMIN') {
-  try {
-    console.log('Starting auto-sync for admin user...');
-    
-    // Sync customers
-    const customerResults = await window.SageAPI.syncCustomersFromSage();
-    console.log(`Auto-sync: Synced ${customerResults.new.length} new, ${customerResults.updated.length} updated customers`);
-    
-    // Sync suppliers  
-    const supplierResults = await window.SageAPI.syncSuppliersFromSage();
-    console.log(`Auto-sync: Synced ${supplierResults.new.length} new, ${supplierResults.updated.length} updated suppliers`);
-    
-    // Store last sync time
-    localStorage.setItem('lastSageSync', new Date().toISOString());
-    
-  } catch (syncError) {
-    console.error('Auto-sync failed:', syncError);
-    // Don't throw - let login succeed even if sync fails
-  }
-}
+   
     return true;
   } catch (err) {
     throw new Error('Invalid credentials');
@@ -4289,7 +4269,7 @@ const displayCustomers = filteredCustomers.map(customer => ({
             // Map database customers to the format the UI expects
   setSyncing(true);
   try {
-    const results = await window.SageAPI.syncCustomersFromSage();
+    const results = await window.SageAPI.syncCustomersQuick();
     setSyncResults(results);
     setShowSyncDialog(true);
   } catch (error) {
@@ -4298,51 +4278,21 @@ const displayCustomers = filteredCustomers.map(customer => ({
     setSyncing(false);
   }
 };
-// Add this new function after handleSyncFromSage (after line 4269)
 const handleQuickSync = async () => {
   console.log('Quick sync - checking for new customers only...');
   setSyncing(true);
   
   try {
-    // Get all customers from Sage
-    const sageData = await window.SageAPI.getCustomers();
+    // Use the new quick sync function
+    const results = await window.SageAPI.syncCustomersQuick();
     
-    // Get existing Sage IDs from database
-    const { data: existingCustomers } = await window.supabase
-      .from('customers')
-      .select('sage_id');
-    
-    const existingSageIds = existingCustomers ? existingCustomers.map(c => c.sage_id) : [];
-    
-    // Filter to only NEW customers
-    const newCustomers = sageData.$items.filter(function(sageCustomer) {
-      return !existingSageIds.includes(sageCustomer.id);
-    });
-    
-    if (newCustomers.length === 0) {
-      console.log('No new customers found');
-      setSyncing(false);
-      return;
-    }
-    
-    console.log('Found ' + newCustomers.length + ' new customers');
-    
-    // Process only new customers through existing sync
-    const partialResults = await window.SageAPI.syncCustomersFromSage();
-    
-    // Filter results to only include new ones
-    const filteredResults = {
-      new: partialResults.new.filter(c => 
-        newCustomers.some(nc => nc.id === c.sage_id)
-      ),
-      updated: []
-    };
-    
-    setSyncResults(filteredResults);
+    setSyncResults(results);
     setShowSyncDialog(true);
     
-    // Apply the new customers
-    await handleApplySync();
+    // Refresh the customer list if new ones were added
+    if (results.new.length > 0) {
+      await fetchCustomers(); // Refresh the list
+    }
     
   } catch (error) {
     console.error('Quick sync error:', error);
@@ -4940,7 +4890,7 @@ const [syncing, setSyncing] = useState(false);
 const handleSyncFromSage = async () => {
   setSyncing(true);
   try {
-    const results = await window.SageAPI.syncSuppliersFromSage();
+    const results = await window.SageAPI.syncSuppliersQuick();
     setSyncResults(results);
     setShowSyncDialog(true);
   } catch (error) {
@@ -5021,7 +4971,7 @@ const handleApplySupplierSync = async () => {
           const handleSupplierSyncFromSage = async () => {
   setSyncing(true);
   try {
-    const results = await window.SageAPI.syncSuppliersFromSage();
+    const results = await window.SageAPI.syncSuppliersQuick();
     setSyncResults(results);
     setShowSyncDialog(true);
   } catch (error) {
@@ -8483,6 +8433,123 @@ if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
     return syncResults;
   } catch (error) {
     console.error('Error syncing suppliers:', error);
+    throw error;
+  }
+},
+// QUICK SYNC FUNCTIONS - For manual button clicks (new records only, no phone lookups)
+async syncCustomersQuick() {
+  try {
+    console.log('🚀 Starting QUICK customer sync (new records only)...');
+    
+    const sageCustomers = await this.getCustomers();
+    const customerContacts = sageCustomers.$items.filter(contact => 
+      contact.contact_types?.some(type => type.id === 'CUSTOMER')
+    );
+    
+    // Get existing Sage IDs only (fast query)
+    const { data: existingCustomers } = await window.supabase
+      .from('customers')
+      .select('sage_id');
+    
+    const existingSageIds = new Set(existingCustomers?.map(c => c.sage_id) || []);
+    const newCustomers = [];
+    
+    for (const sageCustomer of customerContacts) {
+      if (!existingSageIds.has(sageCustomer.id)) {
+        console.log(`✅ Found NEW customer: ${sageCustomer.displayed_as}`);
+        
+        // Quick mapping - NO phone API calls
+        const mappedCustomer = {
+          sage_id: sageCustomer.id,
+          name: sageCustomer.displayed_as || '',
+          email: sageCustomer.email || '',
+          phone: '', // Skip phone lookup for quick sync
+          mobile: '',
+          reference: sageCustomer.reference || '',
+          credit_limit: parseFloat(sageCustomer.credit_limit) || 0,
+          credit_days: parseInt(sageCustomer.credit_days) || 30,
+          account_status: sageCustomer.deletable === false ? 'Active' : 'Inactive',
+          address: sageCustomer.main_address?.displayed_as || '',
+          city: sageCustomer.main_address?.city || '',
+          postcode: sageCustomer.main_address?.postal_code || '',
+          county: sageCustomer.main_address?.region || '',
+          vat_number: sageCustomer.tax_number || '',
+          delivery_address: sageCustomer.delivery_address?.displayed_as || null
+        };
+        
+        // Insert immediately
+        const { error } = await window.supabase.from('customers').insert(mappedCustomer);
+        if (!error) {
+          newCustomers.push(mappedCustomer);
+        } else {
+          console.error(`Failed to insert customer ${sageCustomer.displayed_as}:`, error);
+        }
+      }
+    }
+    
+    console.log(`✅ Quick sync complete: ${newCustomers.length} new customers added`);
+    return { new: newCustomers, updated: [] };
+    
+  } catch (error) {
+    console.error('❌ Quick customer sync failed:', error);
+    throw error;
+  }
+},
+
+async syncSuppliersQuick() {
+  try {
+    console.log('🚀 Starting QUICK supplier sync (new records only)...');
+    
+    const sageSuppliers = await this.getSuppliers();
+    const supplierContacts = sageSuppliers.$items.filter(contact => 
+      contact.contact_types?.some(type => type.id === 'SUPPLIER')
+    );
+    
+    // Get existing Sage IDs only (fast query)
+    const { data: existingSuppliers } = await window.supabase
+      .from('suppliers')
+      .select('sage_id');
+    
+    const existingSageIds = new Set(existingSuppliers?.map(s => s.sage_id) || []);
+    const newSuppliers = [];
+    
+    for (const sageSupplier of supplierContacts) {
+      if (!existingSageIds.has(sageSupplier.id)) {
+        console.log(`✅ Found NEW supplier: ${sageSupplier.displayed_as}`);
+        
+        // Quick mapping - NO phone API calls
+        const mappedSupplier = {
+          sage_id: sageSupplier.id,
+          name: sageSupplier.displayed_as || sageSupplier.name || '',
+          email: sageSupplier.email || '',
+          phone: '', // Skip phone lookup for quick sync
+          mobile: '',
+          reference: sageSupplier.reference || '',
+          address: sageSupplier.main_address?.displayed_as || '',
+          city: sageSupplier.main_address?.city || '',
+          postcode: sageSupplier.main_address?.postal_code || '',
+          county: sageSupplier.main_address?.region || '',
+          vat_number: sageSupplier.tax_number || '',
+          credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
+          credit_days: parseInt(sageSupplier.credit_days) || 30,
+          account_status: sageSupplier.deletable === false ? 'Active' : 'Inactive'
+        };
+        
+        // Insert immediately
+        const { error } = await window.supabase.from('suppliers').insert(mappedSupplier);
+        if (!error) {
+          newSuppliers.push(mappedSupplier);
+        } else {
+          console.error(`Failed to insert supplier ${sageSupplier.displayed_as}:`, error);
+        }
+      }
+    }
+    
+    console.log(`✅ Quick sync complete: ${newSuppliers.length} new suppliers added`);
+    return { new: newSuppliers, updated: [] };
+    
+  } catch (error) {
+    console.error('❌ Quick supplier sync failed:', error);
     throw error;
   }
 },
