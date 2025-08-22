@@ -8416,12 +8416,7 @@ for (const sageSupplier of supplierContacts) {
   accountsEmail: sageSupplier.email || '', // Same as email unless separate field in Sage
   phone: sageSupplier.main_contact_person?.phone || sageSupplier.phone || '',
   mobile: sageSupplier.main_contact_person?.mobile || sageSupplier.mobile || '',
- address: [
-  sageSupplier.main_address?.address_line_1,
-  sageSupplier.main_address?.city,
-  sageSupplier.main_address?.region,
-  sageSupplier.main_address?.postal_code
-].filter(Boolean).join(', ') || sageSupplier.main_address?.displayed_as || '',
+  address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ').replace(/([a-z])([A-Z])/g, '$1, $2').replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1, $2') || '',
   primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
   position: '', // Not typically in Sage
   supplierRating: 'A+', // Default value
@@ -9147,53 +9142,46 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
         // Supplier Form Component
         const SupplierForm = ({ supplier, onClose, onSave }) => {
-          const [formData, setFormData] = useState(supplier || {
-            companyName: '',
-            tradingName: '',
-            companyNumber: '',
-            vatNumber: '',
-            primaryContact: '',
-            contactPosition: '',
-            phone: '',
-            mobile: '',
-            email: '',
-            accountsEmail: '',
-            email: '',
-address: '',  // ADD THIS
-city: '',     // ADD THIS (optional)
-postcode: '',  // ADD THIS (optional)
-county: '',    // ADD THIS (optional)
-            supplierRating: 'B',
-            preferredSupplier: false,
-            primaryServices: [],
-            wasteCarrierLicense: '',
-            wasteCarrierExpiry: '',
-            environmentalPermits: '',
-            publicLiabilityInsurance: '',
-            insuranceExpiry: '',
-            insuranceAmount: '',
-            serviceAreas: [],
-            fleetSize: '',
-            skipSizes: [],
-            aggregateTypes: [],
-            certifications: [],
-            bankName: '',
-            bankAccountNumber: '',
-            bankSortCode: '',
-            paymentTerms: 30,
-            minimumOrderValue: '',
-            accountStatus: 'Active',
-            performanceScore: 100,
-            dateRegistered: new Date().toISOString().split('T')[0],
-            notes: '',
-primaryServices: [],     // ADD THIS
-serviceAreas: [],        // ADD THIS  
-skipSizes: [],          // ADD THIS
-aggregateTypes: [],     // ADD THIS
-fleetSize: '',          // ADD THIS
-minimumOrderValue: ''   // ADD THIS
+         const [formData, setFormData] = useState({
+  companyName: '',
+  tradingName: '',
+  companyNumber: '',
+  vatNumber: '',
+  primaryContact: '',
+  contactPosition: '',
+  phone: '',
+  mobile: '',
+  email: '',
+  accountsEmail: '',
+  address: '',
+  city: '',
+  postcode: '',
+  county: '',
+  supplierRating: 'B',
+  preferredSupplier: false,
+  primaryServices: [],
+  wasteCarrierLicense: '',
+  wasteCarrierExpiry: '',
+  environmentalPermits: '',
+  publicLiabilityInsurance: '',
+  insuranceExpiry: '',
+  insuranceAmount: '',
+  serviceAreas: [],
+  fleetSize: '',
+  skipSizes: [],
+  aggregateTypes: [],
+  certifications: [],
+  bankName: '',
+  bankAccountNumber: '',
+  bankSortCode: '',
+  paymentTerms: 30,
+  minimumOrderValue: '',
+  accountStatus: 'Active',
+  performanceScore: 100,
+  dateRegistered: new Date().toISOString().split('T')[0],
+  notes: '',
+  ...(supplier || {})
 });
-
           const [activeTab, setActiveTab] = useState('company');
 
           const handleSubmit = () => {
