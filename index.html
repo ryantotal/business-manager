@@ -395,6 +395,27 @@ const getFilteredProducts = () => {
       lastName: lastName,
       role: data.role
     });
+    // Auto-sync for ADMIN users on login
+if (data.role === 'ADMIN') {
+  try {
+    console.log('Starting auto-sync for admin user...');
+    
+    // Sync customers
+    const customerResults = await window.SageAPI.syncCustomersFromSage();
+    console.log(`Auto-sync: Synced ${customerResults.new.length} new, ${customerResults.updated.length} updated customers`);
+    
+    // Sync suppliers  
+    const supplierResults = await window.SageAPI.syncSuppliersFromSage();
+    console.log(`Auto-sync: Synced ${supplierResults.new.length} new, ${supplierResults.updated.length} updated suppliers`);
+    
+    // Store last sync time
+    localStorage.setItem('lastSageSync', new Date().toISOString());
+    
+  } catch (syncError) {
+    console.error('Auto-sync failed:', syncError);
+    // Don't throw - let login succeed even if sync fails
+  }
+}
     return true;
   } catch (err) {
     throw new Error('Invalid credentials');
