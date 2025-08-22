@@ -8488,7 +8488,7 @@ async syncCustomersQuick() {
     }
     
     console.log(`✅ Quick sync complete: ${newCustomers.length} new customers added`);
-    return { new: newCustomers, updated: [] };
+    return { new: newCustomers, updated: [], conflicts: [] };
     
   } catch (error) {
     console.error('❌ Quick customer sync failed:', error);
@@ -8546,7 +8546,7 @@ async syncSuppliersQuick() {
     }
     
     console.log(`✅ Quick sync complete: ${newSuppliers.length} new suppliers added`);
-    return { new: newSuppliers, updated: [] };
+    return { new: newSuppliers, updated: [], conflicts: [] };
     
   } catch (error) {
     console.error('❌ Quick supplier sync failed:', error);
