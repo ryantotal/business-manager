@@ -5017,104 +5017,51 @@ const handleApplySync = async () => {
     let successCount = 0;
     let skipCount = 0;
     
-    // Add new suppliers directly to database
+    // Loop 1: Add NEW suppliers
     for (const sageSupplier of syncResults.new) {
-   
-  console.log('Processing supplier:', sageSupplier.name, 'Phone:', sageSupplier.phone);  // ADD THIS
-const { data: existing } = await window.supabase
-  .from('suppliers')
-  .select('*')
-  .eq('name', sageSupplier.companyName || sageSupplier.name || sageSupplier.displayed_as)
-  .maybeSingle();
-      
-   if (existing) {
-  // Check if any data has actually changed
-  const hasChanges = 
-    existing.companyName !== sageSupplier.companyName ||
-    existing.email !== sageSupplier.email ||
-    existing.phone !== sageSupplier.phone ||
-    existing.mobile !== sageSupplier.mobile ||
-    existing.address !== sageSupplier.address ||
-    existing.vatNumber !== sageSupplier.vatNumber ||
-    existing.accountsEmail !== sageSupplier.accountsEmail ||
-    existing.tradingName !== sageSupplier.tradingName ||
-    existing.companyNumber !== sageSupplier.companyNumber ||
-    existing.primaryContact !== sageSupplier.primaryContact ||
-    existing.supplierRating !== sageSupplier.supplierRating ||
-    existing.accountStatus !== sageSupplier.accountStatus ||
-    existing.credit_limit !== sageSupplier.credit_limit ||
-    existing.credit_days !== sageSupplier.credit_days;
-  
-  if (hasChanges) {
-    // Update existing supplier with new data
-    const { error: updateError } = await window.supabase
-      .from('suppliers')
-     .update({
-  name: sageSupplier.name || sageSupplier.companyName,
-  email: sageSupplier.email,
-  phone: sageSupplier.phone,
-  address: sageSupplier.address,
-  vat_number: sageSupplier.vatNumber || sageSupplier.vat_number,
-  contact_person: sageSupplier.primaryContact || sageSupplier.contact_person,
-  // These are supplier-specific (not in customers):
-  position: sageSupplier.position,
-  accountstatus: sageSupplier.accountStatus,
-  accountsemail: sageSupplier.accountsEmail,
-  supplierrating: sageSupplier.supplierRating,
-  performancescore: sageSupplier.performanceScore || 0,
-  preferredsupplier: sageSupplier.preferredSupplier || false,
-})
-      .eq('sage_id', sageSupplier.sage_id);
-      
-    if (!updateError) {
-      successCount++;
-      console.log(`✅ Updated supplier: ${sageSupplier.companyName}`);
-    } else {
-      console.error(`❌ Failed to update: ${updateError.message}`);
-      skipCount++;
-    }
-  } else {
-    skipCount++;
-    console.log(`⏭️ No changes for: ${sageSupplier.companyName}`);
-  }
-  continue;
-}
-     // Map the Sage fields correctly to match your database schema
-const supplierData = {
-  name: sageSupplier.companyName || sageSupplier.name || sageSupplier.displayed_as || 'Unknown Supplier',
- sage_id: sageSupplier.companyName + '_' + Date.now(),
-  email: sageSupplier.email || '',
-  phone: sageSupplier.telephone || sageSupplier.phone || '',
-  vat_number: sageSupplier.tax_number || '',
-  address: sageSupplier.main_address || ''
-};
-      
-      // Save directly to Supabase
       const { error } = await window.supabase
         .from('suppliers')
-        .insert(supplierData);
+        .insert({
+          name: sageSupplier.name || sageSupplier.companyName,
+          sage_id: sageSupplier.sage_id,
+          email: sageSupplier.email,
+          phone: sageSupplier.phone,
+          address: sageSupplier.address,
+          vat_number: sageSupplier.vatNumber,
+          contact_person: sageSupplier.primaryContact,
+          position: sageSupplier.position,
+          accountstatus: sageSupplier.accountStatus,
+          accountsemail: sageSupplier.accountsEmail,
+          supplierrating: sageSupplier.supplierRating,
+          performancescore: sageSupplier.performanceScore || 0,
+          preferredsupplier: sageSupplier.preferredSupplier || false,
+        });
       
-      if (error) {
-        console.error('Error inserting supplier:', error);
-        console.error('Supplier data:', supplierData);
-        continue;
-      }
+      if (!error) successCount++;
+    }
+    
+    // Loop 2: UPDATE existing suppliers
+    for (const sageSupplier of syncResults.updated) {
+      const { error } = await window.supabase
+        .from('suppliers')
+        .update({
+          name: sageSupplier.name || sageSupplier.companyName,
+          email: sageSupplier.email,
+          phone: sageSupplier.phone,
+          address: sageSupplier.address,
+          vat_number: sageSupplier.vatNumber,
+          contact_person: sageSupplier.primaryContact,
+        })
+        .eq('id', sageSupplier.id);  // Use preserved database ID!
       
-      successCount++;
+      if (!error) successCount++;
     }
     
     setShowSyncDialog(false);
     setSyncResults(null);
     
-    if (skipCount > 0) {
-      alert(`Successfully synced ${successCount} new suppliers from Sage!\n${skipCount} suppliers were skipped (already exist).`);
-    } else if (successCount > 0) {
-      alert(`Successfully synced ${successCount} new suppliers from Sage!`);
-    } else {
-      alert('No new suppliers were imported. They may already exist in your database.');
-    }
+    alert(`Successfully synced ${successCount} suppliers from Sage!`);
     
-    // Refresh the page to show new suppliers
     if (successCount > 0) {
       window.location.reload();
     }
@@ -5124,6 +5071,7 @@ const supplierData = {
     alert('Error applying sync: ' + error.message);
   }
 };
+    
           return (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
@@ -8481,8 +8429,7 @@ for (const sageSupplier of supplierContacts) {
   credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
   credit_days: parseInt(sageSupplier.credit_days) || 30,
 };
-    if (!existing) {
-        // Map Sage fields to your database fields
+   
        
 // Try to get phone if the method exists
 if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
@@ -8502,16 +8449,16 @@ if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
 } else {
   console.log(`⚠️ Skipping phone for ${sageSupplier.displayed_as}: No contact person ID`);
 }
+ if (!existing) {
+        // Map Sage fields to your database fields
+
         syncResults.new.push(mappedSupplier);
-    } else {
-        // Check if data differs and add to conflicts if needed
-        if (existing.companyName !== (sageSupplier.name || sageSupplier.displayed_as)) {
-            syncResults.conflicts.push({
-                sage: sageSupplier,
-                local: existing
-            });
-            syncResults.new.push(mappedSupplier);
-        }
+  } else {
+  // Push to UPDATED with preserved database ID
+  syncResults.updated.push({
+    ...mappedSupplier,
+    id: existing.id  // IMPORTANT: Preserve the database ID!
+  });
     }
 }
     
