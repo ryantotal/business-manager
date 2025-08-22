@@ -6847,6 +6847,7 @@ useEffect(() => {
   loadSageProducts();
 }, []);
 
+// 2 AM Full Sync with Phone Lookups
 useEffect(() => {
   const runFullSync = async () => {
     const now = new Date();
@@ -6854,50 +6855,83 @@ useEffect(() => {
     const lastSync = localStorage.getItem('lastFullSageSync');
     const lastSyncDate = lastSync ? new Date(lastSync) : null;
     
-    // Run at 15 (3 PM) if not already done today
-    if (hour === 16 && (!lastSyncDate || lastSyncDate.getDate() !== now.getDate())) {
-      // REMOVED the const user = line
-      // Now using the 'user' from useAuth() at top of App component
+    // Run at 2 AM if not already done today (change to 2 after testing)
+    if (hour === 2 && (!lastSyncDate || lastSyncDate.getDate() !== now.getDate())) {
       
-      if (user && user.role === 'ADMIN') {  // Using user from useAuth
-        console.log('🌙 Starting FULL sync with phone lookups...');
+      if (user && user.role === 'ADMIN') {
+        console.log('🌙 Starting FULL 2 AM sync with phone lookups...');
         
+        // Customer sync with error handling
+        console.log('Starting customer sync...');
+        let customerResults = null;
         try {
-          // FULL sync with all phone lookups
-          const customerResults = await window.SageAPI.syncCustomersFromSage();
-          console.log(`Synced ${customerResults.new.length} new, ${customerResults.updated.length} updated customers`);
+          customerResults = await window.SageAPI.syncCustomersFromSage();
+          console.log('Customer sync completed:', customerResults);
+        } catch (customerError) {
+          console.error('❌ Customer sync error:', customerError);
+        }
+
+        if (customerResults && customerResults.new && customerResults.updated) {
+          console.log(`✅ Synced ${customerResults.new.length} new, ${customerResults.updated.length} updated customers`);
           
-          const supplierResults = await window.SageAPI.syncSuppliersFromSage();
-          console.log(`Synced ${supplierResults.new.length} new, ${supplierResults.updated.length} updated suppliers`);
-          
-          const productResults = await window.SageAPI.syncProductsFromSage();
-          console.log(`Synced products`);
-          
-          // Apply updates to database
           for (const customer of customerResults.new) {
-            await window.supabase.from('customers').insert(customer);
+            try {
+              await window.supabase.from('customers').insert(customer);
+            } catch (e) {
+              console.error('Failed to insert customer:', e);
+            }
           }
+          
           for (const customer of customerResults.updated) {
-            await window.supabase.from('customers')
-              .update(customer)
-              .eq('id', customer.id);
+            try {
+              await window.supabase.from('customers').update(customer).eq('id', customer.id);
+            } catch (e) {
+              console.error('Failed to update customer:', e);
+            }
           }
+        }
+
+        // Supplier sync with error handling
+        console.log('Starting supplier sync...');
+        let supplierResults = null;
+        try {
+          supplierResults = await window.SageAPI.syncSuppliersFromSage();
+          console.log('Supplier sync completed:', supplierResults);
+        } catch (supplierError) {
+          console.error('❌ Supplier sync error:', supplierError);
+        }
+
+        if (supplierResults && supplierResults.new && supplierResults.updated) {
+          console.log(`✅ Synced ${supplierResults.new.length} new, ${supplierResults.updated.length} updated suppliers`);
           
           for (const supplier of supplierResults.new) {
-            await window.supabase.from('suppliers').insert(supplier);
+            try {
+              await window.supabase.from('suppliers').insert(supplier);
+            } catch (e) {
+              console.error('Failed to insert supplier:', e);
+            }
           }
+          
           for (const supplier of supplierResults.updated) {
-            await window.supabase.from('suppliers')
-              .update(supplier)
-              .eq('id', supplier.id);
+            try {
+              await window.supabase.from('suppliers').update(supplier).eq('id', supplier.id);
+            } catch (e) {
+              console.error('Failed to update supplier:', e);
+            }
           }
-          
-          localStorage.setItem('lastFullSageSync', now.toISOString());
-          console.log('✅ Full sync completed successfully!');
-          
-        } catch (error) {
-          console.error('❌ Sync failed:', error);
         }
+
+        // Product sync with error handling
+        console.log('Starting product sync...');
+        try {
+          const productResults = await window.SageAPI.syncProductsFromSage();
+          console.log('✅ Synced products');
+        } catch (productError) {
+          console.error('❌ Product sync error:', productError);
+        }
+        
+        localStorage.setItem('lastFullSageSync', now.toISOString());
+        console.log('✅ Full 2 AM sync completed!');
       }
     }
   };
@@ -6907,10 +6941,9 @@ useEffect(() => {
   runFullSync(); // Check immediately on mount
   
   return () => clearInterval(interval);
-}, [user]); // Added 'user' as dependency so it re-runs when user changes
+}, [user]);
 
 // Load jobs from Supabase when app starts <- This is line 6850
-// Load jobs from Supabase when app starts
 useEffect(() => {
   const loadJobsFromSupabase = async () => {
     try {
