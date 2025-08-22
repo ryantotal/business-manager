@@ -3524,7 +3524,28 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
                 </div>
               </div>
             </div>
-
+              {/* Add Create Invoice Button */}
+{activeTab === 'financial' && (
+  <div className="mt-6">
+    {job.isCompleted && !job.sageInvoiceId && user.role === 'ADMIN' && (
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Sage Integration</h3>
+        <button
+          onClick={() => handleCreateInvoice(job)}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+        >
+          <FileText className="inline mr-2" size={20} />
+          Create Invoice in Sage
+        </button>
+        {job.sageInvoiceId && (
+          <p className="mt-2 text-sm text-gray-600">
+            Sage Invoice ID: {job.sageInvoiceId}
+          </p>
+        )}
+      </div>
+    )}
+  </div>
+)}
             {/* Invoice Information */}
             <div className="bg-white rounded-lg border border-gray-200">
               <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
