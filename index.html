@@ -6826,7 +6826,28 @@ useEffect(() => {
       console.error('Error loading customers:', error);
     }
   };
-  // Add this 2 AM auto-sync useEffect - paste after your other useEffects
+  
+  const loadSageProducts = async () => {
+  try {
+    const { data, error } = await window.supabase
+      .from('sage_products')
+      .select('*')
+      .eq('active', true)
+      .order('name');
+    
+    if (error) throw error;
+    setSageProducts(data || []);
+    console.log('Loaded', data.length, 'Sage products from Supabase');
+  } catch (error) {
+    console.error('Error loading Sage products:', error);
+    setSageProducts([]);
+  }
+};
+  loadCustomersFromSupabase();
+  loadSageProducts();
+}, []);
+
+// ADD THE 2 AM SYNC HERE AT LINE 6849
 useEffect(() => {
   const runFullSync = async () => {
     const now = new Date();
@@ -6835,7 +6856,7 @@ useEffect(() => {
     const lastSyncDate = lastSync ? new Date(lastSync) : null;
     
     // Run at 2 AM if not already done today
-    if (hour === 14 && (!lastSyncDate || lastSyncDate.getDate() !== now.getDate())) {
+    if (hour === 2 && (!lastSyncDate || lastSyncDate.getDate() !== now.getDate())) {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       
       if (user.role === 'ADMIN') {
@@ -6886,26 +6907,9 @@ useEffect(() => {
   runFullSync(); // Check immediately on mount
   
   return () => clearInterval(interval);
-}, []); // Empty dependency array - runs once on mount
-  const loadSageProducts = async () => {
-  try {
-    const { data, error } = await window.supabase
-      .from('sage_products')
-      .select('*')
-      .eq('active', true)
-      .order('name');
-    
-    if (error) throw error;
-    setSageProducts(data || []);
-    console.log('Loaded', data.length, 'Sage products from Supabase');
-  } catch (error) {
-    console.error('Error loading Sage products:', error);
-    setSageProducts([]);
-  }
-};
-  loadCustomersFromSupabase();
-  loadSageProducts();
 }, []);
+
+// Load jobs from Supabase when app starts <- This is line 6850
 // Load jobs from Supabase when app starts
 useEffect(() => {
   const loadJobsFromSupabase = async () => {
