@@ -8416,10 +8416,7 @@ for (const sageSupplier of supplierContacts) {
   accountsEmail: sageSupplier.email || '', // Same as email unless separate field in Sage
   phone: sageSupplier.main_contact_person?.phone || sageSupplier.phone || '',
   mobile: sageSupplier.main_contact_person?.mobile || sageSupplier.mobile || '',
-  address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ') || '',
-  city: sageSupplier.main_address?.city || '',
-  postcode: sageSupplier.main_address?.postal_code || '',
-  county: sageSupplier.main_address?.region || '',
+  address: sageSupplier.main_address?.displayed_as?.replace(/\n/g, ', ').replace(/↵/g, ', ') || '',
   primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
   position: '', // Not typically in Sage
   supplierRating: 'A+', // Default value
@@ -9183,7 +9180,11 @@ county: '',    // ADD THIS (optional)
             accountStatus: 'Active',
             performanceScore: 100,
             dateRegistered: new Date().toISOString().split('T')[0],
-            notes: ''
+            notes: '',
+primaryServices: [],  // ADD THIS
+serviceAreas: [],     // ADD THIS  
+skipSizes: [],        // ADD THIS
+aggregateTypes: [],   // ADD THIS
           });
 
           const [activeTab, setActiveTab] = useState('company');
