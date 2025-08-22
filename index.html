@@ -9438,8 +9438,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Primary Services</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {['Skip Hire', 'Waste Collection', 'Aggregates Supply', 'Recycling', 'Hazardous Waste', 
-                            'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Tipper Hire', 'Plant Hire', 'Haulage', 'Transport'].map(service => (
+                          {['Skip Hire', 'Aggregates Supply', 'Hazardous Waste', 
+                            'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Plant Hire', 'Haulage', 'Transport'].map(service => (
                             <label key={service} className="flex items-center">
                               <input
                                 type="checkbox"
@@ -9496,54 +9496,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                             placeholder="0.00"
                           />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Skip Sizes Available</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          {['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed', 
-                            '12 yard', '12 yard enclosed', '14 yard', '14 yard enclosed', '16 yard', '16 yard enclosed'].map(size => (
-                            <label key={size} className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={formData.skipSizes?.includes(size) || false}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setFormData({...formData, skipSizes: [...(formData.skipSizes || []), size]});
-                                  } else {
-                                    setFormData({...formData, skipSizes: (formData.skipSizes || []).filter(s => s !== size)});
-                                  }
-                                }}
-                                className="mr-2"
-                              />
-                              <span className="text-sm">{size}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Aggregate Types</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {['Type 1 Sub Base', 'Type 2 Sub Base', 'Ballast', 'Sharp Sand', 'Building Sand', 
-                            'Topsoil', 'Shingle', 'Crushed Concrete', 'Scalping', 'Gabion Stone'].map(type => (
-                            <label key={type} className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={formData.aggregateTypes?.includes(type) || false}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setFormData({...formData, aggregateTypes: [...(formData.aggregateTypes || []), type]});
-                                  } else {
-                                    setFormData({...formData, aggregateTypes: (formData.aggregateTypes || []).filter(t => t !== type)});
-                                  }
-                                }}
-                                className="mr-2"
-                              />
-                              <span className="text-sm">{type}</span>
-                            </label>
-                          ))}
                         </div>
                       </div>
 
