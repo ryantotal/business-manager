@@ -3038,11 +3038,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, handleCreateInvoice, user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
-   const handleCreateInvoice = async () => {
-    console.log('Test - Create Invoice clicked');
-    console.log('Job data:', job);
-    alert('Invoice creation test - check console');
-  };
+  
 
   // Load attachments when component mounts
   useEffect(() => {
