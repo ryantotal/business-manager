@@ -6847,7 +6847,6 @@ useEffect(() => {
   loadSageProducts();
 }, []);
 
-// ADD THE 2 AM SYNC HERE AT LINE 6849
 useEffect(() => {
   const runFullSync = async () => {
     const now = new Date();
@@ -6855,23 +6854,24 @@ useEffect(() => {
     const lastSync = localStorage.getItem('lastFullSageSync');
     const lastSyncDate = lastSync ? new Date(lastSync) : null;
     
-    // Run at 2 AM if not already done today
-    if (hour === 15 && (!lastSyncDate || lastSyncDate.getDate() !== now.getDate())) {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+    // Run at 15 (3 PM) if not already done today
+    if (hour === 16 && (!lastSyncDate || lastSyncDate.getDate() !== now.getDate())) {
+      // REMOVED the const user = line
+      // Now using the 'user' from useAuth() at top of App component
       
-      if (user.role === 'ADMIN') {
-        console.log('🌙 Starting FULL 2 AM sync with phone lookups...');
+      if (user && user.role === 'ADMIN') {  // Using user from useAuth
+        console.log('🌙 Starting FULL sync with phone lookups...');
         
         try {
           // FULL sync with all phone lookups
           const customerResults = await window.SageAPI.syncCustomersFromSage();
-          console.log(`2AM: Synced ${customerResults.new.length} new, ${customerResults.updated.length} updated customers`);
+          console.log(`Synced ${customerResults.new.length} new, ${customerResults.updated.length} updated customers`);
           
           const supplierResults = await window.SageAPI.syncSuppliersFromSage();
-          console.log(`2AM: Synced ${supplierResults.new.length} new, ${supplierResults.updated.length} updated suppliers`);
+          console.log(`Synced ${supplierResults.new.length} new, ${supplierResults.updated.length} updated suppliers`);
           
           const productResults = await window.SageAPI.syncProductsFromSage();
-          console.log(`2AM: Synced products`);
+          console.log(`Synced products`);
           
           // Apply updates to database
           for (const customer of customerResults.new) {
@@ -6893,10 +6893,10 @@ useEffect(() => {
           }
           
           localStorage.setItem('lastFullSageSync', now.toISOString());
-          console.log('✅ 2 AM full sync completed successfully!');
+          console.log('✅ Full sync completed successfully!');
           
         } catch (error) {
-          console.error('❌ 2 AM sync failed:', error);
+          console.error('❌ Sync failed:', error);
         }
       }
     }
@@ -6907,7 +6907,7 @@ useEffect(() => {
   runFullSync(); // Check immediately on mount
   
   return () => clearInterval(interval);
-}, []);
+}, [user]); // Added 'user' as dependency so it re-runs when user changes
 
 // Load jobs from Supabase when app starts <- This is line 6850
 // Load jobs from Supabase when app starts
