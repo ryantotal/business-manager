@@ -3035,10 +3035,66 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
-const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, handleCreateInvoice, user }) => {
+const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
-  
+  // Handle invoice creation locally
+  const handleCreateInvoice = async (jobToInvoice) => {
+    try {
+      const isDemoMode = !window.SageAPI || !localStorage.getItem('sage_connected');
+      
+      if (isDemoMode) {
+        const invoiceNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+        await window.supabase
+          .from('jobs')
+          .update({ invoice_number: invoiceNumber })
+          .eq('id', jobToInvoice.id);
+        alert(`Demo Mode: Invoice ${invoiceNumber} created!`);
+        onClose();
+      } else {
+        const { data: customer } = await window.supabase
+          .from('customers')
+          .select('*')
+          .eq('name', jobToInvoice.customerName)
+          .single();
+        
+        if (!customer?.sage_id) {
+          throw new Error('Customer not synced with Sage. Please sync customer first.');
+        }
+        
+        const invoiceData = {
+          contact_id: customer.sage_id,
+          date: new Date().toISOString().split('T')[0],
+          due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+          reference: jobToInvoice.jobNumber,
+          notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress}`,
+          line_items: [{
+            description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || ''}`,
+            quantity: jobToInvoice.quantity || 1,
+            unit_price: jobToInvoice.customerUnitPrice || 0,
+            tax_rate_id: '1',
+            ledger_account_id: '1'
+          }]
+        };
+        
+        const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
+        
+        await window.supabase
+          .from('jobs')
+          .update({
+            sage_invoice_id: invoice.id,
+            invoice_number: invoice.invoice_number || invoice.id
+          })
+          .eq('id', jobToInvoice.id);
+        
+        alert('Invoice created successfully in Sage!');
+        onClose();
+      }
+    } catch (error) {
+      console.error('Error creating invoice:', error);
+      alert('Failed to create invoice: ' + error.message);
+    }
+  };
 
   // Load attachments when component mounts
   useEffect(() => {
