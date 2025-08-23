@@ -3041,7 +3041,7 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
   // Handle invoice creation locally
   const handleCreateInvoice = async (jobToInvoice) => {
     try {
-      const isDemoMode = !window.SageAPI || !localStorage.getItem('sage_connected');
+      const isDemoMode = false; // Force production mode - sage-proxy is working!
       
       if (isDemoMode) {
         const invoiceNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
