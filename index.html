@@ -3078,7 +3078,8 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
         };
         
         const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
-        
+        console.log('Sending invoice data:', invoiceData); // ADD THIS LINE
+console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
         await window.supabase
           .from('jobs')
           .update({
