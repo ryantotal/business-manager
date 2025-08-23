@@ -3062,20 +3062,29 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
           throw new Error('Customer not synced with Sage. Please sync customer first.');
         }
         
-        const invoiceData = {
-          contact_id: customer.sage_id,
-          date: new Date().toISOString().split('T')[0],
-          due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-          reference: jobToInvoice.jobNumber,
-          notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress}`,
-          line_items: [{
-            description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || ''}`,
-            quantity: jobToInvoice.quantity || 1,
-            unit_price: jobToInvoice.customerUnitPrice || 0,
-            tax_rate_id: '1',
-            ledger_account_id: '1'
-          }]
-        };
+        // Calculate tax
+const unitPrice = jobToInvoice.customerUnitPrice || 0;
+const quantity = jobToInvoice.quantity || 1;
+const lineTotal = unitPrice * quantity;
+const taxAmount = lineTotal * 0.20; // 20% VAT
+
+const invoiceData = {
+  sales_invoice: {  // WRAP IN sales_invoice
+    contact_id: customer.sage_id,
+    date: new Date().toISOString().split('T')[0],
+    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+    reference: jobToInvoice.jobNumber,
+    notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress}`,
+    invoice_lines: [{  // CHANGE TO invoice_lines
+      description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
+      quantity: quantity,
+      unit_price: unitPrice,
+      currency_tax_amount: taxAmount,  // ADD THIS FIELD
+      tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',  // FIX TAX RATE
+      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'  // Sales - Services (4010)
+    }]
+  }
+};
         
         const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
         console.log('Sending invoice data:', invoiceData); // ADD THIS LINE
