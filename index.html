@@ -8403,10 +8403,17 @@ async getServices() {
 },
 
 async createDraftInvoice(invoiceData) {
-  // Create invoice as draft status
+  // If already wrapped in sales_invoice, add status to it
+  if (invoiceData.sales_invoice) {
+    invoiceData.sales_invoice.status = 'draft';
+    return this.makeRequest('/sales_invoices', 'POST', invoiceData);
+  }
+  // Otherwise wrap it properly
   return this.makeRequest('/sales_invoices', 'POST', {
-    ...invoiceData,
-    status: 'draft'
+    sales_invoice: {
+      ...invoiceData,
+      status: 'draft'
+    }
   });
 },
     async syncCustomersFromSage() {
