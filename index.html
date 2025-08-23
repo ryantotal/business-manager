@@ -8406,10 +8406,10 @@ async createDraftInvoice(invoiceData) {
   // If already wrapped in sales_invoice, add status to it
   if (invoiceData.sales_invoice) {
     invoiceData.sales_invoice.status = 'draft';
-    return this.makeRequest('/sales_invoices', 'POST', invoiceData);
+    return this.makeRequest('sales_invoices', 'POST', invoiceData);
   }
   // Otherwise wrap it properly
-  return this.makeRequest('/sales_invoices', 'POST', {
+  return this.makeRequest('sales_invoices', 'POST', {
     sales_invoice: {
       ...invoiceData,
       status: 'draft'
