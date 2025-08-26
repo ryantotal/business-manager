@@ -1908,15 +1908,17 @@ siteNotes: '',
       await window.supabase
         .from('jobs')
         .update({ 
-          sageInvoiceId: invoice.id,
-          invoiceNumber: invoice.invoice_number || invoice.id
+        sage_invoice_id: invoice.id,
+invoice_number: invoice.invoice_number || invoice.id,
+invoice_status: 'Invoiced'  // Add this line
         })
         .eq('id', job.id);
       
       onUpdateJob({
         ...job,
-        sageInvoiceId: invoice.id,
-        invoiceNumber: invoice.invoice_number || invoice.id
+       sage_invoice_id: invoice.id,
+invoice_number: invoice.invoice_number || invoice.id,
+invoice_status: 'Invoiced'  // Add this if you want the UI to update immediately
       });
       
       alert('Invoice created successfully in Sage!');
@@ -3060,6 +3062,43 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
         
         if (!customer?.sage_id) {
           throw new Error('Customer not synced with Sage. Please sync customer first.');
+          // Prepare invoice data
+      const invoiceData = {
+        contact_id: customer.sage_id,
+        date: new Date().toISOString().split('T')[0],
+        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
+        invoice_lines: [{
+          description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
+          quantity: jobToInvoice.quantity || 1,
+          unit_price: parseFloat(jobToInvoice.customerPrice) || 0,
+          currency_tax_amount: (parseFloat(jobToInvoice.customerPrice) || 0) * 0.20,
+          tax_rate_id: 'GB_STANDARD',
+          ledger_account_id: 'dc4b88bb472b11e9aac702debebaeea2cc894f12'
+        }]
+      };
+      
+      // Create invoice in Sage
+      const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
+      
+      // Update database
+      await window.supabase
+        .from('jobs')
+        .update({
+          sage_invoice_id: invoice.id,
+          invoice_status: 'Invoiced'
+        })
+        .eq('id', jobToInvoice.id);
+      
+      // Update local state
+      onUpdateJob({
+        ...jobToInvoice,
+        sage_invoice_id: invoice.id,
+        invoice_status: 'Invoiced'
+      });
+      
+      alert(`Invoice created successfully in Sage!`);
+      onClose();
         }
         
         // Calculate tax
@@ -3606,7 +3645,7 @@ console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
         </button>
         {job.sageInvoiceId && (
           <p className="mt-2 text-sm text-gray-600">
-            Sage Invoice ID: {job.sageInvoiceId}
+            Sage Invoice ID: {job.sage_invoice_id}
           </p>
         )}
       </div>
