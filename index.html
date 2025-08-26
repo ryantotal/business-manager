@@ -737,8 +737,21 @@ siteNotes: '',
 
           const handleSubmit = () => {
             const totalQuantity = formData.lineItems?.reduce((sum, item) => sum + (item.quantity || 1), 0) || formData.quantity || 1;
-            // Check if this is a skip/RoRo with quantity > 1
-            if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && totalQuantity > 1) {
+            const handleSubmit = () => {
+  const totalQuantity = formData.lineItems?.reduce((sum, item) => sum + (item.quantity || 1), 0) || formData.quantity || 1;
+  
+  // Add this here - Clean up date fields
+  const cleanedFormData = {
+    ...formData,
+    collectionDate: cleanedFormData.collectionDate || null,
+    deliveryDate: formData.deliveryDate || null,
+    jobDate: cleanedFormData.jobDate || new Date().toISOString().split('T')[0],
+    timeSlot: cleanedFormData.timeSlot || null
+  };
+  
+  // Then update line 741 to use cleanedFormData instead of formData
+  if ((cleanedFormData.jobType === 'Skip Hire' || cleanedFormData.jobType === 'Roll-on Roll-off') && totalQuantity > 1) {// Check if this is a skip/RoRo with quantity > 1
+            if ((cleanedFormData.jobType === 'Skip Hire' || cleanedFormData.jobType === 'Roll-on Roll-off') && totalQuantity > 1) {
             const jobs = [];
             const firstJobNumber = generateJobNumber();
             for (let i = 0; i < totalQuantity; i++) {
@@ -748,8 +761,8 @@ siteNotes: '',
                   id: jobId,
                   jobNumber: jobId,
                   quantity: 1,
-                  customerFinalPrice: formData.customerUnitPrice,
-                  supplierFinalPrice: formData.supplierUnitPrice,
+                  customerFinalPrice: cleanedFormData.customerUnitPrice,
+                  supplierFinalPrice: cleanedFormData.supplierUnitPrice,
                   grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
                   profitMargin: formData.customerUnitPrice > 0 ? 
                     ((formData.customerUnitPrice - formData.supplierUnitPrice) / formData.customerUnitPrice) * 100 : 0,
