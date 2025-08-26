@@ -7164,6 +7164,8 @@ useEffect(() => {
   hazardousWaste: job.hazardous_waste || false,
   consignmentNote: job.consignment_note,
   invoiceNumber: job.invoice_number,
+  sage_invoice_id: job.sage_invoice_id,
+sageInvoiceId: job.sage_invoice_id,
   invoiceStatus: job.invoice_status || 'Not Invoiced',
   paymentStatus: job.payment_status || 'Not Paid',
   sageProductId: job.sage_product_id,
@@ -7240,8 +7242,6 @@ useEffect(() => {
           deliveryDate: quote.delivery_date,
           siteAddress: quote.site_address,
           sitePostcode: quote.site_postcode,
-          sage_invoice_id: job.sage_invoice_id,  // ADD THIS LINE
-          sageInvoiceId: job.sage_invoice_id, 
           notes: quote.notes,
           status: quote.status || 'PENDING',
           rejectedReason: quote.rejected_reason,
