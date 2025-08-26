@@ -2343,103 +2343,119 @@ const uploadJobAttachment = async () => {
                       ))}
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
+    <div className="overflow-x-auto -mx-6 px-0">
+                      <table className="w-full min-w-[1400px] divide-y divide-gray-200 text-xs">
                         <thead className="bg-gray-50">
-  <tr>
-    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job Number & Date</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product/Service</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Haulier</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Postcode</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sage Invoice</th>
-  </tr>
-</thead>
-<tbody className="bg-white divide-y divide-gray-200">
-  {filteredJobs.map(job => {
-const statusConfig = {
- 'QUOTED': 'bg-yellow-100 text-yellow-800',
-'CONFIRMED': 'bg-green-100 text-green-800',
-'IN_PROGRESS': 'bg-blue-100 text-blue-800',
-'COLLECTED': 'bg-purple-100 text-purple-800'
- };
-const status = job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
-job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
-job.isCancelled ? 'bg-red-100 text-red-800' :
-statusConfig[job.status];
-const isFinished = job.isCompleted || job.status === 'COLLECTED';
-const firstProduct = job.lineItems && job.lineItems.length > 0 ? job.lineItems[0].product_name : job.jobType;
-return (
-<tr
-key={job.id}
-className={`hover:bg-gray-50 cursor-pointer ${isFinished ? 'opacity-75' : ''}`}
-onClick={() => handleJobClick(job)}
->
-<td className="px-6 py-4 whitespace-nowrap">
-<div className="flex items-center">
-<div
-className="w-2 h-8 rounded mr-3"
-style={{ backgroundColor: jobColors[job.jobType] }}
-/>
-<div>
-<div className={`text-sm font-medium text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.jobNumber}
-{job.quoteReference && (
-  <div className="text-xs text-gray-500 mt-1">From Quote: {job.quoteReference}</div>
-)}
-</div>
-<div className={`text-sm text-gray-500 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{new Date(job.jobDate).toLocaleDateString('en-GB')}
-</div>
-</div>
-</div>
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.customerName}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.supplierName || '-'}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.lineItems && job.lineItems.length > 0 
-  ? job.lineItems[0].product_name || job.lineItems[0].description || '-'
-  : job.sageProductName || '-'
-}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.haulierName || '-'}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.siteAddress1 || job.siteAddress || '-'}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.sitePostcode || '-'}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.jobType}
-</td>
-<td className="px-6 py-4 whitespace-nowrap">
-<span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${status}`}>
-{job.invoice_status === 'Invoiced' ? 'Invoiced' :
-job.status === 'COLLECTED' ? 'Collected' :
-job.isCompleted ? 'Completed' :
-job.isCancelled ? 'Cancelled' :
-job.status.replace('_', ' ')}
-</span>
-</td>
-<td className="px-6 py-4 whitespace-nowrap">
-  <span className="text-sm text-gray-900">
-    {job.sage_invoice_id || '-'}
-  </span>
-</td>
-</tr>
- );
- })}
-</tbody>                    
+                          <tr>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Job #</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Customer</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Supplier</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Product</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Haulier</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Address</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Postcode</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Type</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Status</th>
+                            <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Invoice</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {filteredJobs.map(job => {
+                            const statusConfig = {
+                              'QUOTED': 'bg-yellow-100 text-yellow-800',
+                              'CONFIRMED': 'bg-green-100 text-green-800',
+                              'IN_PROGRESS': 'bg-blue-100 text-blue-800',
+                              'COLLECTED': 'bg-purple-100 text-purple-800'
+                            };
+                            const status = job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
+                                          job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
+                                          job.isCancelled ? 'bg-red-100 text-red-800' :
+                                          statusConfig[job.status];
+                            const isFinished = job.isCompleted || job.status === 'COLLECTED';
+                            const firstProduct = job.lineItems && job.lineItems.length > 0 ? job.lineItems[0].product_name : job.jobType;
+                            
+                            return (
+                              <tr
+                                key={job.id}
+                                className={`hover:bg-gray-50 cursor-pointer ${isFinished ? 'opacity-75' : ''}`}
+                                onClick={() => handleJobClick(job)}
+                              >
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  <div className="flex items-center">
+                                    <div
+                                      className="w-1 h-6 rounded mr-2"
+                                      style={{ backgroundColor: jobColors[job.jobType] }}
+                                    />
+                                    <div>
+                                      <div className={`text-xs font-medium text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                        {job.jobNumber}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        {new Date(job.jobDate).toLocaleDateString('en-GB', { 
+                                          day: '2-digit', 
+                                          month: '2-digit', 
+                                          year: '2-digit' 
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className={`px-2 py-2 text-xs text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-32" title={job.customerName}>
+                                    {job.customerName}
+                                  </div>
+                                </td>
+                                <td className={`px-2 py-2 text-xs text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-32" title={job.supplierName}>
+                                    {job.supplierName || '-'}
+                                  </div>
+                                </td>
+                                <td className={`px-2 py-2 text-xs text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-40" title={job.sageProductName || (job.lineItems && job.lineItems[0] && job.lineItems[0].product_name)}>
+                                    {job.lineItems && job.lineItems.length > 0 
+                                      ? job.lineItems[0].product_name || job.lineItems[0].description || '-'
+                                      : job.sageProductName || '-'
+                                    }
+                                  </div>
+                                </td>
+                                <td className={`px-2 py-2 text-xs text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-24" title={job.haulierName}>
+                                    {job.haulierName || '-'}
+                                  </div>
+                                </td>
+                                <td className={`px-2 py-2 text-xs text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-40" title={job.siteAddress1 || job.siteAddress}>
+                                    {job.siteAddress1 || job.siteAddress || '-'}
+                                  </div>
+                                </td>
+                                <td className={`px-2 py-2 text-xs text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  {job.sitePostcode || '-'}
+                                </td>
+                                <td className={`px-2 py-2 text-xs text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <span className="text-xs">
+                                    {job.jobType}
+                                  </span>
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  <span className={`inline-flex px-1 py-0.5 text-xs font-medium rounded-full ${status}`}>
+                                    {job.invoice_status === 'Invoiced' ? 'INV' :
+                                    job.status === 'COLLECTED' ? 'COL' :
+                                    job.isCompleted ? 'COM' :
+                                    job.isCancelled ? 'CAN' :
+                                    job.status === 'IN_PROGRESS' ? 'PROG' :
+                                    job.status === 'CONFIRMED' ? 'CONF' :
+                                    job.status.substring(0, 3).toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="px-2 py-2 whitespace-nowrap">
+                                  <span className="text-xs text-gray-900 truncate w-24 block" title={job.sage_invoice_id}>
+                                    {job.sage_invoice_id ? job.sage_invoice_id.substring(0, 8) + '...' : '-'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>                    
                       </table>
                     </div>
                   )}
