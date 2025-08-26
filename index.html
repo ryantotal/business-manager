@@ -2356,6 +2356,7 @@ const uploadJobAttachment = async () => {
 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Postcode</th>
 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sage Invoice</th>
   </tr>
 </thead>
 <tbody className="bg-white divide-y divide-gray-200">
@@ -2423,11 +2424,17 @@ style={{ backgroundColor: jobColors[job.jobType] }}
 </td>
 <td className="px-6 py-4 whitespace-nowrap">
 <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${status}`}>
-{job.status === 'COLLECTED' ? 'Collected' :
+{job.invoice_status === 'Invoiced' ? 'Invoiced' :
+job.status === 'COLLECTED' ? 'Collected' :
 job.isCompleted ? 'Completed' :
 job.isCancelled ? 'Cancelled' :
 job.status.replace('_', ' ')}
 </span>
+</td>
+<td className="px-6 py-4 whitespace-nowrap">
+  <span className="text-sm text-gray-900">
+    {job.sage_invoice_id || '-'}
+  </span>
 </td>
 </tr>
  );
@@ -3251,7 +3258,8 @@ console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
               job.isCancelled ? 'bg-red-100 text-red-800' :
               'bg-blue-100 text-blue-800'
             }`}>
-              {job.status === 'COLLECTED' ? 'Collected' :
+              {job.invoice_status === 'Invoiced' ? 'Invoiced' :
+job.status === 'COLLECTED' ? 'Collected' :
                job.isCompleted ? 'Completed' : 
                job.isCancelled ? 'Cancelled' : 
                job.status}
