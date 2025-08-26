@@ -1915,11 +1915,14 @@ invoice_status: 'Invoiced'  // Add this line
         .eq('id', job.id);
       
       onUpdateJob({
-        ...job,
-       sage_invoice_id: invoice.id,
-invoice_number: invoice.invoice_number || invoice.id,
-invoice_status: 'Invoiced'  // Add this if you want the UI to update immediately
-      });
+  ...job,
+  sage_invoice_id: invoice.id,
+  sageInvoiceId: invoice.id,  // ADD THIS
+  invoice_number: invoice.invoice_number || invoice.id,
+  invoiceNumber: invoice.invoice_number || invoice.id,  // ADD THIS
+  invoice_status: 'Invoiced',  // ADD THIS
+  invoiceStatus: 'Invoiced'  // ADD THIS
+});
       
       alert('Invoice created successfully in Sage!');
     }
@@ -3130,10 +3133,13 @@ const invoiceData = {
 console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
         await window.supabase
           .from('jobs')
-          .update({
-            sage_invoice_id: invoice.id,
-            invoice_number: invoice.invoice_number || invoice.id
-          })
+          onUpdateJob({
+  ...jobToInvoice,
+  sage_invoice_id: invoice.id,
+  sageInvoiceId: invoice.id,  // ADD THIS
+  invoice_status: 'Invoiced',  // ADD THIS
+  invoiceStatus: 'Invoiced'  // ADD THIS
+})
           .eq('id', jobToInvoice.id);
         
         alert('Invoice created successfully in Sage!');
