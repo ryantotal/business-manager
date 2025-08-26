@@ -7240,6 +7240,8 @@ useEffect(() => {
           deliveryDate: quote.delivery_date,
           siteAddress: quote.site_address,
           sitePostcode: quote.site_postcode,
+          sage_invoice_id: job.sage_invoice_id,  // ADD THIS LINE
+          sageInvoiceId: job.sage_invoice_id, 
           notes: quote.notes,
           status: quote.status || 'PENDING',
           rejectedReason: quote.rejected_reason,
