@@ -8253,7 +8253,7 @@ const SageAPI = {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            endpoint,
+            endpoint: endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
             method,
             body,
             businessId // Include the business ID
