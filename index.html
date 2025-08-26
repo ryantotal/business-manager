@@ -2449,7 +2449,7 @@ job.status === 'CONFIRMED' ? 'Confirmed' :
                                 </td>
                                 <td className="px-3 py-2 whitespace-nowrap">
                                   <span className="text-sm text-gray-900 truncate w-24 block" title={job.sage_invoice_id}>
-                                    {job.sage_invoice_id ? job.sage_invoice_id.substring(0, 8) + '...' : '-'}
+                                    {job.invoiceNumber || job.invoice_number || '-'}
                                   </span>
                                 </td>
                               </tr>
