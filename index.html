@@ -2513,7 +2513,7 @@ job.status === 'CONFIRMED' ? 'Confirmed' :
                         )}
                         {/* Add Invoice Button - only for completed jobs without invoice */}
 {(selectedJob.isCompleted || selectedJob.status === 'COLLECTED') && 
- !selectedJob.invoiceNumber && user?.role === 'ADMIN' && (
+ !selectedJob.invoiceNumber && !selectedJob.sage_invoice_id && user?.role === 'ADMIN' && (
   <button
     onClick={() => handleCreateInvoice(selectedJob)}
     disabled={creatingInvoice && invoiceJobId === selectedJob.id}
@@ -3672,22 +3672,28 @@ job.status === 'COLLECTED' ? 'Collected' :
 {activeTab === 'financial' && (
   <div className="mt-6">
     {job.isCompleted && !job.sageInvoiceId && user.role === 'ADMIN' && (
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Sage Integration</h3>
-        <button
-          onClick={() => handleCreateInvoice(job)}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-        >
-          <FileText className="inline mr-2" size={20} />
-          Create Invoice in Sage
+  <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <h3 className="text-lg font-semibold text-gray-800 mb-4">Sage Integration</h3>
+    {job.invoiceNumber || job.sage_invoice_id ? (
+      <div>
+        <p className="text-sm text-gray-600 mb-2">Sage Invoice:</p>
+        <p className="text-lg font-medium mb-4">{job.invoiceNumber || job.sage_invoice_id}</p>
+        <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed">
+          Invoice Already Created
         </button>
-        {job.sageInvoiceId && (
-          <p className="mt-2 text-sm text-gray-600">
-            Sage Invoice ID: {job.sage_invoice_id}
-          </p>
-        )}
       </div>
+    ) : (
+      <button
+        onClick={() => handleCreateInvoice(job)}
+        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+      >
+        <FileText className="inline mr-2" size={20} />
+        Create Invoice in Sage
+      </button>
     )}
+  </div>
+)}
+     
   </div>
 )}
             {/* Invoice Information */}
