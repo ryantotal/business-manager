@@ -723,73 +723,58 @@ siteNotes: '',
             });
           };
 
-          useEffect(() => {
-            calculatePrices();
-          }, [formData.customerUnitPrice, formData.supplierUnitPrice, formData.quantity]);
-
-          const generateJobNumber = () => {
-            const year = new Date().getFullYear();
-            const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
-            const newJobNumber = lastJobNumber + 1;
-            localStorage.setItem('lastJobNumber', newJobNumber.toString());
-            return `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
-          };
-
-          const handleSubmit = () => {
-            const totalQuantity = formData.lineItems?.reduce((sum, item) => sum + (item.quantity || 1), 0) || formData.quantity || 1;
-            const handleSubmit = () => {
+        const handleSubmit = () => {
   const totalQuantity = formData.lineItems?.reduce((sum, item) => sum + (item.quantity || 1), 0) || formData.quantity || 1;
   
-  // Add this here - Clean up date fields
-  const cleanedFormData = {
+  // Clean date fields to prevent empty string errors
+  const cleanedData = {
     ...formData,
-    collectionDate: cleanedFormData.collectionDate || null,
+    collectionDate: formData.collectionDate || null,
     deliveryDate: formData.deliveryDate || null,
-    jobDate: cleanedFormData.jobDate || new Date().toISOString().split('T')[0],
-    timeSlot: cleanedFormData.timeSlot || null
+    timeSlot: formData.timeSlot || null,
+    jobDate: formData.jobDate || new Date().toISOString().split('T')[0]
   };
   
-  // Then update line 741 to use cleanedFormData instead of formData
-  if ((cleanedFormData.jobType === 'Skip Hire' || cleanedFormData.jobType === 'Roll-on Roll-off') && totalQuantity > 1) {// Check if this is a skip/RoRo with quantity > 1
-            if ((cleanedFormData.jobType === 'Skip Hire' || cleanedFormData.jobType === 'Roll-on Roll-off') && totalQuantity > 1) {
-            const jobs = [];
-            const firstJobNumber = generateJobNumber();
-            for (let i = 0; i < totalQuantity; i++) {
-                const jobId = i === 0 ? firstJobNumber : `${firstJobNumber}-${i+1}`;
-                const newJob = {
-                  ...formData,
-                  id: jobId,
-                  jobNumber: jobId,
-                  quantity: 1,
-                  customerFinalPrice: cleanedFormData.customerUnitPrice,
-                  supplierFinalPrice: cleanedFormData.supplierUnitPrice,
-                  grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
-                  profitMargin: formData.customerUnitPrice > 0 ? 
-                    ((formData.customerUnitPrice - formData.supplierUnitPrice) / formData.customerUnitPrice) * 100 : 0,
-                  jobValue: formData.customerUnitPrice,
-                  parentJobId: i === 0 ? null : jobs[0].id,
-                  linkedJobs: []
-                };
-                jobs.push(newJob);
-              }
-              // Link jobs together
-              jobs[0].linkedJobs = jobs.slice(1).map(j => j.id);
-              jobs.forEach(job => onSave(job));
-            } else {
-              const newJobNumber = job?.id || generateJobNumber();
-              const newJob = {
-                ...formData,               
-                id: newJobNumber,
-                jobNumber: job?.jobNumber || newJobNumber,
-                grossProfit: formData.customerFinalPrice - formData.supplierFinalPrice,
-                profitMargin: formData.customerFinalPrice > 0 ? 
-                  ((formData.customerFinalPrice - formData.supplierFinalPrice) / formData.customerFinalPrice) * 100 : 0,
-                jobValue: formData.customerFinalPrice,
-                parentJobId: null,
-                linkedJobs: []
-              };
-              onSave(newJob);
-            }
+  // Check if this is a skip/RoRo with quantity > 1
+  if ((cleanedData.jobType === 'Skip Hire' || cleanedData.jobType === 'Roll-on Roll-off') && totalQuantity > 1) {
+    const jobs = [];
+    const firstJobNumber = generateJobNumber();
+    for (let i = 0; i < totalQuantity; i++) {
+      const jobId = i === 0 ? firstJobNumber : `${firstJobNumber}-${i+1}`;
+      const newJob = {
+        ...cleanedData,
+        id: jobId,
+        jobNumber: jobId,
+        quantity: 1,
+        customerFinalPrice: cleanedData.customerUnitPrice,
+        supplierFinalPrice: cleanedData.supplierUnitPrice,
+        grossProfit: cleanedData.customerUnitPrice - cleanedData.supplierUnitPrice,
+        profitMargin: cleanedData.customerUnitPrice > 0 ?
+          ((cleanedData.customerUnitPrice - cleanedData.supplierUnitPrice) / cleanedData.customerUnitPrice) * 100 : 0,
+        jobValue: cleanedData.customerUnitPrice,
+        parentJobId: i === 0 ? null : jobs[0].id,
+        linkedJobs: []
+      };
+      jobs.push(newJob);
+    }
+    // Link jobs together
+    jobs[0].linkedJobs = jobs.slice(1).map(j => j.id);
+    jobs.forEach(job => onSave(job));
+  } else {
+    const newJobNumber = job?.id || generateJobNumber();
+    const newJob = {
+      ...cleanedData,
+      id: newJobNumber,
+      jobNumber: job?.jobNumber || newJobNumber,
+      grossProfit: cleanedData.customerFinalPrice - cleanedData.supplierFinalPrice,
+      profitMargin: cleanedData.customerFinalPrice > 0 ?
+        ((cleanedData.customerFinalPrice - cleanedData.supplierFinalPrice) / cleanedData.customerFinalPrice) * 100 : 0,
+      jobValue: cleanedData.customerFinalPrice,
+      parentJobId: null,
+      linkedJobs: []
+    };
+    onSave(newJob);
+  }
           };
 
           const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed', 
