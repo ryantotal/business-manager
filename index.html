@@ -3615,7 +3615,7 @@ job.status === 'COLLECTED' ? 'Collected' :
                   <div className="space-y-4">
                     {job.lineItems.map((item, index) => (
                       <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
                           <div>
                             <div className="text-sm text-gray-600 font-medium">Product/Service</div>
                             <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
@@ -3638,6 +3638,26 @@ job.status === 'COLLECTED' ? 'Collected' :
                             <div className="text-sm text-gray-600 font-medium">Quantity</div>
                             <div className="text-gray-900">
                               <div className="font-semibold">{item.quantity || 1}</div>
+                              <div>
+  <div className="text-sm text-gray-600 font-medium">Cost</div>
+  <div className="text-gray-900">
+    <div className="font-semibold">£{((item.cost_price || 0) * (item.quantity || 1)).toFixed(2)}</div>
+  </div>
+</div>
+<div>
+  <div className="text-sm text-gray-600 font-medium">RRP</div>
+  <div className="text-gray-900">
+    <div className="font-semibold">£{((item.unit_price || 0) * (item.quantity || 1)).toFixed(2)}</div>
+  </div>
+</div>
+<div>
+  <div className="text-sm text-gray-600 font-medium">Profit</div>
+  <div className="text-gray-900">
+    <div className="font-semibold text-green-600">
+      £{(((item.unit_price || 0) - (item.cost_price || 0)) * (item.quantity || 1)).toFixed(2)}
+    </div>
+  </div>
+</div>
                             </div>
                           </div>
                         </div>
@@ -3766,24 +3786,6 @@ job.status === 'COLLECTED' ? 'Collected' :
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Invoice Number:</span>
                       <span className="text-gray-900">{job.invoiceNumber || 'Not invoiced'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Invoice Status:</span>
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        job.invoice_status === 'Invoiced' ? 'bg-green-100 text-green-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {job.invoice_status || 'Not Invoiced'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Payment Status:</span>
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        job.paymentStatus === 'Paid' ? 'bg-green-100 text-green-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {job.paymentStatus || 'Not Paid'}
-                      </span>
                     </div>
                   </div>
                   <div className="space-y-4">
