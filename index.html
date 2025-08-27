@@ -4259,7 +4259,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
           
           return (
             <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
-              <div className="grid grid-cols-6 gap-4">
+              <div className="grid grid-cols-9 gap-4">
                 <div>
                   <div className="text-sm text-gray-600 font-medium">Product/Service</div>
                   <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
@@ -4267,6 +4267,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                     <div className="text-sm text-gray-600">Code: {item.item_code}</div>
                   )}
                 </div>
+
                 <div>
                   <div className="text-sm text-gray-600 font-medium">Description</div>
                   <div className="text-gray-900">{item.description || 'No description'}</div>
