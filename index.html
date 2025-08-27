@@ -3098,20 +3098,22 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
         if (!customer?.sage_id) {
           throw new Error('Customer not synced with Sage. Please sync customer first.');
           // Prepare invoice data
-      const invoiceData = {
-        contact_id: customer.sage_id,
-        date: new Date().toISOString().split('T')[0],
-        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-        reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
-        invoice_lines: [{
-          description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
-          quantity: jobToInvoice.quantity || 1,
-          unit_price: parseFloat(jobToInvoice.customerPrice) || 0,
-          currency_tax_amount: (parseFloat(jobToInvoice.customerPrice) || 0) * 0.20,
-          tax_rate_id: 'GB_STANDARD',
-          ledger_account_id: 'dc4b88bb472b11e9aac702debebaeea2cc894f12'
-        }]
-      };
+     const invoiceData = {
+  sales_invoice: {  // ADD THIS WRAPPER!
+    contact_id: customer.sage_id,
+    date: new Date().toISOString().split('T')[0],
+    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+    reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
+    line_items: [{  // CHANGE from invoice_lines to line_items
+      description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
+      quantity: jobToInvoice.quantity || 1,
+      unit_price: parseFloat(jobToInvoice.customerPrice) || 0,
+      currency_tax_amount: (parseFloat(jobToInvoice.customerPrice) || 0) * 0.20,  // ADD THIS!
+      tax_rate_id: 'GB_STANDARD',
+      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+    }]
+  }
+};
       
       // Create invoice in Sage
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
