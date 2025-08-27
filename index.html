@@ -3170,9 +3170,8 @@ const invoiceData = {
     notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress}`,
    invoice_lines: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
   ? jobToInvoice.lineItems.map(item => ({
-      product_code: item.item_code || '',  // Product code if available
-      product_name: item.product_name,     // This goes in Product/Service column
-      description: item.description,       // This goes in Description column
+    product_id: item.sage_id,  // ← THIS IS THE KEY FIELD!
+    description: item.description || '',  // Additional description if needed    // This goes in Description column
       quantity: item.quantity || 1,
       unit_price: unitPrice / (jobToInvoice.lineItems.length),
       currency_tax_amount: taxAmount / (jobToInvoice.lineItems.length),
@@ -3180,7 +3179,6 @@ const invoiceData = {
       ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
     }))
   : [{
-      product_name: jobToInvoice.sageProductName || jobToInvoice.jobType,
       description: `${jobToInvoice.jobType} Service`,
       quantity: quantity,
       unit_price: unitPrice,
