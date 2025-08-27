@@ -1893,7 +1893,7 @@ siteNotes: '',
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: job.jobNumber,
     notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
-    line_items: [{
+    invoice_lines: [{
       description: `${job.jobType} - ${job.wasteType || job.aggregateType || ''}`,
       quantity: job.quantity || 1,
       unit_price: job.customerUnitPrice || 0,
@@ -3110,7 +3110,7 @@ console.log('Available price fields:', {
     date: new Date().toISOString().split('T')[0],
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
-    line_items: [{  // CHANGE from invoice_lines to line_items
+   invoice_lines: [{
       description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
       quantity: jobToInvoice.quantity || 1,
      unit_price: parseFloat(jobToInvoice.customerUnitPrice) || 0,
@@ -9034,6 +9034,12 @@ console.log(`Fetched total of ${allProducts.length} products and services from S
   }
 },
 
+async createDraftInvoice(invoiceData) {
+  return this.makeRequest('/sales_invoices', 'POST', {
+    ...invoiceData,
+    status: 'draft'
+  });
+},
   async createInvoice(invoiceData) {
     return this.makeRequest('/sales_invoices', 'POST', invoiceData);
   }
