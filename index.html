@@ -3153,15 +3153,23 @@ if (DEBUG_MODE) {
       due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
       reference: jobToInvoice.jobNumber,
       line_items: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
-        ? jobToInvoice.lineItems.map(item => ({
-            product_id: item.sage_id,
-            description: item.description || '',
-            quantity: item.quantity || 1,
-            unit_price: unitPrice / (jobToInvoice.lineItems.length),
-            currency_tax_amount: taxAmount / (jobToInvoice.lineItems.length),
-            tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
-            ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
-          }))
+        ? jobToInvoice.lineItems.map(item => {
+    // Get price and quantity for this specific item
+    const itemPrice = item.unit_price || item.price || 0;
+    const itemQuantity = item.quantity || 1;
+    const itemTotal = itemPrice * itemQuantity;
+    const itemTax = itemTotal * 0.20; // 20% VAT per item
+    
+    return {
+      product_id: item.sage_id,
+      description: item.description || '',
+      quantity: itemQuantity,
+      unit_price: itemPrice,
+      currency_tax_amount: itemTax,
+      tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+    };
+  })
         : [{
             description: `${jobToInvoice.jobType} Service`,
             quantity: quantity,
