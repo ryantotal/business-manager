@@ -3133,26 +3133,50 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
       alert(`Invoice created successfully in Sage!`);
       onClose();
         }
-        // DEBUG MODE - Remove this block after testing
+// DEBUG MODE - Remove this block after testing
 const DEBUG_MODE = true;
 if (DEBUG_MODE) {
   console.log('=== DEBUG MODE - NOT SENDING TO SAGE ===');
   console.log('Full job:', jobToInvoice);
   console.log('Line items:', jobToInvoice.lineItems);
-  if (jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0) {
-    console.log('First item keys:', Object.keys(jobToInvoice.lineItems[0]));
-    console.log('First item data:', jobToInvoice.lineItems[0]);
-    
-    // Check for Sage IDs in different possible fields
-    console.log('Checking for Sage IDs:');
-    console.log('- sage_id?', jobToInvoice.lineItems[0].sage_id);
-    console.log('- product_id?', jobToInvoice.lineItems[0].product_id);
-    console.log('- sage_product_id?', jobToInvoice.lineItems[0].sage_product_id);
-    console.log('- item_id?', jobToInvoice.lineItems[0].item_id);
-  }
-  alert('DEBUG MODE: Check console for invoice data (NOT sent to Sage)');
+  
+  // Build the actual invoice to see structure
+  const unitPrice = jobToInvoice.customerUnitPrice || 0;
+  const quantity = jobToInvoice.quantity || 1;
+  const lineTotal = unitPrice * quantity;
+  const taxAmount = lineTotal * 0.20;
+  
+  const testInvoiceData = {
+    sales_invoice: {
+      contact_id: customer.sage_id,
+      date: new Date().toISOString().split('T')[0],
+      due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+      reference: jobToInvoice.jobNumber,
+      line_items: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
+        ? jobToInvoice.lineItems.map(item => ({
+            product_id: item.sage_id,
+            description: item.description || '',
+            quantity: item.quantity || 1,
+            unit_price: unitPrice / (jobToInvoice.lineItems.length),
+            currency_tax_amount: taxAmount / (jobToInvoice.lineItems.length),
+            tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+            ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+          }))
+        : [{
+            description: `${jobToInvoice.jobType} Service`,
+            quantity: quantity,
+            unit_price: unitPrice,
+            currency_tax_amount: taxAmount,
+            tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+            ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+          }]
+    }
+  };
+  
+  console.log('Invoice structure that WOULD be sent:', JSON.stringify(testInvoiceData, null, 2));
+  alert('DEBUG MODE: Check console for invoice structure (NOT sent to Sage)');
   onClose();
-  return; // STOP HERE - Don't create invoice
+  return; // STOP HERE
 }
 // END DEBUG MODE
         // Calculate tax
