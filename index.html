@@ -3098,6 +3098,12 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
         if (!customer?.sage_id) {
           throw new Error('Customer not synced with Sage. Please sync customer first.');
           // Prepare invoice data
+          console.log('Job data:', jobToInvoice);
+console.log('Available price fields:', {
+  customerPrice: jobToInvoice.customerPrice,
+  customerUnitPrice: jobToInvoice.customerUnitPrice,
+  customer_unit_price: jobToInvoice.customer_unit_price
+});
      const invoiceData = {
   sales_invoice: {  // ADD THIS WRAPPER!
     contact_id: customer.sage_id,
@@ -3107,8 +3113,8 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
     line_items: [{  // CHANGE from invoice_lines to line_items
       description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
       quantity: jobToInvoice.quantity || 1,
-      unit_price: parseFloat(jobToInvoice.customerPrice) || 0,
-      currency_tax_amount: (parseFloat(jobToInvoice.customerPrice) || 0) * 0.20,  // ADD THIS!
+     unit_price: parseFloat(jobToInvoice.customerUnitPrice) || 0,
+      currency_tax_amount: ((parseFloat(jobToInvoice.customerUnitPrice) || 0) * (jobToInvoice.quantity || 1)) * 0.20,
       tax_rate_id: 'GB_STANDARD',
       ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
     }]
