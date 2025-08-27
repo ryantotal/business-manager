@@ -3166,7 +3166,7 @@ if (DEBUG_MODE) {
       quantity: itemQuantity,
       unit_price: itemPrice,
       currency_tax_amount: itemTax,
-      tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+      tax_rate_id: (itemPrice === 0 || itemTotal === 0) ? 'GB_ZERO' : 'GB_STANDARD',
       ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
     };
   })
@@ -3175,7 +3175,7 @@ if (DEBUG_MODE) {
             quantity: quantity,
             unit_price: unitPrice,
             currency_tax_amount: taxAmount,
-            tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+            tax_rate_id: (itemPrice === 0 || itemTotal === 0) ? 'GB_ZERO' : 'GB_STANDARD',
             ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
           }]
     }
