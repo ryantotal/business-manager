@@ -1893,7 +1893,7 @@ siteNotes: '',
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: job.jobNumber,
     notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
-    invoice_lines: [{
+    line_items: [{
       description: `${job.jobType} - ${job.wasteType || job.aggregateType || ''}`,
       quantity: job.quantity || 1,
       unit_price: job.customerUnitPrice || 0,
@@ -3110,7 +3110,7 @@ console.log('Available price fields:', {
     date: new Date().toISOString().split('T')[0],
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
-   invoice_lines: [{
+   line_items: [{
       description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
       quantity: jobToInvoice.quantity || 1,
      unit_price: parseFloat(jobToInvoice.customerUnitPrice) || 0,
@@ -3209,7 +3209,7 @@ const invoiceData = {
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: jobToInvoice.jobNumber,
     notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress}`,
-   invoice_lines: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
+   line_items: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
   ? jobToInvoice.lineItems.map(item => ({
     product_id: item.sage_id,  // ← THIS IS THE KEY FIELD!
     description: item.description || '',  // Additional description if needed    // This goes in Description column
