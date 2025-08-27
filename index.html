@@ -8594,7 +8594,15 @@ async getServices() {
   return this.makeRequest('/services');
 },
 
-async createDraftInvoice(invoiceData) {
+  async createDraftInvoice(invoiceData) {
+  // ADD ONLY THESE LINES AT THE START:
+  if (invoiceData?.sales_invoice?.line_items) {
+    invoiceData.sales_invoice.invoice_lines = invoiceData.sales_invoice.line_items;
+    delete invoiceData.sales_invoice.line_items;
+  }
+  
+  // REST OF YOUR EXISTING CODE STAYS THE SAME
+  // (whatever you already have in the function)
   try {
     console.log('=== DEBUG: Invoice Data Received ===');
     console.log(JSON.stringify(invoiceData, null, 2));
