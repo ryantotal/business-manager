@@ -8595,18 +8595,34 @@ async getServices() {
 },
 
 async createDraftInvoice(invoiceData) {
-  // If already wrapped in sales_invoice, add status to it
-  if (invoiceData.sales_invoice) {
-    invoiceData.sales_invoice.status = 'draft';
-    return this.makeRequest('sales_invoices', 'POST', invoiceData);
-  }
-  // Otherwise wrap it properly
-  return this.makeRequest('sales_invoices', 'POST', {
-    sales_invoice: {
-      ...invoiceData,
-      status: 'draft'
+  try {
+    console.log('=== DEBUG: Invoice Data Received ===');
+    console.log(JSON.stringify(invoiceData, null, 2));
+    
+    // Auto-fix line_items to invoice_lines if needed
+    if (invoiceData.sales_invoice && invoiceData.sales_invoice.line_items) {
+      invoiceData.sales_invoice.invoice_lines = invoiceData.sales_invoice.line_items;
+      delete invoiceData.sales_invoice.line_items;
+      console.log('AUTO-FIXED: Renamed line_items to invoice_lines');
     }
-  });
+    
+    // If already wrapped in sales_invoice, add status to it
+    if (invoiceData.sales_invoice) {
+      invoiceData.sales_invoice.status = 'draft';
+      return this.makeRequest('/sales_invoices', 'POST', invoiceData);
+    }
+    
+    // Otherwise wrap it properly
+    return this.makeRequest('/sales_invoices', 'POST', {
+      sales_invoice: {
+        ...invoiceData,
+        status: 'draft'
+      }
+    });
+  } catch (error) {
+    console.error('createDraftInvoice error:', error);
+    throw error;
+  }
 },
     async syncCustomersFromSage() {
   try {
