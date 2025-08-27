@@ -712,17 +712,21 @@ siteNotes: '',
               setFormData({...formData, unit: 'tonnes'});
             }
           }, [formData.jobType]);
+};
 
-          const calculatePrices = () => {
-            const customerTotal = formData.customerUnitPrice * formData.quantity;
-            const supplierTotal = formData.supplierUnitPrice * formData.quantity;
-            setFormData({
-              ...formData,
-              customerFinalPrice: customerTotal,
-              supplierFinalPrice: supplierTotal
-            });
-          };
+  const updateProductField = (index, field, value) => {
+    const updatedItems = [...formData.lineItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      [field]: value
+    };
+    setFormData({
+      ...formData,
+      lineItems: updatedItems
+    });
+  };
 
+  const handleSubmit = () => {
         const handleSubmit = () => {
   const totalQuantity = formData.lineItems?.reduce((sum, item) => sum + (item.quantity || 1), 0) || formData.quantity || 1;
   
@@ -1033,6 +1037,8 @@ siteNotes: '',
             <th className="px-2 py-3 text-left font-medium w-20">Code</th>
             <th className="px-4 py-3 text-left font-medium w-20">Type</th>
             <th className="px-4 py-3 text-left font-medium w-20">Quantity</th>
+            <th className="px-4 py-3 text-left font-medium w-20">Cost (£)</th>  // ADD THIS LINE
+<th className="px-4 py-3 text-left font-medium w-20">RRP (£)</th> 
             <th className="px-4 py-3 text-left font-medium w-20">Actions</th>
           </tr>
         </thead>
@@ -1075,6 +1081,38 @@ siteNotes: '',
                   min="1"
                 />
               </td>
+              
+<td className="px-4 py-3">  {/* ADD FROM HERE */}
+  <input
+    type="number"
+    step="0.01"
+    value={item.cost_price || ''}
+    onChange={(e) => {
+      const updatedItems = [...formData.lineItems];
+      updatedItems[index].cost_price = parseFloat(e.target.value) || 0;
+      setFormData({...formData, lineItems: updatedItems});
+    }}
+    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+    placeholder="0.00"
+    min="0"
+  />
+</td>
+<td className="px-4 py-3">
+  <input
+    type="number"
+    step="0.01"
+    value={item.unit_price || ''}
+    onChange={(e) => {
+      const updatedItems = [...formData.lineItems];
+      updatedItems[index].unit_price = parseFloat(e.target.value) || 0;
+      setFormData({...formData, lineItems: updatedItems});
+    }}
+    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+    placeholder="0.00"
+    min="0"
+  />
+</td>  {/* ADD UNTIL HERE */}
+
               <td className="px-4 py-3">
                 <button 
                   onClick={() => {
@@ -1091,9 +1129,7 @@ siteNotes: '',
         </tbody>
       </table>
     </div>
-    <div className="mt-4 text-sm text-gray-600">
-      Total items: {formData.lineItems.length} | Total quantity: {formData.lineItems.reduce((sum, item) => sum + item.quantity, 0)}
-    </div>
+    
   </div>
 )}
 {formData.jobType === 'Roll-on Roll-off' && (
@@ -4248,40 +4284,70 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             )}
 
             {/* Products & Services */}
-            {quote.lineItems && quote.lineItems.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200">
-                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Products & Services</h2>
+{quote.lineItems && quote.lineItems.length > 0 && (
+  <div className="bg-white rounded-lg border border-gray-200">
+    <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+      <h2 className="text-lg font-semibold text-gray-800">Products & Services</h2>
+    </div>
+    <div className="p-6">
+      <div className="space-y-4">
+        {quote.lineItems.map((item, index) => {
+          const lineTotal = (item.unit_price || 0) * (item.quantity || 1);
+          const lineCost = (item.cost_price || 0) * (item.quantity || 1);
+          const lineProfit = lineTotal - lineCost;
+          
+          return (
+            <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
+              <div className="grid grid-cols-6 gap-4">
+                <div>
+                  <div className="text-sm text-gray-600 font-medium">Product/Service</div>
+                  <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
+                  {item.item_code && (
+                    <div className="text-sm text-gray-600">Code: {item.item_code}</div>
+                  )}
                 </div>
-                <div className="p-6">
-                  <div className="space-y-4">
-                    {quote.lineItems.map((item, index) => (
-                      <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                          <div>
-                            <div className="text-sm text-gray-600 font-medium">Product/Service</div>
-                            <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
-                            {item.item_code && (
-                              <div className="text-sm text-gray-600">Code: {item.item_code}</div>
-                            )}
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-600 font-medium">Description</div>
-                            <div className="text-gray-900">{item.description || 'No description'}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-600 font-medium">Quantity</div>
-                            <div className="text-gray-900">
-                              <div className="font-semibold">{item.quantity || 1}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <div>
+                  <div className="text-sm text-gray-600 font-medium">Description</div>
+                  <div className="text-gray-900">{item.description || 'No description'}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-600 font-medium">Quantity</div>
+                  <div className="font-semibold">{item.quantity || 1}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-600 font-medium">Cost</div>
+                  <div className="font-semibold">£{lineCost.toFixed(2)}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-600 font-medium">RRP</div>
+                  <div className="font-semibold">£{lineTotal.toFixed(2)}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-600 font-medium">Profit</div>
+                  <div className="font-semibold text-green-600">£{lineProfit.toFixed(2)}</div>
                 </div>
               </div>
-            )}
+            </div>
+          );
+        })}
+        
+        {/* Totals Row */}
+        <div className="border-t-2 border-gray-300 pt-4 mt-4">
+          <div className="grid grid-cols-6 gap-4 font-semibold">
+            <div className="col-span-3 text-right">Totals:</div>
+            <div>£{quote.lineItems.reduce((sum, item) => sum + ((item.cost_price || 0) * (item.quantity || 1)), 0).toFixed(2)}</div>
+            <div>£{quote.lineItems.reduce((sum, item) => sum + ((item.unit_price || 0) * (item.quantity || 1)), 0).toFixed(2)}</div>
+            <div className="text-green-600">
+              £{(quote.lineItems.reduce((sum, item) => sum + ((item.unit_price || 0) * (item.quantity || 1)), 0) - 
+                 quote.lineItems.reduce((sum, item) => sum + ((item.cost_price || 0) * (item.quantity || 1)), 0)).toFixed(2)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+                
 
             {/* Notes */}
             {quote.notes && (
