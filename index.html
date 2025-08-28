@@ -1922,7 +1922,7 @@ if (updateError) {
   throw new Error(`Failed to update job: ${updateError.message}`);
 }
       
-      handleUpdateJob({
+      onUpdateJob({
   ...job,
   sage_invoice_id: invoice.id,
   sageInvoiceId: invoice.id,  // ADD THIS
@@ -3164,7 +3164,7 @@ const invoiceData = {
 console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
         await window.supabase
           .from('jobs')
-          handleUpdateJob({
+          onUpdateJob({
   ...jobToInvoice,
   sage_invoice_id: invoice.id,
   sageInvoiceId: invoice.id,  // ADD THIS
