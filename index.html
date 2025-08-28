@@ -746,7 +746,6 @@ siteNotes: '',
         id: jobId,
         jobNumber: jobId,
         quantity: 1,
-        lineItems: formData.lineItems,
         customerFinalPrice: cleanedData.customerUnitPrice,
         supplierFinalPrice: cleanedData.supplierUnitPrice,
         grossProfit: cleanedData.customerUnitPrice - cleanedData.supplierUnitPrice,
@@ -767,7 +766,6 @@ siteNotes: '',
       ...cleanedData,
       id: newJobNumber,
       jobNumber: job?.jobNumber || newJobNumber,
-      lineItems: formData.lineItems,
       grossProfit: cleanedData.customerFinalPrice - cleanedData.supplierFinalPrice,
       profitMargin: cleanedData.customerFinalPrice > 0 ?
         ((cleanedData.customerFinalPrice - cleanedData.supplierFinalPrice) / cleanedData.customerFinalPrice) * 100 : 0,
@@ -1035,8 +1033,6 @@ siteNotes: '',
             <th className="px-2 py-3 text-left font-medium w-20">Code</th>
             <th className="px-4 py-3 text-left font-medium w-20">Type</th>
             <th className="px-4 py-3 text-left font-medium w-20">Quantity</th>
-            <th className="px-4 py-3 text-left font-medium w-20">Cost (£)</th>
-<th className="px-4 py-3 text-left font-medium w-20">RRP (£)</th>
             <th className="px-4 py-3 text-left font-medium w-20">Actions</th>
           </tr>
         </thead>
@@ -1079,36 +1075,6 @@ siteNotes: '',
                   min="1"
                 />
               </td>
-              <td className="px-4 py-3">
-  <input
-    type="number"
-    step="0.01"
-    value={item.cost_price || ''}
-    onChange={(e) => {
-      const updatedItems = [...formData.lineItems];
-      updatedItems[index].cost_price = parseFloat(e.target.value) || 0;
-      setFormData({...formData, lineItems: updatedItems});
-    }}
-    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-    placeholder="0.00"
-    min="0"
-  />
-</td>
-<td className="px-4 py-3">
-  <input
-    type="number"
-    step="0.01"
-    value={item.unit_price || ''}
-    onChange={(e) => {
-      const updatedItems = [...formData.lineItems];
-      updatedItems[index].unit_price = parseFloat(e.target.value) || 0;
-      setFormData({...formData, lineItems: updatedItems});
-    }}
-    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-    placeholder="0.00"
-    min="0"
-  />
-</td>
               <td className="px-4 py-3">
                 <button 
                   onClick={() => {
@@ -1431,6 +1397,41 @@ siteNotes: '',
                   {activeTab === 'financial' && (
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Customer Unit Price (£) *</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={formData.customerUnitPrice}
+                            onChange={(e) => setFormData({...formData, customerUnitPrice: parseFloat(e.target.value) || 0})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Unit Cost (£) *</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={formData.supplierUnitPrice}
+                            onChange={(e) => setFormData({...formData, supplierUnitPrice: parseFloat(e.target.value) || 0})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">VAT Rate (%)</label>
+                          <select
+                            value={formData.vatRate}
+                            onChange={(e) => setFormData({...formData, vatRate: parseFloat(e.target.value)})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          >
+                            <option value={0}>0% (Zero Rated)</option>
+                            <option value={5}>5% (Reduced)</option>
+                            <option value={20}>20% (Standard)</option>
+                          </select>
+                        </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
                           <input
@@ -1886,23 +1887,20 @@ siteNotes: '',
         throw new Error('Customer not synced with Sage. Please sync customer first.');
       }
       
-     const invoiceData = {
-  sales_invoice: {  // ADD THIS WRAPPER!
-    contact_id: customer.sage_id,
-    date: new Date().toISOString().split('T')[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    reference: job.jobNumber,
-    notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
-    line_items: [{
-      description: `${job.jobType} - ${job.wasteType || job.aggregateType || ''}`,
-      quantity: job.quantity || 1,
-      unit_price: job.customerUnitPrice || 0,
-      currency_tax_amount: ((job.customerUnitPrice || 0) * (job.quantity || 1) * 0.20),
-      tax_rate_id: 'GB_STANDARD',
-      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
-    }]
-  }
-};
+      const invoiceData = {
+        contact_id: customer.sageId,
+        date: new Date().toISOString().split('T')[0],
+        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        reference: job.jobNumber,
+        notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
+        line_items: [{
+          description: `${job.jobType} - ${job.wasteType || job.aggregateType || ''}`,
+          quantity: job.quantity,
+          unit_price: job.customerUnitPrice,
+          tax_rate_id: '1',
+          ledger_account_id: '1'
+        }]
+      };
       
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
       
@@ -3098,28 +3096,20 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
         if (!customer?.sage_id) {
           throw new Error('Customer not synced with Sage. Please sync customer first.');
           // Prepare invoice data
-          console.log('Job data:', jobToInvoice);
-console.log('Available price fields:', {
-  customerPrice: jobToInvoice.customerPrice,
-  customerUnitPrice: jobToInvoice.customerUnitPrice,
-  customer_unit_price: jobToInvoice.customer_unit_price
-});
-     const invoiceData = {
-  sales_invoice: {  // ADD THIS WRAPPER!
-    contact_id: customer.sage_id,
-    date: new Date().toISOString().split('T')[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
-   line_items: [{
-      description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
-      quantity: jobToInvoice.quantity || 1,
-     unit_price: parseFloat(jobToInvoice.customerUnitPrice) || 0,
-      currency_tax_amount: ((parseFloat(jobToInvoice.customerUnitPrice) || 0) * (jobToInvoice.quantity || 1)) * 0.20,
-      tax_rate_id: 'GB_STANDARD',
-      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
-    }]
-  }
-};
+      const invoiceData = {
+        contact_id: customer.sage_id,
+        date: new Date().toISOString().split('T')[0],
+        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
+        invoice_lines: [{
+          description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
+          quantity: jobToInvoice.quantity || 1,
+          unit_price: parseFloat(jobToInvoice.customerPrice) || 0,
+          currency_tax_amount: (parseFloat(jobToInvoice.customerPrice) || 0) * 0.20,
+          tax_rate_id: 'GB_STANDARD',
+          ledger_account_id: 'dc4b88bb472b11e9aac702debebaeea2cc894f12'
+        }]
+      };
       
       // Create invoice in Sage
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
@@ -3143,7 +3133,28 @@ console.log('Available price fields:', {
       alert(`Invoice created successfully in Sage!`);
       onClose();
         }
-
+        // DEBUG MODE - Remove this block after testing
+const DEBUG_MODE = true;
+if (DEBUG_MODE) {
+  console.log('=== DEBUG MODE - NOT SENDING TO SAGE ===');
+  console.log('Full job:', jobToInvoice);
+  console.log('Line items:', jobToInvoice.lineItems);
+  if (jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0) {
+    console.log('First item keys:', Object.keys(jobToInvoice.lineItems[0]));
+    console.log('First item data:', jobToInvoice.lineItems[0]);
+    
+    // Check for Sage IDs in different possible fields
+    console.log('Checking for Sage IDs:');
+    console.log('- sage_id?', jobToInvoice.lineItems[0].sage_id);
+    console.log('- product_id?', jobToInvoice.lineItems[0].product_id);
+    console.log('- sage_product_id?', jobToInvoice.lineItems[0].sage_product_id);
+    console.log('- item_id?', jobToInvoice.lineItems[0].item_id);
+  }
+  alert('DEBUG MODE: Check console for invoice data (NOT sent to Sage)');
+  onClose();
+  return; // STOP HERE - Don't create invoice
+}
+// END DEBUG MODE
         // Calculate tax
 const unitPrice = jobToInvoice.customerUnitPrice || 0;
 const quantity = jobToInvoice.quantity || 1;
@@ -3157,10 +3168,11 @@ const invoiceData = {
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: jobToInvoice.jobNumber,
     notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress}`,
-   line_items: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
+   invoice_lines: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
   ? jobToInvoice.lineItems.map(item => ({
-    product_id: item.sage_id,  // ← THIS IS THE KEY FIELD!
-    description: item.description || '',  // Additional description if needed    // This goes in Description column
+      product_code: item.item_code || '',  // Product code if available
+      product_name: item.product_name,     // This goes in Product/Service column
+      description: item.description,       // This goes in Description column
       quantity: item.quantity || 1,
       unit_price: unitPrice / (jobToInvoice.lineItems.length),
       currency_tax_amount: taxAmount / (jobToInvoice.lineItems.length),
@@ -3168,6 +3180,7 @@ const invoiceData = {
       ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
     }))
   : [{
+      product_name: jobToInvoice.sageProductName || jobToInvoice.jobType,
       description: `${jobToInvoice.jobType} Service`,
       quantity: quantity,
       unit_price: unitPrice,
@@ -3573,52 +3586,38 @@ job.status === 'COLLECTED' ? 'Collected' :
               <div className="p-6">
                 {job.lineItems && job.lineItems.length > 0 ? (
                   <div className="space-y-4">
-                   {job.lineItems.map((item, index) => (
-  <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-      {/* Product */}
-      <div>
-        <div className="text-sm text-gray-600 font-medium">Product/Service</div>
-        <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
-        {item.item_code && <div className="text-sm text-gray-600">Code: {item.item_code}</div>}
-      </div>
-      
-      {/* Description */}
-      <div>
-        <div className="text-sm text-gray-600 font-medium">Description</div>
-        <div className="text-gray-900">{item.description || 'No description'}</div>
-      </div>
-      
-      {/* Quantity */}
-      <div>
-        <div className="text-sm text-gray-600 font-medium">Quantity</div>
-        <div className="font-semibold">{item.quantity || 1}</div>
-      </div>
-      
-      {/* Cost */}
-      <div>
-        <div className="text-sm text-gray-600 font-medium">Cost</div>
-        <div className="font-semibold">£{((item.cost_price || 0) * (item.quantity || 1)).toFixed(2)}</div>
-      </div>
-      
-      {/* RRP */}
-      <div>
-        <div className="text-sm text-gray-600 font-medium">RRP</div>
-        <div className="font-semibold">£{((item.unit_price || 0) * (item.quantity || 1)).toFixed(2)}</div>
-      </div>
-      
-      {/* Profit */}
-      <div>
-        <div className="text-sm text-gray-600 font-medium">Profit</div>
-        <div className="font-semibold text-green-600">
-          £{(((item.unit_price || 0) - (item.cost_price || 0)) * (item.quantity || 1)).toFixed(2)}
-        </div>
-      </div>
-    </div>
-  </div>
-))}
+                    {job.lineItems.map((item, index) => (
+                      <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Product/Service</div>
+                            <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
+                            {item.item_code && (
+                              <div className="text-sm text-gray-600">Code: {item.item_code}</div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Description</div>
+                            <div className="text-gray-900">{item.description || 'No description'}</div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              Type: <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                              }`}>
+                                {item.type || 'product'}
+                              </span>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Quantity</div>
+                            <div className="text-gray-900">
+                              <div className="font-semibold">{item.quantity || 1}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                     
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                       <div className="bg-blue-50 p-4 rounded-lg">
                         <div className="text-sm text-blue-600 font-medium">Total Items</div>
                         <div className="text-2xl font-bold text-blue-900">{job.lineItems.length}</div>
@@ -3628,17 +3627,9 @@ job.status === 'COLLECTED' ? 'Collected' :
                         <div className="text-2xl font-bold text-green-900">{job.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}</div>
                       </div>
                       <div className="bg-purple-50 p-4 rounded-lg">
-  <div className="text-sm text-purple-600 font-medium">Job Value</div>
-  <div className="text-2xl font-bold text-purple-900">
-    £{job.lineItems.reduce((sum, item) => sum + ((item.unit_price || 0) * (item.quantity || 1)), 0).toFixed(2)}
-  </div>
-</div>
-<div className="bg-green-50 p-4 rounded-lg">
-  <div className="text-sm text-green-600 font-medium">Total Profit</div>
-  <div className="text-2xl font-bold text-green-900">
-    £{job.lineItems.reduce((sum, item) => sum + (((item.unit_price || 0) - (item.cost_price || 0)) * (item.quantity || 1)), 0).toFixed(2)}
-  </div>
-</div>
+                        <div className="text-sm text-purple-600 font-medium">Job Value</div>
+                        <div className="text-2xl font-bold text-purple-900">£{job.customerFinalPrice?.toFixed(2) || '0.00'}</div>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -3748,6 +3739,24 @@ job.status === 'COLLECTED' ? 'Collected' :
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Invoice Number:</span>
                       <span className="text-gray-900">{job.invoiceNumber || 'Not invoiced'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Invoice Status:</span>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        job.invoice_status === 'Invoiced' ? 'bg-green-100 text-green-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {job.invoice_status || 'Not Invoiced'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Payment Status:</span>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        job.paymentStatus === 'Paid' ? 'bg-green-100 text-green-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {job.paymentStatus || 'Not Paid'}
+                      </span>
                     </div>
                   </div>
                   <div className="space-y-4">
@@ -4209,71 +4218,40 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             )}
 
             {/* Products & Services */}
-{quote.lineItems && quote.lineItems.length > 0 && (
-  <div className="bg-white rounded-lg border border-gray-200">
-    <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-      <h2 className="text-lg font-semibold text-gray-800">Products & Services</h2>
-    </div>
-    <div className="p-6">
-      <div className="space-y-4">
-        {quote.lineItems.map((item, index) => {
-          const lineTotal = (item.unit_price || 0) * (item.quantity || 1);
-          const lineCost = (item.cost_price || 0) * (item.quantity || 1);
-          const lineProfit = lineTotal - lineCost;
-          
-          return (
-            <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
-              <div className="grid grid-cols-9 gap-4">
-                <div>
-                  <div className="text-sm text-gray-600 font-medium">Product/Service</div>
-                  <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
-                  {item.item_code && (
-                    <div className="text-sm text-gray-600">Code: {item.item_code}</div>
-                  )}
+            {quote.lineItems && quote.lineItems.length > 0 && (
+              <div className="bg-white rounded-lg border border-gray-200">
+                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                  <h2 className="text-lg font-semibold text-gray-800">Products & Services</h2>
                 </div>
-
-                <div>
-                  <div className="text-sm text-gray-600 font-medium">Description</div>
-                  <div className="text-gray-900">{item.description || 'No description'}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600 font-medium">Quantity</div>
-                  <div className="font-semibold">{item.quantity || 1}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600 font-medium">Cost</div>
-                  <div className="font-semibold">£{lineCost.toFixed(2)}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600 font-medium">RRP</div>
-                  <div className="font-semibold">£{lineTotal.toFixed(2)}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-600 font-medium">Profit</div>
-                  <div className="font-semibold text-green-600">£{lineProfit.toFixed(2)}</div>
+                <div className="p-6">
+                  <div className="space-y-4">
+                    {quote.lineItems.map((item, index) => (
+                      <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Product/Service</div>
+                            <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
+                            {item.item_code && (
+                              <div className="text-sm text-gray-600">Code: {item.item_code}</div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Description</div>
+                            <div className="text-gray-900">{item.description || 'No description'}</div>
+                          </div>
+                          <div>
+                            <div className="text-sm text-gray-600 font-medium">Quantity</div>
+                            <div className="text-gray-900">
+                              <div className="font-semibold">{item.quantity || 1}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-        
-        {/* Totals Row */}
-        <div className="border-t-2 border-gray-300 pt-4 mt-4">
-          <div className="grid grid-cols-6 gap-4 font-semibold">
-            <div className="col-span-3 text-right">Totals:</div>
-            <div>£{quote.lineItems.reduce((sum, item) => sum + ((item.cost_price || 0) * (item.quantity || 1)), 0).toFixed(2)}</div>
-            <div>£{quote.lineItems.reduce((sum, item) => sum + ((item.unit_price || 0) * (item.quantity || 1)), 0).toFixed(2)}</div>
-            <div className="text-green-600">
-              £{(quote.lineItems.reduce((sum, item) => sum + ((item.unit_price || 0) * (item.quantity || 1)), 0) - 
-                 quote.lineItems.reduce((sum, item) => sum + ((item.cost_price || 0) * (item.quantity || 1)), 0)).toFixed(2)}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
-                
+            )}
 
             {/* Notes */}
             {quote.notes && (
@@ -7477,7 +7455,6 @@ collection_date: newJob.collectionDate || null,
       delivery_date: updatedJob.deliveryDate || null,
 collection_date: updatedJob.collectionDate || null,
       time_slot: updatedJob.timeSlot,
-      line_items: JSON.stringify(updatedJob.lineItems || []),
       collection_date: updatedJob.collectionDate,
       status: updatedJob.status || 'CONFIRMED',
       priority: updatedJob.priority || 'Medium',
@@ -8542,49 +8519,19 @@ async getServices() {
   return this.makeRequest('/services');
 },
 
-  async createDraftInvoice(invoiceData) {
-  // ADD ONLY THESE LINES AT THE START:
-  if (invoiceData?.sales_invoice?.line_items) {
-    invoiceData.sales_invoice.invoice_lines = invoiceData.sales_invoice.line_items;
-    delete invoiceData.sales_invoice.line_items;
+async createDraftInvoice(invoiceData) {
+  // If already wrapped in sales_invoice, add status to it
+  if (invoiceData.sales_invoice) {
+    invoiceData.sales_invoice.status = 'draft';
+    return this.makeRequest('sales_invoices', 'POST', invoiceData);
   }
-  
-  // REST OF YOUR EXISTING CODE STAYS THE SAME
-  // (whatever you already have in the function)
-  try {
-    console.log('=== DEBUG: Invoice Data Received ===');
-    console.log(JSON.stringify(invoiceData, null, 2));
-    
-    // Auto-fix line_items to invoice_lines BEFORE wrapping
-    if (invoiceData.line_items) {
-      invoiceData.invoice_lines = invoiceData.line_items;
-      delete invoiceData.line_items;
-      console.log('AUTO-FIXED: Renamed line_items to invoice_lines (unwrapped)');
+  // Otherwise wrap it properly
+  return this.makeRequest('sales_invoices', 'POST', {
+    sales_invoice: {
+      ...invoiceData,
+      status: 'draft'
     }
-    
-    // If already wrapped in sales_invoice
-    if (invoiceData.sales_invoice) {
-      // Also check if wrapped version has line_items
-      if (invoiceData.sales_invoice.line_items) {
-        invoiceData.sales_invoice.invoice_lines = invoiceData.sales_invoice.line_items;
-        delete invoiceData.sales_invoice.line_items;
-        console.log('AUTO-FIXED: Renamed line_items to invoice_lines (wrapped)');
-      }
-      invoiceData.sales_invoice.status = 'draft';
-      return this.makeRequest('/sales_invoices', 'POST', invoiceData);
-    }
-    
-    // Otherwise wrap it properly
-    return this.makeRequest('/sales_invoices', 'POST', {
-      sales_invoice: {
-        ...invoiceData,
-        status: 'draft'
-      }
-    });
-  } catch (error) {
-    console.error('createDraftInvoice error:', error);
-    throw error;
-  }
+  });
 },
     async syncCustomersFromSage() {
   try {
@@ -10535,8 +10482,6 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                           <th className="px-2 py-3 text-left font-medium w-20">Code</th>
                           <th className="px-4 py-3 text-left font-medium w-20">Type</th>
                           <th className="px-4 py-3 text-left font-medium w-20">Quantity</th>
-                          <th className="px-4 py-3 text-left font-medium w-20">Cost (£)</th>
-<th className="px-4 py-3 text-left font-medium w-20">RRP (£)</th>
                           <th className="px-4 py-3 text-left font-medium w-20">Actions</th>
                         </tr>
                       </thead>
