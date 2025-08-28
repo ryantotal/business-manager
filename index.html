@@ -3133,28 +3133,7 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
       alert(`Invoice created successfully in Sage!`);
       onClose();
         }
-        // DEBUG MODE - Remove this block after testing
-const DEBUG_MODE = true;
-if (DEBUG_MODE) {
-  console.log('=== DEBUG MODE - NOT SENDING TO SAGE ===');
-  console.log('Full job:', jobToInvoice);
-  console.log('Line items:', jobToInvoice.lineItems);
-  if (jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0) {
-    console.log('First item keys:', Object.keys(jobToInvoice.lineItems[0]));
-    console.log('First item data:', jobToInvoice.lineItems[0]);
-    
-    // Check for Sage IDs in different possible fields
-    console.log('Checking for Sage IDs:');
-    console.log('- sage_id?', jobToInvoice.lineItems[0].sage_id);
-    console.log('- product_id?', jobToInvoice.lineItems[0].product_id);
-    console.log('- sage_product_id?', jobToInvoice.lineItems[0].sage_product_id);
-    console.log('- item_id?', jobToInvoice.lineItems[0].item_id);
-  }
-  alert('DEBUG MODE: Check console for invoice data (NOT sent to Sage)');
-  onClose();
-  return; // STOP HERE - Don't create invoice
-}
-// END DEBUG MODE
+      
         // Calculate tax
 const unitPrice = jobToInvoice.customerUnitPrice || 0;
 const quantity = jobToInvoice.quantity || 1;
