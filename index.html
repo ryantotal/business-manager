@@ -746,7 +746,6 @@ siteNotes: '',
         id: jobId,
         jobNumber: jobId,
         quantity: 1,
-        lineItems: formData.lineItems,
         customerFinalPrice: cleanedData.customerUnitPrice,
         supplierFinalPrice: cleanedData.supplierUnitPrice,
         grossProfit: cleanedData.customerUnitPrice - cleanedData.supplierUnitPrice,
@@ -767,7 +766,6 @@ siteNotes: '',
       ...cleanedData,
       id: newJobNumber,
       jobNumber: job?.jobNumber || newJobNumber,
-      lineItems: formData.lineItems,
       grossProfit: cleanedData.customerFinalPrice - cleanedData.supplierFinalPrice,
       profitMargin: cleanedData.customerFinalPrice > 0 ?
         ((cleanedData.customerFinalPrice - cleanedData.supplierFinalPrice) / cleanedData.customerFinalPrice) * 100 : 0,
@@ -1886,23 +1884,20 @@ siteNotes: '',
         throw new Error('Customer not synced with Sage. Please sync customer first.');
       }
       
-     const invoiceData = {
-  sales_invoice: {  // ADD THIS WRAPPER!
-    contact_id: customer.sage_id,
-    date: new Date().toISOString().split('T')[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    reference: job.jobNumber,
-    notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
-    line_items: [{
-      description: `${job.jobType} - ${job.wasteType || job.aggregateType || ''}`,
-      quantity: job.quantity || 1,
-      unit_price: job.customerUnitPrice || 0,
-      currency_tax_amount: ((job.customerUnitPrice || 0) * (job.quantity || 1) * 0.20),
-      tax_rate_id: 'GB_STANDARD',
-      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
-    }]
-  }
-};
+      const invoiceData = {
+        contact_id: customer.sageId,
+        date: new Date().toISOString().split('T')[0],
+        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        reference: job.jobNumber,
+        notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
+        line_items: [{
+          description: `${job.jobType} - ${job.wasteType || job.aggregateType || ''}`,
+          quantity: job.quantity,
+          unit_price: job.customerUnitPrice,
+          tax_rate_id: '1',
+          ledger_account_id: '1'
+        }]
+      };
       
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
       
@@ -3098,28 +3093,20 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
         if (!customer?.sage_id) {
           throw new Error('Customer not synced with Sage. Please sync customer first.');
           // Prepare invoice data
-          console.log('Job data:', jobToInvoice);
-console.log('Available price fields:', {
-  customerPrice: jobToInvoice.customerPrice,
-  customerUnitPrice: jobToInvoice.customerUnitPrice,
-  customer_unit_price: jobToInvoice.customer_unit_price
-});
-     const invoiceData = {
-  sales_invoice: {  // ADD THIS WRAPPER!
-    contact_id: customer.sage_id,
-    date: new Date().toISOString().split('T')[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
-   line_items: [{
-      description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
-      quantity: jobToInvoice.quantity || 1,
-     unit_price: parseFloat(jobToInvoice.customerUnitPrice) || 0,
-      currency_tax_amount: ((parseFloat(jobToInvoice.customerUnitPrice) || 0) * (jobToInvoice.quantity || 1)) * 0.20,
-      tax_rate_id: 'GB_STANDARD',
-      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
-    }]
-  }
-};
+      const invoiceData = {
+        contact_id: customer.sage_id,
+        date: new Date().toISOString().split('T')[0],
+        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
+        invoice_lines: [{
+          description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
+          quantity: jobToInvoice.quantity || 1,
+          unit_price: parseFloat(jobToInvoice.customerPrice) || 0,
+          currency_tax_amount: (parseFloat(jobToInvoice.customerPrice) || 0) * 0.20,
+          tax_rate_id: 'GB_STANDARD',
+          ledger_account_id: 'dc4b88bb472b11e9aac702debebaeea2cc894f12'
+        }]
+      };
       
       // Create invoice in Sage
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
@@ -3144,7 +3131,7 @@ console.log('Available price fields:', {
       onClose();
         }
 // DEBUG MODE - Remove this block after testing
-const DEBUG_MODE = false;
+const DEBUG_MODE = true;
 if (DEBUG_MODE) {
   console.log('=== DEBUG MODE - NOT SENDING TO SAGE ===');
   console.log('Full job:', jobToInvoice);
@@ -3155,40 +3142,41 @@ if (DEBUG_MODE) {
   const quantity = jobToInvoice.quantity || 1;
   const lineTotal = unitPrice * quantity;
   const taxAmount = lineTotal * 0.20;
+  
   const testInvoiceData = {
-  sales_invoice: {
-    contact_id: customer.sage_id,
-    date: new Date().toISOString().split('T')[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    reference: jobToInvoice.jobNumber,
-    line_items: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
-      ? jobToInvoice.lineItems.map(item => {
-          // Get price and quantity for this specific item
-          const itemPrice = item.unit_price || item.price || 0;
-          const itemQuantity = item.quantity || 1;
-          const itemTotal = itemPrice * itemQuantity;
-          const itemTax = itemTotal * 0.20; // 20% VAT per item
-          
-          return {
-            product_id: item.sage_id,
-            description: item.description || '',
-            quantity: itemQuantity,
-            unit_price: itemPrice,
-            currency_tax_amount: itemTax,
+    sales_invoice: {
+      contact_id: customer.sage_id,
+      date: new Date().toISOString().split('T')[0],
+      due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+      reference: jobToInvoice.jobNumber,
+      line_items: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
+        ? jobToInvoice.lineItems.map(item => {
+    // Get price and quantity for this specific item
+    const itemPrice = item.unit_price || item.price || 0;
+    const itemQuantity = item.quantity || 1;
+    const itemTotal = itemPrice * itemQuantity;
+    const itemTax = itemTotal * 0.20; // 20% VAT per item
+    
+    return {
+      product_id: item.sage_id,
+      description: item.description || '',
+      quantity: itemQuantity,
+      unit_price: itemPrice,
+      currency_tax_amount: itemTax,
+      tax_rate_id: (itemPrice === 0 || itemTotal === 0) ? 'GB_ZERO' : 'GB_STANDARD',
+      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+    };
+  })
+        : [{
+            description: `${jobToInvoice.jobType} Service`,
+            quantity: quantity,
+            unit_price: unitPrice,
+            currency_tax_amount: taxAmount,
             tax_rate_id: (itemPrice === 0 || itemTotal === 0) ? 'GB_ZERO' : 'GB_STANDARD',
             ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
-          };
-        })
-      : [{
-          description: `${jobToInvoice.jobType} Service`,
-          quantity: quantity,
-          unit_price: unitPrice,
-          currency_tax_amount: taxAmount,
-          tax_rate_id: (unitPrice === 0 || lineTotal === 0) ? 'GB_ZERO' : 'GB_STANDARD',  // ← FIXED: using unitPrice and lineTotal
-          ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
-        }]
-  }
-};
+          }]
+    }
+  };
   
   console.log('Invoice structure that WOULD be sent:', JSON.stringify(testInvoiceData, null, 2));
   alert('DEBUG MODE: Check console for invoice structure (NOT sent to Sage)');
@@ -3209,7 +3197,7 @@ const invoiceData = {
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: jobToInvoice.jobNumber,
     notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress}`,
-   line_items: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
+   invoice_lines: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
   ? jobToInvoice.lineItems.map(item => ({
     product_id: item.sage_id,  // ← THIS IS THE KEY FIELD!
     description: item.description || '',  // Additional description if needed    // This goes in Description column
@@ -7529,7 +7517,6 @@ collection_date: newJob.collectionDate || null,
       delivery_date: updatedJob.deliveryDate || null,
 collection_date: updatedJob.collectionDate || null,
       time_slot: updatedJob.timeSlot,
-      line_items: JSON.stringify(updatedJob.lineItems || []),
       collection_date: updatedJob.collectionDate,
       status: updatedJob.status || 'CONFIRMED',
       priority: updatedJob.priority || 'Medium',
@@ -8594,49 +8581,19 @@ async getServices() {
   return this.makeRequest('/services');
 },
 
-  async createDraftInvoice(invoiceData) {
-  // ADD ONLY THESE LINES AT THE START:
-  if (invoiceData?.sales_invoice?.line_items) {
-    invoiceData.sales_invoice.invoice_lines = invoiceData.sales_invoice.line_items;
-    delete invoiceData.sales_invoice.line_items;
+async createDraftInvoice(invoiceData) {
+  // If already wrapped in sales_invoice, add status to it
+  if (invoiceData.sales_invoice) {
+    invoiceData.sales_invoice.status = 'draft';
+    return this.makeRequest('sales_invoices', 'POST', invoiceData);
   }
-  
-  // REST OF YOUR EXISTING CODE STAYS THE SAME
-  // (whatever you already have in the function)
-  try {
-    console.log('=== DEBUG: Invoice Data Received ===');
-    console.log(JSON.stringify(invoiceData, null, 2));
-    
-    // Auto-fix line_items to invoice_lines BEFORE wrapping
-    if (invoiceData.line_items) {
-      invoiceData.invoice_lines = invoiceData.line_items;
-      delete invoiceData.line_items;
-      console.log('AUTO-FIXED: Renamed line_items to invoice_lines (unwrapped)');
+  // Otherwise wrap it properly
+  return this.makeRequest('sales_invoices', 'POST', {
+    sales_invoice: {
+      ...invoiceData,
+      status: 'draft'
     }
-    
-    // If already wrapped in sales_invoice
-    if (invoiceData.sales_invoice) {
-      // Also check if wrapped version has line_items
-      if (invoiceData.sales_invoice.line_items) {
-        invoiceData.sales_invoice.invoice_lines = invoiceData.sales_invoice.line_items;
-        delete invoiceData.sales_invoice.line_items;
-        console.log('AUTO-FIXED: Renamed line_items to invoice_lines (wrapped)');
-      }
-      invoiceData.sales_invoice.status = 'draft';
-      return this.makeRequest('/sales_invoices', 'POST', invoiceData);
-    }
-    
-    // Otherwise wrap it properly
-    return this.makeRequest('/sales_invoices', 'POST', {
-      sales_invoice: {
-        ...invoiceData,
-        status: 'draft'
-      }
-    });
-  } catch (error) {
-    console.error('createDraftInvoice error:', error);
-    throw error;
-  }
+  });
 },
     async syncCustomersFromSage() {
   try {
