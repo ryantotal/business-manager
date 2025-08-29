@@ -3075,111 +3075,92 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
-  // Handle invoice creation locally
-  const handleCreateInvoice = async (jobToInvoice) => {
-    try {
-      const isDemoMode = false; // Force production mode - sage-proxy is working!
+const handleCreateInvoice = async (jobToInvoice) => {
+  try {
+    const isDemoMode = false; // Force production mode - sage-proxy is working!
+    
+    if (isDemoMode) {
+      const invoiceNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+      await window.supabase
+        .from('jobs')
+        .update({ invoice_number: invoiceNumber })
+        .eq('id', jobToInvoice.id);
+      alert(`Demo Mode: Invoice ${invoiceNumber} created!`);
+      onClose();
+    } else {
+      const { data: customer } = await window.supabase
+        .from('customers')
+        .select('*')
+        .eq('name', jobToInvoice.customerName)
+        .single();
       
-      if (isDemoMode) {
-        const invoiceNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
-        await window.supabase
-          .from('jobs')
-          .update({ invoice_number: invoiceNumber })
-          .eq('id', jobToInvoice.id);
-        alert(`Demo Mode: Invoice ${invoiceNumber} created!`);
-        onClose();
-      } else {
-        const { data: customer } = await window.supabase
-          .from('customers')
-          .select('*')
-          .eq('name', jobToInvoice.customerName)
-          .single();
-        
-        if (!customer?.sage_id) {
-          throw new Error('Customer not synced with Sage. Please sync customer first.');
-          // Prepare invoice data
+      if (!customer?.sage_id) {
+        throw new Error('Customer not synced with Sage. Please sync customer first.');
+      }
+      
+      // Calculate tax
+      const unitPrice = jobToInvoice.customerUnitPrice || 0;
+      const quantity = jobToInvoice.quantity || 1;
+      const lineTotal = unitPrice * quantity;
+      const taxAmount = lineTotal * 0.20; // 20% VAT
+      
       const invoiceData = {
-        contact_id: customer.sage_id,
-        date: new Date().toISOString().split('T')[0],
-        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-        reference: jobToInvoice.jobNumber || `JOB-${jobToInvoice.id}`,
-        invoice_lines: [{
-          description: `${jobToInvoice.jobType || 'Service'} - ${jobToInvoice.address || 'No address'}`,
-          quantity: jobToInvoice.quantity || 1,
-          unit_price: parseFloat(jobToInvoice.customerPrice) || 0,
-          currency_tax_amount: (parseFloat(jobToInvoice.customerPrice) || 0) * 0.20,
-          tax_rate_id: 'GB_STANDARD',
-          ledger_account_id: 'dc4b88bb472b11e9aac702debebaeea2cc894f12'
-        }]
+        sales_invoice: {  
+          contact_id: customer.sage_id,
+          date: new Date().toISOString().split('T')[0],
+          due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+          reference: jobToInvoice.jobNumber,
+          notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress1 || jobToInvoice.siteAddress}`,
+          invoice_lines: [{
+            description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
+            quantity: quantity,
+            unit_price: unitPrice,
+            currency_tax_amount: taxAmount,
+            tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+            ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+          }]
+        }
       };
       
-      // Create invoice in Sage
+      console.log('Sending invoice data:', invoiceData);
+      console.log('To endpoint: /sales_invoices');
+      
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
       
-      // Update database
+      // Extract SI number from response
+      const siNumber = invoice.invoice_number || invoice.si_number || invoice.id;
+      
+      // Update database with SI number
       await window.supabase
         .from('jobs')
         .update({
           sage_invoice_id: invoice.id,
+          invoice_number: invoice.invoice_number || invoice.id,
+          sage_si_number: siNumber,  // ADD THIS LINE
           invoice_status: 'Invoiced'
         })
         .eq('id', jobToInvoice.id);
       
-      // Update local state
-      onUpdateJob({
-        ...jobToInvoice,
-        sage_invoice_id: invoice.id,
-        invoice_status: 'Invoiced'
-      });
+      // ⚡ CRITICAL FIX: Fetch the updated job from database ⚡
+      const { data: updatedJob, error } = await window.supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', jobToInvoice.id)
+        .single();
       
-      alert(`Invoice created successfully in Sage!`);
+      if (updatedJob && !error) {
+        // Update the job in parent component with fresh data
+        onEdit(updatedJob);
+      }
+      
+      alert(`Invoice created successfully in Sage! SI: ${siNumber}`);
       onClose();
-        }
-        
-        // Calculate tax
-const unitPrice = jobToInvoice.customerUnitPrice || 0;
-const quantity = jobToInvoice.quantity || 1;
-const lineTotal = unitPrice * quantity;
-const taxAmount = lineTotal * 0.20; // 20% VAT
-
-const invoiceData = {
-  sales_invoice: {  // WRAP IN sales_invoice
-    contact_id: customer.sage_id,
-    date: new Date().toISOString().split('T')[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    reference: jobToInvoice.jobNumber,
-    notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress}`,
-    invoice_lines: [{  // CHANGE TO invoice_lines
-      description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
-      quantity: quantity,
-      unit_price: unitPrice,
-      currency_tax_amount: taxAmount,  // ADD THIS FIELD
-      tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',  // FIX TAX RATE
-      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'  // Sales - Services (4010)
-    }]
+    }
+  } catch (error) {
+    console.error('Error creating invoice:', error);
+    alert('Failed to create invoice: ' + error.message);
   }
 };
-        
-        const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
-        console.log('Sending invoice data:', invoiceData); // ADD THIS LINE
-console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
-        await window.supabase
-          .from('jobs')
-          .update({
-            sage_invoice_id: invoice.id,
-            invoice_number: invoice.invoice_number || invoice.id
-          })
-          .eq('id', jobToInvoice.id);
-        
-        alert('Invoice created successfully in Sage!');
-        onClose();
-      }
-    } catch (error) {
-      console.error('Error creating invoice:', error);
-      alert('Failed to create invoice: ' + error.message);
-    }
-  };
-
   // Load attachments when component mounts
   useEffect(() => {
     if (job?.id) {
