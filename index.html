@@ -1949,6 +1949,7 @@ onUpdateJob({
 // Refresh jobs to show the new SI number
 if (refreshJobs) {
   await window.refreshJobs();
+  window.location.reload();
 }
     }
   } catch (error) {
