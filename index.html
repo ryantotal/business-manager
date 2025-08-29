@@ -1935,10 +1935,9 @@ await window.supabase
 
 onUpdateJob({
   ...job,
-  sage_invoice_id: invoice.id,
-  invoice_number: invoice.invoice_number || invoice.id,
-  sage_si_number: siNumber,  // ADD THIS LINE
-  invoice_status: 'Invoiced'
+  invoiceNumber: siNumber,  // Changed from invoice_number
+  sageInvoiceId: invoice.id,  // Add this for consistency
+  invoiceStatus: 'Invoiced'
 });
       
       alert('Invoice created successfully in Sage!');
@@ -7368,6 +7367,22 @@ collection_date: newJob.collectionDate || null,
 };
 
  const handleUpdateJob = async (updatedJob) => {
+  // ADD THESE LINES - Update local state FIRST
+  setJobs(prevJobs => 
+    prevJobs.map(job => 
+      job.id === updatedJob.id ? updatedJob : job
+    )
+  );
+  
+  // Update showFullPageJob if it's the same job
+  if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
+    setShowFullPageJob(updatedJob);
+  }
+  
+  // Update editingJob if it's the same job
+  if (editingJob && editingJob.id === updatedJob.id) {
+    setEditingJob(updatedJob);
+  }
   try {
     // Convert camelCase to snake_case for database
     const jobForDatabase = {
@@ -7412,6 +7427,7 @@ collection_date: updatedJob.collectionDate || null,
       hazardous_waste: updatedJob.hazardousWaste || false,
       consignment_note: updatedJob.consignmentNote,
       invoice_number: updatedJob.invoiceNumber,
+      sage_si_number: updatedJob.invoiceNumber, 
       invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
       payment_status: updatedJob.paymentStatus || 'Not Paid'
     };
@@ -7508,7 +7524,7 @@ const handleDeleteAttachment = async (attachment) => {
           };
          const handleCollection = (job) => {
   console.log('Collection job:', job);
-  onUpdateJob({ 
+  handleUpdateJob({
     ...job, 
     status: 'COLLECTED', 
     isCompleted: true,
