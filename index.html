@@ -1944,12 +1944,16 @@ onUpdateJob({
   invoiceStatus: 'Invoiced'
 });
       
-      alert('Invoice created successfully in Sage!');
+     alert('Invoice created successfully in Sage!');
+console.log('1. About to refresh jobs');
 
 // Refresh jobs to show the new SI number
 if (refreshJobs) {
+  console.log('2. refreshJobs exists, calling it');
   await window.refreshJobs();
+  console.log('3. refreshJobs completed');
   window.location.reload();
+  console.log('4. This should never show');
 }
     }
   } catch (error) {
