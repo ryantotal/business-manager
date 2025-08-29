@@ -3081,7 +3081,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
-const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user }) => {
+const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user, onUpdateDisplay }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
   const [currentJob, setCurrentJob] = useState(job);
