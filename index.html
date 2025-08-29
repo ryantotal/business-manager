@@ -7414,7 +7414,9 @@ collection_date: updatedJob.collectionDate || null,
       consignment_note: updatedJob.consignmentNote,
       invoice_number: updatedJob.invoiceNumber,
       invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
-      payment_status: updatedJob.paymentStatus || 'Not Paid'
+      payment_status: updatedJob.paymentStatus || 'Not Paid',
+      sage_si_number: updatedJob.sage_si_number,  // ADD THIS LINE
+  sage_invoice_id: updatedJob.sage_invoice_id
     };
 
     const { error } = await window.supabase
