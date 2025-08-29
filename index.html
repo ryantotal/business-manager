@@ -7368,11 +7368,19 @@ collection_date: newJob.collectionDate || null,
 
  const handleUpdateJob = async (updatedJob) => {
   // ADD THESE LINES - Update local state FIRST
-  setJobs(prevJobs => 
-    prevJobs.map(job => 
-      job.id === updatedJob.id ? updatedJob : job
-    )
-  );
+  setJobs(prevJobs =>
+  prevJobs.map(job => {
+    if (job.id === updatedJob.id) {
+      const merged = {
+        ...job,           // Keep all existing fields
+        ...updatedJob     // Override with ALL fields from updatedJob
+      };
+      console.log('Merging job:', job.id, 'with invoice:', merged.invoiceNumber);
+      return merged;
+    }
+    return job;
+  })
+);
   
   // Update showFullPageJob if it's the same job
   if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
@@ -7427,7 +7435,7 @@ collection_date: updatedJob.collectionDate || null,
       hazardous_waste: updatedJob.hazardousWaste || false,
       consignment_note: updatedJob.consignmentNote,
       invoice_number: updatedJob.invoiceNumber,
-      sage_si_number: updatedJob.invoiceNumber, 
+      sage_si_number: updatedJob.invoiceNumber,
       invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
       payment_status: updatedJob.paymentStatus || 'Not Paid'
     };
