@@ -1952,7 +1952,6 @@ if (refreshJobs) {
   console.log('2. refreshJobs exists, calling it');
   await window.refreshJobs();
   console.log('3. refreshJobs completed');
-  window.location.reload();
   console.log('4. This should never show');
 }
     }
@@ -3102,7 +3101,7 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
         alert(`Demo Mode: Invoice ${invoiceNumber} created!`);
         onClose();
 await window.refreshJobs();
-window.location.reload();
+
       } else {
         const { data: customer } = await window.supabase
           .from('customers')
@@ -3177,6 +3176,7 @@ const invoiceData = {
         
         const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
         console.log('Sending invoice data:', invoiceData); // ADD THIS LINE
+        console.log('Sage returned:', invoice);  
 console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
         await window.supabase
           .from('jobs')
@@ -3192,7 +3192,6 @@ console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
 // Refresh jobs to show the new SI number
 if (window.refreshJobs) {
   await window.refreshJobs();
-  window.location.reload();
 }
       }
     } catch (error) {
