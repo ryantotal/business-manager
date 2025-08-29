@@ -1940,6 +1940,7 @@ const handleCreateInvoice = async (job) => {
   job.invoice_status = updatedJob.invoice_status;
   
   onUpdateJob(updatedJob);
+  onUpdateDisplay(updatedJob);
   
   // Force a re-render
   setActiveTab(activeTab);
@@ -8142,7 +8143,7 @@ onClick={() => {
   <FullPageJobView 
     job={showFullPageJob}
     onClose={() => setShowFullPageJob(null)}
-    
+    onUpdateDisplay={setShowFullPageJob}
     onEdit={handleEditJob}
     onDuplicate={handleDuplicateJob}
     onDelete={handleDeleteJob}
