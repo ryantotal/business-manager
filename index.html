@@ -737,23 +737,32 @@ siteNotes: '',
           };
 
           const handleSubmit = () => {
-            // Check if this is a skip/RoRo with quantity > 1
-            if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
-            const jobs = [];
-            const firstJobNumber = generateJobNumber();
-            for (let i = 0; i < formData.quantity; i++) {
+  // FIX: Clean up empty date strings before processing
+  const cleanedFormData = {
+    ...formData,
+    // Convert empty strings to null for date fields
+    jobDate: formData.jobDate || new Date().toISOString().split('T')[0],
+    collectionDate: formData.collectionDate || null,
+    completedDate: formData.isCompleted ? new Date().toISOString().split('T')[0] : null
+  };
+  
+  // Check if this is a skip/RoRo with quantity > 1
+  if ((cleanedFormData.jobType === 'Skip Hire' || cleanedFormData.jobType === 'Roll-on Roll-off') && cleanedFormData.quantity > 1) {
+    const jobs = [];
+    const firstJobNumber = generateJobNumber();
+            for (let i = 0; i < cleanedFormData.quantity; i++) {
                 const jobId = i === 0 ? firstJobNumber : `${firstJobNumber}-${i+1}`;
                 const newJob = {
-                  ...formData,
+                  ...cleanedFormData,
                   id: jobId,
                   jobNumber: jobId,
                   quantity: 1,
-                  customerFinalPrice: formData.customerUnitPrice,
-                  supplierFinalPrice: formData.supplierUnitPrice,
-                  grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
-                  profitMargin: formData.customerUnitPrice > 0 ? 
-                    ((formData.customerUnitPrice - formData.supplierUnitPrice) / formData.customerUnitPrice) * 100 : 0,
-                  jobValue: formData.customerUnitPrice,
+                  customerFinalPrice: cleanedFormData.customerUnitPrice,
+                  supplierFinalPrice: cleanedFormData.supplierUnitPrice,
+                  grossProfit: cleanedFormData.customerUnitPrice - cleanedFormData.supplierUnitPrice,
+                  profitMargin: cleanedFormData.customerUnitPrice > 0 ? 
+                    ((cleanedFormData.customerUnitPrice - cleanedFormData.supplierUnitPrice) / cleanedFormData.customerUnitPrice) * 100 : 0,
+                  jobValue: cleanedFormData.customerUnitPrice,
                   parentJobId: i === 0 ? null : jobs[0].id,
                   linkedJobs: []
                 };
@@ -765,13 +774,13 @@ siteNotes: '',
             } else {
               const newJobNumber = job?.id || generateJobNumber();
               const newJob = {
-                ...formData,               
+                ...cleanedFormData,               
                 id: newJobNumber,
                 jobNumber: job?.jobNumber || newJobNumber,
-                grossProfit: formData.customerFinalPrice - formData.supplierFinalPrice,
-                profitMargin: formData.customerFinalPrice > 0 ? 
-                  ((formData.customerFinalPrice - formData.supplierFinalPrice) / formData.customerFinalPrice) * 100 : 0,
-                jobValue: formData.customerFinalPrice,
+                grossProfit: cleanedFormData.customerFinalPrice - cleanedFormData.supplierFinalPrice,
+                profitMargin: cleanedFormData.customerFinalPrice > 0 ? 
+                  ((cleanedFormData.customerFinalPrice - cleanedFormData.supplierFinalPrice) / cleanedFormData.customerFinalPrice) * 100 : 0,
+                jobValue: cleanedFormData.customerFinalPrice,
                 parentJobId: null,
                 linkedJobs: []
               };
@@ -2087,9 +2096,14 @@ const uploadJobAttachment = async () => {
   }
 };
           const handleCollection = (job) => {
-            onUpdateJob({ ...job, status: 'COLLECTED', isCompleted: true });
-            setSelectedJob(null);
-          };
+  onUpdateJob({ 
+    ...job, 
+    status: 'COLLECTED', 
+    isCompleted: true,
+    completedDate: new Date().toISOString().split('T')[0]  // ADD THIS LINE
+  });
+  setSelectedJob(null);
+};
 
           // Calendar View Component
           const CalendarView = () => {
@@ -7492,8 +7506,15 @@ const handleDeleteAttachment = async (attachment) => {
             onAddJob(exchangeJob);
             setSelectedJob(null);
           };
-          const handleCollection = (job) => {
+         const handleCollection = (job) => {
   console.log('Collection job:', job);
+  onUpdateJob({ 
+    ...job, 
+    status: 'COLLECTED', 
+    isCompleted: true,
+    completedDate: new Date().toISOString().split('T')[0]  // ADD THIS LINE
+  });
+  setSelectedJob(null);
 };
    const handleDeleteJob = async (jobId) => {
   try {
