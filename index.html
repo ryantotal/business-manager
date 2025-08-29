@@ -701,7 +701,8 @@ siteNotes: '',
             isCompleted: false,
             isCancelled: false,
             sageProductId: '',
-            sageProductName: ''
+            sageProductName: '',
+            sage_si_number: ''
           });
 
           const [activeTab, setActiveTab] = useState('details');
@@ -1739,10 +1740,15 @@ siteNotes: '',
               )}
               
               {job.invoiceNumber && (
-                <div className="mt-2 text-xs text-gray-500">
-                  Invoice: {job.invoiceNumber}
-                </div>
-              )}
+  <div className="mt-2 text-xs text-gray-500">
+    Invoice: {job.invoiceNumber}
+    {job.sage_si_number && (
+      <span className="ml-2 text-blue-600 font-medium">
+        | SI: {job.sage_si_number}
+      </span>
+    )}
+  </div>
+)}
             </div>
           );
         };
@@ -1904,22 +1910,27 @@ siteNotes: '',
       };
       
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
-      
-      await window.supabase
-        .from('jobs')
-        .update({ 
-        sage_invoice_id: invoice.id,
-invoice_number: invoice.invoice_number || invoice.id,
-invoice_status: 'Invoiced'  // Add this line
-        })
-        .eq('id', job.id);
-      
-      onUpdateJob({
-        ...job,
-       sage_invoice_id: invoice.id,
-invoice_number: invoice.invoice_number || invoice.id,
-invoice_status: 'Invoiced'  // Add this if you want the UI to update immediately
-      });
+
+// Sage returns the SI number in the response
+const siNumber = invoice.invoice_number || invoice.si_number || invoice.id;
+
+await window.supabase
+  .from('jobs')
+  .update({
+    sage_invoice_id: invoice.id,
+    invoice_number: invoice.invoice_number || invoice.id,
+    sage_si_number: siNumber,  // ADD THIS LINE
+    invoice_status: 'Invoiced'
+  })
+  .eq('id', job.id);
+
+onUpdateJob({
+  ...job,
+  sage_invoice_id: invoice.id,
+  invoice_number: invoice.invoice_number || invoice.id,
+  sage_si_number: siNumber,  // ADD THIS LINE
+  invoice_status: 'Invoiced'
+});
       
       alert('Invoice created successfully in Sage!');
     }
@@ -2345,6 +2356,7 @@ const uploadJobAttachment = async () => {
 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Postcode</th>
 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SI Number</th>
   </tr>
 </thead>
 <tbody className="bg-white divide-y divide-gray-200">
@@ -2417,6 +2429,15 @@ job.isCompleted ? 'Completed' :
 job.isCancelled ? 'Cancelled' :
 job.status.replace('_', ' ')}
 </span>
+</td>
+<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+  {job.sage_si_number ? (
+    <span className="font-medium text-blue-600">
+      {job.sage_si_number}
+    </span>
+  ) : (
+    <span className="text-gray-400">-</span>
+  )}
 </td>
 </tr>
  );
@@ -3673,27 +3694,17 @@ console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
                         {job.invoiceStatus || 'Not Invoiced'}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Payment Status:</span>
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        job.paymentStatus === 'Paid' ? 'bg-green-100 text-green-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {job.paymentStatus || 'Not Paid'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">VAT Rate:</span>
-                      <span className="text-gray-900">{job.vatRate || 20}%</span>
-                    </div>
-                    {job.wasteTransferNote && (
+                   {job.wasteTransferNote && (
                       <div className="flex justify-between">
                         <span className="text-gray-600 font-medium">Waste Transfer Note:</span>
                         <span className="text-gray-900">{job.wasteTransferNote}</span>
                       </div>
-                    )}
+                      {job.sage_si_number && (
+  <div>
+    <span className="font-medium">SI Number:</span>
+    <span className="text-blue-600 font-bold">{job.sage_si_number}</span>
+  </div>
+)}
                   </div>
                 </div>
               </div>
