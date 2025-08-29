@@ -3180,12 +3180,18 @@ console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
           .from('jobs')
           .update({
             sage_invoice_id: invoice.id,
-            invoice_number: invoice.invoice_number || invoice.id
+            invoice_number: invoice.invoice_number || invoice.id,
+            sage_si_number: invoice.invoice_number || invoice.id
           })
           .eq('id', jobToInvoice.id);
         
         alert('Invoice created successfully in Sage!');
         onClose();
+// Refresh jobs to show the new SI number
+if (window.refreshJobs) {
+  await window.refreshJobs();
+  window.location.reload();
+}
       }
     } catch (error) {
       console.error('Error creating invoice:', error);
