@@ -47,10 +47,6 @@
     <div id="root"></div>
     
     <script type="text/babel">
-      // Temporary placeholder to prevent errors
-window.refreshJobs = () => {
-  console.log('refreshJobs called before proper definition');
-};
         const { useState, useEffect, createContext, useContext } = React;
         
         // Lucide React Icons as components
@@ -741,32 +737,23 @@ siteNotes: '',
           };
 
           const handleSubmit = () => {
-  // FIX: Clean up empty date strings before processing
-  const cleanedFormData = {
-    ...formData,
-    // Convert empty strings to null for date fields
-    jobDate: formData.jobDate || new Date().toISOString().split('T')[0],
-    collectionDate: formData.collectionDate || null,
-    completedDate: formData.isCompleted ? new Date().toISOString().split('T')[0] : null
-  };
-  
-  // Check if this is a skip/RoRo with quantity > 1
-  if ((cleanedFormData.jobType === 'Skip Hire' || cleanedFormData.jobType === 'Roll-on Roll-off') && cleanedFormData.quantity > 1) {
-    const jobs = [];
-    const firstJobNumber = generateJobNumber();
-            for (let i = 0; i < cleanedFormData.quantity; i++) {
+            // Check if this is a skip/RoRo with quantity > 1
+            if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
+            const jobs = [];
+            const firstJobNumber = generateJobNumber();
+            for (let i = 0; i < formData.quantity; i++) {
                 const jobId = i === 0 ? firstJobNumber : `${firstJobNumber}-${i+1}`;
                 const newJob = {
-                  ...cleanedFormData,
+                  ...formData,
                   id: jobId,
                   jobNumber: jobId,
                   quantity: 1,
-                  customerFinalPrice: cleanedFormData.customerUnitPrice,
-                  supplierFinalPrice: cleanedFormData.supplierUnitPrice,
-                  grossProfit: cleanedFormData.customerUnitPrice - cleanedFormData.supplierUnitPrice,
-                  profitMargin: cleanedFormData.customerUnitPrice > 0 ? 
-                    ((cleanedFormData.customerUnitPrice - cleanedFormData.supplierUnitPrice) / cleanedFormData.customerUnitPrice) * 100 : 0,
-                  jobValue: cleanedFormData.customerUnitPrice,
+                  customerFinalPrice: formData.customerUnitPrice,
+                  supplierFinalPrice: formData.supplierUnitPrice,
+                  grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
+                  profitMargin: formData.customerUnitPrice > 0 ? 
+                    ((formData.customerUnitPrice - formData.supplierUnitPrice) / formData.customerUnitPrice) * 100 : 0,
+                  jobValue: formData.customerUnitPrice,
                   parentJobId: i === 0 ? null : jobs[0].id,
                   linkedJobs: []
                 };
@@ -778,13 +765,13 @@ siteNotes: '',
             } else {
               const newJobNumber = job?.id || generateJobNumber();
               const newJob = {
-                ...cleanedFormData,               
+                ...formData,               
                 id: newJobNumber,
                 jobNumber: job?.jobNumber || newJobNumber,
-                grossProfit: cleanedFormData.customerFinalPrice - cleanedFormData.supplierFinalPrice,
-                profitMargin: cleanedFormData.customerFinalPrice > 0 ? 
-                  ((cleanedFormData.customerFinalPrice - cleanedFormData.supplierFinalPrice) / cleanedFormData.customerFinalPrice) * 100 : 0,
-                jobValue: cleanedFormData.customerFinalPrice,
+                grossProfit: formData.customerFinalPrice - formData.supplierFinalPrice,
+                profitMargin: formData.customerFinalPrice > 0 ? 
+                  ((formData.customerFinalPrice - formData.supplierFinalPrice) / formData.customerFinalPrice) * 100 : 0,
+                jobValue: formData.customerFinalPrice,
                 parentJobId: null,
                 linkedJobs: []
               };
@@ -1861,7 +1848,7 @@ siteNotes: '',
         };
 
         // Jobs Management Component
-          const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setShowFullPageJob, refreshJobs }) => {
+          const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setShowFullPageJob }) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
@@ -1939,21 +1926,13 @@ await window.supabase
 
 onUpdateJob({
   ...job,
-  invoiceNumber: siNumber,  // Changed from invoice_number
-  sageInvoiceId: invoice.id,  // Add this for consistency
-  invoiceStatus: 'Invoiced'
+  sage_invoice_id: invoice.id,
+  invoice_number: invoice.invoice_number || invoice.id,
+  sage_si_number: siNumber,  // ADD THIS LINE
+  invoice_status: 'Invoiced'
 });
       
-     alert('Invoice created successfully in Sage!');
-console.log('1. About to refresh jobs');
-
-// Refresh jobs to show the new SI number
-if (refreshJobs) {
-  console.log('2. refreshJobs exists, calling it');
-  await window.refreshJobs();
-  console.log('3. refreshJobs completed');
-  console.log('4. This should never show');
-}
+      alert('Invoice created successfully in Sage!');
     }
   } catch (error) {
     console.error('Error creating invoice:', error);
@@ -2108,14 +2087,9 @@ const uploadJobAttachment = async () => {
   }
 };
           const handleCollection = (job) => {
-  onUpdateJob({ 
-    ...job, 
-    status: 'COLLECTED', 
-    isCompleted: true,
-    completedDate: new Date().toISOString().split('T')[0]  // ADD THIS LINE
-  });
-  setSelectedJob(null);
-};
+            onUpdateJob({ ...job, status: 'COLLECTED', isCompleted: true });
+            setSelectedJob(null);
+          };
 
           // Calendar View Component
           const CalendarView = () => {
@@ -3100,8 +3074,6 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
           .eq('id', jobToInvoice.id);
         alert(`Demo Mode: Invoice ${invoiceNumber} created!`);
         onClose();
-await window.refreshJobs();
-
       } else {
         const { data: customer } = await window.supabase
           .from('customers')
@@ -3139,6 +3111,12 @@ await window.refreshJobs();
         })
         .eq('id', jobToInvoice.id);
       
+      // Update local state
+      onUpdateJob({
+        ...jobToInvoice,
+        sage_invoice_id: invoice.id,
+        invoice_status: 'Invoiced'
+      });
       
       alert(`Invoice created successfully in Sage!`);
       onClose();
@@ -3170,27 +3148,17 @@ const invoiceData = {
         
         const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
         console.log('Sending invoice data:', invoiceData); // ADD THIS LINE
-        console.log('Sage returned:', invoice);  
 console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
         await window.supabase
           .from('jobs')
           .update({
             sage_invoice_id: invoice.id,
-            invoice_number: invoice.invoice_number || invoice.id,
-            sage_si_number: invoice.invoice_number || invoice.id
+            invoice_number: invoice.invoice_number || invoice.id
           })
           .eq('id', jobToInvoice.id);
-        // Update local state
-      onUpdateJob({
-        ...jobToInvoice,
-        sage_invoice_id: invoice.id,
-        invoice_status: 'Invoiced',
-        sage_si_number: invoice.invoice_number || invoice.id
-      });
-      
+        
         alert('Invoice created successfully in Sage!');
         onClose();
-        await window.refreshJobs();
       }
     } catch (error) {
       console.error('Error creating invoice:', error);
@@ -6975,23 +6943,8 @@ useEffect(() => {
     } catch (error) {
       console.error('Error loading suppliers:', error);
     }
-    const refreshJobs = async () => {
-  try {
-    const { data, error } = await window.supabase
-      .from('jobs')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (data) {
-      setJobs(data);
-      console.log('Jobs refreshed:', data.length);
-    }
-  } catch (error) {
-    console.error('Error refreshing jobs:', error);
-  }
-};
   };
-  window.refreshJobs = refreshJobs;
+  
   loadSuppliersFromSupabase();
 }, []);
           // Load customers from Supabase when app starts
@@ -7401,30 +7354,6 @@ collection_date: newJob.collectionDate || null,
 };
 
  const handleUpdateJob = async (updatedJob) => {
-  // ADD THESE LINES - Update local state FIRST
-  setJobs(prevJobs =>
-  prevJobs.map(job => {
-    if (job.id === updatedJob.id) {
-      const merged = {
-        ...job,           // Keep all existing fields
-        ...updatedJob     // Override with ALL fields from updatedJob
-      };
-      console.log('Merging job:', job.id, 'with invoice:', merged.invoiceNumber);
-      return merged;
-    }
-    return job;
-  })
-);
-  
-  // Update showFullPageJob if it's the same job
-  if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
-    setShowFullPageJob(updatedJob);
-  }
-  
-  // Update editingJob if it's the same job
-  if (editingJob && editingJob.id === updatedJob.id) {
-    setEditingJob(updatedJob);
-  }
   try {
     // Convert camelCase to snake_case for database
     const jobForDatabase = {
@@ -7469,7 +7398,6 @@ collection_date: updatedJob.collectionDate || null,
       hazardous_waste: updatedJob.hazardousWaste || false,
       consignment_note: updatedJob.consignmentNote,
       invoice_number: updatedJob.invoiceNumber,
-      sage_si_number: updatedJob.invoiceNumber,
       invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
       payment_status: updatedJob.paymentStatus || 'Not Paid'
     };
@@ -7564,15 +7492,8 @@ const handleDeleteAttachment = async (attachment) => {
             onAddJob(exchangeJob);
             setSelectedJob(null);
           };
-         const handleCollection = (job) => {
+          const handleCollection = (job) => {
   console.log('Collection job:', job);
-  handleUpdateJob({
-    ...job, 
-    status: 'COLLECTED', 
-    isCompleted: true,
-    completedDate: new Date().toISOString().split('T')[0]  // ADD THIS LINE
-  });
-  setSelectedJob(null);
 };
    const handleDeleteJob = async (jobId) => {
   try {
@@ -8247,7 +8168,6 @@ onClick={() => {
                     suppliers={suppliers}
                     user={user}
                     setShowFullPageJob={setShowFullPageJob}
-                    refreshJobs={refreshJobs}
                   />
                 )}
                 {activeTab === 'customers' && (
