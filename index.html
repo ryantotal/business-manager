@@ -736,19 +736,33 @@ siteNotes: '',
           };
 
           const handleSubmit = () => {
-            // Check if this is a skip/RoRo with quantity > 1
-            if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
+            const totalQuantity = formData.lineItems?.reduce((sum, item) => sum + (item.quantity || 1), 0) || formData.quantity || 1;
+            const handleSubmit = () => {
+  const totalQuantity = formData.lineItems?.reduce((sum, item) => sum + (item.quantity || 1), 0) || formData.quantity || 1;
+  
+  // Add this here - Clean up date fields
+  const cleanedFormData = {
+    ...formData,
+    collectionDate: cleanedFormData.collectionDate || null,
+    deliveryDate: formData.deliveryDate || null,
+    jobDate: cleanedFormData.jobDate || new Date().toISOString().split('T')[0],
+    timeSlot: cleanedFormData.timeSlot || null
+  };
+  
+  // Then update line 741 to use cleanedFormData instead of formData
+  if ((cleanedFormData.jobType === 'Skip Hire' || cleanedFormData.jobType === 'Roll-on Roll-off') && totalQuantity > 1) {// Check if this is a skip/RoRo with quantity > 1
+            if ((cleanedFormData.jobType === 'Skip Hire' || cleanedFormData.jobType === 'Roll-on Roll-off') && totalQuantity > 1) {
             const jobs = [];
             const firstJobNumber = generateJobNumber();
-            for (let i = 0; i < formData.quantity; i++) {
+            for (let i = 0; i < totalQuantity; i++) {
                 const jobId = i === 0 ? firstJobNumber : `${firstJobNumber}-${i+1}`;
                 const newJob = {
                   ...formData,
                   id: jobId,
                   jobNumber: jobId,
                   quantity: 1,
-                  customerFinalPrice: formData.customerUnitPrice,
-                  supplierFinalPrice: formData.supplierUnitPrice,
+                  customerFinalPrice: cleanedFormData.customerUnitPrice,
+                  supplierFinalPrice: cleanedFormData.supplierUnitPrice,
                   grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
                   profitMargin: formData.customerUnitPrice > 0 ? 
                     ((formData.customerUnitPrice - formData.supplierUnitPrice) / formData.customerUnitPrice) * 100 : 0,
@@ -2328,7 +2342,7 @@ const uploadJobAttachment = async () => {
   </div>
 </div>
 
-              <div className="bg-white rounded-lg border border-gray-200">
+              <div className="bg-white rounded-lg border border-gray-200 w-full">
                 <div className="p-6">
                   {viewMode === 'calendar' ? (
                     <CalendarView />
@@ -2343,103 +2357,119 @@ const uploadJobAttachment = async () => {
                       ))}
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
+    <div className="overflow-x-auto -mx-6 px-0">
+                     <table className="w-full divide-y divide-gray-200 text-sm" style={{minWidth: '100%'}}>
                         <thead className="bg-gray-50">
-  <tr>
-    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job Number & Date</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product/Service</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Haulier</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Postcode</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sage Invoice</th>
-  </tr>
-</thead>
-<tbody className="bg-white divide-y divide-gray-200">
-  {filteredJobs.map(job => {
-const statusConfig = {
- 'QUOTED': 'bg-yellow-100 text-yellow-800',
-'CONFIRMED': 'bg-green-100 text-green-800',
-'IN_PROGRESS': 'bg-blue-100 text-blue-800',
-'COLLECTED': 'bg-purple-100 text-purple-800'
- };
-const status = job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
-job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
-job.isCancelled ? 'bg-red-100 text-red-800' :
-statusConfig[job.status];
-const isFinished = job.isCompleted || job.status === 'COLLECTED';
-const firstProduct = job.lineItems && job.lineItems.length > 0 ? job.lineItems[0].product_name : job.jobType;
-return (
-<tr
-key={job.id}
-className={`hover:bg-gray-50 cursor-pointer ${isFinished ? 'opacity-75' : ''}`}
-onClick={() => handleJobClick(job)}
->
-<td className="px-6 py-4 whitespace-nowrap">
-<div className="flex items-center">
-<div
-className="w-2 h-8 rounded mr-3"
-style={{ backgroundColor: jobColors[job.jobType] }}
-/>
-<div>
-<div className={`text-sm font-medium text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.jobNumber}
-{job.quoteReference && (
-  <div className="text-xs text-gray-500 mt-1">From Quote: {job.quoteReference}</div>
-)}
-</div>
-<div className={`text-sm text-gray-500 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{new Date(job.jobDate).toLocaleDateString('en-GB')}
-</div>
-</div>
-</div>
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.customerName}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.supplierName || '-'}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.lineItems && job.lineItems.length > 0 
-  ? job.lineItems[0].product_name || job.lineItems[0].description || '-'
-  : job.sageProductName || '-'
-}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.haulierName || '-'}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.siteAddress1 || job.siteAddress || '-'}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.sitePostcode || '-'}
-</td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.jobType}
-</td>
-<td className="px-6 py-4 whitespace-nowrap">
-<span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${status}`}>
-{job.invoice_status === 'Invoiced' ? 'Invoiced' :
+                          <tr>
+                            <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-32">Job # Date</th>
+<th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-48">Customer</th>
+<th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-48">Supplier</th>
+<th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-64">Product</th>
+<th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-40">Haulier</th>
+<th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-64">Address</th>
+<th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-28">Postcode</th>
+<th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-32">Type</th>
+<th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-28">Status</th>
+<th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider w-32">Invoice</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {filteredJobs.map(job => {
+                            const statusConfig = {
+                              'QUOTED': 'bg-yellow-100 text-yellow-800',
+                              'CONFIRMED': 'bg-green-100 text-green-800',
+                              'IN_PROGRESS': 'bg-blue-100 text-blue-800',
+                              'COLLECTED': 'bg-purple-100 text-purple-800'
+                            };
+                            const status = job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
+                                          job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
+                                          job.isCancelled ? 'bg-red-100 text-red-800' :
+                                          statusConfig[job.status];
+                            const isFinished = job.isCompleted || job.status === 'COLLECTED';
+                            const firstProduct = job.lineItems && job.lineItems.length > 0 ? job.lineItems[0].product_name : job.jobType;
+                            
+                            return (
+                              <tr
+                                key={job.id}
+                                className={`hover:bg-gray-50 cursor-pointer ${isFinished ? 'opacity-75' : ''}`}
+                                onClick={() => handleJobClick(job)}
+                              >
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <div className="flex items-center">
+                                    <div
+                                      className="w-1 h-6 rounded mr-2"
+                                      style={{ backgroundColor: jobColors[job.jobType] }}
+                                    />
+                                    <div>
+                                      <div className={`text-sm font-medium text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                        {job.jobNumber}
+                                      </div>
+                                      <div className="text-sm text-gray-500">
+                                        {new Date(job.jobDate).toLocaleDateString('en-GB', { 
+                                          day: '2-digit', 
+                                          month: '2-digit', 
+                                          year: '2-digit' 
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className={`px-3 py-2 text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-32" title={job.customerName}>
+                                    {job.customerName}
+                                  </div>
+                                </td>
+                                <td className={`px-3 py-2 text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-32" title={job.supplierName}>
+                                    {job.supplierName || '-'}
+                                  </div>
+                                </td>
+                                <td className={`px-3 py-2 text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-40" title={job.sageProductName || (job.lineItems && job.lineItems[0] && job.lineItems[0].product_name)}>
+                                    {job.lineItems && job.lineItems.length > 0 
+                                      ? job.lineItems[0].product_name || job.lineItems[0].description || '-'
+                                      : job.sageProductName || '-'
+                                    }
+                                  </div>
+                                </td>
+                                <td className={`px-3 py-2 text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-24" title={job.haulierName}>
+                                    {job.haulierName || '-'}
+                                  </div>
+                                </td>
+                                <td className={`px-3 py-2 text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <div className="truncate w-40" title={job.siteAddress1 || job.siteAddress}>
+                                    {job.siteAddress1 || job.siteAddress || '-'}
+                                  </div>
+                                </td>
+                                <td className={`px-3 py-2 text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  {job.sitePostcode || '-'}
+                                </td>
+                                <td className={`px-3 py-2 text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+                                  <span className="text-xs">
+                                    {job.jobType}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <span className={`inline-flex px-1 py-0.5 text-sm font-medium rounded-full ${status}`}>
+                                    {job.invoice_status === 'Invoiced' ? 'Invoiced' :
 job.status === 'COLLECTED' ? 'Collected' :
 job.isCompleted ? 'Completed' :
 job.isCancelled ? 'Cancelled' :
-job.status.replace('_', ' ')}
-</span>
-</td>
-<td className="px-6 py-4 whitespace-nowrap">
-  <span className="text-sm text-gray-900">
-    {job.sage_invoice_id || '-'}
-  </span>
-</td>
-</tr>
- );
- })}
-</tbody>                    
+job.status === 'IN_PROGRESS' ? 'In Progress' :
+job.status === 'CONFIRMED' ? 'Confirmed' :
+                                    job.status.substring(0, 3).toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <span className="text-sm text-gray-900 truncate w-24 block" title={job.sage_invoice_id}>
+                                    {job.invoiceNumber || job.invoice_number || '-'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>                    
                       </table>
                     </div>
                   )}
@@ -2497,7 +2527,7 @@ job.status.replace('_', ' ')}
                         )}
                         {/* Add Invoice Button - only for completed jobs without invoice */}
 {(selectedJob.isCompleted || selectedJob.status === 'COLLECTED') && 
- !selectedJob.invoiceNumber && user?.role === 'ADMIN' && (
+ !selectedJob.invoiceNumber && !selectedJob.sage_invoice_id && user?.role === 'ADMIN' && (
   <button
     onClick={() => handleCreateInvoice(selectedJob)}
     disabled={creatingInvoice && invoiceJobId === selectedJob.id}
@@ -3132,13 +3162,25 @@ const invoiceData = {
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: jobToInvoice.jobNumber,
     notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress}`,
-    invoice_lines: [{  // CHANGE TO invoice_lines
-      description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
+   invoice_lines: jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
+  ? jobToInvoice.lineItems.map(item => ({
+      product_code: item.item_code || '',  // Product code if available
+      product_name: item.product_name,     // This goes in Product/Service column
+      description: item.description,       // This goes in Description column
+      quantity: item.quantity || 1,
+      unit_price: unitPrice / (jobToInvoice.lineItems.length),
+      currency_tax_amount: taxAmount / (jobToInvoice.lineItems.length),
+      tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+    }))
+  : [{
+      product_name: jobToInvoice.sageProductName || jobToInvoice.jobType,
+      description: `${jobToInvoice.jobType} Service`,
       quantity: quantity,
       unit_price: unitPrice,
-      currency_tax_amount: taxAmount,  // ADD THIS FIELD
-      tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',  // FIX TAX RATE
-      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'  // Sales - Services (4010)
+      currency_tax_amount: taxAmount,
+      tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
     }]
   }
 };
@@ -3656,22 +3698,28 @@ job.status === 'COLLECTED' ? 'Collected' :
 {activeTab === 'financial' && (
   <div className="mt-6">
     {job.isCompleted && !job.sageInvoiceId && user.role === 'ADMIN' && (
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Sage Integration</h3>
-        <button
-          onClick={() => handleCreateInvoice(job)}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-        >
-          <FileText className="inline mr-2" size={20} />
-          Create Invoice in Sage
+  <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <h3 className="text-lg font-semibold text-gray-800 mb-4">Sage Integration</h3>
+    {job.invoiceNumber || job.sage_invoice_id ? (
+      <div>
+        <p className="text-sm text-gray-600 mb-2">Sage Invoice:</p>
+        <p className="text-lg font-medium mb-4">{job.invoiceNumber || job.sage_invoice_id}</p>
+        <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed">
+          Invoice Already Created
         </button>
-        {job.sageInvoiceId && (
-          <p className="mt-2 text-sm text-gray-600">
-            Sage Invoice ID: {job.sage_invoice_id}
-          </p>
-        )}
       </div>
+    ) : (
+      <button
+        onClick={() => handleCreateInvoice(job)}
+        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+      >
+        <FileText className="inline mr-2" size={20} />
+        Create Invoice in Sage
+      </button>
     )}
+  </div>
+)}
+     
   </div>
 )}
             {/* Invoice Information */}
@@ -7148,6 +7196,8 @@ useEffect(() => {
   hazardousWaste: job.hazardous_waste || false,
   consignmentNote: job.consignment_note,
   invoiceNumber: job.invoice_number,
+  sage_invoice_id: job.sage_invoice_id,
+sageInvoiceId: job.sage_invoice_id,
   invoiceStatus: job.invoice_status || 'Not Invoiced',
   paymentStatus: job.payment_status || 'Not Paid',
   sageProductId: job.sage_product_id,
@@ -10581,45 +10631,50 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                 </div>
               )}
               
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
-                  <input
-                    type="number"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                  <select
-                    value={formData.unit}
-                    onChange={(e) => setFormData({...formData, unit: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    disabled={formData.jobType === 'Aggregates'}
-                  >
-                    <option value="skip">Skip</option>
-                    <option value="tonnes">Tonnes</option>
-                    <option value="loads">Loads</option>
-                    <option value="collections">Collections</option>
-                    <option value="days">Days</option>
-                  </select>
-                </div>
-                {formData.jobType !== 'Aggregates' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Weight (tonnes)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={formData.weight}
-                      onChange={(e) => setFormData({...formData, weight: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="If known"
-                    />
-                  </div>
-                )}
-              </div>
+             {/* 
+// Commented out - using lineItems quantities instead
+formData.jobType !== 'Aggregates' && (
+  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+      <input
+        type="number"
+        value={formData.quantity}
+        onChange={(e) => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      />
+    </div>
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+      <select
+        value={formData.unit}
+        onChange={(e) => setFormData({...formData, unit: e.target.value})}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        disabled={formData.jobType === 'Aggregates'}
+      >
+        <option value="skip">Skip</option>
+        <option value="tonnes">Tonnes</option>
+        <option value="loads">Loads</option>
+        <option value="collections">Collections</option>
+        <option value="days">Days</option>
+      </select>
+    </div>
+    {formData.jobType !== 'Aggregates' && (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Weight (tonnes)</label>
+        <input
+          type="number"
+          step="0.1"
+          value={formData.weight}
+          onChange={(e) => setFormData({...formData, weight: e.target.value})}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          placeholder="If known"
+        />
+      </div>
+    )}
+  </div>
+)
+*/}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
