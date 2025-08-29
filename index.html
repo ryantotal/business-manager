@@ -1922,7 +1922,7 @@ if (updateError) {
   throw new Error(`Failed to update job: ${updateError.message}`);
 }
       
-      onUpdateJob({
+     /* onUpdateJob({
   ...job,
   sage_invoice_id: invoice.id,
   sageInvoiceId: invoice.id,  // ADD THIS
@@ -1931,7 +1931,7 @@ if (updateError) {
   invoice_status: 'Invoiced',  // ADD THIS
   invoiceStatus: 'Invoiced'  // ADD THIS
 });
-      
+      */
       alert('Invoice created successfully in Sage!');
     }
   } catch (error) {
@@ -3125,12 +3125,12 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
         .eq('id', jobToInvoice.id);
       
       // Update local state
-      onUpdateJob({
+     /* onUpdateJob({
         ...jobToInvoice,
         sage_invoice_id: invoice.id,
         invoice_status: 'Invoiced'
       });
-      
+      */
       alert(`Invoice created successfully in Sage!`);
       onClose();
         }
@@ -3164,13 +3164,14 @@ const invoiceData = {
 console.log('To endpoint: /sales_invoices'); // ADD THIS LINE
         await window.supabase
           .from('jobs')
-          onUpdateJob({
+          /*onUpdateJob({
   ...jobToInvoice,
   sage_invoice_id: invoice.id,
   sageInvoiceId: invoice.id,  // ADD THIS
   invoice_status: 'Invoiced',  // ADD THIS
   invoiceStatus: 'Invoiced'  // ADD THIS
 })
+  */
           .eq('id', jobToInvoice.id);
         
         alert('Invoice created successfully in Sage!');
