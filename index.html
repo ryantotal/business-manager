@@ -1857,7 +1857,7 @@ siteNotes: '',
         };
 
         // Jobs Management Component
-          const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setShowFullPageJob }) => {
+          const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setShowFullPageJob, refreshJobs }) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
@@ -1941,6 +1941,11 @@ onUpdateJob({
 });
       
       alert('Invoice created successfully in Sage!');
+
+// Refresh jobs to show the new SI number
+if (refreshJobs) {
+  await refreshJobs();
+}
     }
   } catch (error) {
     console.error('Error creating invoice:', error);
@@ -6956,6 +6961,21 @@ useEffect(() => {
     } catch (error) {
       console.error('Error loading suppliers:', error);
     }
+    const refreshJobs = async () => {
+  try {
+    const { data, error } = await window.supabase
+      .from('jobs')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (data) {
+      setJobs(data);
+      console.log('Jobs refreshed:', data.length);
+    }
+  } catch (error) {
+    console.error('Error refreshing jobs:', error);
+  }
+};
   };
   
   loadSuppliersFromSupabase();
@@ -8213,6 +8233,7 @@ onClick={() => {
                     suppliers={suppliers}
                     user={user}
                     setShowFullPageJob={setShowFullPageJob}
+                    refreshJobs={refreshJobs}
                   />
                 )}
                 {activeTab === 'customers' && (
