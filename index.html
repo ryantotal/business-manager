@@ -3077,16 +3077,10 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
   const [jobAttachments, setJobAttachments] = useState([]);
 const handleCreateInvoice = async (jobToInvoice) => {
   try {
-    const isDemoMode = false; // Force production mode - sage-proxy is working!
+    const isDemoMode = false;
     
     if (isDemoMode) {
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
-      await window.supabase
-        .from('jobs')
-        .update({ invoice_number: invoiceNumber })
-        .eq('id', jobToInvoice.id);
-      alert(`Demo Mode: Invoice ${invoiceNumber} created!`);
-      onClose();
+      // ... demo code ...
     } else {
       const { data: customer } = await window.supabase
         .from('customers')
@@ -3102,7 +3096,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
       const unitPrice = jobToInvoice.customerUnitPrice || 0;
       const quantity = jobToInvoice.quantity || 1;
       const lineTotal = unitPrice * quantity;
-      const taxAmount = lineTotal * 0.20; // 20% VAT
+      const taxAmount = lineTotal * 0.20;
       
       const invoiceData = {
         sales_invoice: {  
@@ -3122,42 +3116,59 @@ const handleCreateInvoice = async (jobToInvoice) => {
         }
       };
       
-      console.log('Sending invoice data:', invoiceData);
-      console.log('To endpoint: /sales_invoices');
-      
+      console.log('Creating invoice in Sage...');
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
       
-      // Extract SI number from response
-      const siNumber = invoice.invoice_number || invoice.si_number || invoice.id;
+      // DEBUG: Log the full response
+      console.log('Sage API Response:', invoice);
       
-      // Update database with SI number
-      await window.supabase
+      // Extract SI number - check different possible fields
+      const siNumber = invoice.invoice_number || invoice.displayed_as || invoice.reference || invoice.id;
+      
+      console.log('Extracted SI Number:', siNumber);
+      
+      // Update database
+      const updateData = {
+        sage_invoice_id: invoice.id,
+        invoice_number: siNumber,  // Use SI number as invoice number
+        sage_si_number: siNumber,
+        invoice_status: 'Invoiced'
+      };
+      
+      console.log('Updating database with:', updateData);
+      
+      const { data: updateResult, error: updateError } = await window.supabase
         .from('jobs')
-        .update({
-          sage_invoice_id: invoice.id,
-          invoice_number: invoice.invoice_number || invoice.id,
-          sage_si_number: siNumber,  // ADD THIS LINE
-          invoice_status: 'Invoiced'
-        })
-        .eq('id', jobToInvoice.id);
+        .update(updateData)
+        .eq('id', jobToInvoice.id)
+        .select();  // Add .select() to see what was updated
       
-      // ⚡ CRITICAL FIX: Fetch the updated job from database ⚡
-      const { data: updatedJob, error } = await window.supabase
+      if (updateError) {
+        console.error('Database update error:', updateError);
+        throw updateError;
+      }
+      
+      console.log('Database update result:', updateResult);
+      
+      // Fetch the updated job
+      const { data: updatedJob, error: fetchError } = await window.supabase
         .from('jobs')
         .select('*')
         .eq('id', jobToInvoice.id)
         .single();
       
-      if (updatedJob && !error) {
-        // Update the job in parent component with fresh data
+      if (fetchError) {
+        console.error('Fetch error:', fetchError);
+      } else {
+        console.log('Updated job from database:', updatedJob);
         onEdit(updatedJob);
       }
       
-      alert(`Invoice created successfully in Sage! SI: ${siNumber}`);
+      alert(`Invoice created! SI: ${siNumber}`);
       onClose();
     }
   } catch (error) {
-    console.error('Error creating invoice:', error);
+    console.error('Full error:', error);
     alert('Failed to create invoice: ' + error.message);
   }
 };
