@@ -3171,6 +3171,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
         console.error('Fetch error:', fetchError);
       } else {
         console.log('Updated job from database:', updatedJob);
+         onUpdateDisplay(updatedJob);
         
       }
       
