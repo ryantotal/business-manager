@@ -2347,18 +2347,16 @@ const uploadJobAttachment = async () => {
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
   <tr>
-    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job Number & Date</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product/Service</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Haulier</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Postcode</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SI Number</th>
-  </tr>
-</thead>
+          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Job Number</th>
+          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
+          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
 <tbody className="bg-white divide-y divide-gray-200">
   {filteredJobs.map(job => {
 const statusConfig = {
@@ -2379,7 +2377,7 @@ key={job.id}
 className={`hover:bg-gray-50 cursor-pointer ${isFinished ? 'opacity-75' : ''}`}
 onClick={() => handleJobClick(job)}
 >
-<td className="px-6 py-4 whitespace-nowrap">
+<td className="px-3 py-3 whitespace-nowrap">
 <div className="flex items-center">
 <div
 className="w-2 h-8 rounded mr-3"
@@ -2398,31 +2396,31 @@ style={{ backgroundColor: jobColors[job.jobType] }}
 </div>
 </div>
 </td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.customerName}
 </td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.supplierName || '-'}
 </td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.lineItems && job.lineItems.length > 0 
   ? job.lineItems[0].product_name || job.lineItems[0].description || '-'
   : job.sageProductName || '-'
 }
 </td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.haulierName || '-'}
 </td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.siteAddress1 || job.siteAddress || '-'}
 </td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.sitePostcode || '-'}
 </td>
-<td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.jobType}
 </td>
-<td className="px-6 py-4 whitespace-nowrap">
+<td className="px-3 py-3 whitespace-nowrap">
 <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${status}`}>
 {job.status === 'COLLECTED' ? 'Collected' :
 job.isCompleted ? 'Completed' :
@@ -2430,7 +2428,7 @@ job.isCancelled ? 'Cancelled' :
 job.status.replace('_', ' ')}
 </span>
 </td>
-<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+<td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
   {job.sage_si_number ? (
     <span className="font-medium text-blue-600">
       {job.sage_si_number}
