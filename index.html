@@ -1863,7 +1863,7 @@ siteNotes: '',
           const [creatingInvoice, setCreatingInvoice] = useState(false);
           const [invoiceJobId, setInvoiceJobId] = useState(null);
 
-  const handleCreateInvoice = async (job) => {
+const handleCreateInvoice = async (job) => {
   setCreatingInvoice(true);
   setInvoiceJobId(job.id);
   
@@ -1878,7 +1878,8 @@ siteNotes: '',
       // Update local state only (in production, this would update Supabase)
       onUpdateJob({
         ...job,
-        invoiceNumber: invoiceNumber
+        invoiceNumber: invoiceNumber,
+        invoiceStatus: 'Invoiced'
       });
       
       alert(`Demo Mode: Invoice ${invoiceNumber} created successfully!`);
@@ -1910,29 +1911,43 @@ siteNotes: '',
       };
       
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
-
-// Sage returns the SI number in the response
-const siNumber = invoice.invoice_number || invoice.si_number || invoice.id;
-
-await window.supabase
-  .from('jobs')
-  .update({
-    sage_invoice_id: invoice.id,
-    invoice_number: invoice.invoice_number || invoice.id,
-    sage_si_number: siNumber,  // ADD THIS LINE
-    invoice_status: 'Invoiced'
-  })
-  .eq('id', job.id);
-
-onUpdateJob({
-  ...job,
-  sage_invoice_id: invoice.id,
-  invoice_number: invoice.invoice_number || invoice.id,
-  sage_si_number: siNumber,  // ADD THIS LINE
-  invoice_status: 'Invoiced'
-});
       
-      alert('Invoice created successfully in Sage!');
+      // Sage returns the SI number in the response
+      const siNumber = invoice.invoice_number || invoice.si_number || invoice.id;
+      
+      // Update the database with the SI number
+      await window.supabase
+        .from('jobs')
+        .update({
+          sage_invoice_id: invoice.id,
+          invoice_number: invoice.invoice_number || invoice.id,
+          sage_si_number: siNumber,
+          invoice_status: 'Invoiced'
+        })
+        .eq('id', job.id);
+      
+      // ⚡ CRITICAL FIX: Fetch the updated job from database ⚡
+      const { data: updatedJob, error } = await window.supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', job.id)
+        .single();
+      
+      if (updatedJob && !error) {
+        // Use the fresh data from database
+        onUpdateJob(updatedJob);
+      } else {
+        // Fallback to manual update if fetch fails
+        onUpdateJob({
+          ...job,
+          sage_invoice_id: invoice.id,
+          invoice_number: invoice.invoice_number || invoice.id,
+          sage_si_number: siNumber,
+          invoice_status: 'Invoiced'
+        });
+      }
+      
+      alert(`Invoice created successfully in Sage! SI: ${siNumber}`);
     }
   } catch (error) {
     console.error('Error creating invoice:', error);
@@ -1942,7 +1957,6 @@ onUpdateJob({
     setInvoiceJobId(null);
   }
 };
-
           const jobColors = {
             'Skip Hire': '#3B82F6',
             'Aggregates': '#F97316',
