@@ -3101,6 +3101,8 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
           .eq('id', jobToInvoice.id);
         alert(`Demo Mode: Invoice ${invoiceNumber} created!`);
         onClose();
+await window.refreshJobs();
+window.location.reload();
       } else {
         const { data: customer } = await window.supabase
           .from('customers')
