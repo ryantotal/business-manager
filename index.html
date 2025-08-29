@@ -3151,35 +3151,27 @@ const handleCreateInvoice = async (jobToInvoice) => {
       console.log('Database update result:', updateResult);
       
       // Fetch the updated job
-      // After creating the invoice and updating database...
-
-// Fetch the updated job
-const { data: updatedJob, error: fetchError } = await window.supabase
-  .from('jobs')
-  .select('*')
-  .eq('id', jobToInvoice.id)
-  .single();
-
-if (fetchError) {
-  console.error('Fetch error:', fetchError);
-} else if (updatedJob) {
-  console.log('Updated job from database:', updatedJob);
-  
-  // Update the job WITHOUT opening any dialogs
-  if (typeof onEdit === 'function') {
-   // onEdit(updatedJob);
+      const { data: updatedJob, error: fetchError } = await window.supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', jobToInvoice.id)
+        .single();
+      
+      if (fetchError) {
+        console.error('Fetch error:', fetchError);
+      } else {
+        console.log('Updated job from database:', updatedJob);
+        
+      }
+      
+      alert(`Invoice created! SI: ${siNumber}`);
+      
+    }
+  } catch (error) {
+    console.error('Full error:', error);
+    alert('Failed to create invoice: ' + error.message);
   }
-  
-  // Refresh the page data if needed
-  if (typeof loadJobData === 'function') {
-    loadJobData();
-  }
-}
-
-alert(`Invoice created! SI: ${siNumber}`);
-
-// DON'T call onClose() - it's triggering the edit modal
-// Just leave the full page view open with updated data
+};
   // Load attachments when component mounts
   useEffect(() => {
     if (job?.id) {
