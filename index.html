@@ -1739,12 +1739,12 @@ siteNotes: '',
                 </div>
               )}
               
-              {job.invoiceNumber && (
+              {currentjob.invoiceNumber && (
   <div className="mt-2 text-xs text-gray-500">
-    Invoice: {job.invoiceNumber}
-    {job.sage_si_number && (
+    Invoice: {currentjob.invoiceNumber}
+    {currentjob.sage_si_number && (
       <span className="ml-2 text-blue-600 font-medium">
-        | SI: {job.sage_si_number}
+        | SI: {currentJob.sage_si_number}
       </span>
     )}
   </div>
@@ -1934,9 +1934,17 @@ const handleCreateInvoice = async (job) => {
         .single();
       
       if (updatedJob && !error) {
-        // Use the fresh data from database
-        onUpdateJob(updatedJob);
-      } else {
+  // Update the job object directly
+  job.sage_si_number = updatedJob.sage_si_number;
+  job.invoice_number = updatedJob.invoice_number;
+  job.invoice_status = updatedJob.invoice_status;
+  
+  onUpdateJob(updatedJob);
+  
+  // Force a re-render
+  setActiveTab(activeTab);
+}
+       else {
         // Fallback to manual update if fetch fails
         onUpdateJob({
           ...job,
@@ -3075,6 +3083,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
+  const [currentJob, setCurrentJob] = useState(job);
 const handleCreateInvoice = async (jobToInvoice) => {
   try {
     const isDemoMode = false;
@@ -3703,13 +3712,13 @@ const handleCreateInvoice = async (jobToInvoice) => {
         {job.wasteTransferNote && (
           <div className="flex justify-between">
             <span className="text-gray-600 font-medium">Waste Transfer Note:</span>
-            <span className="text-gray-900">{job.wasteTransferNote}</span>
+            <span className="text-gray-900">{currentjob.wasteTransferNote}</span>
           </div>
         )}
         {job.sage_si_number && (
           <div>
             <span className="font-medium">SI Number:</span>
-            <span className="text-blue-600 font-bold">{job.sage_si_number}</span>
+            <span className="text-blue-600 font-bold">{currentJob.sage_si_number}</span>
           </div>
         )}
       </div>
