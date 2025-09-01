@@ -775,6 +775,16 @@ siteNotes: '',
                 parentJobId: null,
                 linkedJobs: []
               };
+              // Clean up empty date fields to prevent database errors
+if (!newJob.collectionDate || newJob.collectionDate === '') {
+    delete newJob.collectionDate;
+}
+if (!newJob.deliveryDate || newJob.deliveryDate === '') {
+    delete newJob.deliveryDate;
+}
+if (!newJob.jobDate || newJob.jobDate === '') {
+    newJob.jobDate = new Date().toISOString().split('T')[0];
+}
               onSave(newJob);
             }
           };
@@ -3312,7 +3322,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
             </button>
             {job.jobType !== 'Skip Hire' && job.jobType !== 'Roll-on Roll-off' && !job.isCompleted && job.status !== 'COMPLETED' && (
   <button
-    onClick={() => onComplete(job)}
+    onClick={() => onComplete}
     className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
     title="Mark as Completed"
   >
@@ -3642,32 +3652,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
         {activeTab === 'financial' && (
           <div className="space-y-8">
             
-            {/* Financial Summary */}
-            <div className="bg-white rounded-lg border border-gray-200">
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-800">Financial Summary</h2>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="text-center">
-                    <div className="text-sm text-gray-600 font-medium">Customer Price</div>
-                    <div className="text-2xl font-bold text-blue-600">£{job.customerFinalPrice?.toFixed(2) || '0.00'}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm text-gray-600 font-medium">Supplier Cost</div>
-                    <div className="text-2xl font-bold text-red-600">£{job.supplierFinalPrice?.toFixed(2) || '0.00'}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm text-gray-600 font-medium">Gross Profit</div>
-                    <div className="text-2xl font-bold text-green-600">£{job.grossProfit?.toFixed(2) || '0.00'}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm text-gray-600 font-medium">Profit Margin</div>
-                    <div className="text-2xl font-bold text-purple-600">{job.profitMargin?.toFixed(1) || '0.0'}%</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+           
               {/* Add Create Invoice Button */}
 {activeTab === 'financial' && (
   <div className="mt-6">
