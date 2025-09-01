@@ -2119,10 +2119,6 @@ const uploadJobAttachment = async () => {
     }
   }
 };
-          const handleCollection = (job) => {
-            onUpdateJob({ ...job, status: 'COLLECTED', isCompleted: true });
-            setSelectedJob(null);
-          };
 
           // Calendar View Component
           const CalendarView = () => {
@@ -8153,7 +8149,28 @@ onClick={() => {
     onDuplicate={handleDuplicateJob}
     onDelete={handleDeleteJob}
     onExchange={handleExchange}
-    onCollection={handleCollection}
+    onCollection={async (job) => {
+    try {
+        const { error } = await window.supabase
+            .from('jobs')
+            .update({
+                status: 'COLLECTED',
+                is_completed: true
+            })
+            .eq('id', job.id);
+            
+        if (error) throw error;
+        
+        const updatedJob = {...job, status: 'COLLECTED', isCompleted: true, is_completed: true};
+        setJobs(jobs.map(j => j.id === job.id ? updatedJob : j));
+        setShowFullPageJob(updatedJob);
+        
+        alert('Job marked as collected!');
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error updating job: ' + error.message);
+    }
+}}
     onComplete={handleCompleteJob}
     user={user}
     onDeleteAttachment={handleDeleteAttachment}
