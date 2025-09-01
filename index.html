@@ -3134,7 +3134,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
-const FullPageJobView = ({ job, onClose, onEdit, onDelete, onDuplicate, onSendToSage, customers, suppliers, user }) => {
+const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user, onUpdateDisplay }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
   const [currentJob, setCurrentJob] = useState(job);
@@ -3699,11 +3699,11 @@ const handleCreateInvoice = async (jobToInvoice) => {
               {/* Add Create Invoice Button */}
 {activeTab === 'financial' && (
   <div className="mt-6">
-    {job.isCompleted && !job.sageInvoiceId && user.role === 'ADMIN' && !job.sent_to_sage && (
+    {job.isCompleted && !job.sageInvoiceId && user.role === 'ADMIN' && (
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-800 mb-4">Sage Integration</h3>
         <button
-          onClick={() => onSendToSage()}
+          onClick={() => handleCreateInvoice(job)}
           className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
         >
           <FileText className="inline mr-2" size={20} />
@@ -7808,41 +7808,8 @@ const { error } = await window.supabase
           const handleDeleteSupplier = (supplierId) => {
             setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
           };
-// Line 7811 - ADD THIS ENTIRE FUNCTION:
-const handleSendToSage = async (jobId) => {
-    try {
-        console.log('Sending job to Sage:', jobId);
-        
-        // Get the job data
-        const job = jobs.find(j => j.id === jobId);
-        
-        // Call your existing handleCreateInvoice function
-        await handleCreateInvoice(job);
-        
-        // Mark as sent in database to prevent duplicates
-        const { error } = await window.supabase
-            .from('jobs')
-            .update({ sent_to_sage: true })
-            .eq('id', jobId);
-            
-        if (error) throw error;
-        
-        // Update local state
-        setJobs(jobs.map(j => 
-            j.id === jobId 
-                ? { ...j, sent_to_sage: true }
-                : j
-        ));
-        
-        if (showFullPageJob && showFullPageJob.id === jobId) {
-            setShowFullPageJob({ ...showFullPageJob, sent_to_sage: true });
-        }
-        
-    } catch (error) {
-        console.error('Error sending to Sage:', error);
-    }
-};
-          const handleAddQuote = async (newQuote) => {
+
+        const handleAddQuote = async (newQuote) => {
   try {
     const quoteForDatabase = {
       // DO NOT include 'id' field - let Supabase generate it
@@ -8342,7 +8309,6 @@ onClick={() => {
     onEdit={handleEditJob}
     onDuplicate={() => handleDuplicateJob(showFullPageJob)}
     onDelete={handleDeleteJob}
-    onSendToSage={() => handleSendToSage(showFullPageJob.id)}
     onExchange={async (job) => {
     try {
         // Create exchange job
