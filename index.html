@@ -556,6 +556,13 @@ const getFilteredProducts = () => {
 
         // Job Form Component
         const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch }) => {
+    // DEBUG
+    console.log('JobForm mounted with props:', {
+        handleAddressSearch: handleAddressSearch,
+        addressSuggestions: addressSuggestions,
+        showAddressSuggestions: showAddressSuggestions,
+        setShowAddressSuggestions: setShowAddressSuggestions
+    });
           const [uploadFile, setUploadFile] = useState(null);
           const [jobAttachments, setJobAttachments] = useState([]);
           // Load attachments when job changes
