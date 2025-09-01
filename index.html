@@ -7762,41 +7762,6 @@ const handleAddressSearch = async (searchText) => {
     setShowJobForm(true);
     setShowFullPageJob(null); // Close the full page view if open
 };
-const handleSendToSage = async (jobId) => {
-    try {
-        // TODO: Add your actual Sage API integration here
-        console.log('Sending job to Sage:', jobId);
-
-          const job = jobs.find(j => j.id === jobId);
-        await handleCreateInvoice(job);  
-        
-        // Mark as sent in database
-        const { error } = await window.supabase
-            .from('jobs')
-            .update({ sent_to_sage: true })
-            .eq('id', jobId);
-            
-        if (error) throw error;
-        
-        // Update local jobs array
-        setJobs(jobs.map(job => 
-            job.id === jobId 
-                ? { ...job, sent_to_sage: true }
-                : job
-        ));
-        
-        // Update the currently displayed job if in full page view
-        if (showFullPageJob && showFullPageJob.id === jobId) {
-            setShowFullPageJob({ ...showFullPageJob, sent_to_sage: true });
-        }
-        
-        alert('Successfully sent to Sage!');
-        
-    } catch (error) {
-        console.error('Error sending to Sage:', error);
-        alert('Failed to send to Sage: ' + error.message);
-    }
-};
           const handleUpdateCustomer = (updatedCustomer) => {
             setCustomers(customers.map(customer => customer.id === updatedCustomer.id ? updatedCustomer : customer));
           };
@@ -7843,7 +7808,40 @@ const { error } = await window.supabase
           const handleDeleteSupplier = (supplierId) => {
             setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
           };
-
+// Line 7811 - ADD THIS ENTIRE FUNCTION:
+const handleSendToSage = async (jobId) => {
+    try {
+        console.log('Sending job to Sage:', jobId);
+        
+        // Get the job data
+        const job = jobs.find(j => j.id === jobId);
+        
+        // Call your existing handleCreateInvoice function
+        await handleCreateInvoice(job);
+        
+        // Mark as sent in database to prevent duplicates
+        const { error } = await window.supabase
+            .from('jobs')
+            .update({ sent_to_sage: true })
+            .eq('id', jobId);
+            
+        if (error) throw error;
+        
+        // Update local state
+        setJobs(jobs.map(j => 
+            j.id === jobId 
+                ? { ...j, sent_to_sage: true }
+                : j
+        ));
+        
+        if (showFullPageJob && showFullPageJob.id === jobId) {
+            setShowFullPageJob({ ...showFullPageJob, sent_to_sage: true });
+        }
+        
+    } catch (error) {
+        console.error('Error sending to Sage:', error);
+    }
+};
           const handleAddQuote = async (newQuote) => {
   try {
     const quoteForDatabase = {
