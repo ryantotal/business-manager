@@ -8146,9 +8146,48 @@ onClick={() => {
     onClose={() => setShowFullPageJob(null)}
     onUpdateDisplay={setShowFullPageJob}
     onEdit={handleEditJob}
-    onDuplicate={handleDuplicateJob}
+    onDuplicate={() => handleDuplicateJob(job)}
     onDelete={handleDeleteJob}
-    onExchange={handleExchange}
+    onExchange={async (job) => {
+    try {
+        // Create exchange job
+        const exchangeJob = {
+            ...job,
+            id: null,
+            jobNumber: null,
+            isCompleted: false,
+            is_completed: false,
+            isCancelled: false,
+            status: 'CONFIRMED',
+            notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
+            jobDate: new Date().toISOString().split('T')[0],
+            linkedJobs: []
+        };
+        
+        // Generate new job number
+        const year = new Date().getFullYear();
+        const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
+        const newJobNumber = lastJobNumber + 1;
+        localStorage.setItem('lastJobNumber', newJobNumber.toString());
+        exchangeJob.id = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
+        exchangeJob.jobNumber = exchangeJob.id;
+        
+        // Mark original job as collected
+        await window.supabase
+            .from('jobs')
+            .update({ status: 'COLLECTED', is_completed: true })
+            .eq('id', job.id);
+        
+        // Add the exchange job
+        await handleAddJob(exchangeJob);
+        
+        alert('Exchange job created!');
+        window.location.reload();
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error creating exchange: ' + error.message);
+    }
+}}
     onCollection={async (job) => {
     try {
         const { error } = await window.supabase
