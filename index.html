@@ -3322,7 +3322,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
             </button>
             {job.jobType !== 'Skip Hire' && job.jobType !== 'Roll-on Roll-off' && !job.isCompleted && job.status !== 'COMPLETED' && (
   <button
-    onClick={() => onComplete}
+   onClick={() => onComplete(job)}
     className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
     title="Mark as Completed"
   >
