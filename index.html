@@ -7580,7 +7580,7 @@ const handleDeleteAttachment = async (attachment) => {
   setShowJobForm(true); // ✅ Then show the form
 };
 
-  const handleDuplicateJob = async (jobTemplate) => {
+ const handleDuplicateJob = async (jobTemplate) => {
     try {
         // Create a completely fresh job object
         const year = new Date().getFullYear();
@@ -7606,9 +7606,8 @@ const handleDeleteAttachment = async (attachment) => {
             status: 'CONFIRMED',
             is_completed: false,
             is_cancelled: false,
-            notes: `Duplicated from ${jobTemplate.jobNumber}`,
-            site_address_1: jobTemplate.siteAddress1 || '',
-            site_postcode: jobTemplate.sitePostcode || ''
+            notes: `Duplicated from ${jobTemplate.jobNumber}`
+            // REMOVED site_address_1 and site_postcode - these don't exist in your DB
         };
         
         // Save directly to database
