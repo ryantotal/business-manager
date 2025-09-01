@@ -784,8 +784,9 @@ if (!newJob.deliveryDate || newJob.deliveryDate === '') {
 if (!newJob.jobDate || newJob.jobDate === '') {
     newJob.jobDate = new Date().toISOString().split('T')[0];
 }
-// Only include ID if we're updating an existing job
-if (job?.id) {
+// Only include ID if we're updating an existing job (not creating new/duplicate)
+// Check if formData has an id - if not, it's a new job
+if (job?.id && formData.id) {
     newJob.id = job.id;
 }
               onSave(newJob);
@@ -7325,8 +7326,8 @@ collection_date: newJob.collectionDate || null,
       linked_jobs: JSON.stringify(newJob.linkedJobs || []),
       notes: newJob.notes || null
     };
-    // Remove id field completely if it's null or undefined
-if (!jobForDatabase.id) {
+// Remove id field if invalid
+if (!jobForDatabase.id || jobForDatabase.id === 'undefined' || jobForDatabase.id === 'null') {
     delete jobForDatabase.id;
 }
     const { data, error } = await window.supabase
@@ -7579,29 +7580,32 @@ const handleDeleteAttachment = async (attachment) => {
   setShowJobForm(true); // ✅ Then show the form
 };
 
-     const handleDuplicateJob = (jobTemplate) => {
-    const duplicatedJob = { 
-        ...jobTemplate,
-        jobNumber: null,  // Will be generated on save
-        createdDate: new Date().toISOString(),
+    const handleDuplicateJob = (jobTemplate) => {
+    // Just keep the fields you want to copy
+    const duplicatedJob = {
+        customerName: jobTemplate.customerName,
+        supplierName: jobTemplate.supplierName,
+        jobType: jobTemplate.jobType,
+        wasteType: jobTemplate.wasteType,
+        skipSize: jobTemplate.skipSize,
+        quantity: jobTemplate.quantity,
+        unit: jobTemplate.unit,
+        customerUnitPrice: jobTemplate.customerUnitPrice,
+        supplierUnitPrice: jobTemplate.supplierUnitPrice,
+        siteAddress1: jobTemplate.siteAddress1,
+        siteAddress2: jobTemplate.siteAddress2,
+        sitePostcode: jobTemplate.sitePostcode,
+        // Set defaults for new job
         jobDate: new Date().toISOString().split('T')[0],
-        notes: `Duplicated from ${jobTemplate.jobNumber}. ${jobTemplate.notes || ''}`.trim(),
-        invoiceNumber: '',
-        invoiceStatus: 'Not Invoiced',
-        paymentStatus: 'Not Paid',
+        status: 'CONFIRMED',
         isCompleted: false,
-        is_completed: false,
         isCancelled: false,
-        status: 'CONFIRMED'
+        notes: `Duplicated from ${jobTemplate.jobNumber}`
     };
-    
-    // IMPORTANT: Delete the id field completely
-    delete duplicatedJob.id;
-    delete duplicatedJob.jobNumber;  // Also delete jobNumber to generate new one
     
     setEditingJob(duplicatedJob);
     setShowJobForm(true);
-    setShowFullPageJob(null);  // Close full page view
+    setShowFullPageJob(null);
 };
 
           const handleAddCustomer = async (newCustomer) => {
@@ -11480,4 +11484,3 @@ window.addEventListener('message', async (event) => {
 </script>
 </body>
 </html>
-
