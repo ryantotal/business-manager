@@ -7589,11 +7589,14 @@ const handleDuplicateJob = async (jobTemplate) => {
         localStorage.setItem('lastJobNumber', newJobNumber.toString());
         const jobNumber = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
         
+        // Get the job type (could be Skip Hire, Waste Collection, Grab Hire, Muck Hire)
+        const jobType = jobTemplate.jobType || jobTemplate.job_type || 'Skip Hire';
+        
         const jobForDatabase = {
             job_number: jobNumber,
             customer_name: jobTemplate.customerName || jobTemplate.customer_name,
             supplier_name: jobTemplate.supplierName || jobTemplate.supplier_name,
-            job_type: jobTemplate.jobType || jobTemplate.job_type,
+            job_type: jobType, // Preserves the original job type
             waste_type: jobTemplate.wasteType || jobTemplate.waste_type,
             skip_size: jobTemplate.skipSize || jobTemplate.skip_size,
             quantity: jobTemplate.quantity || 1,
@@ -7606,8 +7609,20 @@ const handleDuplicateJob = async (jobTemplate) => {
             status: 'CONFIRMED',
             is_completed: false,
             is_cancelled: false,
-            notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number}`
+            notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`
         };
+        
+        // Handle specific fields based on job type
+        if (jobType === 'Waste Collection') {
+            jobForDatabase.collection_frequency = jobTemplate.collectionFrequency || jobTemplate.collection_frequency;
+            jobForDatabase.bin_type = jobTemplate.binType || jobTemplate.bin_type;
+        } else if (jobType === 'Grab Hire') {
+            jobForDatabase.grab_size = jobTemplate.grabSize || jobTemplate.grab_size;
+            jobForDatabase.hours_required = jobTemplate.hoursRequired || jobTemplate.hours_required;
+        } else if (jobType === 'Muck Hire') {
+            jobForDatabase.vehicle_type = jobTemplate.vehicleType || jobTemplate.vehicle_type;
+            jobForDatabase.loads_required = jobTemplate.loadsRequired || jobTemplate.loads_required;
+        }
         
         // Save directly to database
         const { data, error } = await window.supabase
@@ -7617,7 +7632,7 @@ const handleDuplicateJob = async (jobTemplate) => {
             
         if (error) throw error;
         
-        // Fetch updated jobs list and convert to camelCase for the app
+        // Fetch updated jobs list
         const { data: updatedJobs, error: fetchError } = await window.supabase
             .from('jobs')
             .select('*')
@@ -7640,14 +7655,21 @@ const handleDuplicateJob = async (jobTemplate) => {
             supplierFinalPrice: job.supplier_final_price,
             jobDate: job.job_date,
             isCompleted: job.is_completed,
-            isCancelled: job.is_cancelled
+            isCancelled: job.is_cancelled,
+            // Add job-type specific field mappings
+            collectionFrequency: job.collection_frequency,
+            binType: job.bin_type,
+            grabSize: job.grab_size,
+            hoursRequired: job.hours_required,
+            vehicleType: job.vehicle_type,
+            loadsRequired: job.loads_required
         }));
         
         // Update the jobs state
         setJobs(formattedJobs);
         
         setShowFullPageJob(null); // Close the full page view
-        alert('Job duplicated successfully!');
+        alert(`${jobType} job duplicated successfully!`);
         
     } catch (error) {
         console.error('Error duplicating job:', error);
