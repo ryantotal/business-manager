@@ -763,11 +763,11 @@ siteNotes: '',
               jobs[0].linkedJobs = jobs.slice(1).map(j => j.id);
               jobs.forEach(job => onSave(job));
             } else {
-              const newJobNumber = job?.id || generateJobNumber();
-              const newJob = {
-                ...formData,               
-                id: newJobNumber,
-                jobNumber: job?.jobNumber || newJobNumber,
+              const newJobNumber = job?.jobNumber || generateJobNumber();
+const newJob = {
+    ...formData,
+    id: job?.id || undefined,  // Don't set ID for new jobs - let database generate UUID
+    jobNumber: newJobNumber,
                 grossProfit: formData.customerFinalPrice - formData.supplierFinalPrice,
                 profitMargin: formData.customerFinalPrice > 0 ? 
                   ((formData.customerFinalPrice - formData.supplierFinalPrice) / formData.customerFinalPrice) * 100 : 0,
