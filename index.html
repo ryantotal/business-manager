@@ -7673,21 +7673,21 @@ const handleAddressSearch = async (searchText) => {
             return;
         }
         
-        // Search for matching addresses in the database
+        // Search with CORRECT column names
         const { data, error } = await window.supabase
             .from('jobs')
-            .select('site_address_1, site_postcode')
-            .or(`site_address_1.ilike.%${searchText}%,site_postcode.ilike.%${searchText}%`)
+            .select('site_address1, site_address2, site_postcode')  // FIXED: site_address1 not site_address_1
+            .or(`site_address1.ilike.%${searchText}%,site_address2.ilike.%${searchText}%,site_postcode.ilike.%${searchText}%`)
             .limit(10);
             
         if (error) throw error;
         
-        // Remove duplicates and format suggestions
+        // Remove duplicates and format suggestions - also update field names here
         const uniqueAddresses = [...new Map(
             data
-                .filter(job => job.site_address_1) // Only include jobs with addresses
-                .map(job => [`${job.site_address_1}|${job.site_postcode || ''}`, {
-                    address: job.site_address_1,
+                .filter(job => job.site_address1)  // FIXED: site_address1
+                .map(job => [`${job.site_address1}|${job.site_postcode || ''}`, {
+                    address: job.site_address1,  // FIXED: site_address1
                     postcode: job.site_postcode || ''
                 }])
         ).values()];
