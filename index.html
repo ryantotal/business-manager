@@ -7414,7 +7414,7 @@ collection_date: updatedJob.collectionDate || null,
     if (error) throw error;
 
     setJobs(jobs.map(job => job.id === updatedJob.id ? updatedJob : job));
-    setEditingJob(null);
+    setEditingJob(updatedJob);  // Update with new data
 setShowJobForm(false);
 setShowFullPageJob(updatedJob);
 alert('Job updated successfully!');
@@ -7427,7 +7427,7 @@ const handleCompleteJob = async (job) => {
     try {
         // For Skip Hire jobs, set status to COLLECTED when marking as complete
         const updateData = {
-            is_completed: true,
+            is_completed: true,  // Database field name
             status: job.jobType === 'Skip Hire' ? 'COLLECTED' : 'COMPLETED'
         };
         
@@ -7438,19 +7438,25 @@ const handleCompleteJob = async (job) => {
             
         if (error) throw error;
         
-        setJobs(jobs.map(j => j.id === job.id ? { 
-            ...j, 
-            status: updateData.status, 
-            isCompleted: true 
-        } : j));
+        // Update local state with camelCase
+        const updatedJob = {
+            ...job,
+            isCompleted: true,  // JavaScript field name
+            is_completed: true, // Keep both for compatibility
+            status: updateData.status
+        };
         
-        setShowFullPageJob({ 
-            ...job, 
-            status: updateData.status, 
-            isCompleted: true 
-        });
+        setJobs(jobs.map(j => j.id === job.id ? updatedJob : j));
+        
+        // Force update the full page view
+        if (setShowFullPageJob) {
+            setShowFullPageJob(updatedJob);
+        }
         
         alert('Job marked as completed!');
+        
+        // Reload the page data to ensure sync
+        window.location.reload();
     } catch (error) {
         console.error('Error completing job:', error);
         alert('Error completing job: ' + error.message);
