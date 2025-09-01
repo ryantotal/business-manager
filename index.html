@@ -7439,24 +7439,37 @@ alert('Job updated successfully!');
   }
 };
 const handleCompleteJob = async (job) => {
-  try {
-    const { error } = await window.supabase
-      .from('jobs')
-      .update({ 
-        status: 'COMPLETED',
-        is_completed: true 
-      })
-      .eq('id', job.id);
-
-    if (error) throw error;
-
-    setJobs(jobs.map(j => j.id === job.id ? { ...j, status: 'COMPLETED', isCompleted: true } : j));
-    setShowFullPageJob({ ...job, status: 'COMPLETED', isCompleted: true });
-    alert('Job marked as completed!');
-  } catch (error) {
-    console.error('Error completing job:', error);
-    alert('Error completing job: ' + error.message);
-  }
+    try {
+        // For Skip Hire jobs, set status to COLLECTED when marking as complete
+        const updateData = {
+            is_completed: true,
+            status: job.jobType === 'Skip Hire' ? 'COLLECTED' : 'COMPLETED'
+        };
+        
+        const { error } = await window.supabase
+            .from('jobs')
+            .update(updateData)
+            .eq('id', job.id);
+            
+        if (error) throw error;
+        
+        setJobs(jobs.map(j => j.id === job.id ? { 
+            ...j, 
+            status: updateData.status, 
+            isCompleted: true 
+        } : j));
+        
+        setShowFullPageJob({ 
+            ...job, 
+            status: updateData.status, 
+            isCompleted: true 
+        });
+        
+        alert('Job marked as completed!');
+    } catch (error) {
+        console.error('Error completing job:', error);
+        alert('Error completing job: ' + error.message);
+    }
 };
 const handleDeleteAttachment = async (attachment) => {
   if (!confirm(`Are you sure you want to delete ${attachment.file_name}?`)) return;
