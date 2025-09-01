@@ -555,7 +555,7 @@ const getFilteredProducts = () => {
         };
 
         // Job Form Component
-const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch }) => {          const { wasteTypes } = useWasteTypes();
+        const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch }) => {
           const [uploadFile, setUploadFile] = useState(null);
           const [jobAttachments, setJobAttachments] = useState([]);
           // Load attachments when job changes
@@ -8416,24 +8416,29 @@ onClick={() => {
 
               {/* Forms */}
   {showJobForm && (
-  <JobForm
-    job={editingJob}
-    onClose={() => {
-      setShowJobForm(false);
-      setEditingJob(null);
-    }}
-    onSave={(jobData) => {
-      if (editingJob) {
-        handleUpdateJob(jobData);
-      } else {
-        handleAddJob(jobData);
-      }
-    }}
-    customers={customers}
-    suppliers={suppliers}
-    sageProducts={sageProducts}
-    user={user}
-  />
+    <JobForm
+        job={editingJob}
+        onClose={() => {
+            setShowJobForm(false);
+            setEditingJob(null);
+        }}
+        onSave={(jobData) => {
+            if (editingJob) {
+                handleUpdateJob(jobData);
+            } else {
+                handleAddJob(jobData);
+            }
+        }}
+        customers={customers}
+        suppliers={suppliers}
+        sageProducts={sageProducts}
+        user={user}
+        // MAKE SURE THESE 4 LINES ARE HERE:
+        addressSuggestions={addressSuggestions}
+        showAddressSuggestions={showAddressSuggestions}
+        setShowAddressSuggestions={setShowAddressSuggestions}
+        handleAddressSearch={handleAddressSearch}
+    />
 )}
 
               {showSupplierForm && (
