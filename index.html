@@ -7606,17 +7606,7 @@ const handleDeleteAttachment = async (attachment) => {
             notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`
         };
         
-        // Handle specific fields based on job type
-        if (jobType === 'Waste Collection') {
-            jobForDatabase.collection_frequency = jobTemplate.collectionFrequency || jobTemplate.collection_frequency;
-            jobForDatabase.bin_type = jobTemplate.binType || jobTemplate.bin_type;
-        } else if (jobType === 'Grab Hire') {
-            jobForDatabase.grab_size = jobTemplate.grabSize || jobTemplate.grab_size;
-            jobForDatabase.hours_required = jobTemplate.hoursRequired || jobTemplate.hours_required;
-        } else if (jobType === 'Muck Hire') {
-            jobForDatabase.vehicle_type = jobTemplate.vehicleType || jobTemplate.vehicle_type;
-            jobForDatabase.loads_required = jobTemplate.loadsRequired || jobTemplate.loads_required;
-        }
+        // NO job-type specific fields - database doesn't have those columns
         
         // Save directly to database
         const { data, error } = await window.supabase
@@ -7649,14 +7639,7 @@ const handleDeleteAttachment = async (attachment) => {
             supplierFinalPrice: job.supplier_final_price,
             jobDate: job.job_date,
             isCompleted: job.is_completed,
-            isCancelled: job.is_cancelled,
-            // Add job-type specific field mappings
-            collectionFrequency: job.collection_frequency,
-            binType: job.bin_type,
-            grabSize: job.grab_size,
-            hoursRequired: job.hours_required,
-            vehicleType: job.vehicle_type,
-            loadsRequired: job.loads_required
+            isCancelled: job.is_cancelled
         }));
         
         // Update the jobs state
@@ -7670,7 +7653,34 @@ const handleDeleteAttachment = async (attachment) => {
         alert('Error duplicating job: ' + error.message);
     }
 };
-
+          const handleEditJob = (job) => {
+    // Convert the job data to the format expected by the form
+    const editableJob = {
+        ...job,
+        id: job.id,
+        jobNumber: job.job_number || job.jobNumber,
+        customerName: job.customer_name || job.customerName,
+        supplierName: job.supplier_name || job.supplierName,
+        jobType: job.job_type || job.jobType,
+        wasteType: job.waste_type || job.wasteType,
+        skipSize: job.skip_size || job.skipSize,
+        quantity: job.quantity || 1,
+        unit: job.unit || 'skip',
+        customerUnitPrice: job.customer_unit_price || job.customerUnitPrice || 0,
+        supplierUnitPrice: job.supplier_unit_price || job.supplierUnitPrice || 0,
+        customerFinalPrice: job.customer_final_price || job.customerFinalPrice || 0,
+        supplierFinalPrice: job.supplier_final_price || job.supplierFinalPrice || 0,
+        jobDate: job.job_date || job.jobDate,
+        status: job.status || 'CONFIRMED',
+        isCompleted: job.is_completed || job.isCompleted || false,
+        isCancelled: job.is_cancelled || job.isCancelled || false,
+        notes: job.notes || ''
+    };
+    
+    setEditingJob(editableJob);
+    setShowJobForm(true);
+    setShowFullPageJob(null); // Close the full page view if open
+};
           const handleUpdateCustomer = (updatedCustomer) => {
             setCustomers(customers.map(customer => customer.id === updatedCustomer.id ? updatedCustomer : customer));
           };
