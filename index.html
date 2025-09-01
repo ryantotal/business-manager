@@ -1333,7 +1333,7 @@ if (job?.id && formData.id) {
                  {/* Site Information Tab */}
 {activeTab === 'site' && (
   <div className="space-y-4">
-    <div>
+    <div style={{display: 'none'}}>  {/* Hide this duplicate */}
       <label className="block text-sm font-medium text-gray-700 mb-1">Site Address *</label>
       <input
         type="text"
