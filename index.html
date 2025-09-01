@@ -1338,11 +1338,7 @@ if (job?.id && formData.id) {
       <input
         type="text"
         value={formData.siteAddress1}
-        onChange={(e) => {
-    setFormData({...formData, siteAddress1: e.target.value});
-    handleAddressSearch(e.target.value);
-}}
-
+        onChange={(e) => setFormData({...formData, siteAddress1: e.target.value})}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
         placeholder="Delivery/collection address"
       />
