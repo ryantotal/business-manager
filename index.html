@@ -7618,7 +7618,8 @@ const handleDeleteAttachment = async (attachment) => {
         if (error) throw error;
         
         alert('Job duplicated successfully!');
-         setShowFullPageJob(null); // Close the full page view
+        await fetchJobs(); // This should refresh your jobs list
+setShowFullPageJob(null);
         
     } catch (error) {
         console.error('Error duplicating job:', error);
