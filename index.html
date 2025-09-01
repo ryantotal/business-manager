@@ -766,7 +766,6 @@ siteNotes: '',
               const newJobNumber = job?.jobNumber || generateJobNumber();
 const newJob = {
     ...formData,
-    id: job?.id || undefined,  // Don't set ID for new jobs - let database generate UUID
     jobNumber: newJobNumber,
                 grossProfit: formData.customerFinalPrice - formData.supplierFinalPrice,
                 profitMargin: formData.customerFinalPrice > 0 ? 
@@ -784,6 +783,10 @@ if (!newJob.deliveryDate || newJob.deliveryDate === '') {
 }
 if (!newJob.jobDate || newJob.jobDate === '') {
     newJob.jobDate = new Date().toISOString().split('T')[0];
+}
+// Only include ID if we're updating an existing job
+if (job?.id) {
+    newJob.id = job.id;
 }
               onSave(newJob);
             }
