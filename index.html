@@ -8146,7 +8146,7 @@ onClick={() => {
     onClose={() => setShowFullPageJob(null)}
     onUpdateDisplay={setShowFullPageJob}
     onEdit={handleEditJob}
-    onDuplicate={() => handleDuplicateJob(job)}
+    onDuplicate={() => handleDuplicateJob(showFullPageJob)}
     onDelete={handleDeleteJob}
     onExchange={async (job) => {
     try {
@@ -8182,7 +8182,7 @@ onClick={() => {
         await handleAddJob(exchangeJob);
         
         alert('Exchange job created!');
-        window.location.reload();
+        setShowFullPageJob(null);  // Close the full page view
     } catch (error) {
         console.error('Error:', error);
         alert('Error creating exchange: ' + error.message);
