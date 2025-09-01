@@ -7580,7 +7580,7 @@ const handleDeleteAttachment = async (attachment) => {
   setShowJobForm(true); // ✅ Then show the form
 };
 
-   const handleDuplicateJob = async (jobTemplate) => {
+  const handleDuplicateJob = async (jobTemplate) => {
     try {
         // Create a completely fresh job object
         const year = new Date().getFullYear();
@@ -7606,7 +7606,9 @@ const handleDeleteAttachment = async (attachment) => {
             status: 'CONFIRMED',
             is_completed: false,
             is_cancelled: false,
-            notes: `Duplicated from ${jobTemplate.jobNumber}`
+            notes: `Duplicated from ${jobTemplate.jobNumber}`,
+            site_address_1: jobTemplate.siteAddress1 || '',
+            site_postcode: jobTemplate.sitePostcode || ''
         };
         
         // Save directly to database
@@ -7617,34 +7619,24 @@ const handleDeleteAttachment = async (attachment) => {
             
         if (error) throw error;
         
+        // Fetch updated jobs list
+        const { data: updatedJobs, error: fetchError } = await window.supabase
+            .from('jobs')
+            .select('*')
+            .order('created_at', { ascending: false });
+            
+        if (fetchError) throw fetchError;
+        
+        // Update the jobs state
+        setJobs(updatedJobs || []);
+        
+        setShowFullPageJob(null); // Close the full page view
         alert('Job duplicated successfully!');
-        await fetchJobs(); // This should refresh your jobs list
-setShowFullPageJob(null);
         
     } catch (error) {
         console.error('Error duplicating job:', error);
         alert('Error duplicating job: ' + error.message);
     }
-};
-
-          const handleAddCustomer = async (newCustomer) => {
-  try {
-    await saveCustomerToDatabase(newCustomer);
-    setCustomers([...customers, newCustomer]);
-    setShowCustomerForm(false);
-  } catch (error) {
-    alert('Error saving customer: ' + error.message);
-  }
-};
-          const saveCustomerToDatabase = async (customer) => {
-  const { error } = await window.supabase
-    .from('customers')
-    .insert([customer]);
-  
-  if (error) {
-    console.error('Error saving customer:', error);
-    throw error;
-  }
 };
 
           const handleUpdateCustomer = (updatedCustomer) => {
