@@ -7708,15 +7708,12 @@ const handleAddressSearch = async (searchText) => {
             return;
         }
         
-        console.log('Querying database...');
         const { data, error } = await window.supabase
             .from('jobs')
             .select('site_address1, site_address2, site_postcode')
             .or(`site_address1.ilike.%${searchText}%,site_address2.ilike.%${searchText}%,site_postcode.ilike.%${searchText}%`)
             .limit(10);
             
-        console.log('Raw results from DB:', data);
-        console.log('Error (if any):', error);
         
         if (error) throw error;
         
@@ -7730,13 +7727,9 @@ const handleAddressSearch = async (searchText) => {
                 }])
         ).values()];
         
-        console.log('Formatted suggestions:', uniqueAddresses);
-        console.log('Setting suggestions, count:', uniqueAddresses.length);
-        
         setAddressSuggestions(uniqueAddresses);
         setShowAddressSuggestions(uniqueAddresses.length > 0);
         
-        console.log('=== handleAddressSearch END ===');
         
     } catch (error) {
         console.error('Error in handleAddressSearch:', error);
