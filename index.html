@@ -1342,9 +1342,35 @@ if (job?.id && formData.id) {
     setFormData({...formData, siteAddress1: e.target.value});
     handleAddressSearch(e.target.value);
 }}
+className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
+                placeholder="Delivery/collection address"
+            />
+            {showAddressSuggestions && addressSuggestions && addressSuggestions.length > 0 ? (
+                <div className="absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                    {addressSuggestions.map((suggestion, index) => (
+                        <div
+                            key={index}
+                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                            onClick={() => {
+                                setFormData({
+                                    ...formData,
+                                    siteAddress1: suggestion.address,
+                                    sitePostcode: suggestion.postcode
+                                });
+                                setShowAddressSuggestions(false);
+                            }}
+                        >
+                            <div className="font-medium">{suggestion.address}</div>
+                            {suggestion.postcode ? (
+                                <div className="text-sm text-gray-600">{suggestion.postcode}</div>
+                            ) : null}
+                        </div>
+                    ))}
+                </div>
+            ) : null}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
         placeholder="Delivery/collection address"
-      />
+      
       <input
         type="text"
         value={formData.siteAddress2}
@@ -1362,7 +1388,7 @@ if (job?.id && formData.id) {
     </div>
 
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
+      <div className="relative">
         <label className="block text-sm font-medium text-gray-700 mb-1">Site Contact Name</label>
         <input
           type="text"
