@@ -7580,7 +7580,7 @@ const handleDeleteAttachment = async (attachment) => {
   setShowJobForm(true); // ✅ Then show the form
 };
 
- const handleDuplicateJob = async (jobTemplate) => {
+const handleDuplicateJob = async (jobTemplate) => {
     try {
         // Create a completely fresh job object
         const year = new Date().getFullYear();
@@ -7591,23 +7591,22 @@ const handleDeleteAttachment = async (attachment) => {
         
         const jobForDatabase = {
             job_number: jobNumber,
-            customer_name: jobTemplate.customerName,
-            supplier_name: jobTemplate.supplierName,
-            job_type: jobTemplate.jobType,
-            waste_type: jobTemplate.wasteType,
-            skip_size: jobTemplate.skipSize,
+            customer_name: jobTemplate.customerName || jobTemplate.customer_name,
+            supplier_name: jobTemplate.supplierName || jobTemplate.supplier_name,
+            job_type: jobTemplate.jobType || jobTemplate.job_type,
+            waste_type: jobTemplate.wasteType || jobTemplate.waste_type,
+            skip_size: jobTemplate.skipSize || jobTemplate.skip_size,
             quantity: jobTemplate.quantity || 1,
             unit: jobTemplate.unit || 'skip',
-            customer_unit_price: jobTemplate.customerUnitPrice || 0,
-            supplier_unit_price: jobTemplate.supplierUnitPrice || 0,
-            customer_final_price: jobTemplate.customerFinalPrice || 0,
-            supplier_final_price: jobTemplate.supplierFinalPrice || 0,
+            customer_unit_price: jobTemplate.customerUnitPrice || jobTemplate.customer_unit_price || 0,
+            supplier_unit_price: jobTemplate.supplierUnitPrice || jobTemplate.supplier_unit_price || 0,
+            customer_final_price: jobTemplate.customerFinalPrice || jobTemplate.customer_final_price || 0,
+            supplier_final_price: jobTemplate.supplierFinalPrice || jobTemplate.supplier_final_price || 0,
             job_date: new Date().toISOString().split('T')[0],
             status: 'CONFIRMED',
             is_completed: false,
             is_cancelled: false,
-            notes: `Duplicated from ${jobTemplate.jobNumber}`
-            // REMOVED site_address_1 and site_postcode - these don't exist in your DB
+            notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number}`
         };
         
         // Save directly to database
@@ -7618,7 +7617,7 @@ const handleDeleteAttachment = async (attachment) => {
             
         if (error) throw error;
         
-        // Fetch updated jobs list
+        // Fetch updated jobs list and convert to camelCase for the app
         const { data: updatedJobs, error: fetchError } = await window.supabase
             .from('jobs')
             .select('*')
@@ -7626,8 +7625,26 @@ const handleDeleteAttachment = async (attachment) => {
             
         if (fetchError) throw fetchError;
         
+        // Convert snake_case to camelCase for the app
+        const formattedJobs = updatedJobs.map(job => ({
+            ...job,
+            jobNumber: job.job_number,
+            customerName: job.customer_name,
+            supplierName: job.supplier_name,
+            jobType: job.job_type,
+            wasteType: job.waste_type,
+            skipSize: job.skip_size,
+            customerUnitPrice: job.customer_unit_price,
+            supplierUnitPrice: job.supplier_unit_price,
+            customerFinalPrice: job.customer_final_price,
+            supplierFinalPrice: job.supplier_final_price,
+            jobDate: job.job_date,
+            isCompleted: job.is_completed,
+            isCancelled: job.is_cancelled
+        }));
+        
         // Update the jobs state
-        setJobs(updatedJobs || []);
+        setJobs(formattedJobs);
         
         setShowFullPageJob(null); // Close the full page view
         alert('Job duplicated successfully!');
