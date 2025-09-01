@@ -7574,12 +7574,27 @@ const handleDeleteAttachment = async (attachment) => {
 };
 
           const handleDuplicateJob = (jobTemplate) => {
-            const duplicatedJob = { ...jobTemplate, id: null, jobNumber: null };
-            delete duplicatedJob.id;
-            delete duplicatedJob.jobNumber;
-            setEditingJob(duplicatedJob);
-            setShowJobForm(true);
-          };
+    const duplicatedJob = { 
+        ...jobTemplate, 
+        id: null,  // Let database generate the UUID
+        jobNumber: null,  // Will be generated on save
+        createdDate: new Date().toISOString(),
+        jobDate: new Date().toISOString().split('T')[0],
+        notes: `Duplicated from ${jobTemplate.jobNumber}. ${jobTemplate.notes || ''}`.trim(),
+        invoiceNumber: '',
+        invoiceStatus: 'Not Invoiced',
+        paymentStatus: 'Not Paid',
+        isCompleted: false,
+        is_completed: false,
+        isCancelled: false,
+        status: 'CONFIRMED'
+    };
+    
+    // Don't delete these fields - they should be null, not deleted
+    setEditingJob(duplicatedJob);
+    setShowJobForm(true);
+    setShowFullPageJob(null);  // Close full page view
+};
 
           const handleAddCustomer = async (newCustomer) => {
   try {
