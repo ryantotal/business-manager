@@ -7325,7 +7325,10 @@ collection_date: newJob.collectionDate || null,
       linked_jobs: JSON.stringify(newJob.linkedJobs || []),
       notes: newJob.notes || null
     };
-    
+    // Remove id field completely if it's null or undefined
+if (!jobForDatabase.id) {
+    delete jobForDatabase.id;
+}
     const { data, error } = await window.supabase
       .from('jobs')
       .insert([jobForDatabase])
