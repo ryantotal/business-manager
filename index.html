@@ -7574,7 +7574,7 @@ const handleDeleteAttachment = async (attachment) => {
   }
 };
 
-       const handleDuplicateJob = async (jobTemplate) => {
+        const handleDuplicateJob = async (jobTemplate) => {
     try {
         // Create a completely fresh job object
         const year = new Date().getFullYear();
@@ -7606,7 +7606,17 @@ const handleDeleteAttachment = async (attachment) => {
             notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`
         };
         
-        // NO job-type specific fields - database doesn't have those columns
+        // Handle specific fields based on job type
+        if (jobType === 'Waste Collection') {
+            jobForDatabase.collection_frequency = jobTemplate.collectionFrequency || jobTemplate.collection_frequency;
+            jobForDatabase.bin_type = jobTemplate.binType || jobTemplate.bin_type;
+        } else if (jobType === 'Grab Hire') {
+            jobForDatabase.grab_size = jobTemplate.grabSize || jobTemplate.grab_size;
+            jobForDatabase.hours_required = jobTemplate.hoursRequired || jobTemplate.hours_required;
+        } else if (jobType === 'Muck Hire') {
+            jobForDatabase.vehicle_type = jobTemplate.vehicleType || jobTemplate.vehicle_type;
+            jobForDatabase.loads_required = jobTemplate.loadsRequired || jobTemplate.loads_required;
+        }
         
         // Save directly to database
         const { data, error } = await window.supabase
@@ -7639,7 +7649,14 @@ const handleDeleteAttachment = async (attachment) => {
             supplierFinalPrice: job.supplier_final_price,
             jobDate: job.job_date,
             isCompleted: job.is_completed,
-            isCancelled: job.is_cancelled
+            isCancelled: job.is_cancelled,
+            // Add job-type specific field mappings
+            collectionFrequency: job.collection_frequency,
+            binType: job.bin_type,
+            grabSize: job.grab_size,
+            hoursRequired: job.hours_required,
+            vehicleType: job.vehicle_type,
+            loadsRequired: job.loads_required
         }));
         
         // Update the jobs state
