@@ -7580,32 +7580,50 @@ const handleDeleteAttachment = async (attachment) => {
   setShowJobForm(true); // ✅ Then show the form
 };
 
-    const handleDuplicateJob = (jobTemplate) => {
-    // Just keep the fields you want to copy
-    const duplicatedJob = {
-        customerName: jobTemplate.customerName,
-        supplierName: jobTemplate.supplierName,
-        jobType: jobTemplate.jobType,
-        wasteType: jobTemplate.wasteType,
-        skipSize: jobTemplate.skipSize,
-        quantity: jobTemplate.quantity,
-        unit: jobTemplate.unit,
-        customerUnitPrice: jobTemplate.customerUnitPrice,
-        supplierUnitPrice: jobTemplate.supplierUnitPrice,
-        siteAddress1: jobTemplate.siteAddress1,
-        siteAddress2: jobTemplate.siteAddress2,
-        sitePostcode: jobTemplate.sitePostcode,
-        // Set defaults for new job
-        jobDate: new Date().toISOString().split('T')[0],
-        status: 'CONFIRMED',
-        isCompleted: false,
-        isCancelled: false,
-        notes: `Duplicated from ${jobTemplate.jobNumber}`
-    };
-    
-    setEditingJob(duplicatedJob);
-    setShowJobForm(true);
-    setShowFullPageJob(null);
+   const handleDuplicateJob = async (jobTemplate) => {
+    try {
+        // Create a completely fresh job object
+        const year = new Date().getFullYear();
+        const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
+        const newJobNumber = lastJobNumber + 1;
+        localStorage.setItem('lastJobNumber', newJobNumber.toString());
+        const jobNumber = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
+        
+        const jobForDatabase = {
+            job_number: jobNumber,
+            customer_name: jobTemplate.customerName,
+            supplier_name: jobTemplate.supplierName,
+            job_type: jobTemplate.jobType,
+            waste_type: jobTemplate.wasteType,
+            skip_size: jobTemplate.skipSize,
+            quantity: jobTemplate.quantity || 1,
+            unit: jobTemplate.unit || 'skip',
+            customer_unit_price: jobTemplate.customerUnitPrice || 0,
+            supplier_unit_price: jobTemplate.supplierUnitPrice || 0,
+            customer_final_price: jobTemplate.customerFinalPrice || 0,
+            supplier_final_price: jobTemplate.supplierFinalPrice || 0,
+            job_date: new Date().toISOString().split('T')[0],
+            status: 'CONFIRMED',
+            is_completed: false,
+            is_cancelled: false,
+            notes: `Duplicated from ${jobTemplate.jobNumber}`
+        };
+        
+        // Save directly to database
+        const { data, error } = await window.supabase
+            .from('jobs')
+            .insert([jobForDatabase])
+            .select();
+            
+        if (error) throw error;
+        
+        alert('Job duplicated successfully!');
+        window.location.reload(); // Just reload to see the new job
+        
+    } catch (error) {
+        console.error('Error duplicating job:', error);
+        alert('Error duplicating job: ' + error.message);
+    }
 };
 
           const handleAddCustomer = async (newCustomer) => {
