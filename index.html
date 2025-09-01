@@ -7574,13 +7574,7 @@ const handleDeleteAttachment = async (attachment) => {
   }
 };
 
-          const handleEditJob = (job) => {
-  console.log('Setting editingJob to:', job); // Debug line
-  setEditingJob(job);  // ✅ This must happen first
-  setShowJobForm(true); // ✅ Then show the form
-};
-
-const handleDuplicateJob = async (jobTemplate) => {
+        const handleDuplicateJob = async (jobTemplate) => {
     try {
         // Create a completely fresh job object
         const year = new Date().getFullYear();
@@ -7612,17 +7606,7 @@ const handleDuplicateJob = async (jobTemplate) => {
             notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`
         };
         
-        // Handle specific fields based on job type
-        if (jobType === 'Waste Collection') {
-            jobForDatabase.collection_frequency = jobTemplate.collectionFrequency || jobTemplate.collection_frequency;
-            jobForDatabase.bin_type = jobTemplate.binType || jobTemplate.bin_type;
-        } else if (jobType === 'Grab Hire') {
-            jobForDatabase.grab_size = jobTemplate.grabSize || jobTemplate.grab_size;
-            jobForDatabase.hours_required = jobTemplate.hoursRequired || jobTemplate.hours_required;
-        } else if (jobType === 'Muck Hire') {
-            jobForDatabase.vehicle_type = jobTemplate.vehicleType || jobTemplate.vehicle_type;
-            jobForDatabase.loads_required = jobTemplate.loadsRequired || jobTemplate.loads_required;
-        }
+        // NO job-type specific fields - database doesn't have those columns
         
         // Save directly to database
         const { data, error } = await window.supabase
@@ -7655,14 +7639,7 @@ const handleDuplicateJob = async (jobTemplate) => {
             supplierFinalPrice: job.supplier_final_price,
             jobDate: job.job_date,
             isCompleted: job.is_completed,
-            isCancelled: job.is_cancelled,
-            // Add job-type specific field mappings
-            collectionFrequency: job.collection_frequency,
-            binType: job.bin_type,
-            grabSize: job.grab_size,
-            hoursRequired: job.hours_required,
-            vehicleType: job.vehicle_type,
-            loadsRequired: job.loads_required
+            isCancelled: job.is_cancelled
         }));
         
         // Update the jobs state
