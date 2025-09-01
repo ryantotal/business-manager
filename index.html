@@ -556,13 +556,6 @@ const getFilteredProducts = () => {
 
         // Job Form Component
         const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch }) => {
-    // DEBUG
-    console.log('JobForm mounted with props:', {
-        handleAddressSearch: handleAddressSearch,
-        addressSuggestions: addressSuggestions,
-        showAddressSuggestions: showAddressSuggestions,
-        setShowAddressSuggestions: setShowAddressSuggestions
-    });
           const [uploadFile, setUploadFile] = useState(null);
           const [jobAttachments, setJobAttachments] = useState([]);
           // Load attachments when job changes
@@ -7673,49 +7666,37 @@ const handleDeleteAttachment = async (attachment) => {
     }
 };
 const handleAddressSearch = async (searchText) => {
-    console.log('=== handleAddressSearch START ===');
-    console.log('Searching for:', searchText);
-    
     try {
         if (searchText.length < 2) {
-            console.log('Text too short, need at least 2 characters');
             setAddressSuggestions([]);
             setShowAddressSuggestions(false);
             return;
         }
         
-        console.log('Querying database...');
+        // Search with CORRECT column names
         const { data, error } = await window.supabase
             .from('jobs')
-            .select('site_address1, site_address2, site_postcode')
+            .select('site_address1, site_address2, site_postcode')  // FIXED: site_address1 not site_address_1
             .or(`site_address1.ilike.%${searchText}%,site_address2.ilike.%${searchText}%,site_postcode.ilike.%${searchText}%`)
             .limit(10);
             
-        console.log('Raw results from DB:', data);
-        console.log('Error (if any):', error);
-        
         if (error) throw error;
         
-        // Remove duplicates and format suggestions
+        // Remove duplicates and format suggestions - also update field names here
         const uniqueAddresses = [...new Map(
             data
-                .filter(job => job.site_address1)
+                .filter(job => job.site_address1)  // FIXED: site_address1
                 .map(job => [`${job.site_address1}|${job.site_postcode || ''}`, {
-                    address: job.site_address1,
+                    address: job.site_address1,  // FIXED: site_address1
                     postcode: job.site_postcode || ''
                 }])
         ).values()];
         
-        console.log('Formatted suggestions:', uniqueAddresses);
-        console.log('Setting suggestions, count:', uniqueAddresses.length);
-        
         setAddressSuggestions(uniqueAddresses);
         setShowAddressSuggestions(uniqueAddresses.length > 0);
         
-        console.log('=== handleAddressSearch END ===');
-        
     } catch (error) {
-        console.error('Error in handleAddressSearch:', error);
+        console.error('Error searching addresses:', error);
     }
 };
           const handleEditJob = (job) => {
