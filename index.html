@@ -7579,10 +7579,9 @@ const handleDeleteAttachment = async (attachment) => {
   setShowJobForm(true); // ✅ Then show the form
 };
 
-          const handleDuplicateJob = (jobTemplate) => {
+     const handleDuplicateJob = (jobTemplate) => {
     const duplicatedJob = { 
-        ...jobTemplate, 
-        id: null,  // Let database generate the UUID
+        ...jobTemplate,
         jobNumber: null,  // Will be generated on save
         createdDate: new Date().toISOString(),
         jobDate: new Date().toISOString().split('T')[0],
@@ -7596,7 +7595,10 @@ const handleDeleteAttachment = async (attachment) => {
         status: 'CONFIRMED'
     };
     
-    // Don't delete these fields - they should be null, not deleted
+    // IMPORTANT: Delete the id field completely
+    delete duplicatedJob.id;
+    delete duplicatedJob.jobNumber;  // Also delete jobNumber to generate new one
+    
     setEditingJob(duplicatedJob);
     setShowJobForm(true);
     setShowFullPageJob(null);  // Close full page view
