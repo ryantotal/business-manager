@@ -7766,6 +7766,9 @@ const handleSendToSage = async (jobId) => {
     try {
         // TODO: Add your actual Sage API integration here
         console.log('Sending job to Sage:', jobId);
+
+          const job = jobs.find(j => j.id === jobId);
+        await handleCreateInvoice(job);  
         
         // Mark as sent in database
         const { error } = await window.supabase
