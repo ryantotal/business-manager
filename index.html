@@ -10888,6 +10888,12 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
                         setFormData({...formData, lineItems: updatedLineItems});
+                        setFormData(prev => ({
+    ...prev,
+    description: product.description || product.name,
+    product_id: product.sage_id,
+    charge: product.customer_price || 0
+}));
                       }}
                       products={sageProducts}
                     />
