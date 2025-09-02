@@ -1052,6 +1052,37 @@ if (job?.id && formData.id) {
     </div>
   </div>
 )}
+{formData.jobType === 'Roll-on Roll-off' && (
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div>
+      <SageProductSelector 
+        jobType="Roll-on Roll-off"
+        selectedProduct={formData.sageProductName}
+        onSelect={(product) => {
+          setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
+          const newLineItem = {
+            id: Date.now(),
+            sage_id: product.sage_id,
+            product_name: product.name,
+            description: product.description || product.name,
+            item_code: product.item_code,
+            type: product.type,
+            quantity: 1,
+            supplier_price: 0.00,
+            customer_price: 0.00,
+            unit_price: 0.00,
+            discount: 0.00,
+            vat_rate: 20,
+            total: 0.00
+          };
+          const updatedLineItems = [...(formData.lineItems || []), newLineItem];
+          setFormData({...formData, lineItems: updatedLineItems});
+        }}
+        products={sageProducts}
+      />
+    </div>
+  </div>
+)}
 {formData.lineItems && formData.lineItems.length > 0 && (
   <div className="mt-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
     <h3 className="text-xl font-semibold mb-6">Selected Products & Services</h3>
@@ -1209,6 +1240,8 @@ if (job?.id && formData.id) {
     item_code: product.item_code,
     type: product.type,
     quantity: 1,
+    supplier_price: 0.00,
+    customer_price: 0.00,
     unit_price: 0.00,
     discount: 0.00,
     vat_rate: 20,
@@ -1239,6 +1272,8 @@ if (job?.id && formData.id) {
     item_code: product.item_code,
     type: product.type,
     quantity: 1,
+    supplier_price: 0.00,
+    customer_price: 0.00,
     unit_price: 0.00,
     discount: 0.00,
     vat_rate: 20,
