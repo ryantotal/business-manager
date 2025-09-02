@@ -2026,19 +2026,28 @@ const handleCreateInvoice = async (job) => {
       }
       
       const invoiceData = {
-        contact_id: customer.sageId,
-        date: new Date().toISOString().split('T')[0],
-        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-        reference: job.jobNumber,
-        notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
-        line_items: [{
-          description: `${job.jobType} - ${job.wasteType || job.aggregateType || ''}`,
-          quantity: job.quantity,
-          unit_price: job.customerUnitPrice,
-          tax_rate_id: '1',
-          ledger_account_id: '1'
-        }]
-      };
+  contact_id: customer.sageId,
+  date: new Date().toISOString().split('T')[0],
+  due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+  reference: job.jobNumber,
+  notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
+    line_items: job.lineItems && job.lineItems.length > 0 
+  ? job.lineItems.map(item => ({
+      description: item.description || item.product_name,
+      quantity: item.quantity || 1,
+      unit_price: item.customer_price || 0,
+      tax_rate_id: '1', // Standard VAT rate - adjust if needed
+      ledger_account_id: item.sage_ledger_id || '4010', // 4000 is typically Sales in Sage
+      product_id: item.sage_id || null // Include the Sage product ID if available
+    }))
+  : [{
+      description: `${job.jobType} - ${job.wasteType || job.aggregateType || ''}`,
+      quantity: job.quantity,
+      unit_price: job.customerUnitPrice,
+      tax_rate_id: '1',
+      ledger_account_id: '4010' // Default sales account
+    }]
+};
       
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
       
