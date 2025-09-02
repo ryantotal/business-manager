@@ -3242,7 +3242,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
       const quantity = jobToInvoice.quantity || 1;
       const lineTotal = unitPrice * quantity;
       const taxAmount = lineTotal * 0.20;
-      
+      console.log('jobToInvoice data:', jobToInvoice);
       const invoiceData = {
         sales_invoice: {  
           contact_id: customer.sage_id,
@@ -3258,10 +3258,9 @@ const handleCreateInvoice = async (jobToInvoice) => {
 },
           //notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress1 || jobToInvoice.siteAddress}`,
          invoice_lines: [{
-    description: jobToInvoice.description,
-    product_id: jobToInvoice.product_id,
-    quantity: jobToInvoice.quantity || 1,
-    unit_price: jobToInvoice.charge,
+    description: jobToInvoice.jobType || "Skip Hire",  // Fallback to ensure description exists
+    quantity: 1,
+    unit_price: jobToInvoice.charge || jobToInvoice.customerUnitPrice || 0,
     currency_tax_amount: taxAmount,
     tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
     ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
