@@ -7426,10 +7426,14 @@ useEffect(() => {
   invoiceStatus: job.invoice_status || 'Not Invoiced',
   paymentStatus: job.payment_status || 'Not Paid',
   sageProductId: job.sage_product_id,
-  sageProductName: job.sage_product_name,
-  sageId: job.sage_id,
-  // Handle both old and new line_items format
-  lineItems: (() => {
+ sageProductName: job.sage_product_name,
+sageId: job.sage_id,
+// ADD THESE THREE LINES:
+charge: job.charge,
+description: job.description,
+product_id: job.product_id,
+// Handle both old and new line_items format
+lineItems: (() => {
     try {
       if (job.line_items) {
         return typeof job.line_items === 'string' ? JSON.parse(job.line_items) : job.line_items;
