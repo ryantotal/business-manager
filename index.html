@@ -761,6 +761,9 @@ siteNotes: '',
                   id: jobId,
                   jobNumber: jobId,
                   quantity: 1,
+                  charge: formData.customerUnitPrice,  // ADD THIS - the price you're charging
+                  description: formData.description || '',  // formData already has the description
+                  product_id: formData.product_id || null,  // formData already has the product_id. 
                   customerFinalPrice: formData.customerUnitPrice,
                   supplierFinalPrice: formData.supplierUnitPrice,
                   grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
@@ -3258,7 +3261,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
 },
           //notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress1 || jobToInvoice.siteAddress}`,
          invoice_lines: [{
-    description: jobToInvoice.jobType || "Skip Hire",  // Fallback to ensure description exists
+    description: jobToInvoice.description || jobToInvoice.jobType || "Skip Hire",
     quantity: 1,
     unit_price: jobToInvoice.charge || jobToInvoice.customerUnitPrice || 0,
     currency_tax_amount: taxAmount,
