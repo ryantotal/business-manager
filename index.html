@@ -3257,15 +3257,15 @@ const handleCreateInvoice = async (jobToInvoice) => {
     country_code: 'GB'
 },
           //notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress1 || jobToInvoice.siteAddress}`,
-         invoice_lines: jobs.map(job => ({
-    description: job.description,
-    product_id: job.product_id,
-    quantity: job.quantity || 1,
-    unit_price: job.charge,  // This ensures the price you set is used
+         invoice_lines: [{
+    description: jobToInvoice.description,
+    product_id: jobToInvoice.product_id,
+    quantity: jobToInvoice.quantity || 1,
+    unit_price: jobToInvoice.charge,
     currency_tax_amount: taxAmount,
     tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
     ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
-}))
+}]
         }
       };
       
