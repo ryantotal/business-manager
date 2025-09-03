@@ -2079,7 +2079,14 @@ tax_amount: item.tax_code === 'T1'
   ? (item.customer_price || item.unit_price || job.customerUnitPrice) * (item.quantity || job.quantity) * 0.20
   : 0,  // Zero tax for GB_ZERO items
   }];
-
+console.log('Job site address data:', {
+    siteAddress1: job.siteAddress1,
+    siteAddress: job.siteAddress,
+    siteCity: job.siteCity,
+    sitePostcode: job.sitePostcode,
+    siteCounty: job.siteCounty
+});
+console.log('Full invoiceData:', JSON.stringify(invoiceData, null, 2));
  const invoiceData = {
     sales_invoice: {
         contact_id: customer.sage_id,
@@ -2088,14 +2095,13 @@ tax_amount: item.tax_code === 'T1'
         reference: job.jobNumber,
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
-        delivery_settings: {
-    address: {
-        address_line_1: job.siteAddress1 || job.siteAddress,  // Check field name
-        address_line_2: job.siteAddress2 || '',
-        city: job.siteCity || '',
-        postal_code: job.sitePostcode || '',
-        country_id: 'GB'
-    }
+        delivery_address: {
+    address_line_1: job.siteAddress1 || job.siteAddress,
+    address_line_2: job.siteAddress2 || '',
+    city: job.siteCity || '',
+    region: job.siteCounty || '',
+    postal_code: job.sitePostcode || '',
+    country_code: 'GB'
 },
         invoice_lines: lineItems
     }
@@ -3312,6 +3318,12 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
   ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'  // UPDATED ID
 }];
+console.log('JobToInvoice object:', jobToInvoice);
+console.log('Site fields:', {
+    siteAddress1: jobToInvoice.siteAddress1,
+    siteAddress: jobToInvoice.siteAddress,
+    siteCity: jobToInvoice.siteCity
+});
 const invoiceData = {
     sales_invoice: {
         contact_id: customer.sage_id,
@@ -3320,14 +3332,13 @@ const invoiceData = {
         reference: job.jobNumber,
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
-        delivery_settings: {
-    address: {
-        address_line_1: job.siteAddress1,  // Changed from job.siteAddress
-        address_line_2: job.siteAddress2 || '',  // Add this line
-        city: job.siteCity || '',
-        postal_code: job.sitePostcode || '',
-        country_id: 'GB'
-    }
+        delivery_address: {
+    address_line_1: jobToInvoice.siteAddress1 || jobToInvoice.siteAddress,
+address_line_2: jobToInvoice.siteAddress2 || '',
+city: jobToInvoice.siteCity || '',
+region: jobToInvoice.siteCounty || '',
+postal_code: jobToInvoice.sitePostcode || '',
+    country_code: 'GB'
 },
         invoice_lines: lineItems
     }
