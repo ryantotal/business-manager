@@ -2082,7 +2082,7 @@ tax_amount: item.tax_code === 'T1'
 
  const invoiceData = {
   sales_invoice: {
-    contact_id: customer.sageId,
+    contact_id: customer.sage_id,
     date: new Date().toISOString().split('T')[0],
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: job.jobNumber,
@@ -3307,10 +3307,12 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
 }];
       const invoiceData = {
   sales_invoice: {
-    contact_id: customer.sageId,
+    contact_id: customer.sage_id,
     date: new Date().toISOString().split('T')[0],
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: job.jobNumber,
+    // REMOVE LINE 2089 - no notes field at all
+    // CHANGE: Add delivery address
     main_address: job.siteAddress ? {
       address_line_1: job.siteAddress,
       country_id: 'GB'
