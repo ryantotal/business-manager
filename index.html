@@ -3289,7 +3289,7 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   description: item.description || `${jobToInvoice.jobType} - ${item.product_name}`,
   quantity: item.quantity || jobToInvoice.quantity,
   unit_price: item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice,
-  currency_tax_amount: (item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice) * (item.quantity || jobToInvoice.quantity) * 0.20,
+  tax_amount: (item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice) * (item.quantity || jobToInvoice.quantity) * 0.20,
   tax_rate_id: (item.customer_price || jobToInvoice.customerUnitPrice) === 0 ? 'GB_ZERO' : 'GB_STANDARD',
   ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',  // UPDATED ID
   ...(item.item_code ? {item_code: item.item_code} : {})
@@ -3298,7 +3298,7 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
   quantity: quantity,
   unit_price: unitPrice,
-  currency_tax_amount: unitPrice * quantity * 0.20,  // ADD THIS
+  tax_amount: unitPrice * quantity * 0.20,  // ADD THIS
   tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
   ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'  // UPDATED ID
 }];
