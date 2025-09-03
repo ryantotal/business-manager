@@ -2081,17 +2081,24 @@ tax_amount: item.tax_code === 'T1'
   }];
 
  const invoiceData = {
-  sales_invoice: {
-    contact_id: customer.sage_id,
-    date: new Date().toISOString().split('T')[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    reference: job.jobNumber,
-    main_address: job.siteAddress ? {
-      address_line_1: job.siteAddress,
-      country_id: 'GB'
-    } : undefined,
-    invoice_lines: lineItems
-  }
+    sales_invoice: {
+        contact_id: customer.sage_id,
+        date: new Date().toISOString().split('T')[0],
+        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        reference: job.jobNumber,
+        // REMOVE LINE 3314 - no notes field at all
+        // CHANGE: Add delivery_settings instead of main_address
+        delivery_settings: {
+    address: {
+        address_line_1: job.siteAddress1 || job.siteAddress,  // Check field name
+        address_line_2: job.siteAddress2 || '',
+        city: job.siteCity || '',
+        postal_code: job.sitePostcode || '',
+        country_id: 'GB'
+    }
+},
+        invoice_lines: lineItems
+    }
 };
       
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
@@ -3305,20 +3312,25 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
   ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'  // UPDATED ID
 }];
-      const invoiceData = {
-  sales_invoice: {
-    contact_id: customer.sage_id,
-    date: new Date().toISOString().split('T')[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    reference: job.jobNumber,
-    // REMOVE LINE 2089 - no notes field at all
-    // CHANGE: Add delivery address
-    main_address: job.siteAddress ? {
-      address_line_1: job.siteAddress,
-      country_id: 'GB'
-    } : undefined,
-    invoice_lines: lineItems
-  }
+const invoiceData = {
+    sales_invoice: {
+        contact_id: customer.sage_id,
+        date: new Date().toISOString().split('T')[0],
+        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        reference: job.jobNumber,
+        // REMOVE LINE 3314 - no notes field at all
+        // CHANGE: Add delivery_settings instead of main_address
+        delivery_settings: {
+    address: {
+        address_line_1: job.siteAddress1,  // Changed from job.siteAddress
+        address_line_2: job.siteAddress2 || '',  // Add this line
+        city: job.siteCity || '',
+        postal_code: job.sitePostcode || '',
+        country_id: 'GB'
+    }
+},
+        invoice_lines: lineItems
+    }
 };
       
       console.log('Creating invoice in Sage...');
