@@ -2065,7 +2065,7 @@ const lineItems = job.sage_line_items?.map(item => ({
   unit_price: item.customer_price || item.unit_price || job.customerUnitPrice,
   ledger_account_id: item.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
   tax_rate_id: item.tax_code || 'T1',
-  product_id: item.sage_id,
+  //product_id: item.sage_id,
   item_code: item.item_code
 })) || [{
   // Fallback if no line items
@@ -3288,7 +3288,7 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   currency_tax_amount: (item.customer_price || jobToInvoice.customerUnitPrice) * (item.quantity || 1) * 0.20,
   tax_rate_id: (item.customer_price || jobToInvoice.customerUnitPrice) === 0 ? 'GB_ZERO' : 'GB_STANDARD',
   ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-  product_id: item.sage_id,
+  //product_id: item.sage_id,
   item_code: item.item_code
 })) || [{
   // Fallback if no line items
