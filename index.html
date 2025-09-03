@@ -2063,7 +2063,7 @@ const lineItems = job.sage_line_items?.map(item => ({
   description: item.description || `${job.jobType} - ${item.product_name}`,
   quantity: item.quantity || job.quantity,
   unit_price: item.customer_price || item.unit_price || job.customerUnitPrice,
-  ledger_account_id: item.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
+  //ledger_account_id: item.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
   tax_rate_id: item.tax_code || 'T1',
   //product_id: item.sage_id,
   // Only include item_code if it exists and is not empty
@@ -2073,7 +2073,7 @@ const lineItems = job.sage_line_items?.map(item => ({
   description: `${job.jobType} - ${job.sageProductName || ''}`,
   quantity: job.quantity,
   unit_price: job.customerUnitPrice,
-  ledger_account_id: 'dc466e9d472b11e9aac702d5719f235e',
+  //ledger_account_id: 'dc466e9d472b11e9aac702d5719f235e',
   tax_rate_id: 'T1'
 }];
 
@@ -3288,7 +3288,7 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   unit_price: item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice,
   currency_tax_amount: (item.customer_price || jobToInvoice.customerUnitPrice) * (item.quantity || 1) * 0.20,
   tax_rate_id: (item.customer_price || jobToInvoice.customerUnitPrice) === 0 ? 'GB_ZERO' : 'GB_STANDARD',
-  ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
+  //ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
   //product_id: item.sage_id,
   // Only include item_code if it exists and is not empty
 ...(item.item_code ? {item_code: item.item_code} : {}),
@@ -3299,7 +3299,7 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   unit_price: unitPrice,
   currency_tax_amount: taxAmount,
   tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
-  ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+  //ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
 }];
       const invoiceData = {
         sales_invoice: {  
