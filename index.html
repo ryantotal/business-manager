@@ -2058,20 +2058,34 @@ const handleCreateInvoice = async (job) => {
         throw new Error('Customer not synced with Sage. Please sync customer first.');
       }
       
-      const invoiceData = {
-        contact_id: customer.sageId,
-        date: new Date().toISOString().split('T')[0],
-        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-        reference: job.jobNumber,
-        notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
-        line_items: [{
-          description: `${job.jobType} - ${job.wasteType || job.aggregateType || ''}`,
-          quantity: job.quantity,
-          unit_price: job.customerUnitPrice,
-          tax_rate_id: '1',
-          ledger_account_id: '1'
-        }]
-      };
+  // Use the stored sage_line_items for invoice line items
+const lineItems = job.sage_line_items?.map(item => ({
+  description: item.description || `${job.jobType} - ${item.product_name}`,
+  quantity: item.quantity || job.quantity,
+  unit_price: item.customer_price || item.unit_price || job.customerUnitPrice,
+  ledger_account_id: item.sales_ledger_account || '4010',
+  tax_rate_id: item.tax_code || 'T1',
+  product_id: item.sage_id,
+  item_code: item.item_code
+})) || [{
+  // Fallback if no line items
+  description: `${job.jobType} - ${job.sageProductName || ''}`,
+  quantity: job.quantity,
+  unit_price: job.customerUnitPrice,
+  ledger_account_id: '4010',
+  tax_rate_id: 'T1'
+}];
+
+const invoiceData = {
+  sales_invoice: {
+    contact_id: customer.sageId,
+    date: new Date().toISOString().split('T')[0],
+    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+    reference: job.jobNumber,
+    notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
+    invoice_lines: lineItems  // Use the mapped lineItems here
+  }
+};
       
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
       
@@ -3266,7 +3280,25 @@ const handleCreateInvoice = async (jobToInvoice) => {
       const quantity = jobToInvoice.quantity || 1;
       const lineTotal = unitPrice * quantity;
       const taxAmount = lineTotal * 0.20;
-      
+      // Use the stored sage_line_items for invoice line items
+const lineItems = jobToInvoice.sage_line_items?.map(item => ({
+  description: item.description || `${jobToInvoice.jobType} - ${item.product_name}`,
+  quantity: item.quantity || jobToInvoice.quantity,
+  unit_price: item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice,
+  currency_tax_amount: (item.customer_price || jobToInvoice.customerUnitPrice) * (item.quantity || 1) * 0.20,
+  tax_rate_id: (item.customer_price || jobToInvoice.customerUnitPrice) === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+  ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
+  product_id: item.sage_id,
+  item_code: item.item_code
+})) || [{
+  // Fallback if no line items
+  description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
+  quantity: quantity,
+  unit_price: unitPrice,
+  currency_tax_amount: taxAmount,
+  tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
+  ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+}];
       const invoiceData = {
         sales_invoice: {  
           contact_id: customer.sage_id,
@@ -3274,14 +3306,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
           due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
           reference: jobToInvoice.jobNumber,
           notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress1 || jobToInvoice.siteAddress}`,
-          invoice_lines: [{
-            description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
-            quantity: quantity,
-            unit_price: unitPrice,
-            currency_tax_amount: taxAmount,
-            tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
-            ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
-          }]
+          invoice_lines: lineItems  // Use the mapped lineItems here
         }
       };
       
