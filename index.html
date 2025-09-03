@@ -2096,11 +2096,11 @@ console.log('Full invoiceData:', JSON.stringify(invoiceData, null, 2));
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
         delivery_address: {
-    address_line_1: job.siteAddress1 || job.siteAddress,
-    address_line_2: job.siteAddress2 || '',
-    city: job.siteCity || '',
-    region: job.siteCounty || '',
-    postal_code: job.sitePostcode || '',
+    address_line_1: job.site_address1 || '',
+    address_line_2: job.site_address2 || '',
+    city: job.site_city || '',
+    region: job.site_county || '',
+    postal_code: job.site_postcode || '',
     country_code: 'GB'
 },
         invoice_lines: lineItems
@@ -3333,11 +3333,11 @@ const invoiceData = {
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
         delivery_address: {
-    address_line_1: jobToInvoice.siteAddress1 || jobToInvoice.siteAddress,
-address_line_2: jobToInvoice.siteAddress2 || '',
-city: jobToInvoice.siteCity || '',
-region: jobToInvoice.siteCounty || '',
-postal_code: jobToInvoice.sitePostcode || '',
+    address_line_1: jobToInvoice.site_address1 || '',
+    address_line_2: jobToInvoice.site_address2 || '',
+    city: jobToInvoice.site_city || '',
+    region: jobToInvoice.site_county || '',
+    postal_code: jobToInvoice.site_postcode || '',
     country_code: 'GB'
 },
         invoice_lines: lineItems
