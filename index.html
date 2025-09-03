@@ -1064,8 +1064,8 @@ siteNotes: '',
   discount: 0.00,
   vat_rate: 20,
   total: 0.00,
-  sales_ledger_account: product.sales_ledger_account || '4010',
-nominal_code: product.nominal_code || '4010',
+  sales_ledger_account: product.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
+nominal_code: product.nominal_code || 'dc466e9d472b11e9aac702d5719f235e',
 tax_code: product.tax_rate_id || 'T1'
 };
   const updatedLineItems = [...(formData.lineItems || []), newLineItem];
@@ -1098,8 +1098,8 @@ tax_code: product.tax_rate_id || 'T1'
             discount: 0.00,
             vat_rate: 20,
             total: 0.00,
-            sales_ledger_account: product.sales_ledger_account || '4010',
-nominal_code: product.nominal_code || '4010',
+            sales_ledger_account: product.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
+nominal_code: product.nominal_code || 'dc466e9d472b11e9aac702d5719f235e',
 tax_code: product.tax_rate_id || 'T1' 
           };
           const updatedLineItems = [...(formData.lineItems || []), newLineItem];
@@ -1273,8 +1273,8 @@ tax_code: product.tax_rate_id || 'T1'
     discount: 0.00,
     vat_rate: 20,
     total: 0.00,
-    sales_ledger_account: product.sales_ledger_account || '4010',
-nominal_code: product.nominal_code || '4010',
+    sales_ledger_account: product.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
+nominal_code: product.nominal_code || 'dc466e9d472b11e9aac702d5719f235e',
 tax_code: product.tax_rate_id || 'T1'
   };
   const updatedLineItems = [...(formData.lineItems || []), newLineItem];
@@ -1308,8 +1308,8 @@ tax_code: product.tax_rate_id || 'T1'
     discount: 0.00,
     vat_rate: 20,
     total: 0.00,
-    sales_ledger_account: product.sales_ledger_account || '4010',
-nominal_code: product.nominal_code || '4010',
+    sales_ledger_account: product.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
+nominal_code: product.nominal_code || 'dc466e9d472b11e9aac702d5719f235e',
 tax_code: product.tax_rate_id || 'T1'
   };
   const updatedLineItems = [...(formData.lineItems || []), newLineItem];
@@ -2063,7 +2063,7 @@ const lineItems = job.sage_line_items?.map(item => ({
   description: item.description || `${job.jobType} - ${item.product_name}`,
   quantity: item.quantity || job.quantity,
   unit_price: item.customer_price || item.unit_price || job.customerUnitPrice,
-  ledger_account_id: item.sales_ledger_account || '4010',
+  ledger_account_id: item.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
   tax_rate_id: item.tax_code || 'T1',
   product_id: item.sage_id,
   item_code: item.item_code
@@ -2072,7 +2072,7 @@ const lineItems = job.sage_line_items?.map(item => ({
   description: `${job.jobType} - ${job.sageProductName || ''}`,
   quantity: job.quantity,
   unit_price: job.customerUnitPrice,
-  ledger_account_id: '4010',
+  ledger_account_id: 'dc466e9d472b11e9aac702d5719f235e',
   tax_rate_id: 'T1'
 }];
 
@@ -10836,8 +10836,8 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
-                          sales_ledger_account: product.sales_ledger_account || '4010',
-nominal_code: product.nominal_code || '4010',
+                          sales_ledger_account: product.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
+nominal_code: product.nominal_code || 'dc466e9d472b11e9aac702d5719f235e',
 tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
@@ -10947,8 +10947,8 @@ tax_code: product.tax_rate_id || 'T1'
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
-                          sales_ledger_account: product.sales_ledger_account || '4010',
-nominal_code: product.nominal_code || '4010',
+                          sales_ledger_account: product.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
+nominal_code: product.nominal_code || 'dc466e9d472b11e9aac702d5719f235e',
 tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
@@ -10980,8 +10980,8 @@ tax_code: product.tax_rate_id || 'T1'
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
-                          sales_ledger_account: product.sales_ledger_account || '4010',
-nominal_code: product.nominal_code || '4010',
+                          sales_ledger_account: product.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
+nominal_code: product.nominal_code || 'dc466e9d472b11e9aac702d5719f235e',
 tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
@@ -11013,8 +11013,8 @@ tax_code: product.tax_rate_id || 'T1'
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
-                          sales_ledger_account: product.sales_ledger_account || '4010',
-nominal_code: product.nominal_code || '4010',
+                          sales_ledger_account: product.sales_ledger_account || 'dc466e9d472b11e9aac702d5719f235e',
+nominal_code: product.nominal_code || 'dc466e9d472b11e9aac702d5719f235e',
 tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
