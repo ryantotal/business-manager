@@ -2084,7 +2084,7 @@ const invoiceData = {
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: job.jobNumber,
     notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
-    invoice_lines: lineItems  // Use the mapped lineItems here
+   line_items: lineItems  // Change this ONE word
   }
 };
       
@@ -3308,7 +3308,7 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
           due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
           reference: jobToInvoice.jobNumber,
           notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress1 || jobToInvoice.siteAddress}`,
-          invoice_lines: lineItems  // Use the mapped lineItems here
+          line_items: lineItems  // Change this ONE word
         }
       };
       
@@ -9336,13 +9336,6 @@ console.log(`Fetched total of ${allProducts.length} products and services from S
     throw error;
   }
 },
-
-async createDraftInvoice(invoiceData) {
-  return this.makeRequest('/sales_invoices', 'POST', {
-    ...invoiceData,
-    status: 'draft'
-  });
-},
   async createInvoice(invoiceData) {
     return this.makeRequest('/sales_invoices', 'POST', invoiceData);
   }
@@ -9350,6 +9343,19 @@ async createDraftInvoice(invoiceData) {
 
 // Make SageAPI available globally
 window.SageAPI = SageAPI;
+// Override the broken compiled version
+window.SageAPI.createDraftInvoice = async function(invoiceData) {
+  if (invoiceData.sales_invoice) {
+    invoiceData.sales_invoice.status = 'draft';
+    return this.makeRequest('/sales_invoices', 'POST', invoiceData);
+  }
+  return this.makeRequest('/sales_invoices', 'POST', {
+    sales_invoice: {
+      ...invoiceData,
+      status: 'draft'
+    }
+  });
+};
 // Sage OAuth Handler
 window.SageOAuthHandler = {
   authorizationUrl: 'https://www.sageone.com/oauth2/auth/central?filter=apiv3.1',
