@@ -2080,13 +2080,16 @@ tax_amount: item.tax_code === 'T1'
   : 0,  // Zero tax for GB_ZERO items
   }];
 
-const invoiceData = {
+ const invoiceData = {
   sales_invoice: {
     contact_id: customer.sageId,
     date: new Date().toISOString().split('T')[0],
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
     reference: job.jobNumber,
-    notes: `Job: ${job.jobNumber}\nType: ${job.jobType}\nSite: ${job.siteAddress}`,
+    main_address: job.siteAddress ? {
+      address_line_1: job.siteAddress,
+      country_id: 'GB'
+    } : undefined,
     invoice_lines: lineItems
   }
 };
@@ -3303,15 +3306,18 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'  // UPDATED ID
 }];
       const invoiceData = {
-        sales_invoice: {  
-          contact_id: customer.sage_id,
-          date: new Date().toISOString().split('T')[0],
-          due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-          reference: jobToInvoice.jobNumber,
-          notes: `Job: ${jobToInvoice.jobNumber}\nType: ${jobToInvoice.jobType}\nSite: ${jobToInvoice.siteAddress1 || jobToInvoice.siteAddress}`,
-          invoice_lines: lineItems
-        }
-      };
+  sales_invoice: {
+    contact_id: customer.sageId,
+    date: new Date().toISOString().split('T')[0],
+    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+    reference: job.jobNumber,
+    main_address: job.siteAddress ? {
+      address_line_1: job.siteAddress,
+      country_id: 'GB'
+    } : undefined,
+    invoice_lines: lineItems
+  }
+};
       
       console.log('Creating invoice in Sage...');
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
