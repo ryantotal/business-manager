@@ -3343,7 +3343,8 @@ const invoiceData = {
         invoice_lines: lineItems
     }
 };
-      
+      console.log('=== FULL INVOICE DATA BEING SENT TO SAGE ===');
+console.log(JSON.stringify(invoiceData, null, 2));
       console.log('Creating invoice in Sage...');
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
       
