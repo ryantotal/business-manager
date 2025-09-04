@@ -9333,76 +9333,89 @@ async getServices() {
 },
 
 async syncProductsFromSage() {
-  try {
-    // Get both products and services
-const sageProducts = await this.getProducts();
-const sageServices = await this.getServices();
-
-// Combine products and services
-// Combine products and services with proper tagging
-const allProducts = [
-  ...(sageProducts.$items || []).map(item => ({ ...item, _isService: false })),
-  ...(sageServices.$items || []).map(item => ({ ...item, _isService: true }))
-];
-
-console.log(`Fetched total of ${allProducts.length} products and services from Sage`);
-// Filter out inactive products by fetching full details
-console.log('Checking active status for each product...');
-const activeProducts = [];
-for (const sageItem of activeProducts) {
     try {
-        const response = await fetch('/api/sage-proxy', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                endpoint: `products/${item.id}`,
-                method: 'GET'
-            })
-        });
-        const fullProduct = await response.json();
+        // Get both products and services
+        const sageProducts = await this.getProducts();
+        const sageServices = await this.getServices();
         
-// DEBUG: Log first product to see structure
-if (activeProducts.length === 0) {
-    console.log('First product structure:', fullProduct);
-    console.log('Active field value:', fullProduct.active);
-}
-
-if (fullProduct.active !== false) {
-    activeProducts.push(item);
-}
+        // Combine products and services with proper tagging
+        const allProducts = [
+            ...(sageProducts.$items || []).map(item => ({ ...item, _isService: false })),
+            ...(sageServices.$items || []).map(item => ({ ...item, _isService: true }))
+        ];
+        
+        console.log(`Fetched total of ${allProducts.length} products and services from Sage`);
+        
+        // Filter out inactive products by fetching full details
+        console.log('Checking active status for each product...');
+        const activeProducts = [];
+        
+        // Loop through allProducts to check each one
+        for (const item of allProducts) {
+            try {
+                const response = await fetch('/api/sage-proxy', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        endpoint: `products/${item.id}`,
+                        method: 'GET'
+                    })
+                });
+                
+                if (!response.ok) {
+                    console.log(`API error for ${item.displayed_as}: ${response.status}`);
+                    continue;
+                }
+                
+                const fullProduct = await response.json();
+                
+                // DEBUG: Log first product to see structure
+                if (activeProducts.length === 0) {
+                    console.log('First product structure:', fullProduct);
+                    console.log('Active field value:', fullProduct.active);
+                }
+                
+                if (fullProduct.active !== false) {
+                    activeProducts.push(item);
+                } else {
+                    console.log(`Skipping inactive: ${item.displayed_as}`);
+                }
+            } catch (error) {
+                console.log(`Error fetching ${item.displayed_as}:`, error.message);
+            }
+        }
+        
+        console.log(`Filtered to ${activeProducts.length} active products from ${allProducts.length} total`);
+        
+        // Get existing items from Supabase
+        const { data: existingItems, error } = await window.supabase
+            .from('sage_products')
+            .select('*');
+        
+        if (error) throw error;
+        
+        const syncResults = {
+            new: [],
+            updated: [],
+            conflicts: []
+        };
+        
+        // Loop through activeProducts instead of allProducts
+        for (const sageItem of activeProducts) {
+            const existing = existingItems?.find(
+                item => item.sage_id === sageItem.id
+            );
+            
+            if (!existing) {
+                syncResults.new.push(sageItem);
+            }
+        }
+        
+        return syncResults;
     } catch (error) {
-        console.log(`Skipping product ${item.displayed_as} - couldn't fetch details`);
+        console.error('Error syncing products:', error);
+        throw error;
     }
-}
-console.log(`Filtered to ${activeProducts.length} active products from ${allProducts.length} total`);
-    // Get existing items from Supabase
-    const { data: existingItems, error } = await window.supabase
-      .from('sage_products')
-      .select('*');
-    
-    if (error) throw error;
-    
-    const syncResults = {
-      new: [],
-      updated: [],
-      conflicts: []
-    };
-    
-   for (const sageItem of activeProducts) {
-      const existing = existingItems?.find(
-        item => item.sage_id === sageItem.id
-      );
-      
-      if (!existing) {
-        syncResults.new.push(sageItem);
-      }
-    }
-    
-    return syncResults;
-  } catch (error) {
-    console.error('Error syncing products:', error);
-    throw error;
-  }
 },
   async createInvoice(invoiceData) {
     return this.makeRequest('/sales_invoices', 'POST', invoiceData);
