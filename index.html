@@ -555,8 +555,7 @@ const getFilteredProducts = () => {
         };
 
         // Job Form Component
-        const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch }) => {
-    
+const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
  
           const [uploadFile, setUploadFile] = useState(null);
           const [jobAttachments, setJobAttachments] = useState([]);
@@ -8769,6 +8768,14 @@ onClick={() => {
         showAddressSuggestions={showAddressSuggestions}
         setShowAddressSuggestions={setShowAddressSuggestions}
         handleAddressSearch={handleAddressSearch}
+        contactSuggestions={contactSuggestions}
+showContactSuggestions={showContactSuggestions}
+setShowContactSuggestions={setShowContactSuggestions}
+handleContactSearch={handleContactSearch}
+phoneSuggestions={phoneSuggestions}
+showPhoneSuggestions={showPhoneSuggestions}
+setShowPhoneSuggestions={setShowPhoneSuggestions}
+handlePhoneSearch={handlePhoneSearch}
     />
 )}
 
