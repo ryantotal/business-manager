@@ -1047,7 +1047,9 @@ siteNotes: '',
         jobType="Skip Hire"
         selectedProduct={formData.sageProductName}
        onSelect={(product) => {
-        console.log('Selected product:', product);  // ADD THIS
+        console.log('Selected product full object:', product);
+console.log('Product sage_id:', product.sage_id);
+console.log('Product item_code:', product.item_code);
          alert('Adding product: ' + product.name); 
   setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
   const newLineItem = {
@@ -2060,7 +2062,6 @@ const handleCreateInvoice = async (job) => {
       
 const lineItems = job.sage_line_items?.map(item => ({
   description: item.description || `${job.jobType} - ${item.product_name}`,
-  product_id: item.sage_id,
   quantity: item.quantity || job.quantity,
   unit_price: item.customer_price || item.unit_price || job.customerUnitPrice,
   ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
@@ -2072,7 +2073,6 @@ tax_amount: item.tax_code === 'T1'
 })) || [{
   // Fallback if no line items
   description: `${job.jobType} - ${job.sageProductName || ''}`,
-  product_id: item.sage_id,
   quantity: job.quantity,
   unit_price: job.customerUnitPrice,
   ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e',
@@ -2081,8 +2081,14 @@ tax_amount: item.tax_code === 'T1'
   ? (item.customer_price || item.unit_price || job.customerUnitPrice) * (item.quantity || job.quantity) * 0.20
   : 0,  // Zero tax for GB_ZERO items
   }];
-
-console.log('Line item being sent:', lineItems[0]);
+console.log('Job site address data:', {
+    siteAddress1: job.siteAddress1,
+    siteAddress: job.siteAddress,
+    siteCity: job.siteCity,
+    sitePostcode: job.sitePostcode,
+    siteCounty: job.siteCounty
+});
+console.log('Full invoiceData:', JSON.stringify(invoiceData, null, 2));
  const invoiceData = {
     sales_invoice: {
         contact_id: customer.sage_id,
@@ -3299,7 +3305,6 @@ const handleCreateInvoice = async (jobToInvoice) => {
       // Use the stored sage_line_items for invoice line items
 const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   description: item.description || `${jobToInvoice.jobType} - ${item.product_name}`,
-  product_id: item.sage_id,
   quantity: item.quantity || jobToInvoice.quantity,
   unit_price: item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice,
   tax_amount: (item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice) * (item.quantity || jobToInvoice.quantity) * 0.20,
@@ -3309,14 +3314,18 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
 })) || [{
   // Fallback if no line items
   description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
-  product_id: item.sage_id,
   quantity: quantity,
   unit_price: unitPrice,
   tax_amount: unitPrice * quantity * 0.20,  // ADD THIS
   tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
   ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'  // UPDATED ID
 }];
-console.log('Line item being sent:', lineItems[0]);
+console.log('JobToInvoice object:', jobToInvoice);
+console.log('Site fields:', {
+    siteAddress1: jobToInvoice.siteAddress1,
+    siteAddress: jobToInvoice.siteAddress,
+    siteCity: jobToInvoice.siteCity
+});
 const invoiceData = {
     sales_invoice: {
         contact_id: customer.sage_id,
@@ -3336,7 +3345,9 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
         invoice_lines: lineItems
     }
 };
-    
+      console.log('=== FULL INVOICE DATA BEING SENT TO SAGE ===');
+console.log(JSON.stringify(invoiceData, null, 2));
+      console.log('Creating invoice in Sage...');
       const invoice = await window.SageAPI.createDraftInvoice(invoiceData);
       
       // DEBUG: Log the full response
@@ -7592,7 +7603,7 @@ collection_date: newJob.collectionDate || null,
       linked_jobs: JSON.stringify(newJob.linkedJobs || []),
       notes: newJob.notes || null,
        sage_product_data: newJob.sage_product_data || null,
-  sage_line_items: JSON.stringify(newJob.lineItems || []),
+  sage_line_items: newJob.sage_line_items || null
     };
 // Remove id field if invalid
 if (!jobForDatabase.id || jobForDatabase.id === 'undefined' || jobForDatabase.id === 'null') {
