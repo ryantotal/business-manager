@@ -628,10 +628,15 @@ const handleUploadInForm = async () => {
   const fileInput = document.getElementById('attachment-file');
   const file = fileInput?.files[0];
 
-  if (!attachmentType || !file || !job) {
-    alert('Please select attachment type, file, and ensure a job is selected');
-    return;
-  }
+ if (!attachmentType || !file) {
+  alert('Please select both an attachment type and a file');
+  return;
+}
+
+if (!job || !job.id) {
+  alert('Please save the job first before uploading attachments.\n\n1. Fill in the job details\n2. Click "Create Job" to save\n3. Then you can add documents to the saved job');
+  return;
+}
 
   try {
     const fileName = `job_${job.id}_${Date.now()}_${file.name}`;
@@ -1711,7 +1716,6 @@ tax_code: product.tax_rate_id || 'T1'
                     </div>
                   )}
                 </div>
-{/* Documents Tab */}
 {/* Documents Tab */}
 {activeTab === 'documents' && (
   <div className="space-y-4">
