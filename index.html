@@ -6125,7 +6125,7 @@ const handleApplyProductsSync = async () => {
   sage_id: sageItem.id,
   name: sageItem.displayed_as,
   description: sageItem.displayed_as,
-  item_code: sageItem.id,
+  item_code: '',  // Just leave it empty
   sales_ledger_account: sageItem.sales_ledger_account_id,
   type: sageItem._isService ? 'service' : 'product', // We'll add this flag
   active: sageItem.active !== false
