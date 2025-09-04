@@ -9381,8 +9381,11 @@ async syncProductsFromSage() {
                     console.log(`Skipping inactive: ${item.displayed_as}`);
                 }
             } catch (error) {
-                console.log(`Error fetching ${item.displayed_as}:`, error.message);
-            }
+    console.log(`FAILED: ${item.displayed_as} (${item.id}) - ${error.message}`);
+    console.log('Full error:', error);
+    // Still try to include it if we can't verify active status
+    activeProducts.push(item);
+}
         }
         
         console.log(`Filtered to ${activeProducts.length} active products from ${allProducts.length} total`);
