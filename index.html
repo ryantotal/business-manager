@@ -3336,7 +3336,7 @@ const invoiceData = {
         contact_id: customer.sage_id,
         date: new Date().toISOString().split('T')[0],
         due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-reference: job.customerPO || job.customer_po || '',
+        reference: jobToInvoice.customerPO || jobToInvoice.customer_po || '',
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
         delivery_address: {
