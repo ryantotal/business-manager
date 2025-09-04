@@ -7051,6 +7051,7 @@ const loadUsers = async () => {
                 .from('documents')
                 .insert([{
                   name: docTitle,
+                  category: docType,
                   file_type: docType,
                   file_path: fileName,
                   file_url: publicUrl,
