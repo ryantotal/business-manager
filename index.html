@@ -9384,7 +9384,7 @@ console.log(`Filtered to ${activeProducts.length} active products from ${allProd
       conflicts: []
     };
     
-    for (const sageItem of allProducts) {
+   for (const sageItem of activeProducts) {
       const existing = existingItems?.find(
         item => item.sage_id === sageItem.id
       );
