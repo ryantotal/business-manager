@@ -2066,9 +2066,10 @@ const lineItems = job.sage_line_items?.map(item => ({
   unit_price: item.customer_price || item.unit_price || job.customerUnitPrice,
   ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
   tax_rate_id: item.tax_code === 'T1' ? 'GB_STANDARD' : 'GB_ZERO',
-tax_amount: item.tax_code === 'T1' 
-  ? (item.customer_price || item.unit_price || job.customerUnitPrice) * (item.quantity || job.quantity) * 0.20
-  : 0,  // Zero tax for GB_ZERO items
+// Only include tax_amount for GB_STANDARD, exclude it completely for GB_ZERO
+...(item.tax_code === 'T1' ? {
+  tax_amount: (item.customer_price || item.unit_price || 0) * (item.quantity || 1) * 0.20
+} : {}),
   ...(item.item_code ? {item_code: item.item_code} : {})
 })) || [{
   // Fallback if no line items
@@ -2078,9 +2079,10 @@ tax_amount: item.tax_code === 'T1'
   unit_price: job.customerUnitPrice,
   ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e',
   tax_rate_id: item.tax_code === 'T1' ? 'GB_STANDARD' : 'GB_ZERO',
-tax_amount: item.tax_code === 'T1'
-  ? (item.customer_price || item.unit_price || job.customerUnitPrice) * (item.quantity || job.quantity) * 0.20
-  : 0,  // Zero tax for GB_ZERO items
+// Only include tax_amount for GB_STANDARD, exclude it completely for GB_ZERO
+...(item.tax_code === 'T1' ? {
+  tax_amount: (item.customer_price || item.unit_price || 0) * (item.quantity || 1) * 0.20
+} : {}),
   }];
 
  const invoiceData = {
@@ -3323,10 +3325,11 @@ const lineItems = jobToInvoice.sage_product_data && jobToInvoice.sage_product_da
           description: item.description || item.product_name,
           quantity: item.quantity || 1,
           unit_price: item.customer_price || item.unit_price || 0,
-          tax_amount: item.tax_code === 'T1' 
-  ? (item.customer_price || item.unit_price || 0) * (item.quantity || 1) * 0.20 
-  : 0,
-tax_rate_id: item.tax_code === 'T1' ? 'GB_STANDARD' : 'GB_ZERO',
+          tax_rate_id: item.tax_code === 'T1' ? 'GB_STANDARD' : 'GB_ZERO',
+// Only include tax_amount for GB_STANDARD, exclude it completely for GB_ZERO
+...(item.tax_code === 'T1' ? {
+  tax_amount: (item.customer_price || item.unit_price || 0) * (item.quantity || 1) * 0.20
+} : {}),
           ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e'
       };
       
@@ -3345,10 +3348,11 @@ tax_rate_id: item.tax_code === 'T1' ? 'GB_STANDARD' : 'GB_ZERO',
       description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
       quantity: jobToInvoice.quantity,
       unit_price: jobToInvoice.customerUnitPrice,
-      tax_amount: item.tax_code === 'T1' 
-  ? (item.customer_price || item.unit_price || 0) * (item.quantity || 1) * 0.20 
-  : 0,
-tax_rate_id: item.tax_code === 'T1' ? 'GB_STANDARD' : 'GB_ZERO',
+      tax_rate_id: item.tax_code === 'T1' ? 'GB_STANDARD' : 'GB_ZERO',
+// Only include tax_amount for GB_STANDARD, exclude it completely for GB_ZERO
+...(item.tax_code === 'T1' ? {
+  tax_amount: (item.customer_price || item.unit_price || 0) * (item.quantity || 1) * 0.20
+} : {}),
       ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
   }];
 console.log('JobToInvoice object:', jobToInvoice);
