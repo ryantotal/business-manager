@@ -9357,7 +9357,7 @@ async syncProductsFromSage() {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        endpoint: `products/${item.id}`,
+                        endpoint: item._isService ? `services/${item.id}` : `products/${item.id}`,
                         method: 'GET'
                     })
                 });
