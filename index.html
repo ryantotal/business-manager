@@ -2096,7 +2096,7 @@ console.log('Full invoiceData:', JSON.stringify(invoiceData, null, 2));
         contact_id: customer.sage_id,
         date: new Date().toISOString().split('T')[0],
         due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-        reference: job.jobNumber,
+reference: job.customerPO || job.customer_po || '',
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
         delivery_address: {
@@ -3336,7 +3336,7 @@ const invoiceData = {
         contact_id: customer.sage_id,
         date: new Date().toISOString().split('T')[0],
         due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-        reference: job.jobNumber,
+reference: job.customerPO || job.customer_po || '',
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
         delivery_address: {
@@ -7555,6 +7555,7 @@ useEffect(() => {
     const jobForDatabase = {
       job_number: newJob.jobNumber,
       quote_reference: newJob.quoteReference || null,
+      reference: newJob.customerPO || '',  // Add this line - use customer PO as reference
       job_date: newJob.jobDate || null,
       customer_name: newJob.customerName,
       customer_po: newJob.customerPO || null,
@@ -7646,6 +7647,7 @@ if (!jobForDatabase.id || jobForDatabase.id === 'undefined' || jobForDatabase.id
   try {
     // Convert camelCase to snake_case for database
     const jobForDatabase = {
+      reference: updatedJob.customerPO || '',
       customer_name: updatedJob.customerName,
       customer_po: updatedJob.customerPO,
       supplier_name: updatedJob.supplierName,
@@ -9347,7 +9349,6 @@ async syncProductsFromSage() {
         console.log(`Fetched total of ${allProducts.length} products and services from Sage`);
         
         // Filter out inactive products by fetching full details
-        console.log('Checking active status for each product...');
         const activeProducts = [];
         
         // Loop through allProducts to check each one
@@ -9363,7 +9364,6 @@ async syncProductsFromSage() {
                 });
                 
                 if (!response.ok) {
-                    console.log(`API error for ${item.displayed_as}: ${response.status}`);
                     continue;
                 }
                 
@@ -9371,24 +9371,18 @@ async syncProductsFromSage() {
                 
                 // DEBUG: Log first product to see structure
                 if (activeProducts.length === 0) {
-                    console.log('First product structure:', fullProduct);
-                    console.log('Active field value:', fullProduct.active);
                 }
                 
                 if (fullProduct.active !== false) {
                     activeProducts.push(item);
                 } else {
-                    console.log(`Skipping inactive: ${item.displayed_as}`);
                 }
             } catch (error) {
-    console.log(`FAILED: ${item.displayed_as} (${item.id}) - ${error.message}`);
-    console.log('Full error:', error);
     // Still try to include it if we can't verify active status
     activeProducts.push(item);
 }
         }
         
-        console.log(`Filtered to ${activeProducts.length} active products from ${allProducts.length} total`);
         
         // Get existing items from Supabase
         const { data: existingItems, error } = await window.supabase
