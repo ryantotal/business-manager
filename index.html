@@ -2061,7 +2061,7 @@ const handleCreateInvoice = async (job) => {
       
 const lineItems = job.sage_line_items?.map(item => ({
   description: item.description || `${job.jobType} - ${item.product_name}`,
-  product_id: item.sage_id,  // ADD THIS LINE
+...(item.type?.toLowerCase() === 'service' ? {service_id: item.sage_id} : {product_id: item.sage_id}),
   quantity: item.quantity || job.quantity,
   unit_price: item.customer_price || item.unit_price || job.customerUnitPrice,
   ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
@@ -2073,7 +2073,7 @@ tax_amount: item.tax_code === 'T1'
 })) || [{
   // Fallback if no line items
   description: `${job.jobType} - ${job.sageProductName || ''}`,
-  product_id: item.sage_id,  // ADD THIS LINE
+...(item.type?.toLowerCase() === 'service' ? {service_id: item.sage_id} : {product_id: item.sage_id}),
   quantity: job.quantity,
   unit_price: job.customerUnitPrice,
   ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e',
@@ -2082,14 +2082,7 @@ tax_amount: item.tax_code === 'T1'
   ? (item.customer_price || item.unit_price || job.customerUnitPrice) * (item.quantity || job.quantity) * 0.20
   : 0,  // Zero tax for GB_ZERO items
   }];
-console.log('Job site address data:', {
-    siteAddress1: job.siteAddress1,
-    siteAddress: job.siteAddress,
-    siteCity: job.siteCity,
-    sitePostcode: job.sitePostcode,
-    siteCounty: job.siteCounty
-});
-console.log('Full invoiceData:', JSON.stringify(invoiceData, null, 2));
+
  const invoiceData = {
     sales_invoice: {
         contact_id: customer.sage_id,
@@ -3305,25 +3298,36 @@ const handleCreateInvoice = async (jobToInvoice) => {
       const lineTotal = unitPrice * quantity;
       const taxAmount = lineTotal * 0.20;
       // Use the stored sage_line_items for invoice line items
-const lineItems = jobToInvoice.sage_line_items?.map(item => ({
-  description: item.description || `${jobToInvoice.jobType} - ${item.product_name}`,
-  product_id: item.sage_id,  // ADD THIS LINE
-  quantity: item.quantity || jobToInvoice.quantity,
-  unit_price: item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice,
-  tax_amount: (item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice) * (item.quantity || jobToInvoice.quantity) * 0.20,
-  tax_rate_id: (item.customer_price || jobToInvoice.customerUnitPrice) === 0 ? 'GB_ZERO' : 'GB_STANDARD',
-  ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',  // UPDATED ID
-  ...(item.item_code ? {item_code: item.item_code} : {})
-})) || [{
-  // Fallback if no line items
-  description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
-  product_id: item.sage_id,  // ADD THIS LINE
-  quantity: quantity,
-  unit_price: unitPrice,
-  tax_amount: unitPrice * quantity * 0.20,  // ADD THIS
-  tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
-  ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'  // UPDATED ID
-}];
+const lineItems = jobToInvoice.sage_product_data && jobToInvoice.sage_product_data.length > 0
+  ? jobToInvoice.sage_product_data.map(item => {
+      const line = {
+          description: item.description || item.product_name,
+          quantity: item.quantity || 1,
+          unit_price: item.customer_price || item.unit_price || 0,
+          tax_amount: (item.customer_price || item.unit_price || 0) * (item.quantity || 1) * 0.20,
+          tax_rate_id: item.tax_code === 'T1' ? 'GB_ZERO' : 'GB_STANDARD',
+          ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e'
+      };
+      
+      // Check for service (lowercase 'service')
+      if (item.sage_id) {
+          if (item.type?.toLowerCase() === 'service') {
+              line.service_id = item.sage_id;
+          } else {
+              line.product_id = item.sage_id;
+          }
+      }
+      
+      return line;
+  })
+  : [{  // Fallback remains the same
+      description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
+      quantity: jobToInvoice.quantity,
+      unit_price: jobToInvoice.customerUnitPrice,
+      tax_amount: jobToInvoice.customerUnitPrice * jobToInvoice.quantity * 0.20,
+      tax_rate_id: 'GB_STANDARD',
+      ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
+  }];
 console.log('JobToInvoice object:', jobToInvoice);
 console.log('Site fields:', {
     siteAddress1: jobToInvoice.siteAddress1,
@@ -6131,7 +6135,7 @@ const handleApplyProductsSync = async () => {
   description: sageItem.displayed_as,
   item_code: '',  // Just leave it empty
   sales_ledger_account: sageItem.sales_ledger_account_id,
-  type: sageItem._isService ? 'service' : 'product', // We'll add this flag
+  type: sageItem._isService ? 'service' : 'product',
   active: sageItem.active !== false
 });
     }
