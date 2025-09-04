@@ -2150,6 +2150,25 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
       }
       
       alert(`Invoice created successfully in Sage! SI: ${siNumber}`);
+      if (window.refreshJobs) {
+  await window.refreshJobs();
+} else {
+  // If refreshJobs doesn't exist yet, reload jobs manually
+  try {
+    const { data, error } = await window.supabase
+      .from('jobs')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    // You need to call setJobs here, but it might not be accessible
+    // So we need to make sure refreshJobs is defined first
+    console.log('Jobs need refresh but function not available');
+  } catch (error) {
+    console.error('Error refreshing jobs:', error);
+  }
+}
     }
   } catch (error) {
     console.error('Error creating invoice:', error);
@@ -7470,6 +7489,25 @@ useEffect(() => {
   };
   
   loadJobsFromSupabase();
+  // Add this function to refresh jobs from database
+const refreshJobs = async () => {
+  try {
+    const { data, error } = await window.supabase
+      .from('jobs')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    setJobs(data || []);
+    console.log('Jobs refreshed:', data?.length);
+  } catch (error) {
+    console.error('Error refreshing jobs:', error);
+  }
+};
+
+// Make it globally accessible for invoice creation
+window.refreshJobs = refreshJobs;
 }, []);
           const [quotes, setQuotes] = useState([]);
           // Load quotes from Supabase when app starts
