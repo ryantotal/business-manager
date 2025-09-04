@@ -9361,11 +9361,15 @@ for (const sageItem of activeProducts) {
         });
         const fullProduct = await response.json();
         
-        if (fullProduct.active !== false) {
-            activeProducts.push(item);
-        } else {
-            console.log(`Skipping inactive product: ${item.displayed_as}`);
-        }
+// DEBUG: Log first product to see structure
+if (activeProducts.length === 0) {
+    console.log('First product structure:', fullProduct);
+    console.log('Active field value:', fullProduct.active);
+}
+
+if (fullProduct.active !== false) {
+    activeProducts.push(item);
+}
     } catch (error) {
         console.log(`Skipping product ${item.displayed_as} - couldn't fetch details`);
     }
