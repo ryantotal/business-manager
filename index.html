@@ -7555,7 +7555,6 @@ useEffect(() => {
     const jobForDatabase = {
       job_number: newJob.jobNumber,
       quote_reference: newJob.quoteReference || null,
-      reference: newJob.customerPO || '',  // Add this line - use customer PO as reference
       job_date: newJob.jobDate || null,
       customer_name: newJob.customerName,
       customer_po: newJob.customerPO || null,
@@ -7647,7 +7646,6 @@ if (!jobForDatabase.id || jobForDatabase.id === 'undefined' || jobForDatabase.id
   try {
     // Convert camelCase to snake_case for database
     const jobForDatabase = {
-      reference: updatedJob.customerPO || '',
       customer_name: updatedJob.customerName,
       customer_po: updatedJob.customerPO,
       supplier_name: updatedJob.supplierName,
