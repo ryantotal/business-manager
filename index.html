@@ -3302,6 +3302,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
       // Calculate tax
       const unitPrice = jobToInvoice.customerUnitPrice || 0;
       const quantity = jobToInvoice.quantity || 1;
+      // List of known inactive product IDs
       const lineTotal = unitPrice * quantity;
       const taxAmount = lineTotal * 0.20;
       // Use the stored sage_line_items for invoice line items
@@ -9345,7 +9346,31 @@ const allProducts = [
 ];
 
 console.log(`Fetched total of ${allProducts.length} products and services from Sage`);
-
+// Filter out inactive products by fetching full details
+console.log('Checking active status for each product...');
+const activeProducts = [];
+for (const sageItem of activeProducts) {
+    try {
+        const response = await fetch('/api/sage-proxy', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                endpoint: `products/${item.id}`,
+                method: 'GET'
+            })
+        });
+        const fullProduct = await response.json();
+        
+        if (fullProduct.active !== false) {
+            activeProducts.push(item);
+        } else {
+            console.log(`Skipping inactive product: ${item.displayed_as}`);
+        }
+    } catch (error) {
+        console.log(`Skipping product ${item.displayed_as} - couldn't fetch details`);
+    }
+}
+console.log(`Filtered to ${activeProducts.length} active products from ${allProducts.length} total`);
     // Get existing items from Supabase
     const { data: existingItems, error } = await window.supabase
       .from('sage_products')
