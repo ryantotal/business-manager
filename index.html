@@ -3301,9 +3301,6 @@ const handleCreateInvoice = async (jobToInvoice) => {
 const lineItems = jobToInvoice.sage_product_data && jobToInvoice.sage_product_data.length > 0
   ? jobToInvoice.sage_product_data.map(item => {
       const line = {
-        console.log('Item object:', item);
-console.log('Item tax_code:', item.tax_code);
-console.log('Is tax_code T1?:', item.tax_code === 'T1');
           description: item.description || item.product_name,
           quantity: item.quantity || 1,
           unit_price: item.customer_price || item.unit_price || 0,
