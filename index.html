@@ -7592,7 +7592,7 @@ collection_date: newJob.collectionDate || null,
       linked_jobs: JSON.stringify(newJob.linkedJobs || []),
       notes: newJob.notes || null,
        sage_product_data: newJob.sage_product_data || null,
-  sage_line_items: newJob.sage_line_items || null
+  sage_line_items: JSON.stringify(newJob.lineItems || []),
     };
 // Remove id field if invalid
 if (!jobForDatabase.id || jobForDatabase.id === 'undefined' || jobForDatabase.id === 'null') {
