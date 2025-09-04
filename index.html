@@ -2060,6 +2060,7 @@ const handleCreateInvoice = async (job) => {
       
 const lineItems = job.sage_line_items?.map(item => ({
   description: item.description || `${job.jobType} - ${item.product_name}`,
+  product_id: item.sage_id,
   quantity: item.quantity || job.quantity,
   unit_price: item.customer_price || item.unit_price || job.customerUnitPrice,
   ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
@@ -2071,6 +2072,7 @@ tax_amount: item.tax_code === 'T1'
 })) || [{
   // Fallback if no line items
   description: `${job.jobType} - ${job.sageProductName || ''}`,
+  product_id: item.sage_id,
   quantity: job.quantity,
   unit_price: job.customerUnitPrice,
   ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e',
@@ -3303,6 +3305,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
       // Use the stored sage_line_items for invoice line items
 const lineItems = jobToInvoice.sage_line_items?.map(item => ({
   description: item.description || `${jobToInvoice.jobType} - ${item.product_name}`,
+  product_id: item.sage_id,
   quantity: item.quantity || jobToInvoice.quantity,
   unit_price: item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice,
   tax_amount: (item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice) * (item.quantity || jobToInvoice.quantity) * 0.20,
@@ -3312,6 +3315,7 @@ const lineItems = jobToInvoice.sage_line_items?.map(item => ({
 })) || [{
   // Fallback if no line items
   description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
+  product_id: item.sage_id,
   quantity: quantity,
   unit_price: unitPrice,
   tax_amount: unitPrice * quantity * 0.20,  // ADD THIS
