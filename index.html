@@ -2065,7 +2065,7 @@ const lineItems = job.sage_line_items?.map(item => ({
   quantity: item.quantity || job.quantity,
   unit_price: item.customer_price || item.unit_price || job.customerUnitPrice,
   ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-  tax_rate_id: item.tax_code === 'T1' ? 'GB_STANDARD' : 'GB_ZERO',
+   tax_rate_id: item.tax_code === 'T1' ? 'GB_STANDARD' : 'GB_ZERO',
 tax_amount: item.tax_code === 'T1' 
   ? (item.customer_price || item.unit_price || job.customerUnitPrice) * (item.quantity || job.quantity) * 0.20
   : 0,  // Zero tax for GB_ZERO items
@@ -3304,8 +3304,8 @@ const lineItems = jobToInvoice.sage_product_data && jobToInvoice.sage_product_da
           description: item.description || item.product_name,
           quantity: item.quantity || 1,
           unit_price: item.customer_price || item.unit_price || 0,
-          tax_amount: (item.customer_price || item.unit_price || 0) * (item.quantity || 1) * 0.20,
-          tax_rate_id: item.tax_code === 'T1' ? 'GB_ZERO' : 'GB_STANDARD',
+          tax_amount: (item.customer_price || item.unit_price || jobToInvoice.customerUnitPrice) * (item.quantity || jobToInvoice.quantity) * 0.20,
+  tax_rate_id: (item.customer_price || jobToInvoice.customerUnitPrice) === 0 ? 'GB_ZERO' : 'GB_STANDARD',
           ledger_account_id: item.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e'
       };
       
@@ -3324,8 +3324,8 @@ const lineItems = jobToInvoice.sage_product_data && jobToInvoice.sage_product_da
       description: `${jobToInvoice.jobType} - ${jobToInvoice.wasteType || jobToInvoice.aggregateType || ''}`,
       quantity: jobToInvoice.quantity,
       unit_price: jobToInvoice.customerUnitPrice,
-      tax_amount: jobToInvoice.customerUnitPrice * jobToInvoice.quantity * 0.20,
-      tax_rate_id: 'GB_STANDARD',
+      tax_amount: unitPrice * quantity * 0.20,  // ADD THIS
+  tax_rate_id: lineTotal === 0 ? 'GB_ZERO' : 'GB_STANDARD',
       ledger_account_id: 'dc4b88bb472b11e9aac702d5719f235e'
   }];
 console.log('JobToInvoice object:', jobToInvoice);
