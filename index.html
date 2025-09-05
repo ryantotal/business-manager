@@ -9298,19 +9298,29 @@ async syncCustomersQuick() {
 async syncSuppliersQuick() {
     try {
         console.log('🚀 Starting QUICK supplier sync (new records only)...');
+        
         const sageSuppliers = await this.getSuppliers();
-        // Don't filter - use all suppliers that Sage returns
-        const supplierContacts = sageSuppliers.$items;
+        
+        // Filter to ensure we only have suppliers (not customers)
+        const supplierContacts = sageSuppliers.$items.filter(contact => {
+            const types = contact.contact_types || [];
+            const isSupplier = types.some(t => t.id === 'SUPPLIER' || t.id === 'VENDOR');
+            const isCustomer = types.some(t => t.id === 'CUSTOMER');
+            return isSupplier && !isCustomer;  // Only suppliers, not dual customer-suppliers
+        });
+        
+        console.log('📊 Raw from Sage:', sageSuppliers.$items.length);
+        console.log('📊 Suppliers only:', supplierContacts.length);
         
         // Get existing Sage IDs only (fast query)
-const { data: existingSuppliers, error: fetchError } = await window.supabase
-    .from('suppliers')
-    .select('sage_id, name');
-    
-if (fetchError) {
-    console.error('❌ Error fetching existing:', fetchError);
-    return;
-}
+        const { data: existingSuppliers, error: fetchError } = await window.supabase
+            .from('suppliers')
+            .select('sage_id, name');
+            
+        if (fetchError) {
+            console.error('❌ Error fetching existing:', fetchError);
+            return;
+        }
         
         const existingSageIds = new Set(existingSuppliers?.map(s => s.sage_id) || []);
         const newSuppliers = [];
@@ -9319,25 +9329,24 @@ if (fetchError) {
             if (!existingSageIds.has(sageSupplier.id)) {
                 console.log(`✅ Found NEW supplier: ${sageSupplier.displayed_as}`);
                 
-                // Quick mapping - NO phone API calls - MATCHING YOUR DB SCHEMA
-        
-    const mappedSupplier = {
-    sage_id: sageSupplier.id,
-    name: sageSupplier.displayed_as || sageSupplier.name || '',
-    email: sageSupplier.email || '',
-    phone: '',  // Will be filled later if available
-    address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
-    vat_number: sageSupplier.tax_number || '',
-    contact_person: sageSupplier.main_contact_person?.displayed_as || '',
-    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
-    accountsemail: sageSupplier.email || '',
-    position: '',
-    supplierrating: 'A+',
-    performancescore: 0,
-    preferredsupplier: false,
-    credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
-    credit_days: parseInt(sageSupplier.credit_days) || 30,
-};
+                // Mapping matching YOUR DB SCHEMA
+                const mappedSupplier = {
+                    sage_id: sageSupplier.id,
+                    name: sageSupplier.displayed_as || sageSupplier.name || '',
+                    email: sageSupplier.email || '',
+                    phone: '',  // Will be filled later if available
+                    address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
+                    vat_number: sageSupplier.tax_number || '',
+                    contact_person: sageSupplier.main_contact_person?.displayed_as || '',
+                    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
+                    accountsemail: sageSupplier.email || '',
+                    position: '',
+                    supplierrating: 'A+',
+                    performancescore: 0,
+                    preferredsupplier: false,
+                    credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
+                    credit_days: parseInt(sageSupplier.credit_days) || 30,
+                };
                 
                 // Insert immediately
                 const { error } = await window.supabase.from('suppliers').insert(mappedSupplier);
@@ -9350,6 +9359,12 @@ if (fetchError) {
         }
         
         console.log(`✅ Quick sync complete: ${newSuppliers.length} new suppliers added`);
+        
+        // Refresh the display
+        if (typeof this.loadSuppliers === 'function') {
+            await this.loadSuppliers();
+        }
+        
         return { new: newSuppliers, updated: [], conflicts: [] };
     } catch (error) {
         console.error('❌ Quick supplier sync failed:', error);
