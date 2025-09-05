@@ -8662,10 +8662,11 @@ onClick={() => {
     try {
         const { error } = await window.supabase
             .from('jobs')
-            .update({
-                status: 'COLLECTED',
-                is_completed: true
-            })
+.update({
+    ...updatedJob,
+    si_number: updatedJob.si_number === '' ? null : updatedJob.si_number,
+    quote_number: updatedJob.quote_number === '' ? null : updatedJob.quote_number
+})
             .eq('id', job.id);
             
         if (error) throw error;
