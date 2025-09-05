@@ -9161,11 +9161,8 @@ if (this.getContactPersonDetails && sageCustomer.main_contact_person?.id) {
 async syncSuppliersFromSage() {
   try {
     const sageSuppliers = await this.getSuppliers();
-    const supplierContacts = sageSuppliers.$items.filter(function(contact) {
-  return contact.contact_types && contact.contact_types.some(function(type) {
-    return type.id === 'VENDOR';
-  });
-});
+   // Don't filter - use all suppliers that Sage returns
+const supplierContacts = sageSuppliers.$items;
     const { data: existingSuppliers, error } = await window.supabase
       .from('suppliers')
       .select('*');
@@ -9308,10 +9305,8 @@ async syncSuppliersQuick() {
     console.log('🚀 Starting QUICK supplier sync (new records only)...');
     
     const sageSuppliers = await this.getSuppliers();
-    const supplierContacts = sageSuppliers.$items.filter(contact => 
-      contact.contact_types?.some(type => type.id === 'SUPPLIER')
-    );
-    
+   // Don't filter - use all suppliers that Sage returns
+const supplierContacts = sageSuppliers.$items;
     // Get existing Sage IDs only (fast query)
     const { data: existingSuppliers } = await window.supabase
       .from('suppliers')
