@@ -9182,26 +9182,26 @@ async syncSuppliersFromSage() {
             );
             
             const mappedSupplier = {
-                sage_id: sageSupplier.id,
-                companyName: sageSupplier.displayed_as || sageSupplier.name || sageSupplier.company_name || 'No Name',
-                name: sageSupplier.displayed_as || sageSupplier.name || '', // For consistency
-                tradingName: sageSupplier.trading_name || '',
-                companyNumber: sageSupplier.registered_number || '',
-                vatNumber: sageSupplier.tax_number || '',
-                email: sageSupplier.email || '',
-                accountsEmail: sageSupplier.email || '', // Same as email unless separate field in Sage
-                phone: sageSupplier.main_contact_person?.phone || sageSupplier.phone || '',
-                mobile: sageSupplier.main_contact_person?.mobile || sageSupplier.mobile || '',
-                address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ').replace(/([a-z])([A-Z])/g, '$1, $2').replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1, $2') || '',
-                primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
-                position: '', // Not typically in Sage
-                supplierRating: 'A+', // Default value
-                accountStatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
-                performanceScore: 0, // Default
-                preferredSupplier: false, // Default
-                credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
-                credit_days: parseInt(sageSupplier.credit_days) || 30,
-            };
+    sage_id: sageSupplier.id,
+    companyName: sageSupplier.displayed_as || sageSupplier.name || 'No Name',
+    name: sageSupplier.displayed_as || sageSupplier.name || '',
+    tradingName: sageSupplier.trading_name || '',
+    companyNumber: sageSupplier.registered_number || '',
+    vatNumber: sageSupplier.tax_number || '',
+    email: sageSupplier.email || '',
+    accountsEmail: sageSupplier.email || '',
+    phone: '',
+    mobile: '',
+    address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
+    primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
+    position: '',
+    supplierRating: 'A+',
+    account_status: sageSupplier.deletable === false ? 'Active' : 'Inactive', // <- Changed from accountStatus
+    performanceScore: 0,
+    preferredSupplier: false,
+    credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
+    credit_days: parseInt(sageSupplier.credit_days) || 30,
+};
             
             // Try to get phone if the method exists
             if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
@@ -9320,26 +9320,26 @@ async syncSuppliersQuick() {
                 
                 // Quick mapping - NO phone API calls - MATCHING YOUR DB SCHEMA
                 const mappedSupplier = {
-                    sage_id: sageSupplier.id,
-                    companyName: sageSupplier.displayed_as || sageSupplier.name || 'No Name',
-                    name: sageSupplier.displayed_as || sageSupplier.name || '',
-                    tradingName: sageSupplier.trading_name || '',
-                    companyNumber: sageSupplier.registered_number || '',
-                    vatNumber: sageSupplier.tax_number || '',
-                    email: sageSupplier.email || '',
-                    accountsEmail: sageSupplier.email || '',
-                    phone: '', // Skip phone lookup for quick sync
-                    mobile: '',
-                    address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
-                    primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
-                    position: '',
-                    supplierRating: 'A+',
-                    accountStatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
-                    performanceScore: 0,
-                    preferredSupplier: false,
-                    credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
-                    credit_days: parseInt(sageSupplier.credit_days) || 30,
-                };
+    sage_id: sageSupplier.id,
+    companyName: sageSupplier.displayed_as || sageSupplier.name || 'No Name',
+    name: sageSupplier.displayed_as || sageSupplier.name || '',
+    tradingName: sageSupplier.trading_name || '',
+    companyNumber: sageSupplier.registered_number || '',
+    vatNumber: sageSupplier.tax_number || '',
+    email: sageSupplier.email || '',
+    accountsEmail: sageSupplier.email || '',
+    phone: '',
+    mobile: '',
+    address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
+    primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
+    position: '',
+    supplierRating: 'A+',
+    account_status: sageSupplier.deletable === false ? 'Active' : 'Inactive', // <- Changed from accountStatus
+    performanceScore: 0,
+    preferredSupplier: false,
+    credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
+    credit_days: parseInt(sageSupplier.credit_days) || 30,
+};
                 
                 // Insert immediately
                 const { error } = await window.supabase.from('suppliers').insert(mappedSupplier);
