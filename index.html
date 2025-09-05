@@ -9159,86 +9159,85 @@ if (this.getContactPersonDetails && sageCustomer.main_contact_person?.id) {
 },
 
 async syncSuppliersFromSage() {
-  try {
-    const sageSuppliers = await this.getSuppliers();
-   // Don't filter - use all suppliers that Sage returns
-const supplierContacts = sageSuppliers.$items;
-    const { data: existingSuppliers, error } = await window.supabase
-      .from('suppliers')
-      .select('*');
-    
-    if (error) throw error;
-    
-    const syncResults = {
-      new: [],
-      updated: [],
-      conflicts: []
-    };
-    
-    // Inside syncSuppliersFromSage - for the supplier processing loop
-for (const sageSupplier of supplierContacts) {
-    const existing = existingSuppliers.data?.find(
-    s => s.sage_id === sageSupplier.id
-);
- const mappedSupplier = {
-  sage_id: sageSupplier.id,
-  companyName: sageSupplier.displayed_as || sageSupplier.name || sageSupplier.company_name || 'No Name',
-  name: sageSupplier.displayed_as || sageSupplier.name || '', // For consistency
-  tradingName: sageSupplier.trading_name || '',
-  companyNumber: sageSupplier.registered_number || '',
-  vatNumber: sageSupplier.tax_number || '',
-  email: sageSupplier.email || '',
-  accountsEmail: sageSupplier.email || '', // Same as email unless separate field in Sage
-  phone: sageSupplier.main_contact_person?.phone || sageSupplier.phone || '',
-  mobile: sageSupplier.main_contact_person?.mobile || sageSupplier.mobile || '',
-  address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ').replace(/([a-z])([A-Z])/g, '$1, $2').replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1, $2') || '',
-  primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
-  position: '', // Not typically in Sage
-  supplierRating: 'A+', // Default value
-  accountStatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
-  performanceScore: 0, // Default
-  preferredSupplier: false, // Default
-  credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
-  credit_days: parseInt(sageSupplier.credit_days) || 30,
-};
-   
-       
-// Try to get phone if the method exists
-if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
-  try {
-    console.log(`📞 Fetching phone for ${sageSupplier.displayed_as}...`);
-    const fullContact = await this.getContactPersonDetails(sageSupplier.id);
-    console.log('📞 Result:', fullContact);
-    if (fullContact) {
-      mappedSupplier.phone = fullContact.telephone || fullContact.phone || '';
-      mappedSupplier.mobile = fullContact.mobile || '';
-      mappedSupplier.email = fullContact.email || mappedSupplier.email;
-      console.log(`✓ Set phone: ${mappedSupplier.phone}, mobile: ${mappedSupplier.mobile}`);
+    try {
+        const sageSuppliers = await this.getSuppliers();
+        // Don't filter - use all suppliers that Sage returns
+        const supplierContacts = sageSuppliers.$items;
+        const { data: existingSuppliers, error } = await window.supabase
+            .from('suppliers')
+            .select('*');
+        
+        if (error) throw error;
+        
+        const syncResults = {
+            new: [],
+            updated: [],
+            conflicts: []
+        };
+        
+        // Inside syncSuppliersFromSage - for the supplier processing loop
+        for (const sageSupplier of supplierContacts) {
+            const existing = existingSuppliers?.find(
+                s => s.sage_id === sageSupplier.id
+            );
+            
+            const mappedSupplier = {
+                sage_id: sageSupplier.id,
+                companyName: sageSupplier.displayed_as || sageSupplier.name || sageSupplier.company_name || 'No Name',
+                name: sageSupplier.displayed_as || sageSupplier.name || '', // For consistency
+                tradingName: sageSupplier.trading_name || '',
+                companyNumber: sageSupplier.registered_number || '',
+                vatNumber: sageSupplier.tax_number || '',
+                email: sageSupplier.email || '',
+                accountsEmail: sageSupplier.email || '', // Same as email unless separate field in Sage
+                phone: sageSupplier.main_contact_person?.phone || sageSupplier.phone || '',
+                mobile: sageSupplier.main_contact_person?.mobile || sageSupplier.mobile || '',
+                address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ').replace(/([a-z])([A-Z])/g, '$1, $2').replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1, $2') || '',
+                primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
+                position: '', // Not typically in Sage
+                supplierRating: 'A+', // Default value
+                accountStatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
+                performanceScore: 0, // Default
+                preferredSupplier: false, // Default
+                credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
+                credit_days: parseInt(sageSupplier.credit_days) || 30,
+            };
+            
+            // Try to get phone if the method exists
+            if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
+                try {
+                    console.log(`📞 Fetching phone for ${sageSupplier.displayed_as}...`);
+                    const fullContact = await this.getContactPersonDetails(sageSupplier.id);
+                    console.log('📞 Result:', fullContact);
+                    if (fullContact) {
+                        mappedSupplier.phone = fullContact.telephone || fullContact.phone || '';
+                        mappedSupplier.mobile = fullContact.mobile || '';
+                        mappedSupplier.email = fullContact.email || mappedSupplier.email;
+                        console.log(`✓ Set phone: ${mappedSupplier.phone}, mobile: ${mappedSupplier.mobile}`);
+                    }
+                } catch (err) {
+                    console.log(`✗ Error: ${err.message}`);
+                }
+            } else {
+                console.log(`⚠️ No contact person for ${sageSupplier.displayed_as}, but still adding supplier`);
+            }
+            
+            // ALWAYS add the supplier regardless of contact details
+            if (!existing) {
+                syncResults.new.push(mappedSupplier);
+            } else {
+                syncResults.updated.push({
+                    ...mappedSupplier,
+                    id: existing.id // IMPORTANT: Preserve the database ID!
+                });
+            }
+        }
+        
+        return syncResults;
+    } catch (error) {
+        console.error('Error syncing suppliers:', error);
+        throw error;
     }
-  } catch (err) {
-    console.log(`✗ Error: ${err.message}`);
-  }
-} else {
-  console.log(`⚠️ Skipping phone for ${sageSupplier.displayed_as}: No contact person ID`);
-}
- if (!existing) {
-        // Map Sage fields to your database fields
-
-        syncResults.new.push(mappedSupplier);
-  } else {
-  // Push to UPDATED with preserved database ID
-  syncResults.updated.push({
-    ...mappedSupplier,
-    id: existing.id  // IMPORTANT: Preserve the database ID!
-  });
-    }
-}
-    
-    return syncResults;
-  } catch (error) {
-    console.error('Error syncing suppliers:', error);
-    throw error;
-  }
 },
 // QUICK SYNC FUNCTIONS - For manual button clicks (new records only, no phone lookups)
 async syncCustomersQuick() {
