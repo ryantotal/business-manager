@@ -9301,60 +9301,107 @@ async syncCustomersQuick() {
 
 async syncSuppliersQuick() {
     try {
-        console.log('🚀 Starting QUICK supplier sync (new records only)...');
+        console.log('🚀 Starting QUICK supplier sync...');
+        
+        // 1. Get ALL suppliers from Sage
         const sageSuppliers = await this.getSuppliers();
-        // Don't filter - use all suppliers that Sage returns
+        console.log('📊 Total from Sage:', sageSuppliers.$items.length);
+        
+        // Don't filter - use all suppliers
         const supplierContacts = sageSuppliers.$items;
         
-        // Get existing Sage IDs only (fast query)
-        const { data: existingSuppliers } = await window.supabase
+        // 2. Get existing suppliers from Supabase
+        const { data: existingSuppliers, error: fetchError } = await window.supabase
             .from('suppliers')
-            .select('sage_id');
+            .select('sage_id, companyname');
+            
+        if (fetchError) {
+            console.error('❌ Error fetching existing:', fetchError);
+            return;
+        }
+        
+        console.log('📊 Currently in Supabase:', existingSuppliers?.length || 0);
         
         const existingSageIds = new Set(existingSuppliers?.map(s => s.sage_id) || []);
         const newSuppliers = [];
+        const failedSuppliers = [];
         
+        // 3. Process each supplier
         for (const sageSupplier of supplierContacts) {
             if (!existingSageIds.has(sageSupplier.id)) {
-                console.log(`✅ Found NEW supplier: ${sageSupplier.displayed_as}`);
+                console.log(`🔍 Processing NEW: ${sageSupplier.displayed_as} (${sageSupplier.id})`);
                 
-                // Quick mapping - NO phone API calls - MATCHING YOUR DB SCHEMA
-              const mappedSupplier = {
-    sage_id: sageSupplier.id,
-    companyname: sageSupplier.displayed_as || sageSupplier.name || 'No Name',  // lowercase!
-    name: sageSupplier.displayed_as || sageSupplier.name || '',
-    tradingname: sageSupplier.trading_name || '',  // lowercase!
-    companynumber: sageSupplier.registered_number || '',  // lowercase!
-    vatnumber: sageSupplier.tax_number || '',  // lowercase!
-    email: sageSupplier.email || '',
-    accountsemail: sageSupplier.email || '',  // lowercase!
-    phone: '',
-    mobile: '',
-    address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
-    primarycontact: sageSupplier.main_contact_person?.displayed_as || 'No contact',  // lowercase!
-    position: '',
-    supplierrating: 'A+',  // lowercase!
-    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',  // lowercase!
-    performancescore: 0,  // lowercase!
-    preferredsupplier: false,  // lowercase!
-    credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
-    credit_days: parseInt(sageSupplier.credit_days) || 30,
-};
+                // Map with lowercase field names matching your schema
+                const mappedSupplier = {
+                    sage_id: sageSupplier.id,
+                    companyname: sageSupplier.displayed_as || sageSupplier.name || 'No Name',
+                    name: sageSupplier.displayed_as || sageSupplier.name || '',
+                    tradingname: sageSupplier.trading_name || '',
+                    companynumber: sageSupplier.registered_number || '',
+                    vatnumber: sageSupplier.tax_number || '',
+                    email: sageSupplier.email || '',
+                    accountsemail: sageSupplier.email || '',
+                    phone: '',
+                    mobile: '',
+                    address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
+                    primarycontact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
+                    position: '',
+                    supplierrating: 'A+',
+                    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
+                    performancescore: 0,
+                    preferredsupplier: false,
+                    credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
+                    credit_days: parseInt(sageSupplier.credit_days) || 30,
+                };
                 
-                // Insert immediately
-                const { error } = await window.supabase.from('suppliers').insert(mappedSupplier);
-                if (!error) {
+                console.log('📝 Mapped data:', mappedSupplier);
+                
+                // Try to insert
+                const { data: insertedData, error: insertError } = await window.supabase
+                    .from('suppliers')
+                    .insert(mappedSupplier)
+                    .select();
+                
+                if (!insertError) {
+                    console.log(`✅ Inserted: ${sageSupplier.displayed_as}`);
                     newSuppliers.push(mappedSupplier);
                 } else {
-                    console.error(`Failed to insert supplier ${sageSupplier.displayed_as}:`, error);
+                    console.error(`❌ Failed to insert ${sageSupplier.displayed_as}:`, insertError);
+                    failedSuppliers.push({
+                        supplier: sageSupplier.displayed_as,
+                        error: insertError.message,
+                        details: insertError
+                    });
                 }
             }
         }
         
-        console.log(`✅ Quick sync complete: ${newSuppliers.length} new suppliers added`);
+        // 4. Summary
+        console.log('📊 SYNC SUMMARY:');
+        console.log(`- Total in Sage: ${supplierContacts.length}`);
+        console.log(`- Already in DB: ${existingSageIds.size}`);
+        console.log(`- New added: ${newSuppliers.length}`);
+        console.log(`- Failed: ${failedSuppliers.length}`);
+        
+        if (failedSuppliers.length > 0) {
+            console.error('Failed suppliers:', failedSuppliers);
+            alert(`Added ${newSuppliers.length} suppliers, but ${failedSuppliers.length} failed. Check console for details.`);
+        } else if (newSuppliers.length > 0) {
+            alert(`Successfully added ${newSuppliers.length} new suppliers!`);
+        } else {
+            alert('All suppliers already synced!');
+        }
+        
+        // Refresh the display
+        if (typeof this.loadSuppliers === 'function') {
+            await this.loadSuppliers();
+        }
+        
         return { new: newSuppliers, updated: [], conflicts: [] };
+        
     } catch (error) {
         console.error('❌ Quick supplier sync failed:', error);
+        alert('Sync failed: ' + error.message);
         throw error;
     }
 },
