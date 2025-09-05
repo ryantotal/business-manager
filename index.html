@@ -41,6 +41,12 @@
     .hover\:bg-blue-700:hover {
         background-color: var(--primary-hover) !important;
     }
+    /* Prevent horizontal scrolling/bouncing */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  overscroll-behavior-x: none;
+}
 </style>
 </head>
 <body>
@@ -857,25 +863,25 @@ siteNotes: '',
                 <div className="flex border-b border-gray-200">
                   <button
                     onClick={() => setActiveTab('details')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
                   >
                     Job Details
                   </button>
                   <button
                     onClick={() => setActiveTab('site')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
                   >
                     Site Information
                   </button>
                   <button
                     onClick={() => setActiveTab('financial')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
                   >
                     Pricing & Status
                   </button>
                   <button
-  onClick={() => setActiveTab('documents')}
-  className={`px-6 py-3 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                   onClick={() => setActiveTab('documents')}
+                   className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
 >
   Documents
 </button>
