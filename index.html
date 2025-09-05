@@ -3050,19 +3050,19 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
       {/* Filters */}
       {/* Filters */}
 <div className="bg-white rounded-lg border border-gray-200 p-4">
-  <div className="flex items-center space-x-4">
+  <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
     <Filter size={16} className="text-gray-600" />
     <input
       type="text"
       placeholder="Search quotes, customers, postcodes..."
       value={searchQuery}
       onChange={(e) => setSearchQuery(e.target.value)}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+     className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     />
     <select
       value={filters.status}
       onChange={(e) => setFilters({...filters, status: e.target.value})}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+     className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     >
       <option value="">All Statuses</option>
       <option value="PENDING">Pending</option>
@@ -3075,7 +3075,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <select
       value={filters.jobType}
       onChange={(e) => setFilters({...filters, jobType: e.target.value})}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     >
       <option value="">All Job Types</option>
       <option value="Skip Hire">Skip Hire</option>
@@ -3088,7 +3088,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <select
       value={filters.priority}
       onChange={(e) => setFilters({...filters, priority: e.target.value})}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     >
       <option value="">All Priorities</option>
       <option value="Low">Low</option>
@@ -3099,7 +3099,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <select
       value={filters.rejectionReason}
       onChange={(e) => setFilters({...filters, rejectionReason: e.target.value})}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     >
       <option value="">All Rejection Reasons</option>
       <option value="price">Price Too High</option>
@@ -4853,19 +4853,19 @@ const { error } = await window.supabase
               {/* Filters */}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
+                  <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
                     <Filter size={16} className="text-gray-600" />
                     <input
                       type="text"
                       placeholder="Search customers..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     />
                     <select
                       value={filters.businessType}
                       onChange={(e) => setFilters({...filters, businessType: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     >
                       <option value="">All Business Types</option>
                       <option value="Construction Company">Construction Company</option>
@@ -4879,7 +4879,7 @@ const { error } = await window.supabase
                     <select
                       value={filters.creditRating}
                       onChange={(e) => setFilters({...filters, creditRating: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     >
                       <option value="">All Credit Ratings</option>
                       <option value="A+">A+ (Excellent)</option>
@@ -5515,19 +5515,19 @@ const handleApplySync = async () => {
               {/* Filters */}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
+                  <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
                     <Filter size={16} className="text-gray-600" />
                     <input
                       type="text"
                       placeholder="Search suppliers..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                     className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     />
                     <select
                       value={filters.service}
                       onChange={(e) => setFilters({...filters, service: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     >
                       <option value="">All Services</option>
                       <option value="Skip Hire">Skip Hire</option>
@@ -5541,7 +5541,7 @@ const handleApplySync = async () => {
                     <select
                       value={filters.rating}
                       onChange={(e) => setFilters({...filters, rating: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                     className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     >
                       <option value="">All Ratings</option>
                       <option value="A+">A+ (Excellent)</option>
