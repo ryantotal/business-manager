@@ -9181,7 +9181,7 @@ async syncSuppliersFromSage() {
                 s => s.sage_id === sageSupplier.id
             );
             
-            const mappedSupplier = {
+           const mappedSupplier = {
     sage_id: sageSupplier.id,
     companyName: sageSupplier.displayed_as || sageSupplier.name || 'No Name',
     name: sageSupplier.displayed_as || sageSupplier.name || '',
@@ -9189,14 +9189,14 @@ async syncSuppliersFromSage() {
     companyNumber: sageSupplier.registered_number || '',
     vatNumber: sageSupplier.tax_number || '',
     email: sageSupplier.email || '',
-    accountsEmail: sageSupplier.email || '',
+    accountsemail: sageSupplier.email || '',  // Changed from accountsEmail
     phone: '',
     mobile: '',
     address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
     primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
     position: '',
     supplierRating: 'A+',
-    account_status: sageSupplier.deletable === false ? 'Active' : 'Inactive', // <- Changed from accountStatus
+    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',  // Changed from account_status
     performanceScore: 0,
     preferredSupplier: false,
     credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
@@ -9327,14 +9327,14 @@ async syncSuppliersQuick() {
     companyNumber: sageSupplier.registered_number || '',
     vatNumber: sageSupplier.tax_number || '',
     email: sageSupplier.email || '',
-    accountsEmail: sageSupplier.email || '',
+    accountsemail: sageSupplier.email || '',  // Changed from accountsEmail
     phone: '',
     mobile: '',
     address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
     primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
     position: '',
     supplierRating: 'A+',
-    account_status: sageSupplier.deletable === false ? 'Active' : 'Inactive', // <- Changed from accountStatus
+    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',  // Changed from account_status
     performanceScore: 0,
     preferredSupplier: false,
     credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
