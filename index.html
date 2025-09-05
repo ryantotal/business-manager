@@ -2178,14 +2178,13 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
           const filteredJobs = sortedJobs.filter(job => {
   if (searchQuery) {
     const query = searchQuery.toLowerCase();
-    const matchesJobNumber = job.jobNumber.toLowerCase().includes(query);
-    const matchesCustomer = job.customerName.toLowerCase().includes(query);
-    const matchesSupplier = job.supplierName.toLowerCase().includes(query);
-    const matchesPostcode = (job.sitePostcode && job.sitePostcode.toLowerCase().includes(query)) ||
-                           (job.postcode && job.postcode.toLowerCase().includes(query));
-    const matchesAddress = (job.siteAddress1 && job.siteAddress1.toLowerCase().includes(query)) ||
-                          (job.siteAddress && job.siteAddress.toLowerCase().includes(query));
-    
+    const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
+   const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
+    const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
+    const matchesPostcode = ((job.sitePostcode || '').toLowerCase().includes(query)) || 
+                        ((job.postcode || '').toLowerCase().includes(query));
+const matchesAddress = ((job.siteAddress1 || '').toLowerCase().includes(query)) || 
+                       ((job.siteAddress || '').toLowerCase().includes(query));    
     if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
       return false;
     }
