@@ -9183,22 +9183,22 @@ async syncSuppliersFromSage() {
             
            const mappedSupplier = {
     sage_id: sageSupplier.id,
-    companyName: sageSupplier.displayed_as || sageSupplier.name || 'No Name',
+    companyname: sageSupplier.displayed_as || sageSupplier.name || 'No Name',  // lowercase
     name: sageSupplier.displayed_as || sageSupplier.name || '',
-    tradingName: sageSupplier.trading_name || '',
-    companyNumber: sageSupplier.registered_number || '',
-    vatNumber: sageSupplier.tax_number || '',
+    tradingname: sageSupplier.trading_name || '',  // lowercase
+    companynumber: sageSupplier.registered_number || '',  // lowercase
+    vatnumber: sageSupplier.tax_number || '',  // lowercase
     email: sageSupplier.email || '',
-    accountsemail: sageSupplier.email || '',  // Changed from accountsEmail
+    accountsemail: sageSupplier.email || '',  // lowercase
     phone: '',
     mobile: '',
     address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
-    primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
+    primarycontact: sageSupplier.main_contact_person?.displayed_as || 'No contact',  // lowercase
     position: '',
-    supplierRating: 'A+',
-    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',  // Changed from account_status
-    performanceScore: 0,
-    preferredSupplier: false,
+    supplierrating: 'A+',  // lowercase
+    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',  // lowercase, no underscore
+    performancescore: 0,  // lowercase
+    preferredsupplier: false,  // lowercase
     credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
     credit_days: parseInt(sageSupplier.credit_days) || 30,
 };
@@ -9319,24 +9319,24 @@ async syncSuppliersQuick() {
                 console.log(`✅ Found NEW supplier: ${sageSupplier.displayed_as}`);
                 
                 // Quick mapping - NO phone API calls - MATCHING YOUR DB SCHEMA
-                const mappedSupplier = {
+              const mappedSupplier = {
     sage_id: sageSupplier.id,
-    companyName: sageSupplier.displayed_as || sageSupplier.name || 'No Name',
+    companyname: sageSupplier.displayed_as || sageSupplier.name || 'No Name',  // lowercase
     name: sageSupplier.displayed_as || sageSupplier.name || '',
-    tradingName: sageSupplier.trading_name || '',
-    companyNumber: sageSupplier.registered_number || '',
-    vatNumber: sageSupplier.tax_number || '',
+    tradingname: sageSupplier.trading_name || '',  // lowercase
+    companynumber: sageSupplier.registered_number || '',  // lowercase
+    vatnumber: sageSupplier.tax_number || '',  // lowercase
     email: sageSupplier.email || '',
-    accountsemail: sageSupplier.email || '',  // Changed from accountsEmail
+    accountsemail: sageSupplier.email || '',  // lowercase
     phone: '',
     mobile: '',
     address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
-    primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
+    primarycontact: sageSupplier.main_contact_person?.displayed_as || 'No contact',  // lowercase
     position: '',
-    supplierRating: 'A+',
-    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',  // Changed from account_status
-    performanceScore: 0,
-    preferredSupplier: false,
+    supplierrating: 'A+',  // lowercase
+    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',  // lowercase, no underscore
+    performancescore: 0,  // lowercase
+    preferredsupplier: false,  // lowercase
     credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
     credit_days: parseInt(sageSupplier.credit_days) || 30,
 };
