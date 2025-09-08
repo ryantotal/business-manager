@@ -7415,7 +7415,7 @@ useEffect(() => {
   jobType: job.job_type,
   wasteType: job.waste_type,
   skipSize: job.skip_size,
-
+collectionDate: job.collection_date,
   quantity: job.quantity || 1,
   unit: job.unit || 'skip',
   weight: job.weight,
@@ -7632,6 +7632,7 @@ collection_date: newJob.collectionDate || null,
       linked_jobs: JSON.stringify(newJob.linkedJobs || []),
       notes: newJob.notes || null,
        sage_product_data: newJob.sage_product_data || null,
+       collection_date: newJob.collectionDate || null,
   sage_line_items: newJob.sage_line_items || null
     };
 // Remove id field if invalid
@@ -7713,6 +7714,7 @@ collection_date: updatedJob.collectionDate || null,
       invoice_number: updatedJob.invoiceNumber,
       invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
       payment_status: updatedJob.paymentStatus || 'Not Paid',
+      collection_date: updatedJob.collectionDate || null,
       sage_si_number: updatedJob.sage_si_number,  // ADD THIS LINE
   sage_invoice_id: updatedJob.sage_invoice_id
     };
