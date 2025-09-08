@@ -587,6 +587,34 @@ setShowPhoneSuggestions(false);
     }
 }, [showAddressSuggestions, setShowAddressSuggestions]);
 const loadJobAttachments = async (jobId) => {
+  // Helper function to handle number inputs properly
+  const handleNumberInput = (index, field, value, isDecimal = false) => {
+    // Allow empty string for better UX
+    if (value === '') {
+      const updatedItems = [...formData.lineItems];
+      updatedItems[index][field] = '';
+      setFormData({...formData, lineItems: updatedItems});
+      return;
+    }
+    
+    // For decimal numbers, allow partial input like "0." or "10."
+    if (isDecimal && value.endsWith('.') && value.indexOf('.') === value.length - 1) {
+      const updatedItems = [...formData.lineItems];
+      updatedItems[index][field] = value;
+      setFormData({...formData, lineItems: updatedItems});
+      return;
+    }
+    
+    // Parse the value
+    const parsedValue = isDecimal ? parseFloat(value) : parseInt(value);
+    
+    // Only update if it's a valid number
+    if (!isNaN(parsedValue)) {
+      const updatedItems = [...formData.lineItems];
+      updatedItems[index][field] = parsedValue;
+      setFormData({...formData, lineItems: updatedItems});
+    }
+  };
   try {
     const { data, error } = await window.supabase
       .from('job_attachments')
@@ -1163,42 +1191,55 @@ tax_code: product.tax_rate_id || 'T1'
         </td>
         <td className="px-2 py-3">
           <input
-            type="number"
-            value={item.quantity}
-            onChange={(e) => {
-              const updatedItems = [...formData.lineItems];
-              updatedItems[index].quantity = parseInt(e.target.value) || 1;
-              setFormData({...formData, lineItems: updatedItems});
-            }}
-            className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
-            min="1"
-          />
+  type="text"
+  inputMode="numeric"
+  className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+  value={item.quantity === 0 || item.quantity === '' ? '' : item.quantity}
+  onChange={(e) => handleNumberInput(index, 'quantity', e.target.value, false)}
+  onBlur={(e) => {
+    if (e.target.value === '') {
+      const updatedItems = [...formData.lineItems];
+      updatedItems[index].quantity = 1;
+      setFormData({...formData, lineItems: updatedItems});
+    }
+  }}
+/>
         </td>
         <td className="px-2 py-3">
           <input
-            type="number"
-            step="0.01"
-            value={item.supplier_price || 0}
-            onChange={(e) => {
-              const updatedItems = [...formData.lineItems];
-              updatedItems[index].supplier_price = parseFloat(e.target.value) || 0;
-              setFormData({...formData, lineItems: updatedItems});
-            }}
-            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-          />
+  type="text"
+  inputMode="decimal"
+  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+  value={item.supplier_price === 0 || item.supplier_price === '' ? '' : item.supplier_price}
+  onChange={(e) => handleNumberInput(index, 'supplier_price', e.target.value, true)}
+  onBlur={(e) => {
+    const value = e.target.value;
+    if (value !== '' && !isNaN(parseFloat(value))) {
+      const updatedItems = [...formData.lineItems];
+      updatedItems[index].supplier_price = parseFloat(value).toFixed(2);
+      setFormData({...formData, lineItems: updatedItems});
+    }
+  }}
+  placeholder="0.00"
+/>
         </td>
         <td className="px-2 py-3">
           <input
-            type="number"
-            step="0.01"
-            value={item.customer_price || 0}
-            onChange={(e) => {
-              const updatedItems = [...formData.lineItems];
-              updatedItems[index].customer_price = parseFloat(e.target.value) || 0;
-              setFormData({...formData, lineItems: updatedItems});
-            }}
-            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-          />
+  type="text"
+  inputMode="decimal"
+  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+  value={item.customer_price === 0 || item.customer_price === '' ? '' : item.customer_price}
+  onChange={(e) => handleNumberInput(index, 'customer_price', e.target.value, true)}
+  onBlur={(e) => {
+    const value = e.target.value;
+    if (value !== '' && !isNaN(parseFloat(value))) {
+      const updatedItems = [...formData.lineItems];
+      updatedItems[index].customer_price = parseFloat(value).toFixed(2);
+      setFormData({...formData, lineItems: updatedItems});
+    }
+  }}
+  placeholder="0.00"
+/>
         </td>
         <td className="px-2 py-3">
           <div className={`text-sm font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
