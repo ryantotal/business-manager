@@ -3669,12 +3669,16 @@ console.log(JSON.stringify(invoiceData, null, 2));
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Created Date:</span>
-                      <span className="text-gray-900">{new Date(job.jobDate).toLocaleDateString()}</span>
+                     <span className="text-gray-900">{job.created_at ? new Date(job.created_at).toLocaleDateString() : new Date(job.jobDate).toLocaleDateString()}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Delivery Date:</span>
                       <span className="text-gray-900 font-semibold">{new Date(job.jobDate).toLocaleDateString()}</span>
                     </div>
+                    <div className="flex justify-between">
+  <span className="text-gray-600 font-medium">Collection Date:</span>
+  <span className="text-gray-900">{job.collection_date ? new Date(job.collection_date).toLocaleDateString() : 'Not provided'}</span>
+</div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Quantity:</span>
                       <span className="text-gray-900">{job.quantity} {job.unit}</span>
@@ -4410,7 +4414,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Created Date:</span>
-                      <span className="text-gray-900">{new Date(quote.createdDate).toLocaleDateString()}</span>
+                      <span className="text-gray-900">{job.created_at ? new Date(job.created_at).toLocaleDateString() : 'Not provided'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Valid Until:</span>
