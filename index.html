@@ -756,7 +756,9 @@ siteNotes: '',
 
    const handleSubmit = async () => {
   // Capture complete Sage product details from lineItems
-  const sageProductData = formData.lineItems?.map(item => ({
+  const sageProductData = formData.lineItems?.map(item => {
+  console.log('Line item structure:', item);  // Add this to see what properties exist
+  return {
     sage_id: item.sage_id,
     product_name: item.product_name,
     description: item.description,
@@ -769,7 +771,8 @@ siteNotes: '',
     nominal_code: item.nominal_code || '4000', 
     tax_code: item.tax_code || 'T1',
     vat_rate: formData.vatRate
-  })) || [];
+  }
+  }) || [];
 
   // Check if this is a skip/RoRo with quantity > 1
   if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
