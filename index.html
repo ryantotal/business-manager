@@ -7408,7 +7408,7 @@ useEffect(() => {
 
   quantity: job.quantity || 1,
   unit: job.unit || 'skip',
-  weight: updatedJob.weight ? parseFloat(updatedJob.weight) : null,
+  weight: job.weight,
   customerUnitPrice: job.customer_unit_price || 0,
   customerFinalPrice: job.customer_final_price || 0,
   supplierUnitPrice: job.supplier_unit_price || 0,
@@ -7581,7 +7581,7 @@ useEffect(() => {
       aggregate_type: newJob.aggregateType || null,
       quantity: parseInt(newJob.quantity) || 1,
       unit: newJob.unit || 'skip',
-      weight: updatedJob.weight ? parseFloat(updatedJob.weight) : null,
+      weight: newJob.weight || null,
       customer_unit_price: parseFloat(newJob.customerUnitPrice) || 0,
 customer_final_price: parseFloat(newJob.customerFinalPrice) || 0,
 supplier_unit_price: parseFloat(newJob.supplierUnitPrice) || 0,
@@ -8412,7 +8412,7 @@ const jobNumber = `TWS-${currentYear}-${String(lastJobNumber + 1).padStart(4, '0
       aggregateType: quote.aggregateType || '',  // This is correct, gets converted to aggregate_type
       quantity: quote.quantity || 1,
       unit: quote.unit || 'skip',
-      weight: updatedJob.weight ? parseFloat(updatedJob.weight) : null,
+      weight: null,  // Add this field
       customerUnitPrice: quote.price || 0,
       customerFinalPrice: quote.totalPrice || 0,
       supplierUnitPrice: 0,
@@ -10750,7 +10750,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     aggregateType: '',
     quantity: 1,
     unit: 'skip',
-    weight: updatedJob.weight ? parseFloat(updatedJob.weight) : null,
+    weight: '',
     customerUnitPrice: 0,
     customerFinalPrice: 0,
     vatRate: 20,
