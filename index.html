@@ -1424,7 +1424,7 @@ tax_code: product.tax_rate_id || 'T1'
                       </div>
 
                       <div>
-                        <label className="flex items-center space-x-2">
+                        <div className="flex items-center">
                           <input
                             type="checkbox"
                             checked={formData.hazardousWaste}
@@ -1432,7 +1432,7 @@ tax_code: product.tax_rate_id || 'T1'
                             className="mr-2"
                           />
                           <span className="text-sm font-medium cursor-pointer">Contains Hazardous Waste</span>
-                        </label>
+                        </div>
                       </div>
 
                       {formData.hazardousWaste && (
