@@ -763,8 +763,8 @@ siteNotes: '',
     item_code: item.item_code,
     type: item.type,
     quantity: item.quantity,
-unit_price: item.customer_unit_price || 0,  // Correct field name
-cost_price: item.supplier_unit_price || 0,  // Correct field name
+    unit_price: item?.customer_price || item?.customer_unit_price || 0,
+cost_price: item?.supplier_price || item?.supplier_unit_price || 0,
     sales_ledger_account: item.sales_ledger_account || '4000',
     nominal_code: item.nominal_code || '4000', 
     tax_code: item.tax_code || 'T1',
@@ -3860,7 +3860,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                         £{lineCost.toFixed(2)}
                       </div>
                       <div className="text-xs text-gray-500">
-                        @ £{(item.supplier_price || 0).toFixed(2)}
+                        @ £{(item.supplier_unit_price || 0).toFixed(2)}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-right">
@@ -3868,7 +3868,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                         £{lineRRP.toFixed(2)}
                       </div>
                       <div className="text-xs text-gray-500">
-                        @ £{(item.customer_price || 0).toFixed(2)}
+                        @ £{(item.customer_unit_price || 0).toFixed(2)}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-right">
