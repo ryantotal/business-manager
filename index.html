@@ -7800,7 +7800,7 @@ const handleDeleteAttachment = async (attachment) => {
               isCancelled: false,
               status: 'CONFIRMED',
               notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
-              jobDate: new Date().toISOString().split('T')[0], // Set to today
+              jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
               linkedJobs: []
             };
             
@@ -8631,7 +8631,7 @@ onClick={() => {
             isCancelled: false,
             status: 'CONFIRMED',
             notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
-            jobDate: new Date().toISOString().split('T')[0],
+            jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
             linkedJobs: []
         };
         
@@ -10754,7 +10754,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     customerUnitPrice: 0,
     customerFinalPrice: 0,
     vatRate: 20,
-    jobDate: new Date().toISOString().split('T')[0],
+    jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
     timeSlot: '',
     collectionDate: '',
     status: 'PENDING',
