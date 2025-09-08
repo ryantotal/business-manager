@@ -753,15 +753,8 @@ siteNotes: '',
             calculatePrices();
           }, [formData.customerUnitPrice, formData.supplierUnitPrice, formData.quantity]);
 
-          const generateJobNumber = () => {
-            const year = new Date().getFullYear();
-            const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
-            const newJobNumber = lastJobNumber + 1;
-            localStorage.setItem('lastJobNumber', newJobNumber.toString());
-            return `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
-          };
 
-    const handleSubmit = () => {
+   const handleSubmit = async () => {
   // Capture complete Sage product details from lineItems
   const sageProductData = formData.lineItems?.map(item => ({
     sage_id: item.sage_id,
@@ -781,16 +774,34 @@ siteNotes: '',
   // Check if this is a skip/RoRo with quantity > 1
   if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
     const jobs = [];
-    const firstJobNumber = generateJobNumber();
+    // Get the job number from Supabase sequence
+const { data: firstJobNumber, error: jobNumError } = await supabase
+  .rpc('get_next_job_number');
+
+if (jobNumError) {
+  console.error('Error getting job number:', jobNumError);
+  return;
+}
     for (let i = 0; i < formData.quantity; i++) {
-      const jobId = i === 0 ? firstJobNumber : `${firstJobNumber}-${i+1}`;
-      const newJob = {
-        ...formData,
-        id: jobId,
-        jobNumber: jobId,
-        quantity: 1,
-        customerFinalPrice: formData.customerUnitPrice,
-        supplierFinalPrice: formData.supplierUnitPrice,
+  // Get a unique job number for EACH job
+  const { data: jobNumber, error: jobNumError } = await supabase
+    .rpc('get_next_job_number');
+  
+  if (jobNumError) {
+    console.error('Error getting job number:', jobNumError);
+    alert('Error generating job number. Please try again.');
+    return;
+  }
+  
+  const jobId = jobNumber;  // Each job gets its own unique number
+  const newJob = {
+    ...formData,
+    id: jobId,
+    jobNumber: jobNumber,  // Use the unique number from Supabase
+    quantity: 1,
+    customerFinalPrice: formData.customerUnitPrice,
+    supplierFinalPrice: formData.supplierUnitPrice,
+    // ... rest of your properties stay the same
         grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
         profitMargin: formData.customerUnitPrice > 0 ?
           ((formData.customerUnitPrice - formData.supplierUnitPrice) / formData.customerUnitPrice) * 100 : 0,
@@ -807,7 +818,21 @@ siteNotes: '',
     jobs[0].linkedJobs = jobs.slice(1).map(j => j.id);
     jobs.forEach(job => onSave(job));
   } else {
-    const newJobNumber = job?.jobNumber || generateJobNumber();
+    // For single job creation/editing
+let newJobNumber = job?.jobNumber;  // Keep existing number if editing
+
+if (!newJobNumber) {
+  // Only get new number if creating a new job
+  const { data: jobNum, error: jobNumError } = await supabase
+    .rpc('get_next_job_number');
+  
+  if (jobNumError) {
+    console.error('Error getting job number:', jobNumError);
+    alert('Error generating job number. Please try again.');
+    return;
+  }
+  newJobNumber = jobNum;
+}
     const newJob = {
       ...formData,
       jobNumber: newJobNumber,
