@@ -587,34 +587,43 @@ setShowPhoneSuggestions(false);
     }
 }, [showAddressSuggestions, setShowAddressSuggestions]);
 const loadJobAttachments = async (jobId) => {
-  // Helper function to handle number inputs properly
-  const handleNumberInput = (index, field, value, isDecimal = false) => {
-    // Allow empty string for better UX
-    if (value === '') {
-      const updatedItems = [...formData.lineItems];
-      updatedItems[index][field] = '';
-      setFormData({...formData, lineItems: updatedItems});
-      return;
-    }
-    
-    // For decimal numbers, allow partial input like "0." or "10."
-    if (isDecimal && value.endsWith('.') && value.indexOf('.') === value.length - 1) {
-      const updatedItems = [...formData.lineItems];
-      updatedItems[index][field] = value;
-      setFormData({...formData, lineItems: updatedItems});
-      return;
-    }
-    
-    // Parse the value
-    const parsedValue = isDecimal ? parseFloat(value) : parseInt(value);
-    
-    // Only update if it's a valid number
-    if (!isNaN(parsedValue)) {
-      const updatedItems = [...formData.lineItems];
-      updatedItems[index][field] = parsedValue;
-      setFormData({...formData, lineItems: updatedItems});
-    }
-  };
+ // Helper function to handle number inputs properly
+const handleNumberInput = (index, field, value, isDecimal = false) => {
+  // Allow empty string for better UX
+  if (value === '') {
+    const updatedItems = [...formData.lineItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      [field]: ''
+    };
+    setFormData({...formData, lineItems: updatedItems});
+    return;
+  }
+  
+  // For decimal numbers, allow partial input like "0." or "10."
+  if (isDecimal && value.endsWith('.') && value.indexOf('.') === value.length - 1) {
+    const updatedItems = [...formData.lineItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      [field]: value
+    };
+    setFormData({...formData, lineItems: updatedItems});
+    return;
+  }
+  
+  // Parse the value
+  const parsedValue = isDecimal ? parseFloat(value) : parseInt(value);
+  
+  // Only update if it's a valid number
+  if (!isNaN(parsedValue)) {
+    const updatedItems = [...formData.lineItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      [field]: parsedValue
+    };
+    setFormData({...formData, lineItems: updatedItems});
+  }
+};
   try {
     const { data, error } = await window.supabase
       .from('job_attachments')
