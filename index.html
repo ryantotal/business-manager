@@ -7402,6 +7402,7 @@ useEffect(() => {
       if (error) throw error;
       
       if (data && data.length > 0) {
+  console.log('Raw job data from Supabase:', data[0]); // Add this line
   // Convert snake_case from database back to camelCase for React
   const jobsWithCamelCase = data.map(job => ({
   id: job.id,
@@ -7478,6 +7479,7 @@ collectionDate: job.collection_date,
   })(),
   notes: job.notes
 }));
+  console.log('Mapped collection date:', job.collection_date), // Add this line
   setJobs(jobsWithCamelCase);
         console.log('Loaded', data.length, 'jobs from Supabase');
       }
