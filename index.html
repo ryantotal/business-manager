@@ -3670,7 +3670,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Created Date:</span>
-                     <span className="text-gray-900">{job.created_at ? new Date(job.created_at).toLocaleDateString() : new Date(job.jobDate).toLocaleDateString()}</span>
+                     <span className="text-gray-900">{job.createdDate ? new Date(job.createdDate).toLocaleDateString() : new Date(job.jobDate).toLocaleDateString()}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Delivery Date:</span>
@@ -3678,7 +3678,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                     </div>
                     <div className="flex justify-between">
   <span className="text-gray-600 font-medium">Collection Date:</span>
-  <span className="text-gray-900">{job.collection_date ? new Date(job.collection_date).toLocaleDateString() : 'Not provided'}</span>
+  <span className="text-gray-900">{job.collectionDate ? new Date(job.collectionDate).toLocaleDateString() : 'Not provided'}</span>
 </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Quantity:</span>
@@ -7402,7 +7402,6 @@ useEffect(() => {
       if (error) throw error;
       
       if (data && data.length > 0) {
-  console.log('Raw job data from Supabase:', data[0]); // Add this line
   // Convert snake_case from database back to camelCase for React
   const jobsWithCamelCase = data.map(job => ({
   id: job.id,
