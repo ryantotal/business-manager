@@ -2172,7 +2172,26 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
   
   onUpdateJob(updatedJob);
   onUpdateDisplay(updatedJob);
-  
+  // Also update the main jobs list to reflect the SI number
+const updatedJobWithAllFields = {
+  ...job,
+  sage_si_number: updatedJob.sage_si_number,
+  invoice_number: updatedJob.invoice_number,
+  invoice_status: updatedJob.invoice_status,
+  sage_invoice_id: invoice.id,
+  // Make sure we have the SI number in both formats
+  siNumber: siNumber,
+  invoiceNumber: invoice.invoice_number || invoice.id
+};
+
+// This will update the job in the parent's jobs array
+onUpdateJob(updatedJobWithAllFields);
+
+// Close and reopen the job view to force refresh
+setShowFullPageJob(null);
+setTimeout(() => {
+  setShowFullPageJob(updatedJobWithAllFields);
+}, 100);
   // Force a re-render
   setActiveTab(activeTab);
 }
