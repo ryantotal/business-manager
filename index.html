@@ -8240,9 +8240,7 @@ const handlePhoneSearch = async (searchText) => {
         console.error('Error searching phones:', error);
     }
 };
-          const handleEditJob = (job) => {
-    // Convert the job data to the format expected by the form
-    const handleEditJob = async (job) => {  // Change to async
+         const handleEditJob = async (job) => {  // Change to async
     // Fetch line items for this job
     const { data: lineItems, error: lineItemsError } = await window.supabase
         .from('job_line_items')
