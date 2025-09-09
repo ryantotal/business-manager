@@ -2487,6 +2487,7 @@ const uploadJobAttachment = async () => {
     <button
       onClick={async () => {
   try {
+    // Fetch jobs with all related data
     const { data, error } = await supabase
       .from('jobs')
       .select('*')
@@ -2495,13 +2496,22 @@ const uploadJobAttachment = async () => {
     if (error) throw error;
     
     if (data) {
-      // Ensure all jobs have a jobNumber field (use empty string if missing)
-      const jobsWithNumbers = data.map(job => ({
+      // Process jobs to ensure all fields are present
+      const processedJobs = data.map(job => ({
         ...job,
-        jobNumber: job.jobNumber || job.job_number || ''
+        jobNumber: job.jobNumber || job.job_number || '',
+        jobDate: job.jobDate || job.job_date || job.created_at,
+        customerName: job.customerName || job.customer_name || '',
+        supplierName: job.supplierName || job.supplier_name || '',
+        productService: job.productService || job.product_service || '',
+        haulier: job.haulier || '',
+        siteAddress: job.siteAddress || job.site_address || '',
+        sitePostcode: job.sitePostcode || job.site_postcode || '',
+        status: job.status || 'PENDING'
       }));
-      setJobs(jobsWithNumbers);
-      alert(`Refreshed: ${jobsWithNumbers.length} jobs loaded`);
+      
+      setJobs(processedJobs);
+      alert(`Refreshed: ${processedJobs.length} jobs loaded`);
     }
   } catch (error) {
     console.error('Error refreshing jobs:', error);
