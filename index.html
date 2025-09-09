@@ -2050,7 +2050,7 @@ tax_code: product.tax_rate_id || 'T1'
         };
 
         // Jobs Management Component
-          const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setShowFullPageJob }) => {
+        const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setJobs }) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
@@ -8772,6 +8772,7 @@ onClick={() => {
                 {activeTab === 'jobs' && (
                   <JobsView 
                     jobs={jobs} 
+                    setJobs={setJobs}
                     onAddJob={() => setShowJobForm(true)}
                     onUpdateJob={handleUpdateJob}
                     onDeleteJob={handleDeleteJob}
