@@ -8242,6 +8242,21 @@ const handlePhoneSearch = async (searchText) => {
 };
           const handleEditJob = (job) => {
     // Convert the job data to the format expected by the form
+    const handleEditJob = async (job) => {  // Change to async
+    // Fetch line items for this job
+    const { data: lineItems, error: lineItemsError } = await window.supabase
+        .from('job_line_items')
+        .select('*')
+        .eq('job_id', job.id);
+    
+    if (lineItemsError) {
+        console.error('Error fetching line items:', lineItemsError);
+    }
+    
+    // Add line items to the job object
+    job.lineItems = lineItems || [];
+    
+    // Convert the job data to the format expected by the form
     const editableJob = {
         ...job,
         id: job.id,
