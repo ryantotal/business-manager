@@ -2048,7 +2048,19 @@ tax_code: product.tax_rate_id || 'T1'
             </div>
           );
         };
-
+const shortenCompanyName = (name) => {
+  if (!name) return '-';
+  // Common long company names to shorten
+  const abbreviations = {
+    'S & B Waste Management & Recycling Ltd': 'S&B Waste',
+    'DSS Civil Engineering Ltd': 'DSS Civil',
+    'DL Grab Hire': 'DL Grab',
+    '40yard RORO': '40yd RORO',
+    'Byard Delivery': 'Byard',
+    // Add more as needed
+  };
+  return abbreviations[name] || name;
+};
         // Jobs Management Component
         const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setJobs, setShowFullPageJob }) => {
           const { hasPermission } = useAuth();
@@ -2751,19 +2763,22 @@ style={{ backgroundColor: jobColors[job.jobType] }}
 </div>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.customerName}
+<span title={job.customerName}>{shortenCompanyName(job.customerName)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.supplierName || '-'}
+<span title={job.supplierName}>{shortenCompanyName(job.supplierName)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.lineItems && job.lineItems.length > 0 
-  ? job.lineItems[0].product_name || job.lineItems[0].description || '-'
+ ? <span title={job.lineItems[0].product_name || job.lineItems[0].description}>
+    {(job.lineItems[0].product_name || job.lineItems[0].description || '-').substring(0, 30)}
+    {(job.lineItems[0].product_name || job.lineItems[0].description || '').length > 30 ? '...' : ''}
+  </span>
   : job.sageProductName || '-'
 }
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.haulierName || '-'}
+<span title={job.haulierName}>{shortenCompanyName(job.haulierName)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.siteAddress1 || job.siteAddress || '-'}
