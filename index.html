@@ -2482,7 +2482,32 @@ const uploadJobAttachment = async () => {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Job Management</h2>
+                  <div className="flex items-center gap-4">
+  <h2 className="text-2xl font-bold text-gray-900">Job Management</h2>
+  <button
+    onClick={async () => {
+      try {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (data) {
+          setFilteredJobs(data);
+          alert(`Refreshed: ${data.length} jobs loaded`);
+        }
+      } catch (error) {
+        console.error('Error refreshing jobs:', error);
+        alert('Error refreshing jobs');
+      }
+    }}
+    className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 flex items-center gap-2"
+  >
+    <span>↻</span> Refresh List
+  </button>
+</div>
                   <p className="text-gray-600">{filteredJobs.length} jobs found</p>
                 </div>
                 <button 
