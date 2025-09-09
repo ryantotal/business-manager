@@ -2487,7 +2487,7 @@ const uploadJobAttachment = async () => {
     <button
       onClick={async () => {
         try {
-          const { data, error } = await window.supabase
+          const { data, error } = await supabase
             .from('jobs')
             .select('*')
             .order('created_at', { ascending: false });
