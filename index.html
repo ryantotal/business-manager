@@ -2495,10 +2495,8 @@ const uploadJobAttachment = async () => {
     if (error) throw error;
     
     if (data) {
-      // Filter out any jobs without jobNumber to prevent errors
-      const validJobs = data.filter(job => job && job.jobNumber);
-      setJobs(validJobs);
-      alert(`Refreshed: ${validJobs.length} jobs loaded`);
+      setJobs(data);
+      alert(`Refreshed: ${data.length} jobs loaded`);
     }
   } catch (error) {
     console.error('Error refreshing jobs:', error);
