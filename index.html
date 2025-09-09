@@ -2665,12 +2665,6 @@ const uploadJobAttachment = async () => {
     
     <div className="flex items-center justify-end gap-2">
       <button
-        onClick={() => setViewMode('grid')}
-        className={`p-2 rounded ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
-      >
-        <Grid size={16} />
-      </button>
-      <button
         onClick={() => setViewMode('list')}
         className={`p-2 rounded ${viewMode === 'list' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
       >
