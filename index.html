@@ -9181,11 +9181,8 @@ async createDraftInvoice(invoiceData) {
     async syncCustomersFromSage() {
   try {
     const sageCustomers = await this.getCustomers();
-    const customerContacts = sageCustomers.$items.filter(function(contact) {
-      return contact.contact_types && contact.contact_types.some(function(type) {
-        return type.id === 'CUSTOMER';
-      });
-    });
+    // Don't filter - use all customers that Sage returns
+const customerContacts = sageCustomers.$items;
     
     console.log(`Fetched ${customerContacts.length} customers from Sage`);
     
