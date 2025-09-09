@@ -1332,8 +1332,8 @@ tax_code: product.tax_rate_id || 'T1'
   </div>
 )}
 
-                     {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Waste Collection') && (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+ {(formData.jobType === 'Waste Collection') && (
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
     <div>
       <SageProductSelector 
         jobType={formData.jobType}
