@@ -8055,7 +8055,15 @@ const handleDeleteAttachment = async (attachment) => {
             status: 'CONFIRMED',
             is_completed: false,
             is_cancelled: false,
-            notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`
+            notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`,
+            site_address: jobTemplate.siteAddress || jobTemplate.site_address || null,
+    site_address1: jobTemplate.siteAddress1 || jobTemplate.site_address1 || null,
+    site_address2: jobTemplate.siteAddress2 || jobTemplate.site_address2 || null,
+    site_city: jobTemplate.siteCity || jobTemplate.site_city || null,
+    site_postcode: jobTemplate.sitePostcode || jobTemplate.site_postcode || null,
+    site_contact: jobTemplate.siteContact || jobTemplate.site_contact || null,
+    site_phone: jobTemplate.sitePhone || jobTemplate.site_phone || null,
+    site_notes: jobTemplate.siteNotes || jobTemplate.site_notes || null,
         };
         
         // NO job-type specific fields - database doesn't have those columns
@@ -8065,7 +8073,40 @@ const handleDeleteAttachment = async (attachment) => {
             .from('jobs')
             .insert([jobForDatabase])
             .select();
-            
+            // Copy line items if they exist in the original job
+if (data && data[0] && jobTemplate.lineItems && jobTemplate.lineItems.length > 0) {
+    const newJobId = data[0].id;
+    
+    // Prepare line items for the new job
+    const lineItemsToInsert = jobTemplate.lineItems.map(item => ({
+        job_id: newJobId,
+        product_name: item.product_name,
+        sage_id: item.sage_id,
+        description: item.description,
+        item_code: item.item_code,
+        type: item.type,
+        quantity: item.quantity || 1,
+        unit_price: item.unit_price || 0,
+        customer_price: item.customer_price || 0,
+        supplier_price: item.supplier_price || 0,
+        discount: item.discount || 0,
+        vat_rate: item.vat_rate || 20,
+        total: item.total || 0,
+        sales_ledger_account: item.sales_ledger_account,
+        nominal_code: item.nominal_code,
+        tax_code: item.tax_code
+    }));
+    
+    // Insert line items
+    const { error: lineItemsError } = await window.supabase
+        .from('job_line_items')
+        .insert(lineItemsToInsert);
+    
+    if (lineItemsError) {
+        console.error('Error copying line items:', lineItemsError);
+        // Still continue as the job was created successfully
+    }
+}
         if (error) throw error;
         
         // Fetch updated jobs list
