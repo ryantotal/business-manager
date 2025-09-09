@@ -2495,8 +2495,13 @@ const uploadJobAttachment = async () => {
     if (error) throw error;
     
     if (data) {
-      setJobs(data);
-      alert(`Refreshed: ${data.length} jobs loaded`);
+      // Ensure all jobs have a jobNumber field (use empty string if missing)
+      const jobsWithNumbers = data.map(job => ({
+        ...job,
+        jobNumber: job.jobNumber || job.job_number || ''
+      }));
+      setJobs(jobsWithNumbers);
+      alert(`Refreshed: ${jobsWithNumbers.length} jobs loaded`);
     }
   } catch (error) {
     console.error('Error refreshing jobs:', error);
