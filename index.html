@@ -2487,17 +2487,81 @@ const uploadJobAttachment = async () => {
     <button
       onClick={async () => {
   try {
-    // Reload jobs exactly like your app does on startup
-    const { data, error } = await supabase
+    const { data, error } = await window.supabase
       .from('jobs')
       .select('*')
       .order('created_at', { ascending: false });
     
     if (error) throw error;
     
-    if (data) {
-      setJobs(data);
-      alert(`Refreshed: ${data.length} jobs loaded`);
+    if (data && data.length > 0) {
+      // Use the EXACT same conversion as your initial load
+      const jobsWithCamelCase = data.map(job => ({
+        id: job.id,
+        jobNumber: job.job_number,
+        jobDate: job.job_date,
+        createdDate: job.created_at,
+        customerName: job.customer_name,
+        customerPO: job.customer_po,
+        supplierName: job.supplier_name,
+        supplierRef: job.supplier_ref,
+        haulierName: job.haulier_name,
+        jobType: job.job_type,
+        wasteType: job.waste_type,
+        skipSize: job.skip_size,
+        collectionDate: job.collection_date,
+        quantity: job.quantity || 1,
+        unit: job.unit || 'skip',
+        weight: job.weight,
+        customerUnitPrice: job.customer_unit_price || 0,
+        customerFinalPrice: job.customer_final_price || 0,
+        supplierUnitPrice: job.supplier_unit_price || 0,
+        supplierFinalPrice: job.supplier_final_price || 0,
+        vatRate: job.vat_rate || 20,
+        grossProfit: job.gross_profit || 0,
+        profitMargin: job.profit_margin || 0,
+        jobValue: job.job_value || 0,
+        siteAddress: job.site_address,
+        siteAddress1: job.site_address1,
+        siteAddress2: job.site_address2,
+        siteCity: job.site_city,
+        sitePostcode: job.site_postcode,
+        siteContact: job.site_contact,
+        sitePhone: job.site_phone,
+        siteNotes: job.site_notes,
+        deliveryInstructions: job.delivery_instructions,
+        timeSlot: job.time_slot,
+        status: job.status || 'CONFIRMED',
+        priority: job.priority || 'Medium',
+        isCompleted: job.is_completed || false,
+        isCancelled: job.is_cancelled || false,
+        wasteTransferNote: job.waste_transfer_note,
+        hazardousWaste: job.hazardous_waste || false,
+        consignmentNote: job.consignment_note,
+        invoiceNumber: job.invoice_number,
+        invoiceStatus: job.invoice_status || 'Not Invoiced',
+        paymentStatus: job.payment_status || 'Not Paid',
+        sageProductId: job.sage_product_id,
+        sageProductName: job.sage_product_name,
+        sageId: job.sage_id,
+        lineItems: (() => {
+          try {
+            if (job.line_items) {
+              return typeof job.line_items === 'string' ? JSON.parse(job.line_items) : job.line_items;
+            }
+            return [];
+          } catch (e) {
+            console.warn('Error parsing line_items for job', job.id);
+            return [];
+          }
+        })()
+      }));
+      
+      setJobs(jobsWithCamelCase);
+      alert(`Refreshed: ${jobsWithCamelCase.length} jobs loaded`);
+    } else {
+      setJobs([]);
+      alert('No jobs found');
     }
   } catch (error) {
     console.error('Error refreshing jobs:', error);
