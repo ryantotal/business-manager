@@ -7595,12 +7595,13 @@ collectionDate: job.collection_date,
   sageProductId: job.sage_product_id,
   sageProductName: job.sage_product_name,
   sageId: job.sage_id,
+  sageLineItems: job.sage_line_items || [],
   // Handle both old and new line_items format
   lineItems: (() => {
     try {
-      if (job.line_items) {
-        return typeof job.line_items === 'string' ? JSON.parse(job.line_items) : job.line_items;
-      }
+      if (job.sage_line_items) {  // CHANGE from job.line_items to job.sage_line_items
+    return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : job.sage_line_items;  // CHANGE both references
+}
       return [];
     } catch (e) {
       console.warn('Error parsing line_items for job', job.id);
