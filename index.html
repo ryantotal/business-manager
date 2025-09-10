@@ -8053,6 +8053,9 @@ if (fullJob) {
     jobTemplate.description = fullJob.description;
     jobTemplate.sage_product_name = fullJob.sage_product_name;
     console.log('Added sage_line_items:', jobTemplate.sage_line_items);
+    console.log('Original jobTemplate:', jobTemplate);
+console.log('Has description?', jobTemplate.description);
+console.log('Has sage_line_items?', jobTemplate.sage_line_items);
 }
         const jobForDatabase = {
             job_number: jobNumber,
@@ -8084,8 +8087,9 @@ if (fullJob) {
     site_notes: jobTemplate.siteNotes || jobTemplate.site_notes || null,
     sage_line_items: jobTemplate.sage_line_items || null,
         };
-        
-        // NO job-type specific fields - database doesn't have those columns
+        console.log('Job being saved to database:', jobForDatabase);
+console.log('Description being saved:', jobForDatabase.description);
+console.log('sage_line_items being saved:', jobForDatabase.sage_line_items);
         
        // Save directly to database
 const { data, error } = await window.supabase
@@ -8106,7 +8110,11 @@ const { data: updatedJobs, error: fetchError } = await window.supabase
     .order('created_at', { ascending: false });
     console.log('First job from database:', updatedJobs[0]);
 console.log('All field names:', Object.keys(updatedJobs[0]));
-                    
+ console.log('First job after fetch:', updatedJobs[0]);
+console.log('Its description:', updatedJobs[0].description);
+console.log('Its sage_line_items:', updatedJobs[0].sage_line_items);
+
+console.log('First job from database:', updatedJobs[0]);                   
 const formattedJobs = updatedJobs.map(job => ({
     ...job,  // KEEP THIS - preserves all original fields
     id: job.id,
