@@ -8140,9 +8140,11 @@ const formattedJobs = updatedJobs.map(job => ({
     status: job.status,
     haulier: job.haulier_name,  // CHANGE THIS - was job.haulier
     haulierName: job.haulier_name,  // ADD THIS TOO just in case
-    product_service: job.sage_product_name || job.description,  // Use sage_product_name or description
+    product_service: job.sage_line_items?.[0]?.product_name || job.sage_product_name || job.description || '',
     sageLineItems: job.sage_line_items,
+    sage_line_items: job.sage_line_items, 
     lineItems: job.line_items,
+    line_items: job.line_items,
     sageSiNumber: job.sage_si_number,
     invoiceNumber: job.invoice_number,
     sageInvoiceId: job.sage_invoice_id,
