@@ -8124,7 +8124,9 @@ const formattedJobs = updatedJobs.map(job => ({
     sitePostcode: job.site_postcode,
     status: job.status,
     haulier: job.haulier,
-    product_service: job.product_service
+    product_service: job.product_service,
+     sage_line_items: job.sage_line_items,  // ADD THIS
+    si_number: job.si_number 
 }));
         
         // Update the jobs state
