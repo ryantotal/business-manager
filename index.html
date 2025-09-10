@@ -8037,7 +8037,8 @@ const handleDeleteAttachment = async (attachment) => {
         
         // Get the job type (could be Skip Hire, Waste Collection, Grab Hire, Muck Hire)
         const jobType = jobTemplate.jobType || jobTemplate.job_type || 'Skip Hire';
-        
+        console.log('Full jobTemplate object:', jobTemplate);
+console.log('jobTemplate.sage_line_items:', jobTemplate.sage_line_items);
         const jobForDatabase = {
             job_number: jobNumber,
             customer_name: jobTemplate.customerName || jobTemplate.customer_name,
