@@ -1189,14 +1189,15 @@ tax_code: product.tax_rate_id || 'T1'
         </td>
         <td className="px-2 py-3">
          <input
-  type="text"
+  type="number"
   className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+  step="0.01"
   value={item.quantity || ''}
   onChange={(e) => {
     const updatedItems = [...formData.lineItems];
     updatedItems[index] = {
       ...updatedItems[index],
-      quantity: parseInt(e.target.value) || ''
+      quantity: parseFloat(e.target.value) || ''
     };
     setFormData({...formData, lineItems: updatedItems});
   }}
