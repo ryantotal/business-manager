@@ -8102,7 +8102,6 @@ const { data: updatedJobs, error: fetchError } = await window.supabase
     console.log('First job from database:', updatedJobs[0]);
 console.log('All field names:', Object.keys(updatedJobs[0]));
                     
-      // Convert snake_case to camelCase for the app
 const formattedJobs = updatedJobs.map(job => ({
     ...job,  // KEEP THIS - preserves all original fields
     id: job.id,
@@ -8127,8 +8126,11 @@ const formattedJobs = updatedJobs.map(job => ({
     status: job.status,
     haulier: job.haulier,
     product_service: job.product_service,
-    sageLineItems: job.sage_line_items,  // Map snake_case to camelCase
-    lineItems: job.line_items  // Also map this if it exists
+    sageLineItems: job.sage_line_items,
+    lineItems: job.line_items,
+    sageSiNumber: job.sage_si_number,  // ADD THIS - this is your SI number!
+    invoiceNumber: job.invoice_number,  // Also add this if you use it
+    sageInvoiceId: job.sage_invoice_id  // And this for the Sage invoice ID
 }));
         
         // Update the jobs state
