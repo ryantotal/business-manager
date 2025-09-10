@@ -2270,8 +2270,19 @@ const matchesAddress = ((job.siteAddress1 || '').toLowerCase().includes(query)) 
             return true;
           });
 
-    const handleJobClick = (job) => {
-  setShowFullPageJob(job); // ADD THIS LINE - opens full page view
+    const handleJobClick = async (job) => {
+    // Fetch fresh job data from Supabase to ensure we have all fields
+    const { data: freshJob, error } = await window.supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', job.id)
+        .single();
+    
+    if (freshJob) {
+        setShowFullPageJob(freshJob); // Use fresh data with all fields
+    } else {
+        setShowFullPageJob(job); // Fallback to original if fetch fails
+    }
 };
 
 // Add loadJobAttachments function
@@ -8849,7 +8860,6 @@ onClick={() => {
         };
         
         // Generate new job number
-        const year = new Date().getFullYear();
         const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
         const newJobNumber = lastJobNumber + 1;
         localStorage.setItem('lastJobNumber', newJobNumber.toString());
