@@ -8062,7 +8062,7 @@ console.log('Has sage_line_items?', jobTemplate.sage_line_items);
             customer_name: jobTemplate.customerName || jobTemplate.customer_name,
             supplier_name: jobTemplate.supplierName || jobTemplate.supplier_name,
              description: jobTemplate.description || null,  // ADD THIS LINE
-    sage_product_name: jobTemplate.sageProductName || jobTemplate.sage_product_name || null,  // ADD THIS TOO
+    sage_product_name: fullJob?.sage_product_name || null,  // ADD THIS LINE
             job_type: jobType, // Preserves the original job type
             waste_type: jobTemplate.wasteType || jobTemplate.waste_type,
             skip_size: jobTemplate.skipSize || jobTemplate.skip_size,
