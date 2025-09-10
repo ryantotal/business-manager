@@ -765,10 +765,10 @@ siteNotes: '',
     item_code: item.item_code,
     type: item.type,
     quantity: item.quantity,
-    unit_price: item.customer_price || 0,  // Use RRP from line item
-    cost_price: item.supplier_price || 0,  // Use Cost from line item
-    customer_price: item.customer_price || 0,  // Add this line
-supplier_price: item.supplier_price || 0,   
+    unit_price: parseFloat(item.customer_price) || 0,
+    cost_price: parseFloat(item.supplier_price) || 0,
+    customer_price: parseFloat(item.customer_price) || 0,  // Add this
+    supplier_price: parseFloat(item.supplier_price) || 0,  // Add this 
     sales_ledger_account: item.sales_ledger_account || '4000',
     nominal_code: item.nominal_code || '4000', 
     tax_code: item.tax_code || 'T1',
