@@ -8068,49 +8068,32 @@ const handleDeleteAttachment = async (attachment) => {
         
         // NO job-type specific fields - database doesn't have those columns
         
-        // Save directly to database
-        const { data, error } = await window.supabase
-            .from('jobs')
-            .insert([jobForDatabase])
-            .select();
-            // Copy line items if they exist in the original job
+       // Save directly to database
+const { data, error } = await window.supabase
+    .from('jobs')
+    .insert([jobForDatabase])
+    .select();
+
+// Copy line items if they exist in the original job
 console.log('About to duplicate job:', jobTemplate);
 console.log('LineItems to copy:', jobTemplate.lineItems);
+console.log('First lineItem details:', jobTemplate.lineItems?.[0]);
+
 if (data && data[0] && jobTemplate.lineItems && jobTemplate.lineItems.length > 0) {
     const newJobId = data[0].id;
     
     // Prepare line items for the new job
     const lineItemsToInsert = jobTemplate.lineItems.map(item => {
-        // If the item has sage_product_data, use it directly
-        if (item.sage_product_data) {
-            return {
-                job_id: newJobId,
-                sage_product_data: item.sage_product_data
-            };
-        }
+        console.log('Raw item from database:', item);
         
-        // Otherwise, construct the sage_product_data from individual fields
-        return {
+        // Create the new item structure
+        const newItem = {
             job_id: newJobId,
-            sage_product_data: {
-                type: "product",
-                sage_id: item.sage_id || item.sage_product_data?.sage_id,
-                product_name: item.product_name || item.sage_product_data?.product_name,
-                description: item.description || item.sage_product_data?.description,
-                item_code: item.item_code || item.sage_product_data?.item_code,
-                type: item.type || item.sage_product_data?.type || "product",
-                quantity: item.quantity || item.sage_product_data?.quantity || 1,
-                unit_price: item.unit_price || item.sage_product_data?.unit_price || 0,
-                customer_price: item.customer_price || item.sage_product_data?.customer_price || 0,
-                supplier_price: item.supplier_price || item.sage_product_data?.supplier_price || 0,
-                discount: item.discount || item.sage_product_data?.discount || 0,
-                vat_rate: item.vat_rate || item.sage_product_data?.vat_rate || 20,
-                total: item.total || item.sage_product_data?.total || 0,
-                sales_ledger_account: item.sales_ledger_account || item.sage_product_data?.sales_ledger_account,
-                nominal_code: item.nominal_code || item.sage_product_data?.nominal_code,
-                tax_code: item.tax_code || item.sage_product_data?.tax_code
-            }
+            sage_product_data: item.sage_product_data || item
         };
+        
+        console.log('Inserting item:', newItem);
+        return newItem;
     });
     
     // Insert line items into the sage_line_items table
@@ -8120,9 +8103,13 @@ if (data && data[0] && jobTemplate.lineItems && jobTemplate.lineItems.length > 0
     
     if (lineItemsError) {
         console.error('Error copying line items:', lineItemsError);
-        // Still continue as the job was created successfully
+        console.error('Attempted to insert:', lineItemsToInsert);
+    } else {
+        console.log('Successfully copied line items');
     }
 }
+
+if (error) throw error;
         if (error) throw error;
         
         // Fetch updated jobs list
