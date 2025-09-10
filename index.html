@@ -8223,10 +8223,12 @@ const handlePhoneSearch = async (searchText) => {
     // Fetch line items for this job - using correct table name
    
     
-    // Add line items to the job object
-   // Add line items to the job object
-job.lineItems = job.sage_line_items || [];  // Use the column from the job
-console.log('Job after adding lineItems:', job);  // Add this debug line
+    // Add line items to the job object - check both naming conventions
+job.lineItems = job.sage_line_items || job.sageLineItems || [];
+console.log('Looking for sage_line_items:', job.sage_line_items);
+console.log('Looking for sageLineItems:', job.sageLineItems);
+console.log('Final lineItems:', job.lineItems);
+console.log('All job properties:', Object.keys(job));
     // Convert the job data to the format expected by the form
     const editableJob = {
         ...job,
