@@ -8076,7 +8076,7 @@ if (fullJob) {
     site_contact: jobTemplate.siteContact || jobTemplate.site_contact || null,
     site_phone: jobTemplate.sitePhone || jobTemplate.site_phone || null,
     site_notes: jobTemplate.siteNotes || jobTemplate.site_notes || null,
-    sage_line_items: jobTemplate.sage_line_items || null, 
+    sage_line_items: jobTemplate.sage_line_items || null,
         };
         
         // NO job-type specific fields - database doesn't have those columns
@@ -8221,19 +8221,12 @@ const handlePhoneSearch = async (searchText) => {
 };
          const handleEditJob = async (job) => {
     // Fetch line items for this job - using correct table name
-    const { data: lineItems, error: lineItemsError } = await window.supabase
-        .from('sage_line_items')  // Correct table name!
-        .select('*')
-        .eq('job_id', job.id);
-    
-    if (lineItemsError) {
-        console.error('Error fetching line items:', lineItemsError);
-    }
+   
     
     // Add line items to the job object
-    job.lineItems = lineItems || [];
-    console.log('Job after adding lineItems:', job);  // Add this debug line
-console.log('Number of lineItems:', job.lineItems.length);
+   // Add line items to the job object
+job.lineItems = job.sage_line_items || [];  // Use the column from the job
+console.log('Job after adding lineItems:', job);  // Add this debug line
     // Convert the job data to the format expected by the form
     const editableJob = {
         ...job,
