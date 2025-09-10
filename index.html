@@ -8118,11 +8118,75 @@ await new Promise(resolve => setTimeout(resolve, 300));
 // Wait a moment for database to fully process
 await new Promise(resolve => setTimeout(resolve, 500));
 
-// Reload all jobs using the existing function that properly formats everything
-await loadJobsFromSupabase();
+// Fetch ALL jobs fresh from database
+const { data: allJobs, error: fetchError } = await window.supabase
+    .from('jobs')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+if (allJobs && allJobs.length > 0) {
+    // Format all jobs exactly like loadJobsFromSupabase does (lines 7560-7635)
+    const jobsWithCamelCase = allJobs.map(job => ({
+        id: job.id,
+        jobNumber: job.job_number,
+        jobDate: job.job_date,
+        createdDate: job.created_at,
+        customerName: job.customer_name,
+        customerPO: job.customer_po,
+        supplierName: job.supplier_name,
+        supplierRef: job.supplier_ref,
+        haulierName: job.haulier_name,
+        jobType: job.job_type,
+        wasteType: job.waste_type,
+        skipSize: job.skip_size,
+        aggregateType: job.aggregate_type,
+        quantity: job.quantity,
+        unit: job.unit,
+        weight: job.weight,
+        customerUnitPrice: job.customer_unit_price,
+        customerFinalPrice: job.customer_final_price,
+        supplierUnitPrice: job.supplier_unit_price,
+        supplierFinalPrice: job.supplier_final_price,
+        vatRate: job.vat_rate,
+        grossProfit: job.gross_profit,
+        profitMargin: job.profit_margin,
+        jobValue: job.job_value,
+        siteAddress: job.site_address,
+        siteAddress1: job.site_address1,
+        siteAddress2: job.site_address2,
+        siteCity: job.site_city,
+        sitePostcode: job.site_postcode,
+        siteContact: job.site_contact,
+        sitePhone: job.site_phone,
+        siteNotes: job.site_notes,
+        deliveryInstructions: job.delivery_instructions,
+        accessRestrictions: job.access_restrictions,
+        timeSlot: job.time_slot,
+        collectionDate: job.collection_date,
+        priority: job.priority,
+        isCompleted: job.is_completed,
+        isCancelled: job.is_cancelled,
+        wasteTransferNote: job.waste_transfer_note,
+        hazardousWaste: job.hazardous_waste,
+        consignmentNote: job.consignment_note,
+        invoiceNumber: job.invoice_number,
+        invoiceStatus: job.invoice_status,
+        paymentStatus: job.payment_status,
+        sageProductId: job.sage_product_id,
+        sageProductName: job.sage_product_name,
+        sageId: job.sage_id,
+        lineItems: job.line_items,
+        parentJobId: job.parent_job_id,
+        linkedJobs: job.linked_jobs,
+        notes: job.notes
+    }));
+    
+    setJobs(jobsWithCamelCase);
+}
 
 setShowFullPageJob(null); // Close the full page view
 alert(`${jobType} job duplicated successfully!`);
+        
     } catch (error) {
         console.error('Error duplicating job:', error);
         alert('Error duplicating job: ' + error.message);
