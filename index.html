@@ -9023,7 +9023,6 @@ exchangeJob.id = jobNumber;
             .from('jobs')
 .update({
     ...(updatedJob || {}),
-    si_number: updatedJob?.si_number || null,
 })
             .eq('id', job.id);
             
