@@ -8064,6 +8064,7 @@ const handleDeleteAttachment = async (attachment) => {
     site_contact: jobTemplate.siteContact || jobTemplate.site_contact || null,
     site_phone: jobTemplate.sitePhone || jobTemplate.site_phone || null,
     site_notes: jobTemplate.siteNotes || jobTemplate.site_notes || null,
+    sage_line_items: jobTemplate.sage_line_items || null, 
         };
         
         // NO job-type specific fields - database doesn't have those columns
@@ -8074,31 +8075,6 @@ const { data, error } = await window.supabase
     .insert([jobForDatabase])
     .select();
 
-// Copy line items if they exist in the original job
-console.log('About to duplicate job:', jobTemplate);
-console.log('LineItems to copy:', jobTemplate.lineItems);
-
-if (error) throw error;
-
-// If the original job had line items, we need to update the new job with them
-if (data && data[0] && jobTemplate.sage_line_items) {
-    const newJobId = data[0].id;
-    
-    console.log('Copying line items to new job:', jobTemplate.sage_line_items);
-    
-    // Update the new job with the line items
-    const { error: updateError } = await window.supabase
-        .from('jobs')
-        .update({ sage_line_items: jobTemplate.sage_line_items })
-        .eq('id', newJobId);
-    
-    if (updateError) {
-        console.error('Error copying line items:', updateError);
-    } else {
-        console.log('Successfully copied line items');
-    }
-}
-
 if (error) throw error;
         if (error) throw error;
         
@@ -8107,9 +8083,7 @@ if (error) throw error;
             .from('jobs')
             .select('*')
             .order('created_at', { ascending: false });
-            
-        if (fetchError) throw fetchError;
-        
+                    
         // Convert snake_case to camelCase for the app
         const formattedJobs = updatedJobs.map(job => ({
             ...job,
