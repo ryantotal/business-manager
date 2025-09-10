@@ -8146,10 +8146,6 @@ if (newJob) {
     // Add the formatted job to the existing jobs array
     setJobs(prevJobs => [...prevJobs, formattedNewJob]);
 }
-        
-        // Update the jobs state
-        setJobs(formattedJobs);
-        
         setShowFullPageJob(null); // Close the full page view
         alert(`${jobType} job duplicated successfully!`);
         
@@ -12223,4 +12219,3 @@ window.addEventListener('message', async (event) => {
 </script>
 </body>
 </html>
-    
