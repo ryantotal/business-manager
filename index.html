@@ -8999,7 +8999,7 @@ if (seqError) {
 }
 
 exchangeJob.id = jobNumber;
-        exchangeJob.jobNumber = exchangeJob.id;
+        exchangeJob.jobNumber = jobNumber;
         
         // Mark original job as collected
         await window.supabase
@@ -9023,8 +9023,8 @@ exchangeJob.id = jobNumber;
             .from('jobs')
 .update({
     ...updatedJob,
-    si_number: updatedJob.si_number === '' ? null : updatedJob.si_number,
-    quote_number: updatedJob.quote_number === '' ? null : updatedJob.quote_number
+    si_number: updatedJob?.si_number || null,
+    quote_number: updatedJob?.quote_number || null
 })
             .eq('id', job.id);
             
