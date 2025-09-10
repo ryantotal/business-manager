@@ -8100,23 +8100,8 @@ const { data: updatedJobs, error: fetchError } = await window.supabase
     .select('*')
     .order('created_at', { ascending: false });
                     
-        // Convert snake_case to camelCase for the app
-        const formattedJobs = updatedJobs.map(job => ({
-            ...job,
-            jobNumber: job.job_number,
-            customerName: job.customer_name,
-            supplierName: job.supplier_name,
-            jobType: job.job_type,
-            wasteType: job.waste_type,
-            skipSize: job.skip_size,
-            customerUnitPrice: job.customer_unit_price,
-            supplierUnitPrice: job.supplier_unit_price,
-            customerFinalPrice: job.customer_final_price,
-            supplierFinalPrice: job.supplier_final_price,
-            jobDate: job.job_date,
-            isCompleted: job.is_completed,
-            isCancelled: job.is_cancelled
-        }));
+      // Just use the data as-is from the database
+setJobs(updatedJobs);
         
         // Update the jobs state
         setJobs(formattedJobs);
