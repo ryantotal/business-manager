@@ -9024,7 +9024,6 @@ exchangeJob.id = jobNumber;
 .update({
     ...(updatedJob || {}),
     si_number: updatedJob?.si_number || null,
-    quote_number: updatedJob?.quote_number || null
 })
             .eq('id', job.id);
             
