@@ -8118,14 +8118,31 @@ console.log('Its sage_line_items:', updatedJobs[0].sage_line_items);
 console.log('First job from database:', updatedJobs[0]);                   
 // Just keep everything as-is from the database
 const formattedJobs = updatedJobs.map(job => ({
-    ...job,  // This preserves EVERYTHING
-    // Only add the camelCase versions that your app specifically needs
+    ...job,  // KEEP all original fields
+    // Add camelCase mappings for fields your app uses
     jobNumber: job.job_number,
     customerName: job.customer_name,
     supplierName: job.supplier_name,
     jobType: job.job_type,
+    wasteType: job.waste_type,
+    skipSize: job.skip_size,
+    customerUnitPrice: job.customer_unit_price,
+    supplierUnitPrice: job.supplier_unit_price,
+    customerFinalPrice: job.customer_final_price,
+    supplierFinalPrice: job.supplier_final_price,
     jobDate: job.job_date,
-    // Don't remove or override any fields - just add aliases
+    isCompleted: job.is_completed,
+    isCancelled: job.is_cancelled,
+    siteAddress: job.site_address,
+    siteAddress1: job.site_address1,
+    siteAddress2: job.site_address2,
+    siteCity: job.site_city,
+    sitePostcode: job.site_postcode,
+    haulierName: job.haulier_name,
+    sageSiNumber: job.sage_si_number,
+    // Make sure line_items is available in both formats
+    lineItems: job.line_items,
+    sageLineItems: job.sage_line_items
 }));
 
         
