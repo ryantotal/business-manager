@@ -9022,7 +9022,7 @@ exchangeJob.id = jobNumber;
         const { error } = await window.supabase
             .from('jobs')
 .update({
-    ...updatedJob,
+    ...(updatedJob || {}),
     si_number: updatedJob?.si_number || null,
     quote_number: updatedJob?.quote_number || null
 })
