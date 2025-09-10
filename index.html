@@ -8283,7 +8283,6 @@ const refreshJobs = async () => {
             }));
             
             setJobs(jobsWithCamelCase);
-            setFilteredJobs(jobsWithCamelCase);
             console.log('Refreshed', data.length, 'jobs from Supabase');
         }
     } catch (error) {
