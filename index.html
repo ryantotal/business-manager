@@ -8086,10 +8086,15 @@ if (data && data[0] && jobTemplate.lineItems && jobTemplate.lineItems.length > 0
     const lineItemsToInsert = jobTemplate.lineItems.map(item => {
         console.log('Raw item from database:', item);
         
-        // Create the new item structure
+        // The item has direct properties, we need to wrap them in sage_product_data
         const newItem = {
             job_id: newJobId,
-            sage_product_data: item.sage_product_data || item
+            sage_product_data: {
+                sage_id: item.sage_id,
+                product_name: item.product_name,
+                type: item.type || "product",
+                // Add any other fields that exist on the item
+            }
         };
         
         console.log('Inserting item:', newItem);
