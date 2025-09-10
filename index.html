@@ -8105,6 +8105,9 @@ if (error) throw error;
 await new Promise(resolve => setTimeout(resolve, 300));
 
 // Fetch updated jobs list
+// Wait a moment for database to fully process
+await new Promise(resolve => setTimeout(resolve, 300));
+
 // Fetch JUST the newly created job
 const { data: newJob, error: fetchError } = await window.supabase
     .from('jobs')
@@ -8113,8 +8116,35 @@ const { data: newJob, error: fetchError } = await window.supabase
     .single();
 
 if (newJob) {
-    // Add the new job to the existing jobs array (like delete but in reverse)
-    setJobs(prevJobs => [...prevJobs, newJob]);
+    // Format the new job to match what the app expects
+    const formattedNewJob = {
+        ...newJob,  // Keep all original fields
+        jobNumber: newJob.job_number,
+        customerName: newJob.customer_name,
+        supplierName: newJob.supplier_name,
+        jobType: newJob.job_type,
+        wasteType: newJob.waste_type,
+        skipSize: newJob.skip_size,
+        customerUnitPrice: newJob.customer_unit_price,
+        supplierUnitPrice: newJob.supplier_unit_price,
+        customerFinalPrice: newJob.customer_final_price,
+        supplierFinalPrice: newJob.supplier_final_price,
+        jobDate: newJob.job_date,
+        isCompleted: newJob.is_completed,
+        isCancelled: newJob.is_cancelled,
+        siteAddress: newJob.site_address,
+        siteAddress1: newJob.site_address1,
+        siteAddress2: newJob.site_address2,
+        siteCity: newJob.site_city,
+        sitePostcode: newJob.site_postcode,
+        haulierName: newJob.haulier_name,
+        sageSiNumber: newJob.sage_si_number,
+        lineItems: newJob.line_items,
+        sageLineItems: newJob.sage_line_items
+    };
+    
+    // Add the formatted job to the existing jobs array
+    setJobs(prevJobs => [...prevJobs, formattedNewJob]);
 }
         
         // Update the jobs state
@@ -12193,3 +12223,4 @@ window.addEventListener('message', async (event) => {
 </script>
 </body>
 </html>
+    
