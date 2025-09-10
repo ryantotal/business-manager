@@ -41,6 +41,12 @@
     .hover\:bg-blue-700:hover {
         background-color: var(--primary-hover) !important;
     }
+    /* Prevent horizontal scrolling/bouncing */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  overscroll-behavior-x: none;
+}
 </style>
 </head>
 <body>
@@ -356,7 +362,7 @@ const getFilteredProducts = () => {
         const defaultWasteTypes = {
           'Skip Hire': ['Mixed Construction Waste', 'Inert/Soil', 'Wood', 'Metal', 'Plasterboard', 'Green Waste', 'Mixed Heavy', 'Light Mixed'],
           'Aggregates': ['Type 1 Sub Base', 'Type 2 Sub Base', 'Ballast', 'Sharp Sand', 'Building Sand', 'Topsoil', 'Shingle'],
-          'Waste Collection': ['General Waste', 'Dry Mixed Recycling', 'Cardboard', 'Wood', 'Metal', 'WEEE', 'Hazardous'],
+          'Other': ['General Waste', 'Dry Mixed Recycling', 'Cardboard', 'Wood', 'Metal', 'WEEE', 'Hazardous'],
           'Roll-on Roll-off': ['Mixed Construction Waste', 'Inert/Soil', 'Wood', 'Metal', 'Mixed Heavy'],
           'Grab Hire': ['Mixed Construction Waste', 'Inert/Soil', 'Hardcore', 'Green Waste'],
           'Muck Away': ['Clean Soil', 'Mixed Soil', 'Clay', 'Contaminated Soil']
@@ -696,7 +702,7 @@ if (window.refreshFullPageAttachments) {
             supplierUnitPrice: 0,
             supplierFinalPrice: 0,
             vatRate: 20,
-            jobDate: new Date().toISOString().split('T')[0],
+            jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
             timeSlot: '',
             collectionDate: '',
             status: 'CONFIRMED',
@@ -747,16 +753,8 @@ siteNotes: '',
             calculatePrices();
           }, [formData.customerUnitPrice, formData.supplierUnitPrice, formData.quantity]);
 
-          const generateJobNumber = () => {
-            const year = new Date().getFullYear();
-            const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
-            const newJobNumber = lastJobNumber + 1;
-            localStorage.setItem('lastJobNumber', newJobNumber.toString());
-            return `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
-          };
 
-    const handleSubmit = () => {
-      console.log('Line items being saved:', formData.lineItems);
+   const handleSubmit = async () => {
   // Capture complete Sage product details from lineItems
   const sageProductData = formData.lineItems?.map(item => ({
     sage_id: item.sage_id,
@@ -765,10 +763,8 @@ siteNotes: '',
     item_code: item.item_code,
     type: item.type,
     quantity: item.quantity,
-    unit_price: parseFloat(item.customer_price) || 0,
-    cost_price: parseFloat(item.supplier_price) || 0,
-    customer_price: parseFloat(item.customer_price) || 0,  // Add this
-    supplier_price: parseFloat(item.supplier_price) || 0,  // Add this 
+    unit_price: item?.customer_price || item?.customer_unit_price || 0,
+cost_price: item?.supplier_price || item?.supplier_unit_price || 0,
     sales_ledger_account: item.sales_ledger_account || '4000',
     nominal_code: item.nominal_code || '4000', 
     tax_code: item.tax_code || 'T1',
@@ -778,22 +774,41 @@ siteNotes: '',
   // Check if this is a skip/RoRo with quantity > 1
   if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
     const jobs = [];
-    const firstJobNumber = generateJobNumber();
+    // Get the job number from Supabase sequence
+const { data: firstJobNumber, error: jobNumError } = await supabase
+  .rpc('get_next_job_number');
+
+if (jobNumError) {
+  console.error('Error getting job number:', jobNumError);
+  return;
+}
     for (let i = 0; i < formData.quantity; i++) {
-      const jobId = i === 0 ? firstJobNumber : `${firstJobNumber}-${i+1}`;
-      const newJob = {
-        ...formData,
-        id: jobId,
-        jobNumber: jobId,
-        quantity: 1,
-        customerFinalPrice: formData.customerUnitPrice,
-        supplierFinalPrice: formData.supplierUnitPrice,
+  // Get a unique job number for EACH job
+  const { data: jobNumber, error: jobNumError } = await supabase
+    .rpc('get_next_job_number');
+  
+  if (jobNumError) {
+    console.error('Error getting job number:', jobNumError);
+    alert('Error generating job number. Please try again.');
+    return;
+  }
+  
+  const jobId = jobNumber;  // Each job gets its own unique number
+  const newJob = {
+    ...formData,
+    id: jobId,
+    jobNumber: jobNumber,  // Use the unique number from Supabase
+    quantity: 1,
+    customerFinalPrice: formData.customerUnitPrice,
+    supplierFinalPrice: formData.supplierUnitPrice,
+    // ... rest of your properties stay the same
         grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
         profitMargin: formData.customerUnitPrice > 0 ?
           ((formData.customerUnitPrice - formData.supplierUnitPrice) / formData.customerUnitPrice) * 100 : 0,
         jobValue: formData.customerUnitPrice,
         parentJobId: i === 0 ? null : jobs[0].id,
         linkedJobs: [],
+        collectionDate: formData.collectionDate,
         sage_product_data: sageProductData,
         sage_line_items: formData.lineItems
       };
@@ -803,7 +818,21 @@ siteNotes: '',
     jobs[0].linkedJobs = jobs.slice(1).map(j => j.id);
     jobs.forEach(job => onSave(job));
   } else {
-    const newJobNumber = job?.jobNumber || generateJobNumber();
+    // For single job creation/editing
+let newJobNumber = job?.jobNumber;  // Keep existing number if editing
+
+if (!newJobNumber) {
+  // Only get new number if creating a new job
+  const { data: jobNum, error: jobNumError } = await supabase
+    .rpc('get_next_job_number');
+  
+  if (jobNumError) {
+    console.error('Error getting job number:', jobNumError);
+    alert('Error generating job number. Please try again.');
+    return;
+  }
+  newJobNumber = jobNum;
+}
     const newJob = {
       ...formData,
       jobNumber: newJobNumber,
@@ -860,25 +889,25 @@ siteNotes: '',
                 <div className="flex border-b border-gray-200">
                   <button
                     onClick={() => setActiveTab('details')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
                   >
                     Job Details
                   </button>
                   <button
                     onClick={() => setActiveTab('site')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
                   >
                     Site Information
                   </button>
                   <button
                     onClick={() => setActiveTab('financial')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
                   >
                     Pricing & Status
                   </button>
                   <button
-  onClick={() => setActiveTab('documents')}
-  className={`px-6 py-3 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                   onClick={() => setActiveTab('documents')}
+                   className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
 >
   Documents
 </button>
@@ -1028,7 +1057,7 @@ siteNotes: '',
                           >
                             <option value="Skip Hire">Skip Hire</option>
                             <option value="Aggregates">Aggregates</option>
-                            <option value="Waste Collection">Waste Collection</option>
+                            <option value="Other">Other</option>
                             <option value="Grab Hire">Grab Hire</option>
                             <option value="Muck Away">Muck Away</option>
                             <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -1159,44 +1188,50 @@ tax_code: product.tax_rate_id || 'T1'
           />
         </td>
         <td className="px-2 py-3">
-          <input
-            type="number"
-            step="0.1"
-            value={item.quantity}
-            onChange={(e) => {
-              const updatedItems = [...formData.lineItems];
-              updatedItems[index].quantity = parseFloat(e.target.value) || 1;
-              setFormData({...formData, lineItems: updatedItems});
-            }}
-            className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
-            min="1"
-          />
+         <input
+  type="number"
+  className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+  step="0.01"
+  value={item.quantity || ''}
+  onChange={(e) => {
+    const updatedItems = [...formData.lineItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      quantity: parseFloat(e.target.value) || ''
+    };
+    setFormData({...formData, lineItems: updatedItems});
+  }}
+/>
         </td>
         <td className="px-2 py-3">
           <input
-            type="number"
-            step="0.01"
-            value={item.supplier_price || 0}
-            onChange={(e) => {
-              const updatedItems = [...formData.lineItems];
-              updatedItems[index].supplier_price = parseFloat(e.target.value) || 0;
-              setFormData({...formData, lineItems: updatedItems});
-            }}
-            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-          />
+  type="text"
+  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+  value={item.supplier_price || ''}
+  onChange={(e) => {
+    const updatedItems = [...formData.lineItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      supplier_price: e.target.value
+    };
+    setFormData({...formData, lineItems: updatedItems});
+  }}
+/>
         </td>
         <td className="px-2 py-3">
           <input
-            type="number"
-            step="0.01"
-            value={item.customer_price || 0}
-            onChange={(e) => {
-              const updatedItems = [...formData.lineItems];
-              updatedItems[index].customer_price = parseFloat(e.target.value) || 0;
-              setFormData({...formData, lineItems: updatedItems});
-            }}
-            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-          />
+  type="text"
+  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+  value={item.customer_price || ''}
+  onChange={(e) => {
+    const updatedItems = [...formData.lineItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      customer_price: e.target.value
+    };
+    setFormData({...formData, lineItems: updatedItems});
+  }}
+/>
         </td>
         <td className="px-2 py-3">
           <div className={`text-sm font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -1298,7 +1333,7 @@ tax_code: product.tax_rate_id || 'T1'
   </div>
 )}
 
-                     {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Waste Collection') && (
+                     {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
     <div>
       <SageProductSelector 
@@ -1343,7 +1378,6 @@ tax_code: product.tax_rate_id || 'T1'
                           </label>
                           <input
                             type="number"
-                            step="0.1"
                             value={formData.quantity}
                             onChange={(e) => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
@@ -1390,42 +1424,42 @@ tax_code: product.tax_rate_id || 'T1'
                           />
                         </div>
                         {formData.jobType === 'Aggregates' ? (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Time Slot</label>
-                            <select
-                              value={formData.timeSlot}
-                              onChange={(e) => setFormData({...formData, timeSlot: e.target.value})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            >
-                              <option value="">Select time slot</option>
-                              {timeSlots.map(slot => (
-                                <option key={slot} value={slot}>{slot}</option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Collection Date</label>
-                            <input
-                              type="date"
-                              value={formData.collectionDate}
-                              onChange={(e) => setFormData({...formData, collectionDate: e.target.value})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            />
-                          </div>
-                        )}
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-1">Time Slot</label>
+    <select
+      value={formData.timeSlot}
+      onChange={(e) => setFormData({...formData, timeSlot: e.target.value})}
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+    >
+      <option value="">Select time slot</option>
+      {timeSlots.map(slot => (
+        <option key={slot} value={slot}>{slot}</option>
+      ))}
+    </select>
+  </div>
+) : (formData.jobType !== 'Grab Hire' && formData.jobType !== 'Muck Away') ? (
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-1">Collection Date</label>
+    <input
+      type="date"
+      value={formData.collectionDate}
+      onChange={(e) => setFormData({...formData, collectionDate: e.target.value})}
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+    />
+  </div>
+) : null}
                       </div>
 
                       <div>
-                        <label className="flex items-center">
+                        <div className="flex items-center">
                           <input
                             type="checkbox"
                             checked={formData.hazardousWaste}
                             onChange={(e) => setFormData({...formData, hazardousWaste: e.target.checked})}
                             className="mr-2"
                           />
-                          <span className="text-sm font-medium">Contains Hazardous Waste</span>
-                        </label>
+                          <span className="text-sm font-medium cursor-pointer">Contains Hazardous Waste</span>
+                        </div>
                       </div>
 
                       {formData.hazardousWaste && (
@@ -1816,7 +1850,7 @@ tax_code: product.tax_rate_id || 'T1'
           const jobIcons = {
             'Skip Hire': { icon: 'Trash2', color: 'text-blue-600', bg: 'bg-blue-100' },
             'Aggregates': { icon: 'Mountain', color: 'text-orange-600', bg: 'bg-orange-100' },
-            'Waste Collection': { icon: 'Recycle', color: 'text-green-600', bg: 'bg-green-100' },
+            'Other': { icon: 'Recycle', color: 'text-green-600', bg: 'bg-green-100' },
             'Grab Hire': { icon: 'Truck', color: 'text-purple-600', bg: 'bg-purple-100' },
             'Muck Away': { icon: 'Truck', color: 'text-red-600', bg: 'bg-red-100' },
             'Roll-on Roll-off': { icon: 'Truck', color: 'text-indigo-600', bg: 'bg-indigo-100' }
@@ -2015,9 +2049,18 @@ tax_code: product.tax_rate_id || 'T1'
             </div>
           );
         };
-
+const shortenCompanyName = (name) => {
+  if (!name) return '-';
+  
+  // Simply truncate if too long
+  if (name.length > 24) {
+    return name.substring(0, 21) + '...';
+  }
+  
+  return name;
+};
         // Jobs Management Component
-          const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setShowFullPageJob }) => {
+        const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setJobs, setShowFullPageJob }) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
@@ -2139,7 +2182,26 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
   
   onUpdateJob(updatedJob);
   onUpdateDisplay(updatedJob);
-  
+  // Also update the main jobs list to reflect the SI number
+const updatedJobWithAllFields = {
+  ...job,
+  sage_si_number: updatedJob.sage_si_number,
+  invoice_number: updatedJob.invoice_number,
+  invoice_status: updatedJob.invoice_status,
+  sage_invoice_id: invoice.id,
+  // Make sure we have the SI number in both formats
+  siNumber: siNumber,
+  invoiceNumber: invoice.invoice_number || invoice.id
+};
+
+// This will update the job in the parent's jobs array
+onUpdateJob(updatedJobWithAllFields);
+
+// Close and reopen the job view to force refresh
+setShowFullPageJob(null);
+setTimeout(() => {
+  setShowFullPageJob(updatedJobWithAllFields);
+}, 100);
   // Force a re-render
   setActiveTab(activeTab);
 }
@@ -2167,7 +2229,7 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
           const jobColors = {
             'Skip Hire': '#3B82F6',
             'Aggregates': '#F97316',
-            'Waste Collection': '#10B981',
+            'Other': '#10B981',
             'Grab Hire': '#8B5CF6',
             'Muck Away': '#EF4444',
             'Roll-on Roll-off': '#6366F1'
@@ -2183,14 +2245,13 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
           const filteredJobs = sortedJobs.filter(job => {
   if (searchQuery) {
     const query = searchQuery.toLowerCase();
-    const matchesJobNumber = job.jobNumber.toLowerCase().includes(query);
-    const matchesCustomer = job.customerName.toLowerCase().includes(query);
-    const matchesSupplier = job.supplierName.toLowerCase().includes(query);
-    const matchesPostcode = (job.sitePostcode && job.sitePostcode.toLowerCase().includes(query)) ||
-                           (job.postcode && job.postcode.toLowerCase().includes(query));
-    const matchesAddress = (job.siteAddress1 && job.siteAddress1.toLowerCase().includes(query)) ||
-                          (job.siteAddress && job.siteAddress.toLowerCase().includes(query));
-    
+    const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
+   const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
+    const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
+    const matchesPostcode = ((job.sitePostcode || '').toLowerCase().includes(query)) || 
+                        ((job.postcode || '').toLowerCase().includes(query));
+const matchesAddress = ((job.siteAddress1 || '').toLowerCase().includes(query)) || 
+                       ((job.siteAddress || '').toLowerCase().includes(query));    
     if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
       return false;
     }
@@ -2449,8 +2510,25 @@ const uploadJobAttachment = async () => {
           return (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Job Management</h2>
+                  <div>
+  <div className="flex items-center gap-4">
+    <h2 className="text-2xl font-bold text-gray-900">Job Management</h2>
+    <button
+      onClick={async () => {
+  try {
+    // Just call the refreshJobs function we created earlier
+    await refreshJobs();
+    alert(`Refreshed: ${jobs.length} jobs loaded`);
+  } catch (error) {
+    console.error('Error refreshing jobs:', error);
+    alert('Error refreshing jobs');
+  }
+}}
+      className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 flex items-center gap-2"
+    >
+      <span>↻</span> Refresh List
+    </button>
+  </div>
                   <p className="text-gray-600">{filteredJobs.length} jobs found</p>
                 </div>
                 <button 
@@ -2483,7 +2561,7 @@ const uploadJobAttachment = async () => {
         <option value="">All Job Types</option>
         <option value="Skip Hire">Skip Hire</option>
         <option value="Aggregates">Aggregates</option>
-        <option value="Waste Collection">Waste Collection</option>
+        <option value="Other">Other</option>
         <option value="Grab Hire">Grab Hire</option>
         <option value="Muck Away">Muck Away</option>
         <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -2523,12 +2601,6 @@ const uploadJobAttachment = async () => {
     </div>
     
     <div className="flex items-center justify-end gap-2">
-      <button
-        onClick={() => setViewMode('grid')}
-        className={`p-2 rounded ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
-      >
-        <Grid size={16} />
-      </button>
       <button
         onClick={() => setViewMode('list')}
         className={`p-2 rounded ${viewMode === 'list' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
@@ -2616,19 +2688,22 @@ style={{ backgroundColor: jobColors[job.jobType] }}
 </div>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.customerName}
+<span title={job.customerName}>{shortenCompanyName(job.customerName)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.supplierName || '-'}
+<span title={job.supplierName}>{shortenCompanyName(job.supplierName)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.lineItems && job.lineItems.length > 0 
-  ? job.lineItems[0].product_name || job.lineItems[0].description || '-'
+ ? <span title={job.lineItems[0].product_name || job.lineItems[0].description}>
+    {(job.lineItems[0].product_name || job.lineItems[0].description || '-').substring(0, 30)}
+    {(job.lineItems[0].product_name || job.lineItems[0].description || '').length > 30 ? '...' : ''}
+  </span>
   : job.sageProductName || '-'
 }
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
-{job.haulierName || '-'}
+<span title={job.haulierName}>{shortenCompanyName(job.haulierName)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'line-through decoration-red-500' : ''}`}>
 {job.siteAddress1 || job.siteAddress || '-'}
@@ -3050,19 +3125,19 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
       {/* Filters */}
       {/* Filters */}
 <div className="bg-white rounded-lg border border-gray-200 p-4">
-  <div className="flex items-center space-x-4">
+  <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
     <Filter size={16} className="text-gray-600" />
     <input
       type="text"
       placeholder="Search quotes, customers, postcodes..."
       value={searchQuery}
       onChange={(e) => setSearchQuery(e.target.value)}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+     className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     />
     <select
       value={filters.status}
       onChange={(e) => setFilters({...filters, status: e.target.value})}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+     className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     >
       <option value="">All Statuses</option>
       <option value="PENDING">Pending</option>
@@ -3075,12 +3150,12 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <select
       value={filters.jobType}
       onChange={(e) => setFilters({...filters, jobType: e.target.value})}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     >
       <option value="">All Job Types</option>
       <option value="Skip Hire">Skip Hire</option>
       <option value="Aggregates">Aggregates</option>
-      <option value="Waste Collection">Waste Collection</option>
+      <option value="Other">Other</option>
       <option value="Grab Hire">Grab Hire</option>
       <option value="Muck Away">Muck Away</option>
       <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -3088,7 +3163,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <select
       value={filters.priority}
       onChange={(e) => setFilters({...filters, priority: e.target.value})}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     >
       <option value="">All Priorities</option>
       <option value="Low">Low</option>
@@ -3099,7 +3174,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <select
       value={filters.rejectionReason}
       onChange={(e) => setFilters({...filters, rejectionReason: e.target.value})}
-      className="px-3 py-2 border border-gray-300 rounded-lg"
+      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     >
       <option value="">All Rejection Reasons</option>
       <option value="price">Price Too High</option>
@@ -3663,12 +3738,16 @@ console.log(JSON.stringify(invoiceData, null, 2));
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Created Date:</span>
-                      <span className="text-gray-900">{new Date(job.jobDate).toLocaleDateString()}</span>
+                     <span className="text-gray-900">{job.createdDate ? new Date(job.createdDate).toLocaleDateString() : new Date(job.jobDate).toLocaleDateString()}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Delivery Date:</span>
                       <span className="text-gray-900 font-semibold">{new Date(job.jobDate).toLocaleDateString()}</span>
                     </div>
+                    <div className="flex justify-between">
+  <span className="text-gray-600 font-medium">Collection Date:</span>
+  <span className="text-gray-900">{job.collectionDate ? new Date(job.collectionDate).toLocaleDateString() : 'Not provided'}</span>
+</div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Quantity:</span>
                       <span className="text-gray-900">{job.quantity} {job.unit}</span>
@@ -3802,8 +3881,8 @@ console.log(JSON.stringify(invoiceData, null, 2));
             </thead>
             <tbody>
               {job.lineItems.map((item, index) => {
-                const lineCost = (parseFloat(item.supplier_price) || 0) * (item.quantity || 1);
-                const lineRRP = (parseFloat(item.customer_price) || 0) * (item.quantity || 1);
+                const lineCost = (item.supplier_price || 0) * (item.quantity || 1);
+                const lineRRP = (item.customer_price || 0) * (item.quantity || 1);
                 const lineProfit = lineRRP - lineCost;
                 const profitMargin = lineRRP > 0 ? ((lineProfit / lineRRP) * 100).toFixed(1) : 0;
                 
@@ -3824,7 +3903,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                         £{lineCost.toFixed(2)}
                       </div>
                       <div className="text-xs text-gray-500">
-                        @ £{(parseFloat(item.supplier_price) || 0).toFixed(2)}
+                        @ £{(item.supplier_unit_price || 0).toFixed(2)}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-right">
@@ -3832,7 +3911,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                         £{lineRRP.toFixed(2)}
                       </div>
                       <div className="text-xs text-gray-500">
-                       @ £{(parseFloat(item.customer_price) || 0).toFixed(2)}
+                        @ £{(item.customer_unit_price || 0).toFixed(2)}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-right">
@@ -4404,7 +4483,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Created Date:</span>
-                      <span className="text-gray-900">{new Date(quote.createdDate).toLocaleDateString()}</span>
+                      <span className="text-gray-900">{job.created_at ? new Date(job.created_at).toLocaleDateString() : 'Not provided'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Valid Until:</span>
@@ -4853,19 +4932,19 @@ const { error } = await window.supabase
               {/* Filters */}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
+                  <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
                     <Filter size={16} className="text-gray-600" />
                     <input
                       type="text"
                       placeholder="Search customers..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     />
                     <select
                       value={filters.businessType}
                       onChange={(e) => setFilters({...filters, businessType: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     >
                       <option value="">All Business Types</option>
                       <option value="Construction Company">Construction Company</option>
@@ -4879,7 +4958,7 @@ const { error } = await window.supabase
                     <select
                       value={filters.creditRating}
                       onChange={(e) => setFilters({...filters, creditRating: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     >
                       <option value="">All Credit Ratings</option>
                       <option value="A+">A+ (Excellent)</option>
@@ -5515,23 +5594,23 @@ const handleApplySync = async () => {
               {/* Filters */}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
+                  <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
                     <Filter size={16} className="text-gray-600" />
                     <input
                       type="text"
                       placeholder="Search suppliers..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                     className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     />
                     <select
                       value={filters.service}
                       onChange={(e) => setFilters({...filters, service: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     >
                       <option value="">All Services</option>
                       <option value="Skip Hire">Skip Hire</option>
-                      <option value="Waste Collection">Waste Collection</option>
+                      <option value="Other">Other</option>
                       <option value="Aggregates Supply">Aggregates Supply</option>
                       <option value="Recycling">Recycling</option>
                       <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -5541,7 +5620,7 @@ const handleApplySync = async () => {
                     <select
                       value={filters.rating}
                       onChange={(e) => setFilters({...filters, rating: e.target.value})}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                     className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
                     >
                       <option value="">All Ratings</option>
                       <option value="A+">A+ (Excellent)</option>
@@ -7396,6 +7475,7 @@ useEffect(() => {
   id: job.id,
   jobNumber: job.job_number,
   jobDate: job.job_date,
+  createdDate: job.created_at,
   customerName: job.customer_name,
   customerPO: job.customer_po,
   supplierName: job.supplier_name,
@@ -7404,7 +7484,7 @@ useEffect(() => {
   jobType: job.job_type,
   wasteType: job.waste_type,
   skipSize: job.skip_size,
-
+collectionDate: job.collection_date,
   quantity: job.quantity || 1,
   unit: job.unit || 'skip',
   weight: job.weight,
@@ -7440,12 +7520,13 @@ useEffect(() => {
   sageProductId: job.sage_product_id,
   sageProductName: job.sage_product_name,
   sageId: job.sage_id,
+  sageLineItems: job.sage_line_items || [],
   // Handle both old and new line_items format
   lineItems: (() => {
     try {
-      if (job.line_items) {
-        return typeof job.line_items === 'string' ? JSON.parse(job.line_items) : job.line_items;
-      }
+      if (job.sage_line_items) {  // CHANGE from job.line_items to job.sage_line_items
+    return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : job.sage_line_items;  // CHANGE both references
+}
       return [];
     } catch (e) {
       console.warn('Error parsing line_items for job', job.id);
@@ -7473,7 +7554,105 @@ useEffect(() => {
       console.error('Error loading jobs:', error);
     }
   };
-  
+  // Add refresh function for duplicating jobs
+const refreshJobs = async () => {
+    try {
+        const { data, error } = await window.supabase
+            .from('jobs')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+            // Use EXACT same conversion as loadJobsFromSupabase
+            const jobsWithCamelCase = data.map(job => ({
+                id: job.id,
+                jobNumber: job.job_number,
+                jobDate: job.job_date,
+                createdDate: job.created_at,
+                customerName: job.customer_name,
+                customerPO: job.customer_po,
+                supplierName: job.supplier_name,
+                supplierRef: job.supplier_ref,
+                haulierName: job.haulier_name,
+                jobType: job.job_type,
+                wasteType: job.waste_type,
+                skipSize: job.skip_size,
+                collectionDate: job.collection_date,
+                quantity: job.quantity || 1,
+                unit: job.unit || 'skip',
+                weight: job.weight,
+                customerUnitPrice: job.customer_unit_price || 0,
+                customerFinalPrice: job.customer_final_price || 0,
+                supplierUnitPrice: job.supplier_unit_price || 0,
+                supplierFinalPrice: job.supplier_final_price || 0,
+                vatRate: job.vat_rate || 20,
+                grossProfit: job.gross_profit || 0,
+                profitMargin: job.profit_margin || 0,
+                jobValue: job.job_value || 0,
+                siteAddress: job.site_address,
+                siteAddress1: job.site_address1,
+                siteAddress2: job.site_address2,
+                siteCity: job.site_city,
+                sitePostcode: job.site_postcode,
+                siteContact: job.site_contact,
+                sitePhone: job.site_phone,
+                siteNotes: job.site_notes,
+                deliveryInstructions: job.delivery_instructions,
+                timeSlot: job.time_slot,
+                status: job.status || 'CONFIRMED',
+                priority: job.priority || 'Medium',
+                isCompleted: job.is_completed || false,
+                isCancelled: job.is_cancelled || false,
+                wasteTransferNote: job.waste_transfer_note,
+                hazardousWaste: job.hazardous_waste || false,
+                consignmentNote: job.consignment_note,
+                invoiceNumber: job.invoice_number,
+                invoiceStatus: job.invoice_status || 'Not Invoiced',
+                paymentStatus: job.payment_status || 'Not Paid',
+                sageProductId: job.sage_product_id,
+                sageProductName: job.sage_product_name,
+                sageId: job.sage_id,
+                sageLineItems: job.sage_line_items || [],
+                // Handle sage_line_items for lineItems
+                lineItems: (() => {
+                    try {
+                        if (job.sage_line_items) {
+                            return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : job.sage_line_items;
+                        }
+                        return [];
+                    } catch (e) {
+                        console.warn('Error parsing line_items for job', job.id);
+                        return [];
+                    }
+                })(),
+                parentJobId: job.parent_job_id,
+                linkedJobs: (() => {
+                    try {
+                        if (job.linked_jobs) {
+                            return typeof job.linked_jobs === 'string' ? JSON.parse(job.linked_jobs) : job.linked_jobs;
+                        }
+                        return [];
+                    } catch (e) {
+                        console.warn('Error parsing linked_jobs for job', job.id);
+                        return [];
+                    }
+                })(),
+                notes: job.notes
+            }));
+            
+            setJobs(jobsWithCamelCase);
+            setFilteredJobs(jobsWithCamelCase);
+            console.log('Refreshed', data.length, 'jobs from Supabase');
+        }
+    } catch (error) {
+        console.error('Error refreshing jobs:', error);
+    }
+};
+
+// Make it globally accessible
+window.refreshJobs = refreshJobs;
   loadJobsFromSupabase();
 }, []);
           const [quotes, setQuotes] = useState([]);
@@ -7600,7 +7779,6 @@ job_value: parseFloat(newJob.jobValue) || 0,
       delivery_instructions: newJob.deliveryInstructions || null,
       access_restrictions: newJob.accessRestrictions || null,
       time_slot: newJob.timeSlot || null,
-      collection_date: newJob.collectionDate || null,
       delivery_date: newJob.deliveryDate || null,
 collection_date: newJob.collectionDate || null,
       status: newJob.status || 'CONFIRMED',
@@ -7621,6 +7799,7 @@ collection_date: newJob.collectionDate || null,
       linked_jobs: JSON.stringify(newJob.linkedJobs || []),
       notes: newJob.notes || null,
        sage_product_data: newJob.sage_product_data || null,
+       collection_date: newJob.collectionDate || null,
   sage_line_items: newJob.sage_line_items || null
     };
 // Remove id field if invalid
@@ -7670,7 +7849,7 @@ if (!jobForDatabase.id || jobForDatabase.id === 'undefined' || jobForDatabase.id
       aggregate_type: updatedJob.aggregateType,
       quantity: parseInt(updatedJob.quantity) || 1,
       unit: updatedJob.unit || 'skip',
-      weight: updatedJob.weight,
+      weight: updatedJob.weight ? parseFloat(updatedJob.weight) : null,
      customer_unit_price: parseFloat(updatedJob.customerUnitPrice) || 0,
 customer_final_price: parseFloat(updatedJob.customerFinalPrice) || 0,
 supplier_unit_price: parseFloat(updatedJob.supplierUnitPrice) || 0,
@@ -7689,9 +7868,9 @@ job_value: parseFloat(updatedJob.jobValue) || 0,
       site_notes: updatedJob.siteNotes,
       delivery_instructions: updatedJob.deliveryInstructions,
       delivery_date: updatedJob.deliveryDate || null,
+      job_date: updatedJob.jobDate || null,
 collection_date: updatedJob.collectionDate || null,
       time_slot: updatedJob.timeSlot,
-      collection_date: updatedJob.collectionDate,
       status: updatedJob.status || 'CONFIRMED',
       priority: updatedJob.priority || 'Medium',
       is_completed: updatedJob.isCompleted || false,
@@ -7702,6 +7881,7 @@ collection_date: updatedJob.collectionDate || null,
       invoice_number: updatedJob.invoiceNumber,
       invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
       payment_status: updatedJob.paymentStatus || 'Not Paid',
+      collection_date: updatedJob.collectionDate || null,
       sage_si_number: updatedJob.sage_si_number,  // ADD THIS LINE
   sage_invoice_id: updatedJob.sage_invoice_id
     };
@@ -7799,7 +7979,7 @@ const handleDeleteAttachment = async (attachment) => {
               isCancelled: false,
               status: 'CONFIRMED',
               notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
-              jobDate: new Date().toISOString().split('T')[0], // Set to today
+              jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
               linkedJobs: []
             };
             
@@ -7872,20 +8052,43 @@ const handleDeleteAttachment = async (attachment) => {
 
         const handleDuplicateJob = async (jobTemplate) => {
     try {
-        // Create a completely fresh job object
-        const year = new Date().getFullYear();
-        const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
-        const newJobNumber = lastJobNumber + 1;
-        localStorage.setItem('lastJobNumber', newJobNumber.toString());
-        const jobNumber = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
+        // Get the next job number from Supabase sequence
+const { data: jobNumber, error: seqError } = await window.supabase
+    .rpc('get_next_job_number');
+
+if (seqError) {
+    console.error('Error getting job number:', seqError);
+    alert('Error getting job number. Please try again.');
+    return;
+}
         
-        // Get the job type (could be Skip Hire, Waste Collection, Grab Hire, Muck Hire)
+        // Get the job type (could be Skip Hire, Other, Grab Hire, Muck Hire)
         const jobType = jobTemplate.jobType || jobTemplate.job_type || 'Skip Hire';
-        
+        console.log('Full jobTemplate object:', jobTemplate);
+console.log('jobTemplate.sage_line_items:', jobTemplate.sage_line_items);
+// Fetch the complete job data including sage_line_items
+const { data: fullJob } = await window.supabase
+    .from('jobs')
+    .select('*')
+    .eq('id', jobTemplate.id)
+    .single();
+
+if (fullJob) {
+    // Only add the specific fields we need, don't overwrite everything
+    jobTemplate.sage_line_items = fullJob.sage_line_items;
+    jobTemplate.description = fullJob.description;
+    jobTemplate.sage_product_name = fullJob.sage_product_name;
+    console.log('Added sage_line_items:', jobTemplate.sage_line_items);
+    console.log('Original jobTemplate:', jobTemplate);
+console.log('Has description?', jobTemplate.description);
+console.log('Has sage_line_items?', jobTemplate.sage_line_items);
+}
         const jobForDatabase = {
             job_number: jobNumber,
-            customer_name: jobTemplate.customerName || jobTemplate.customer_name,
-            supplier_name: jobTemplate.supplierName || jobTemplate.supplier_name,
+           customer_name: jobTemplate.customerName || jobTemplate.customer_name || fullJob?.customer_name,
+supplier_name: jobTemplate.supplierName || jobTemplate.supplier_name || fullJob?.supplier_name,
+description: fullJob?.description || null,
+sage_product_name: fullJob?.sage_product_name || null,
             job_type: jobType, // Preserves the original job type
             waste_type: jobTemplate.wasteType || jobTemplate.waste_type,
             skip_size: jobTemplate.skipSize || jobTemplate.skip_size,
@@ -7899,44 +8102,86 @@ const handleDeleteAttachment = async (attachment) => {
             status: 'CONFIRMED',
             is_completed: false,
             is_cancelled: false,
-            notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`
+            notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`,
+            site_address: jobTemplate.siteAddress || jobTemplate.site_address || null,
+    site_address1: jobTemplate.siteAddress1 || jobTemplate.site_address1 || null,
+    site_address2: jobTemplate.siteAddress2 || jobTemplate.site_address2 || null,
+    site_city: jobTemplate.siteCity || jobTemplate.site_city || null,
+    site_postcode: jobTemplate.sitePostcode || jobTemplate.site_postcode || null,
+    site_contact: jobTemplate.siteContact || jobTemplate.site_contact || null,
+    site_phone: jobTemplate.sitePhone || jobTemplate.site_phone || null,
+    site_notes: jobTemplate.siteNotes || jobTemplate.site_notes || null,
+    sage_line_items: fullJob?.sage_line_items || null,
+    sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
         };
+        console.log('Job being saved to database:', jobForDatabase);
+console.log('Description being saved:', jobForDatabase.description);
+console.log('sage_line_items being saved:', jobForDatabase.sage_line_items);
         
-        // NO job-type specific fields - database doesn't have those columns
-        
-        // Save directly to database
-        const { data, error } = await window.supabase
-            .from('jobs')
-            .insert([jobForDatabase])
-            .select();
-            
+       // Save directly to database
+const { data, error } = await window.supabase
+    .from('jobs')
+    .insert([jobForDatabase])
+    .select();
+
+if (error) throw error;
         if (error) throw error;
         
-        // Fetch updated jobs list
-        const { data: updatedJobs, error: fetchError } = await window.supabase
-            .from('jobs')
-            .select('*')
-            .order('created_at', { ascending: false });
-            
-        if (fetchError) throw fetchError;
-        
-        // Convert snake_case to camelCase for the app
-        const formattedJobs = updatedJobs.map(job => ({
-            ...job,
-            jobNumber: job.job_number,
-            customerName: job.customer_name,
-            supplierName: job.supplier_name,
-            jobType: job.job_type,
-            wasteType: job.waste_type,
-            skipSize: job.skip_size,
-            customerUnitPrice: job.customer_unit_price,
-            supplierUnitPrice: job.supplier_unit_price,
-            customerFinalPrice: job.customer_final_price,
-            supplierFinalPrice: job.supplier_final_price,
-            jobDate: job.job_date,
-            isCompleted: job.is_completed,
-            isCancelled: job.is_cancelled
-        }));
+        // Wait a moment for database to fully process
+// Wait for database to process, then refresh
+setTimeout(async () => {
+    await refreshJobs();  // Use our new refresh function
+    setShowFullPageJob(null);
+    alert('Job duplicated successfully!');
+}, 500);
+
+// Fetch updated jobs list
+const { data: updatedJobs, error: fetchError } = await window.supabase
+    .from('jobs')
+    .select('*')
+    .order('created_at', { ascending: false });
+    console.log('First job from database:', updatedJobs[0]);
+console.log('All field names:', Object.keys(updatedJobs[0]));
+ console.log('First job after fetch:', updatedJobs[0]);
+console.log('Its description:', updatedJobs[0].description);
+console.log('Its sage_line_items:', updatedJobs[0].sage_line_items);
+
+console.log('First job from database:', updatedJobs[0]);                   
+const formattedJobs = updatedJobs.map(job => ({
+    ...job,  // KEEP THIS - preserves all original fields
+    id: job.id,
+    jobNumber: job.job_number,
+    customerName: job.customer_name,
+    supplierName: job.supplier_name,
+    jobType: job.job_type,
+    wasteType: job.waste_type,
+    skipSize: job.skip_size,
+    customerUnitPrice: job.customer_unit_price,
+    supplierUnitPrice: job.supplier_unit_price,
+    customerFinalPrice: job.customer_final_price,
+    supplierFinalPrice: job.supplier_final_price,
+    jobDate: job.job_date,
+    isCompleted: job.is_completed,
+    isCancelled: job.is_cancelled,
+    siteAddress: job.site_address,
+    siteAddress1: job.site_address1,
+    siteAddress2: job.site_address2,
+    siteCity: job.site_city,
+    sitePostcode: job.site_postcode,
+    status: job.status,
+    haulier: job.haulier_name,  // CHANGE THIS - was job.haulier
+    haulierName: job.haulier_name,  // ADD THIS TOO just in case
+    product_service: job.sage_line_items?.[0]?.product_name || job.sage_product_name || job.description || '',
+    sageLineItems: job.sage_line_items,
+    sage_line_items: job.sage_line_items, 
+    lineItems: job.line_items,
+    line_items: job.line_items,
+    sageSiNumber: job.sage_si_number,
+    invoiceNumber: job.invoice_number,
+    sageInvoiceId: job.sage_invoice_id,
+    sageProductName: job.sage_product_name,  // ADD THIS
+    description: job.description  // ADD THIS
+}));
         
         // Update the jobs state
         setJobs(formattedJobs);
@@ -7949,6 +8194,105 @@ const handleDeleteAttachment = async (attachment) => {
         alert('Error duplicating job: ' + error.message);
     }
 };
+// Add refresh function for duplicating jobs
+const refreshJobs = async () => {
+    try {
+        const { data, error } = await window.supabase
+            .from('jobs')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+            // Use EXACT same conversion as loadJobsFromSupabase
+            const jobsWithCamelCase = data.map(job => ({
+                id: job.id,
+                jobNumber: job.job_number,
+                jobDate: job.job_date,
+                createdDate: job.created_at,
+                customerName: job.customer_name,
+                customerPO: job.customer_po,
+                supplierName: job.supplier_name,
+                supplierRef: job.supplier_ref,
+                haulierName: job.haulier_name,
+                jobType: job.job_type,
+                wasteType: job.waste_type,
+                skipSize: job.skip_size,
+                collectionDate: job.collection_date,
+                quantity: job.quantity || 1,
+                unit: job.unit || 'skip',
+                weight: job.weight,
+                customerUnitPrice: job.customer_unit_price || 0,
+                customerFinalPrice: job.customer_final_price || 0,
+                supplierUnitPrice: job.supplier_unit_price || 0,
+                supplierFinalPrice: job.supplier_final_price || 0,
+                vatRate: job.vat_rate || 20,
+                grossProfit: job.gross_profit || 0,
+                profitMargin: job.profit_margin || 0,
+                jobValue: job.job_value || 0,
+                siteAddress: job.site_address,
+                siteAddress1: job.site_address1,
+                siteAddress2: job.site_address2,
+                siteCity: job.site_city,
+                sitePostcode: job.site_postcode,
+                siteContact: job.site_contact,
+                sitePhone: job.site_phone,
+                siteNotes: job.site_notes,
+                deliveryInstructions: job.delivery_instructions,
+                timeSlot: job.time_slot,
+                status: job.status || 'CONFIRMED',
+                priority: job.priority || 'Medium',
+                isCompleted: job.is_completed || false,
+                isCancelled: job.is_cancelled || false,
+                wasteTransferNote: job.waste_transfer_note,
+                hazardousWaste: job.hazardous_waste || false,
+                consignmentNote: job.consignment_note,
+                invoiceNumber: job.invoice_number,
+                invoiceStatus: job.invoice_status || 'Not Invoiced',
+                paymentStatus: job.payment_status || 'Not Paid',
+                sageProductId: job.sage_product_id,
+                sageProductName: job.sage_product_name,
+                sageId: job.sage_id,
+                sageLineItems: job.sage_line_items || [],
+                // Handle sage_line_items for lineItems
+                lineItems: (() => {
+                    try {
+                        if (job.sage_line_items) {
+                            return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : job.sage_line_items;
+                        }
+                        return [];
+                    } catch (e) {
+                        console.warn('Error parsing line_items for job', job.id);
+                        return [];
+                    }
+                })(),
+                parentJobId: job.parent_job_id,
+                linkedJobs: (() => {
+                    try {
+                        if (job.linked_jobs) {
+                            return typeof job.linked_jobs === 'string' ? JSON.parse(job.linked_jobs) : job.linked_jobs;
+                        }
+                        return [];
+                    } catch (e) {
+                        console.warn('Error parsing linked_jobs for job', job.id);
+                        return [];
+                    }
+                })(),
+                notes: job.notes
+            }));
+            
+            setJobs(jobsWithCamelCase);
+            setFilteredJobs(jobsWithCamelCase);
+            console.log('Refreshed', data.length, 'jobs from Supabase');
+        }
+    } catch (error) {
+        console.error('Error refreshing jobs:', error);
+    }
+};
+
+// Make it globally accessible
+window.refreshJobs = refreshJobs;
 const handleAddressSearch = async (searchText) => {
 
     
@@ -8043,7 +8387,16 @@ const handlePhoneSearch = async (searchText) => {
         console.error('Error searching phones:', error);
     }
 };
-          const handleEditJob = (job) => {
+         const handleEditJob = async (job) => {
+    // Fetch line items for this job - using correct table name
+   
+    
+    // Add line items to the job object - check both naming conventions
+job.lineItems = job.sage_line_items || job.sageLineItems || [];
+console.log('Looking for sage_line_items:', job.sage_line_items);
+console.log('Looking for sageLineItems:', job.sageLineItems);
+console.log('Final lineItems:', job.lineItems);
+console.log('All job properties:', Object.keys(job));
     // Convert the job data to the format expected by the form
     const editableJob = {
         ...job,
@@ -8630,17 +8983,23 @@ onClick={() => {
             isCancelled: false,
             status: 'CONFIRMED',
             notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
-            jobDate: new Date().toISOString().split('T')[0],
+            jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
             linkedJobs: []
         };
         
         // Generate new job number
-        const year = new Date().getFullYear();
-        const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
-        const newJobNumber = lastJobNumber + 1;
-        localStorage.setItem('lastJobNumber', newJobNumber.toString());
-        exchangeJob.id = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
-        exchangeJob.jobNumber = exchangeJob.id;
+        // Get the next job number from Supabase sequence
+const { data: jobNumber, error: seqError } = await window.supabase
+    .rpc('get_next_job_number');
+
+if (seqError) {
+    console.error('Error getting job number:', seqError);
+    alert('Error getting job number. Please try again.');
+    return;
+}
+
+exchangeJob.id = jobNumber;
+        exchangeJob.jobNumber = jobNumber;
         
         // Mark original job as collected
         await window.supabase
@@ -8662,10 +9021,9 @@ onClick={() => {
     try {
         const { error } = await window.supabase
             .from('jobs')
-            .update({
-                status: 'COLLECTED',
-                is_completed: true
-            })
+.update({
+    ...(updatedJob || {}),
+})
             .eq('id', job.id);
             
         if (error) throw error;
@@ -8708,6 +9066,7 @@ onClick={() => {
                 {activeTab === 'jobs' && (
                   <JobsView 
                     jobs={jobs} 
+                    setJobs={setJobs}
                     onAddJob={() => setShowJobForm(true)}
                     onUpdateJob={handleUpdateJob}
                     onDeleteJob={handleDeleteJob}
@@ -9032,11 +9391,8 @@ async createDraftInvoice(invoiceData) {
     async syncCustomersFromSage() {
   try {
     const sageCustomers = await this.getCustomers();
-    const customerContacts = sageCustomers.$items.filter(function(contact) {
-      return contact.contact_types && contact.contact_types.some(function(type) {
-        return type.id === 'CUSTOMER';
-      });
-    });
+    // Don't filter - use all customers that Sage returns
+const customerContacts = sageCustomers.$items;
     
     console.log(`Fetched ${customerContacts.length} customers from Sage`);
     
@@ -9159,89 +9515,81 @@ if (this.getContactPersonDetails && sageCustomer.main_contact_person?.id) {
 },
 
 async syncSuppliersFromSage() {
-  try {
-    const sageSuppliers = await this.getSuppliers();
-    const supplierContacts = sageSuppliers.$items.filter(function(contact) {
-  return contact.contact_types && contact.contact_types.some(function(type) {
-    return type.id === 'VENDOR';
-  });
-});
-    const { data: existingSuppliers, error } = await window.supabase
-      .from('suppliers')
-      .select('*');
-    
-    if (error) throw error;
-    
-    const syncResults = {
-      new: [],
-      updated: [],
-      conflicts: []
-    };
-    
-    // Inside syncSuppliersFromSage - for the supplier processing loop
-for (const sageSupplier of supplierContacts) {
-    const existing = existingSuppliers.data?.find(
-    s => s.sage_id === sageSupplier.id
-);
- const mappedSupplier = {
-  sage_id: sageSupplier.id,
-  companyName: sageSupplier.displayed_as || sageSupplier.name || sageSupplier.company_name || 'No Name',
-  name: sageSupplier.displayed_as || sageSupplier.name || '', // For consistency
-  tradingName: sageSupplier.trading_name || '',
-  companyNumber: sageSupplier.registered_number || '',
-  vatNumber: sageSupplier.tax_number || '',
-  email: sageSupplier.email || '',
-  accountsEmail: sageSupplier.email || '', // Same as email unless separate field in Sage
-  phone: sageSupplier.main_contact_person?.phone || sageSupplier.phone || '',
-  mobile: sageSupplier.main_contact_person?.mobile || sageSupplier.mobile || '',
-  address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ').replace(/([a-z])([A-Z])/g, '$1, $2').replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1, $2') || '',
-  primaryContact: sageSupplier.main_contact_person?.displayed_as || 'No contact',
-  position: '', // Not typically in Sage
-  supplierRating: 'A+', // Default value
-  accountStatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
-  performanceScore: 0, // Default
-  preferredSupplier: false, // Default
-  credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
-  credit_days: parseInt(sageSupplier.credit_days) || 30,
+    try {
+        const sageSuppliers = await this.getSuppliers();
+        // Don't filter - use all suppliers that Sage returns
+        const supplierContacts = sageSuppliers.$items;
+        const { data: existingSuppliers, error } = await window.supabase
+            .from('suppliers')
+            .select('*');
+        
+        if (error) throw error;
+        
+        const syncResults = {
+            new: [],
+            updated: [],
+            conflicts: []
+        };
+        
+        // Inside syncSuppliersFromSage - for the supplier processing loop
+        for (const sageSupplier of supplierContacts) {
+            const existing = existingSuppliers?.find(
+                s => s.sage_id === sageSupplier.id
+            );
+            
+           const mappedSupplier = {
+    sage_id: sageSupplier.id,
+    name: sageSupplier.displayed_as || sageSupplier.name || '',
+    email: sageSupplier.email || '',
+    phone: '',  // Will be filled later if available
+    address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
+    vat_number: sageSupplier.tax_number || '',
+    contact_person: sageSupplier.main_contact_person?.displayed_as || '',
+    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
+    accountsemail: sageSupplier.email || '',
+    position: '',
+    supplierrating: 'A+',
+    performancescore: 0,
+    preferredsupplier: false,
+    credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
+    credit_days: parseInt(sageSupplier.credit_days) || 30,
 };
-   
-       
-// Try to get phone if the method exists
-if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
-  try {
-    console.log(`📞 Fetching phone for ${sageSupplier.displayed_as}...`);
-    const fullContact = await this.getContactPersonDetails(sageSupplier.id);
-    console.log('📞 Result:', fullContact);
-    if (fullContact) {
-      mappedSupplier.phone = fullContact.telephone || fullContact.phone || '';
-      mappedSupplier.mobile = fullContact.mobile || '';
-      mappedSupplier.email = fullContact.email || mappedSupplier.email;
-      console.log(`✓ Set phone: ${mappedSupplier.phone}, mobile: ${mappedSupplier.mobile}`);
+            
+            // Try to get phone if the method exists
+            if (this.getContactPersonDetails && sageSupplier.main_contact_person?.id) {
+                try {
+                    console.log(`📞 Fetching phone for ${sageSupplier.displayed_as}...`);
+                    const fullContact = await this.getContactPersonDetails(sageSupplier.id);
+                    console.log('📞 Result:', fullContact);
+                    if (fullContact) {
+                        mappedSupplier.phone = fullContact.telephone || fullContact.phone || '';
+                        mappedSupplier.mobile = fullContact.mobile || '';
+                        mappedSupplier.email = fullContact.email || mappedSupplier.email;
+                        console.log(`✓ Set phone: ${mappedSupplier.phone}, mobile: ${mappedSupplier.mobile}`);
+                    }
+                } catch (err) {
+                    console.log(`✗ Error: ${err.message}`);
+                }
+            } else {
+                console.log(`⚠️ No contact person for ${sageSupplier.displayed_as}, but still adding supplier`);
+            }
+            
+            // ALWAYS add the supplier regardless of contact details
+            if (!existing) {
+                syncResults.new.push(mappedSupplier);
+            } else {
+                syncResults.updated.push({
+                    ...mappedSupplier,
+                    id: existing.id // IMPORTANT: Preserve the database ID!
+                });
+            }
+        }
+        
+        return syncResults;
+    } catch (error) {
+        console.error('Error syncing suppliers:', error);
+        throw error;
     }
-  } catch (err) {
-    console.log(`✗ Error: ${err.message}`);
-  }
-} else {
-  console.log(`⚠️ Skipping phone for ${sageSupplier.displayed_as}: No contact person ID`);
-}
- if (!existing) {
-        // Map Sage fields to your database fields
-
-        syncResults.new.push(mappedSupplier);
-  } else {
-  // Push to UPDATED with preserved database ID
-  syncResults.updated.push({
-    ...mappedSupplier,
-    id: existing.id  // IMPORTANT: Preserve the database ID!
-  });
-    }
-}
-    
-    return syncResults;
-  } catch (error) {
-    console.error('Error syncing suppliers:', error);
-    throw error;
-  }
 },
 // QUICK SYNC FUNCTIONS - For manual button clicks (new records only, no phone lookups)
 async syncCustomersQuick() {
@@ -9304,61 +9652,80 @@ async syncCustomersQuick() {
 },
 
 async syncSuppliersQuick() {
-  try {
-    console.log('🚀 Starting QUICK supplier sync (new records only)...');
-    
-    const sageSuppliers = await this.getSuppliers();
-    const supplierContacts = sageSuppliers.$items.filter(contact => 
-      contact.contact_types?.some(type => type.id === 'SUPPLIER')
-    );
-    
-    // Get existing Sage IDs only (fast query)
-    const { data: existingSuppliers } = await window.supabase
-      .from('suppliers')
-      .select('sage_id');
-    
-    const existingSageIds = new Set(existingSuppliers?.map(s => s.sage_id) || []);
-    const newSuppliers = [];
-    
-    for (const sageSupplier of supplierContacts) {
-      if (!existingSageIds.has(sageSupplier.id)) {
-        console.log(`✅ Found NEW supplier: ${sageSupplier.displayed_as}`);
+    try {
+        console.log('🚀 Starting QUICK supplier sync (new records only)...');
         
-        // Quick mapping - NO phone API calls
-        const mappedSupplier = {
-          sage_id: sageSupplier.id,
-          name: sageSupplier.displayed_as || sageSupplier.name || '',
-          email: sageSupplier.email || '',
-          phone: '', // Skip phone lookup for quick sync
-          mobile: '',
-          reference: sageSupplier.reference || '',
-          address: sageSupplier.main_address?.displayed_as || '',
-          city: sageSupplier.main_address?.city || '',
-          postcode: sageSupplier.main_address?.postal_code || '',
-          county: sageSupplier.main_address?.region || '',
-          vat_number: sageSupplier.tax_number || '',
-          credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
-          credit_days: parseInt(sageSupplier.credit_days) || 30,
-          account_status: sageSupplier.deletable === false ? 'Active' : 'Inactive'
-        };
+        const sageSuppliers = await this.getSuppliers();
         
-        // Insert immediately
-        const { error } = await window.supabase.from('suppliers').insert(mappedSupplier);
-        if (!error) {
-          newSuppliers.push(mappedSupplier);
-        } else {
-          console.error(`Failed to insert supplier ${sageSupplier.displayed_as}:`, error);
+        // Filter to ensure we only have suppliers (not customers)
+        const supplierContacts = sageSuppliers.$items.filter(contact => {
+            const types = contact.contact_types || [];
+            const isSupplier = types.some(t => t.id === 'SUPPLIER' || t.id === 'VENDOR');
+            const isCustomer = types.some(t => t.id === 'CUSTOMER');
+            return isSupplier && !isCustomer;  // Only suppliers, not dual customer-suppliers
+        });
+        
+        console.log('📊 Raw from Sage:', sageSuppliers.$items.length);
+        console.log('📊 Suppliers only:', supplierContacts.length);
+        
+        // Get existing Sage IDs only (fast query)
+        const { data: existingSuppliers, error: fetchError } = await window.supabase
+            .from('suppliers')
+            .select('sage_id, name');
+            
+        if (fetchError) {
+            console.error('❌ Error fetching existing:', fetchError);
+            return;
         }
-      }
+        
+        const existingSageIds = new Set(existingSuppliers?.map(s => s.sage_id) || []);
+        const newSuppliers = [];
+        
+        for (const sageSupplier of supplierContacts) {
+            if (!existingSageIds.has(sageSupplier.id)) {
+                console.log(`✅ Found NEW supplier: ${sageSupplier.displayed_as}`);
+                
+                // Mapping matching YOUR DB SCHEMA
+                const mappedSupplier = {
+                    sage_id: sageSupplier.id,
+                    name: sageSupplier.displayed_as || sageSupplier.name || '',
+                    email: sageSupplier.email || '',
+                    phone: '',  // Will be filled later if available
+                    address: sageSupplier.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/\n/g, ', ') || '',
+                    vat_number: sageSupplier.tax_number || '',
+                    contact_person: sageSupplier.main_contact_person?.displayed_as || '',
+                    accountstatus: sageSupplier.deletable === false ? 'Active' : 'Inactive',
+                    accountsemail: sageSupplier.email || '',
+                    position: '',
+                    supplierrating: 'A+',
+                    performancescore: 0,
+                    preferredsupplier: false,
+                    credit_limit: parseFloat(sageSupplier.credit_limit) || 0,
+                    credit_days: parseInt(sageSupplier.credit_days) || 30,
+                };
+                
+                // Insert immediately
+                const { error } = await window.supabase.from('suppliers').insert(mappedSupplier);
+                if (!error) {
+                    newSuppliers.push(mappedSupplier);
+                } else {
+                    console.error(`Failed to insert supplier ${sageSupplier.displayed_as}:`, error);
+                }
+            }
+        }
+        
+        console.log(`✅ Quick sync complete: ${newSuppliers.length} new suppliers added`);
+        
+        // Refresh the display
+        if (typeof this.loadSuppliers === 'function') {
+            await this.loadSuppliers();
+        }
+        
+        return { new: newSuppliers, updated: [], conflicts: [] };
+    } catch (error) {
+        console.error('❌ Quick supplier sync failed:', error);
+        throw error;
     }
-    
-    console.log(`✅ Quick sync complete: ${newSuppliers.length} new suppliers added`);
-    return { new: newSuppliers, updated: [], conflicts: [] };
-    
-  } catch (error) {
-    console.error('❌ Quick supplier sync failed:', error);
-    throw error;
-  }
 },
 async getProducts() {
   let allItems = [];
@@ -9978,7 +10345,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <label className="block text-sm font-medium text-gray-700 mb-1">Credit Limit (£)</label>
                           <input
                             type="number"
-                            step="0.1"
                             value={formData.creditLimit}
                             onChange={(e) => setFormData({...formData, creditLimit: parseFloat(e.target.value) || 0})}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
@@ -10742,7 +11108,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     customerUnitPrice: 0,
     customerFinalPrice: 0,
     vatRate: 20,
-    jobDate: new Date().toISOString().split('T')[0],
+    jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
     timeSlot: '',
     collectionDate: '',
     status: 'PENDING',
@@ -10956,7 +11322,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                   >
                     <option value="Skip Hire">Skip Hire</option>
                     <option value="Aggregates">Aggregates</option>
-                    <option value="Waste Collection">Waste Collection</option>
+                    <option value="Other">Other</option>
                     <option value="Grab Hire">Grab Hire</option>
                     <option value="Muck Away">Muck Away</option>
                     <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -11056,11 +11422,10 @@ tax_code: product.tax_rate_id || 'T1'
                             <td className="px-4 py-3">
                               <input
                                 type="number"
-                                step="0.1"
                                 value={item.quantity}
                                 onChange={(e) => {
                                   const updatedItems = [...formData.lineItems];
-                                updatedItems[index].quantity = parseFloat(e.target.value) || 1;
+                                  updatedItems[index].quantity = parseInt(e.target.value) || 1;
                                   setFormData({...formData, lineItems: updatedItems});
                                   setFormData(prev => ({...prev, quantity: parseInt(e.target.value) || 1}));
                                 }}
@@ -11157,7 +11522,7 @@ tax_code: product.tax_rate_id || 'T1'
                 </div>
               )}
 
-              {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Waste Collection') && (
+              {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <SageProductSelector 
@@ -11195,7 +11560,6 @@ tax_code: product.tax_rate_id || 'T1'
                   <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
                   <input
                     type="number"
-                    step="0.1"
                     value={formData.quantity}
                     onChange={(e) => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
