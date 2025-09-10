@@ -8100,6 +8100,7 @@ const { data: updatedJobs, error: fetchError } = await window.supabase
     .select('*')
     .order('created_at', { ascending: false });
     console.log('First job from database:', updatedJobs[0]);
+console.log('All field names:', Object.keys(updatedJobs[0]));
                     
       // Convert snake_case to camelCase for the app
 const formattedJobs = updatedJobs.map(job => ({
