@@ -8103,7 +8103,7 @@ const { data: updatedJobs, error: fetchError } = await window.supabase
                     
       // Convert snake_case to camelCase for the app
 const formattedJobs = updatedJobs.map(job => ({
-    ...job,  // KEEP THIS - it preserves all original fields
+    ...job,  // KEEP THIS - preserves all original fields
     id: job.id,
     jobNumber: job.job_number,
     customerName: job.customer_name,
@@ -8126,8 +8126,8 @@ const formattedJobs = updatedJobs.map(job => ({
     status: job.status,
     haulier: job.haulier,
     product_service: job.product_service,
-     sage_line_items: job.sage_line_items,  // ADD THIS
-    si_number: job.si_number 
+    sageLineItems: job.sage_line_items,  // Map snake_case to camelCase
+    lineItems: job.line_items  // Also map this if it exists
 }));
         
         // Update the jobs state
