@@ -8039,6 +8039,17 @@ const handleDeleteAttachment = async (attachment) => {
         const jobType = jobTemplate.jobType || jobTemplate.job_type || 'Skip Hire';
         console.log('Full jobTemplate object:', jobTemplate);
 console.log('jobTemplate.sage_line_items:', jobTemplate.sage_line_items);
+// Fetch the complete job data including sage_line_items
+const { data: fullJob } = await window.supabase
+    .from('jobs')
+    .select('*')
+    .eq('id', jobTemplate.id)
+    .single();
+
+if (fullJob) {
+    jobTemplate = fullJob;
+    console.log('Fetched full job with sage_line_items:', jobTemplate.sage_line_items);
+}
         const jobForDatabase = {
             job_number: jobNumber,
             customer_name: jobTemplate.customerName || jobTemplate.customer_name,
