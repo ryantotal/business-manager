@@ -8035,7 +8035,7 @@ const handleDeleteAttachment = async (attachment) => {
         localStorage.setItem('lastJobNumber', newJobNumber.toString());
         const jobNumber = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
         
-        // Create properly formatted job for database - matching your database schema
+        // Create properly formatted job for database
         const jobForDatabase = {
             job_number: jobNumber,
             customer_name: jobTemplate.customer_name,
@@ -8054,7 +8054,6 @@ const handleDeleteAttachment = async (attachment) => {
             is_completed: false,
             is_cancelled: false,
             notes: `Duplicated from ${jobTemplate.job_number}`,
-            // Include ALL the fields that your display needs
             site_address: jobTemplate.site_address || '',
             site_address1: jobTemplate.site_address1 || '',
             site_address2: jobTemplate.site_address2 || '',
@@ -8062,35 +8061,23 @@ const handleDeleteAttachment = async (attachment) => {
             site_postcode: jobTemplate.site_postcode || '',
             site_contact: jobTemplate.site_contact || '',
             site_phone: jobTemplate.site_phone || '',
-            site_notes: jobTemplate.site_notes || '',
-            sage_line_items: jobTemplate.sage_line_items || null
+            site_notes: jobTemplate.site_notes || ''
         };
         
-        // Save directly to database
+        // Save to database
         const { data, error } = await window.supabase
             .from('jobs')
             .insert([jobForDatabase])
-            .select('*');  // Make sure to select all fields back
+            .select();
             
         if (error) throw error;
         
-        // Fetch ALL jobs again to ensure complete data
-        const { data: updatedJobs, error: fetchError } = await window.supabase
-            .from('jobs')
-            .select('*')
-            .order('created_at', { ascending: false });
-            
-        if (fetchError) throw fetchError;
+        // Use the existing fetchJobs function to refresh the list
+        await fetchJobs();
         
-        // Update the state with the complete jobs data
-        setJobs(updatedJobs);
+        // Close the full page view
+        setShowFullPageJob(null);
         
-        // Close the full page view if it's open
-        if (setShowFullPageJob) {
-            setShowFullPageJob(null);
-        }
-        
-        console.log('Job duplicated successfully:', data);
         alert('Job duplicated successfully!');
         
     } catch (error) {
