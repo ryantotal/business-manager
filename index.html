@@ -8988,11 +8988,17 @@ onClick={() => {
         };
         
         // Generate new job number
-        const year = new Date().getFullYear();
-        const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
-        const newJobNumber = lastJobNumber + 1;
-        localStorage.setItem('lastJobNumber', newJobNumber.toString());
-        exchangeJob.id = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
+        // Get the next job number from Supabase sequence
+const { data: jobNumber, error: seqError } = await window.supabase
+    .rpc('get_next_job_number');
+
+if (seqError) {
+    console.error('Error getting job number:', seqError);
+    alert('Error getting job number. Please try again.');
+    return;
+}
+
+exchangeJob.id = jobNumber;
         exchangeJob.jobNumber = exchangeJob.id;
         
         // Mark original job as collected
