@@ -8077,40 +8077,34 @@ const { data, error } = await window.supabase
 // Copy line items if they exist in the original job
 console.log('About to duplicate job:', jobTemplate);
 console.log('LineItems to copy:', jobTemplate.lineItems);
-console.log('First lineItem details:', jobTemplate.lineItems?.[0]);
 
 if (data && data[0] && jobTemplate.lineItems && jobTemplate.lineItems.length > 0) {
     const newJobId = data[0].id;
     
-    // Prepare line items for the new job
-    const lineItemsToInsert = jobTemplate.lineItems.map(item => {
-        console.log('Raw item from database:', item);
-        
-        // The item has direct properties, we need to wrap them in sage_product_data
-        const newItem = {
-            job_id: newJobId,
-            sage_product_data: {
-                sage_id: item.sage_id,
-                product_name: item.product_name,
-                type: item.type || "product",
-                // Add any other fields that exist on the item
-            }
-        };
-        
-        console.log('Inserting item:', newItem);
-        return newItem;
-    });
+    // Prepare line items for the new job - simpler structure
+    const lineItemsToInsert = jobTemplate.lineItems.map(item => ({
+        job_id: newJobId,
+        sage_product_data: {
+            sage_id: item.sage_id || item.sage_product_data?.sage_id || '',
+            product_name: item.product_name || item.sage_product_data?.product_name || '',
+            type: item.type || item.sage_product_data?.type || 'product'
+        }
+    }));
+    
+    console.log('Attempting to insert:', lineItemsToInsert);
     
     // Insert line items into the sage_line_items table
-    const { error: lineItemsError } = await window.supabase
+    const { data: insertedItems, error: lineItemsError } = await window.supabase
         .from('sage_line_items')
-        .insert(lineItemsToInsert);
+        .insert(lineItemsToInsert)
+        .select();  // Add select to see what gets inserted
     
     if (lineItemsError) {
-        console.error('Error copying line items:', lineItemsError);
-        console.error('Attempted to insert:', lineItemsToInsert);
+        console.error('Detailed error:', lineItemsError);
+        console.error('Error message:', lineItemsError.message);
+        console.error('Error code:', lineItemsError.code);
     } else {
-        console.log('Successfully copied line items');
+        console.log('Successfully inserted items:', insertedItems);
     }
 }
 
