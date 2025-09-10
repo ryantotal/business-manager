@@ -8124,13 +8124,16 @@ const formattedJobs = updatedJobs.map(job => ({
     siteCity: job.site_city,
     sitePostcode: job.site_postcode,
     status: job.status,
-    haulier: job.haulier,
-    product_service: job.product_service,
+    haulier: job.haulier_name,  // CHANGE THIS - was job.haulier
+    haulierName: job.haulier_name,  // ADD THIS TOO just in case
+    product_service: job.sage_product_name || job.description,  // Use sage_product_name or description
     sageLineItems: job.sage_line_items,
     lineItems: job.line_items,
-    sageSiNumber: job.sage_si_number,  // ADD THIS - this is your SI number!
-    invoiceNumber: job.invoice_number,  // Also add this if you use it
-    sageInvoiceId: job.sage_invoice_id  // And this for the Sage invoice ID
+    sageSiNumber: job.sage_si_number,
+    invoiceNumber: job.invoice_number,
+    sageInvoiceId: job.sage_invoice_id,
+    sageProductName: job.sage_product_name,  // ADD THIS
+    description: job.description  // ADD THIS
 }));
         
         // Update the jobs state
