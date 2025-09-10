@@ -8027,7 +8027,7 @@ const handleDeleteAttachment = async (attachment) => {
   }
 };
 
-       const handleDuplicateJob = async (jobTemplate) => {
+        const handleDuplicateJob = async (jobTemplate) => {
     try {
         // Create a completely fresh job object
         const year = new Date().getFullYear();
@@ -8048,13 +8048,21 @@ const { data: fullJob } = await window.supabase
     .single();
 
 if (fullJob) {
-    jobTemplate = fullJob;
-    console.log('Fetched full job with sage_line_items:', jobTemplate.sage_line_items);
+    // Only add the specific fields we need, don't overwrite everything
+    jobTemplate.sage_line_items = fullJob.sage_line_items;
+    jobTemplate.description = fullJob.description;
+    jobTemplate.sage_product_name = fullJob.sage_product_name;
+    console.log('Added sage_line_items:', jobTemplate.sage_line_items);
+    console.log('Original jobTemplate:', jobTemplate);
+console.log('Has description?', jobTemplate.description);
+console.log('Has sage_line_items?', jobTemplate.sage_line_items);
 }
         const jobForDatabase = {
             job_number: jobNumber,
-            customer_name: jobTemplate.customerName || jobTemplate.customer_name,
-            supplier_name: jobTemplate.supplierName || jobTemplate.supplier_name,
+           customer_name: jobTemplate.customerName || jobTemplate.customer_name || fullJob?.customer_name,
+supplier_name: jobTemplate.supplierName || jobTemplate.supplier_name || fullJob?.supplier_name,
+description: fullJob?.description || null,
+sage_product_name: fullJob?.sage_product_name || null,
             job_type: jobType, // Preserves the original job type
             waste_type: jobTemplate.wasteType || jobTemplate.waste_type,
             skip_size: jobTemplate.skipSize || jobTemplate.skip_size,
@@ -8077,10 +8085,12 @@ if (fullJob) {
     site_contact: jobTemplate.siteContact || jobTemplate.site_contact || null,
     site_phone: jobTemplate.sitePhone || jobTemplate.site_phone || null,
     site_notes: jobTemplate.siteNotes || jobTemplate.site_notes || null,
-    sage_line_items: jobTemplate.sage_line_items || null,
+    sage_line_items: fullJob?.sage_line_items || null,
+    sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
         };
-        
-        // NO job-type specific fields - database doesn't have those columns
+        console.log('Job being saved to database:', jobForDatabase);
+console.log('Description being saved:', jobForDatabase.description);
+console.log('sage_line_items being saved:', jobForDatabase.sage_line_items);
         
        // Save directly to database
 const { data, error } = await window.supabase
@@ -8091,29 +8101,54 @@ const { data, error } = await window.supabase
 if (error) throw error;
         if (error) throw error;
         
-        // Fetch updated jobs list
-        const { data: updatedJobs, error: fetchError } = await window.supabase
-            .from('jobs')
-            .select('*')
-            .order('created_at', { ascending: false });
-                    
-        // Convert snake_case to camelCase for the app
-        const formattedJobs = updatedJobs.map(job => ({
-            ...job,
-            jobNumber: job.job_number,
-            customerName: job.customer_name,
-            supplierName: job.supplier_name,
-            jobType: job.job_type,
-            wasteType: job.waste_type,
-            skipSize: job.skip_size,
-            customerUnitPrice: job.customer_unit_price,
-            supplierUnitPrice: job.supplier_unit_price,
-            customerFinalPrice: job.customer_final_price,
-            supplierFinalPrice: job.supplier_final_price,
-            jobDate: job.job_date,
-            isCompleted: job.is_completed,
-            isCancelled: job.is_cancelled
-        }));
+        // Wait a moment for database to fully process
+await new Promise(resolve => setTimeout(resolve, 300));
+
+// Fetch updated jobs list
+const { data: updatedJobs, error: fetchError } = await window.supabase
+    .from('jobs')
+    .select('*')
+    .order('created_at', { ascending: false });
+    console.log('First job from database:', updatedJobs[0]);
+console.log('All field names:', Object.keys(updatedJobs[0]));
+ console.log('First job after fetch:', updatedJobs[0]);
+console.log('Its description:', updatedJobs[0].description);
+console.log('Its sage_line_items:', updatedJobs[0].sage_line_items);
+
+console.log('First job from database:', updatedJobs[0]);                   
+const formattedJobs = updatedJobs.map(job => ({
+    ...job,  // KEEP THIS - preserves all original fields
+    id: job.id,
+    jobNumber: job.job_number,
+    customerName: job.customer_name,
+    supplierName: job.supplier_name,
+    jobType: job.job_type,
+    wasteType: job.waste_type,
+    skipSize: job.skip_size,
+    customerUnitPrice: job.customer_unit_price,
+    supplierUnitPrice: job.supplier_unit_price,
+    customerFinalPrice: job.customer_final_price,
+    supplierFinalPrice: job.supplier_final_price,
+    jobDate: job.job_date,
+    isCompleted: job.is_completed,
+    isCancelled: job.is_cancelled,
+    siteAddress: job.site_address,
+    siteAddress1: job.site_address1,
+    siteAddress2: job.site_address2,
+    siteCity: job.site_city,
+    sitePostcode: job.site_postcode,
+    status: job.status,
+    haulier: job.haulier_name,  // CHANGE THIS - was job.haulier
+    haulierName: job.haulier_name,  // ADD THIS TOO just in case
+    product_service: job.sage_product_name || job.description,  // Use sage_product_name or description
+    sageLineItems: job.sage_line_items,
+    lineItems: job.line_items,
+    sageSiNumber: job.sage_si_number,
+    invoiceNumber: job.invoice_number,
+    sageInvoiceId: job.sage_invoice_id,
+    sageProductName: job.sage_product_name,  // ADD THIS
+    description: job.description  // ADD THIS
+}));
         
         // Update the jobs state
         setJobs(formattedJobs);
