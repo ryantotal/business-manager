@@ -2051,16 +2051,13 @@ tax_code: product.tax_rate_id || 'T1'
         };
 const shortenCompanyName = (name) => {
   if (!name) return '-';
-  // Common long company names to shorten
-  const abbreviations = {
-    'S & B Waste Management & Recycling Ltd': 'S&B Waste',
-    'DSS Civil Engineering Ltd': 'DSS Civil',
-    'DL Grab Hire': 'DL Grab',
-    '40yard RORO': '40yd RORO',
-    'Byard Delivery': 'Byard',
-    // Add more as needed
-  };
-  return abbreviations[name] || name;
+  
+  // Simply truncate if too long
+  if (name.length > 24) {
+    return name.substring(0, 21) + '...';
+  }
+  
+  return name;
 };
         // Jobs Management Component
         const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setJobs, setShowFullPageJob }) => {
