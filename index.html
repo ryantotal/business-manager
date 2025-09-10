@@ -8115,77 +8115,50 @@ if (error) throw error;
         // Wait a moment for database to fully process
 await new Promise(resolve => setTimeout(resolve, 300));
 
+// Fetch updated jobs list
 // Wait a moment for database to fully process
-await new Promise(resolve => setTimeout(resolve, 500));
+await new Promise(resolve => setTimeout(resolve, 300));
 
-// Fetch ALL jobs fresh from database
-const { data: allJobs, error: fetchError } = await window.supabase
+// Fetch JUST the newly created job
+const { data: newJob, error: fetchError } = await window.supabase
     .from('jobs')
     .select('*')
-    .order('created_at', { ascending: false });
+    .eq('job_number', jobNumber)
+    .single();
 
-if (allJobs && allJobs.length > 0) {
-    // Format all jobs exactly like loadJobsFromSupabase does (lines 7560-7635)
-    const jobsWithCamelCase = allJobs.map(job => ({
-        id: job.id,
-        jobNumber: job.job_number,
-        jobDate: job.job_date,
-        createdDate: job.created_at,
-        customerName: job.customer_name,
-        customerPO: job.customer_po,
-        supplierName: job.supplier_name,
-        supplierRef: job.supplier_ref,
-        haulierName: job.haulier_name,
-        jobType: job.job_type,
-        wasteType: job.waste_type,
-        skipSize: job.skip_size,
-        aggregateType: job.aggregate_type,
-        quantity: job.quantity,
-        unit: job.unit,
-        weight: job.weight,
-        customerUnitPrice: job.customer_unit_price,
-        customerFinalPrice: job.customer_final_price,
-        supplierUnitPrice: job.supplier_unit_price,
-        supplierFinalPrice: job.supplier_final_price,
-        vatRate: job.vat_rate,
-        grossProfit: job.gross_profit,
-        profitMargin: job.profit_margin,
-        jobValue: job.job_value,
-        siteAddress: job.site_address,
-        siteAddress1: job.site_address1,
-        siteAddress2: job.site_address2,
-        siteCity: job.site_city,
-        sitePostcode: job.site_postcode,
-        siteContact: job.site_contact,
-        sitePhone: job.site_phone,
-        siteNotes: job.site_notes,
-        deliveryInstructions: job.delivery_instructions,
-        accessRestrictions: job.access_restrictions,
-        timeSlot: job.time_slot,
-        collectionDate: job.collection_date,
-        priority: job.priority,
-        isCompleted: job.is_completed,
-        isCancelled: job.is_cancelled,
-        wasteTransferNote: job.waste_transfer_note,
-        hazardousWaste: job.hazardous_waste,
-        consignmentNote: job.consignment_note,
-        invoiceNumber: job.invoice_number,
-        invoiceStatus: job.invoice_status,
-        paymentStatus: job.payment_status,
-        sageProductId: job.sage_product_id,
-        sageProductName: job.sage_product_name,
-        sageId: job.sage_id,
-        lineItems: job.line_items,
-        parentJobId: job.parent_job_id,
-        linkedJobs: job.linked_jobs,
-        notes: job.notes
-    }));
+if (newJob) {
+    // Format the new job to match what the app expects
+    const formattedNewJob = {
+        ...newJob,  // Keep all original fields
+        jobNumber: newJob.job_number,
+        customerName: newJob.customer_name,
+        supplierName: newJob.supplier_name,
+        jobType: newJob.job_type,
+        wasteType: newJob.waste_type,
+        skipSize: newJob.skip_size,
+        customerUnitPrice: newJob.customer_unit_price,
+        supplierUnitPrice: newJob.supplier_unit_price,
+        customerFinalPrice: newJob.customer_final_price,
+        supplierFinalPrice: newJob.supplier_final_price,
+        jobDate: newJob.job_date,
+        isCompleted: newJob.is_completed,
+        isCancelled: newJob.is_cancelled,
+        siteAddress: newJob.site_address,
+        siteAddress1: newJob.site_address1,
+        siteAddress2: newJob.site_address2,
+        siteCity: newJob.site_city,
+        sitePostcode: newJob.site_postcode,
+        haulierName: newJob.haulier_name,
+        sageSiNumber: newJob.sage_si_number,
+        lineItems: newJob.line_items,
+        sageLineItems: newJob.sage_line_items
+    };
     
-    setJobs(jobsWithCamelCase);
+    // Add the formatted job to the existing jobs array
+    setJobs(prevJobs => [...prevJobs, formattedNewJob]);
 }
-
-setShowFullPageJob(null); // Close the full page view
-alert(`${jobType} job duplicated successfully!`);
+        setShowFullPageJob(null); // Close the full page view
+        alert(`${jobType} job duplicated successfully!`);
         
     } catch (error) {
         console.error('Error duplicating job:', error);
