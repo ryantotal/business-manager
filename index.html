@@ -8027,100 +8027,99 @@ const handleDeleteAttachment = async (attachment) => {
   }
 };
 
-        const handleDuplicateJob = async (jobTemplate) => {
-    try {
-        const year = new Date().getFullYear();
-        const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
-        const newJobNumber = lastJobNumber + 1;
-        localStorage.setItem('lastJobNumber', newJobNumber.toString());
-        const jobNumber = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
-        
-        // Create properly formatted job for database
-        const jobForDatabase = {
-            job_number: jobNumber,
-            customer_name: jobTemplate.customer_name,
-            supplier_name: jobTemplate.supplier_name,
-            job_type: jobTemplate.job_type,
-            waste_type: jobTemplate.waste_type,
-            skip_size: jobTemplate.skip_size,
-            quantity: jobTemplate.quantity || 1,
-            unit: jobTemplate.unit || 'skip',
-            customer_unit_price: jobTemplate.customer_unit_price || 0,
-            supplier_unit_price: jobTemplate.supplier_unit_price || 0,
-            customer_final_price: jobTemplate.customer_final_price || 0,
-            supplier_final_price: jobTemplate.supplier_final_price || 0,
-            job_date: new Date().toISOString().split('T')[0],
-            status: 'CONFIRMED',
-            is_completed: false,
-            is_cancelled: false,
-            notes: `Duplicated from ${jobTemplate.job_number}`,
-            site_address: jobTemplate.site_address || '',
-            site_address1: jobTemplate.site_address1 || '',
-            site_address2: jobTemplate.site_address2 || '',
-            site_city: jobTemplate.site_city || '',
-            site_postcode: jobTemplate.site_postcode || '',
-            site_contact: jobTemplate.site_contact || '',
-            site_phone: jobTemplate.site_phone || '',
-            site_notes: jobTemplate.site_notes || ''
-        };
-        
-        // Save to database
-        const { data, error } = await window.supabase
-            .from('jobs')
-            .insert([jobForDatabase])
-            .select();
-            
-        if (error) throw error;
-        
-        // Use the existing fetchJobs function to refresh the list
-        await fetchJobs();
-        
-        // Close the full page view
-        setShowFullPageJob(null);
-        
-        alert('Job duplicated successfully!');
-        
-    } catch (error) {
-        console.error('Error duplicating job:', error);
-        alert('Error duplicating job: ' + error.message);
-    }
+       const handleDuplicateJob = async (jobTemplate) => {
+ try {
+// Create a completely fresh job object
+const year = new Date().getFullYear();
+const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
+const newJobNumber = lastJobNumber + 1;
+localStorage.setItem('lastJobNumber', newJobNumber.toString());
+const jobNumber = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
+// Get the job type (could be Skip Hire, Waste Collection, Grab Hire, Muck Hire)
+const jobType = jobTemplate.jobType || jobTemplate.job_type || 'Skip Hire';
+console.log('Full jobTemplate object:', jobTemplate);
+console.log('jobTemplate.sage_line_items:', jobTemplate.sage_line_items);
+// Fetch the complete job data including sage_line_items
+const { data: fullJob } = await window.supabase
+ .from('jobs')
+ .select('*')
+ .eq('id', jobTemplate.id)
+ .single();
+if (fullJob) {
+jobTemplate = fullJob;
+console.log('Fetched full job with sage_line_items:', jobTemplate.sage_line_items);
+}
+const jobForDatabase = {
+job_number: jobNumber,
+customer_name: jobTemplate.customerName || jobTemplate.customer_name,
+supplier_name: jobTemplate.supplierName || jobTemplate.supplier_name,
+job_type: jobType, // Preserves the original job type
+waste_type: jobTemplate.wasteType || jobTemplate.waste_type,
+skip_size: jobTemplate.skipSize || jobTemplate.skip_size,
+quantity: jobTemplate.quantity || 1,
+unit: jobTemplate.unit || 'skip',
+customer_unit_price: jobTemplate.customerUnitPrice || jobTemplate.customer_unit_price || 0,
+supplier_unit_price: jobTemplate.supplierUnitPrice || jobTemplate.supplier_unit_price || 0,
+customer_final_price: jobTemplate.customerFinalPrice || jobTemplate.customer_final_price || 0,
+supplier_final_price: jobTemplate.supplierFinalPrice || jobTemplate.supplier_final_price || 0,
+job_date: new Date().toISOString().split('T')[0],
+status: 'CONFIRMED',
+is_completed: false,
+is_cancelled: false,
+notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`,
+site_address: jobTemplate.siteAddress || jobTemplate.site_address || null,
+site_address1: jobTemplate.siteAddress1 || jobTemplate.site_address1 || null,
+site_address2: jobTemplate.siteAddress2 || jobTemplate.site_address2 || null,
+site_city: jobTemplate.siteCity || jobTemplate.site_city || null,
+site_postcode: jobTemplate.sitePostcode || jobTemplate.site_postcode || null,
+site_contact: jobTemplate.siteContact || jobTemplate.site_contact || null,
+site_phone: jobTemplate.sitePhone || jobTemplate.site_phone || null,
+site_notes: jobTemplate.siteNotes || jobTemplate.site_notes || null,
+sage_line_items: jobTemplate.sage_line_items || null,
+ };
+// NO job-type specific fields - database doesn't have those columns
+// Save directly to database
+const { data, error } = await window.supabase
+ .from('jobs')
+ .insert([jobForDatabase])
+ .select();
+if (error) throw error;
+// CHANGED: Call fetchJobs instead of manually updating state
+await fetchJobs();
+setShowFullPageJob(null); // Close the full page view
+alert(`${jobType} job duplicated successfully!`);
+ } catch (error) {
+console.error('Error duplicating job:', error);
+alert('Error duplicating job: ' + error.message);
+ }
 };
 const handleAddressSearch = async (searchText) => {
-
-    
-    try {
-        if (searchText.length < 2) {
-            setAddressSuggestions([]);
-            setShowAddressSuggestions(false);
-            return;
-        }
-        
-        const { data, error } = await window.supabase
-            .from('jobs')
-            .select('site_address1, site_address2, site_postcode')
-            .or(`site_address1.ilike.%${searchText}%,site_address2.ilike.%${searchText}%,site_postcode.ilike.%${searchText}%`)
-            .limit(10);
-            
-        
-        if (error) throw error;
-        
-        // Remove duplicates and format suggestions
-        const uniqueAddresses = [...new Map(
-            data
-                .filter(job => job.site_address1)
-                .map(job => [`${job.site_address1}|${job.site_postcode || ''}`, {
-                    address: job.site_address1,
-                    postcode: job.site_postcode || ''
-                }])
-        ).values()];
-        
-        setAddressSuggestions(uniqueAddresses);
-        setShowAddressSuggestions(uniqueAddresses.length > 0);
-        
-        
-    } catch (error) {
-        console.error('Error in handleAddressSearch:', error);
-    }
+try {
+if (searchText.length < 2) {
+setAddressSuggestions([]);
+setShowAddressSuggestions(false);
+return;
+ }
+const { data, error } = await window.supabase
+ .from('jobs')
+ .select('site_address1, site_address2, site_postcode')
+ .or(`site_address1.ilike.%${searchText}%,site_address2.ilike.%${searchText}%,site_postcode.ilike.%${searchText}%`)
+ .limit(10);
+if (error) throw error;
+// Remove duplicates and format suggestions
+const uniqueAddresses = [...new Map(
+data
+ .filter(job => job.site_address1)
+ .map(job => [`${job.site_address1}|${job.site_postcode || ''}`, {
+address: job.site_address1,
+postcode: job.site_postcode || ''
+ }])
+ ).values()];
+setAddressSuggestions(uniqueAddresses);
+setShowAddressSuggestions(uniqueAddresses.length > 0);
+ } catch (error) {
+console.error('Error in handleAddressSearch:', error);
+ }
 };
 const handleContactSearch = async (searchText) => {
     try {
