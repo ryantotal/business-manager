@@ -8052,12 +8052,15 @@ const handleDeleteAttachment = async (attachment) => {
 
         const handleDuplicateJob = async (jobTemplate) => {
     try {
-        // Create a completely fresh job object
-        const year = new Date().getFullYear();
-        const lastJobNumber = parseInt(localStorage.getItem('lastJobNumber') || '0');
-        const newJobNumber = lastJobNumber + 1;
-        localStorage.setItem('lastJobNumber', newJobNumber.toString());
-        const jobNumber = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
+        // Get the next job number from Supabase sequence
+const { data: jobNumber, error: seqError } = await window.supabase
+    .rpc('get_next_job_number');
+
+if (seqError) {
+    console.error('Error getting job number:', seqError);
+    alert('Error getting job number. Please try again.');
+    return;
+}
         
         // Get the job type (could be Skip Hire, Other, Grab Hire, Muck Hire)
         const jobType = jobTemplate.jobType || jobTemplate.job_type || 'Skip Hire';
