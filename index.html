@@ -8048,8 +8048,11 @@ const { data: fullJob } = await window.supabase
     .single();
 
 if (fullJob) {
-    jobTemplate = fullJob;
-    console.log('Fetched full job with sage_line_items:', jobTemplate.sage_line_items);
+    // Only add the specific fields we need, don't overwrite everything
+    jobTemplate.sage_line_items = fullJob.sage_line_items;
+    jobTemplate.description = fullJob.description;
+    jobTemplate.sage_product_name = fullJob.sage_product_name;
+    console.log('Added sage_line_items:', jobTemplate.sage_line_items);
 }
         const jobForDatabase = {
             job_number: jobNumber,
