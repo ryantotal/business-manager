@@ -8074,7 +8074,8 @@ const handleDeleteAttachment = async (attachment) => {
             .insert([jobForDatabase])
             .select();
             // Copy line items if they exist in the original job
-// Copy line items if they exist in the original job
+console.log('About to duplicate job:', jobTemplate);
+console.log('LineItems to copy:', jobTemplate.lineItems);
 if (data && data[0] && jobTemplate.lineItems && jobTemplate.lineItems.length > 0) {
     const newJobId = data[0].id;
     
@@ -8268,7 +8269,8 @@ const handlePhoneSearch = async (searchText) => {
     
     // Add line items to the job object
     job.lineItems = lineItems || [];
-    
+    console.log('Job after adding lineItems:', job);  // Add this debug line
+console.log('Number of lineItems:', job.lineItems.length);
     // Convert the job data to the format expected by the form
     const editableJob = {
         ...job,
