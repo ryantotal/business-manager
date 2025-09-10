@@ -8078,33 +8078,24 @@ const { data, error } = await window.supabase
 console.log('About to duplicate job:', jobTemplate);
 console.log('LineItems to copy:', jobTemplate.lineItems);
 
-if (data && data[0] && jobTemplate.lineItems && jobTemplate.lineItems.length > 0) {
+if (error) throw error;
+
+// If the original job had line items, we need to update the new job with them
+if (data && data[0] && jobTemplate.sage_line_items) {
     const newJobId = data[0].id;
     
-    // Prepare line items for the new job - simpler structure
-    const lineItemsToInsert = jobTemplate.lineItems.map(item => ({
-        job_id: newJobId,
-        sage_product_data: {
-            sage_id: item.sage_id || item.sage_product_data?.sage_id || '',
-            product_name: item.product_name || item.sage_product_data?.product_name || '',
-            type: item.type || item.sage_product_data?.type || 'product'
-        }
-    }));
+    console.log('Copying line items to new job:', jobTemplate.sage_line_items);
     
-    console.log('Attempting to insert:', lineItemsToInsert);
+    // Update the new job with the line items
+    const { error: updateError } = await window.supabase
+        .from('jobs')
+        .update({ sage_line_items: jobTemplate.sage_line_items })
+        .eq('id', newJobId);
     
-    // Insert line items into the sage_line_items table
-    const { data: insertedItems, error: lineItemsError } = await window.supabase
-        .from('sage_line_items')
-        .insert(lineItemsToInsert)
-        .select();  // Add select to see what gets inserted
-    
-    if (lineItemsError) {
-        console.error('Detailed error:', lineItemsError);
-        console.error('Error message:', lineItemsError.message);
-        console.error('Error code:', lineItemsError.code);
+    if (updateError) {
+        console.error('Error copying line items:', updateError);
     } else {
-        console.log('Successfully inserted items:', insertedItems);
+        console.log('Successfully copied line items');
     }
 }
 
