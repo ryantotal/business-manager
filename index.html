@@ -362,7 +362,7 @@ const getFilteredProducts = () => {
         const defaultWasteTypes = {
           'Skip Hire': ['Mixed Construction Waste', 'Inert/Soil', 'Wood', 'Metal', 'Plasterboard', 'Green Waste', 'Mixed Heavy', 'Light Mixed'],
           'Aggregates': ['Type 1 Sub Base', 'Type 2 Sub Base', 'Ballast', 'Sharp Sand', 'Building Sand', 'Topsoil', 'Shingle'],
-          'Waste Collection': ['General Waste', 'Dry Mixed Recycling', 'Cardboard', 'Wood', 'Metal', 'WEEE', 'Hazardous'],
+          'Other': ['General Waste', 'Dry Mixed Recycling', 'Cardboard', 'Wood', 'Metal', 'WEEE', 'Hazardous'],
           'Roll-on Roll-off': ['Mixed Construction Waste', 'Inert/Soil', 'Wood', 'Metal', 'Mixed Heavy'],
           'Grab Hire': ['Mixed Construction Waste', 'Inert/Soil', 'Hardcore', 'Green Waste'],
           'Muck Away': ['Clean Soil', 'Mixed Soil', 'Clay', 'Contaminated Soil']
@@ -1057,7 +1057,7 @@ if (!newJobNumber) {
                           >
                             <option value="Skip Hire">Skip Hire</option>
                             <option value="Aggregates">Aggregates</option>
-                            <option value="Waste Collection">Waste Collection</option>
+                            <option value="Other">Other</option>
                             <option value="Grab Hire">Grab Hire</option>
                             <option value="Muck Away">Muck Away</option>
                             <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -1333,7 +1333,7 @@ tax_code: product.tax_rate_id || 'T1'
   </div>
 )}
 
-                     {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Waste Collection') && (
+                     {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
     <div>
       <SageProductSelector 
@@ -1850,7 +1850,7 @@ tax_code: product.tax_rate_id || 'T1'
           const jobIcons = {
             'Skip Hire': { icon: 'Trash2', color: 'text-blue-600', bg: 'bg-blue-100' },
             'Aggregates': { icon: 'Mountain', color: 'text-orange-600', bg: 'bg-orange-100' },
-            'Waste Collection': { icon: 'Recycle', color: 'text-green-600', bg: 'bg-green-100' },
+            'Other': { icon: 'Recycle', color: 'text-green-600', bg: 'bg-green-100' },
             'Grab Hire': { icon: 'Truck', color: 'text-purple-600', bg: 'bg-purple-100' },
             'Muck Away': { icon: 'Truck', color: 'text-red-600', bg: 'bg-red-100' },
             'Roll-on Roll-off': { icon: 'Truck', color: 'text-indigo-600', bg: 'bg-indigo-100' }
@@ -2229,7 +2229,7 @@ setTimeout(() => {
           const jobColors = {
             'Skip Hire': '#3B82F6',
             'Aggregates': '#F97316',
-            'Waste Collection': '#10B981',
+            'Other': '#10B981',
             'Grab Hire': '#8B5CF6',
             'Muck Away': '#EF4444',
             'Roll-on Roll-off': '#6366F1'
@@ -2561,7 +2561,7 @@ const uploadJobAttachment = async () => {
         <option value="">All Job Types</option>
         <option value="Skip Hire">Skip Hire</option>
         <option value="Aggregates">Aggregates</option>
-        <option value="Waste Collection">Waste Collection</option>
+        <option value="Other">Other</option>
         <option value="Grab Hire">Grab Hire</option>
         <option value="Muck Away">Muck Away</option>
         <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -3155,7 +3155,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
       <option value="">All Job Types</option>
       <option value="Skip Hire">Skip Hire</option>
       <option value="Aggregates">Aggregates</option>
-      <option value="Waste Collection">Waste Collection</option>
+      <option value="Other">Other</option>
       <option value="Grab Hire">Grab Hire</option>
       <option value="Muck Away">Muck Away</option>
       <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -5610,7 +5610,7 @@ const handleApplySync = async () => {
                     >
                       <option value="">All Services</option>
                       <option value="Skip Hire">Skip Hire</option>
-                      <option value="Waste Collection">Waste Collection</option>
+                      <option value="Other">Other</option>
                       <option value="Aggregates Supply">Aggregates Supply</option>
                       <option value="Recycling">Recycling</option>
                       <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -8059,7 +8059,7 @@ const handleDeleteAttachment = async (attachment) => {
         localStorage.setItem('lastJobNumber', newJobNumber.toString());
         const jobNumber = `TWS-${year}-${String(newJobNumber).padStart(4, '0')}`;
         
-        // Get the job type (could be Skip Hire, Waste Collection, Grab Hire, Muck Hire)
+        // Get the job type (could be Skip Hire, Other, Grab Hire, Muck Hire)
         const jobType = jobTemplate.jobType || jobTemplate.job_type || 'Skip Hire';
         console.log('Full jobTemplate object:', jobTemplate);
 console.log('jobTemplate.sage_line_items:', jobTemplate.sage_line_items);
@@ -11315,7 +11315,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                   >
                     <option value="Skip Hire">Skip Hire</option>
                     <option value="Aggregates">Aggregates</option>
-                    <option value="Waste Collection">Waste Collection</option>
+                    <option value="Other">Other</option>
                     <option value="Grab Hire">Grab Hire</option>
                     <option value="Muck Away">Muck Away</option>
                     <option value="Roll-on Roll-off">Roll-on Roll-off</option>
@@ -11515,7 +11515,7 @@ tax_code: product.tax_rate_id || 'T1'
                 </div>
               )}
 
-              {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Waste Collection') && (
+              {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <SageProductSelector 
