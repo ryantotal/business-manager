@@ -2449,20 +2449,18 @@ const uploadJobAttachment = async () => {
                             const isFinished = job.isCompleted || job.status === 'COLLECTED';
                             return (
                               <div
-                                key={job.id}
-                                className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
-                                  isFinished ? 'opacity-60' : ''
-                                }`}
-                                style={{ 
-                                  backgroundColor: jobColors[job.jobType] + '20', 
-                                  color: jobColors[job.jobType],
-                                  borderLeft: `3px solid ${jobColors[job.jobType]}`,
-                                  textDecoration: isFinished ? 'line-through' : 'none',
-                                  textDecorationColor: isFinished ? '#ef4444' : 'transparent'
-                                }}
-                                onClick={() => handleJobClick(job)}
-                                title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}`}
-                              >
+  key={job.id}
+  className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
+    isFinished ? 'bg-green-500 line-through decoration-black' : ''
+  }`}
+  style={{ 
+    backgroundColor: isFinished ? '' : jobColors[job.jobType] + '20', 
+    color: isFinished ? 'black' : jobColors[job.jobType],
+    borderLeft: `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
+  }}
+  onClick={() => handleJobClick(job)}
+  title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}`}
+>
                                 <div className="truncate font-medium text-xs">
   {job.customerName || 'No Customer'}
 </div>
