@@ -2523,7 +2523,7 @@ const uploadJobAttachment = async () => {
             </button>
             <button
               onClick={() => {
-                handleDeleteJob(deleteConfirmation.jobId);
+                onDeleteJob(deleteConfirmation.jobId);
                 setDeleteConfirmation({ show: false, jobId: null, jobNumber: '' });
               }}
               className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
