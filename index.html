@@ -2060,7 +2060,7 @@ const shortenCompanyName = (name) => {
   return name;
 };
         // Jobs Management Component
-        const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setJobs, setShowFullPageJob }) => {
+        const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setJobs, setShowFullPageJob, deleteConfirmation, setDeleteConfirmation }) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
@@ -2074,8 +2074,6 @@ const shortenCompanyName = (name) => {
 });
           const [creatingInvoice, setCreatingInvoice] = useState(false);
           const [invoiceJobId, setInvoiceJobId] = useState(null);
-          const [deleteConfirmation, setDeleteConfirmation] = useState({ show: false, jobId: null, jobNumber: '' });
-
 const handleCreateInvoice = async (job) => {
   setCreatingInvoice(true);
   setInvoiceJobId(job.id);
@@ -7291,6 +7289,7 @@ const loadUsers = async () => {
         // Main Application
         const App = () => {
           // Load company settings on app start
+          const [deleteConfirmation, setDeleteConfirmation] = useState({ show: false, jobId: null, jobNumber: '' });
 useEffect(() => {
   const loadGlobalSettings = async () => {
     try {
@@ -9106,6 +9105,8 @@ exchangeJob.id = jobNumber;
                     suppliers={suppliers}
                     user={user}
                     setShowFullPageJob={setShowFullPageJob}
+                    deleteConfirmation={deleteConfirmation}  // Add this
+  setDeleteConfirmation={setDeleteConfirmation}
                   />
                 )}
                 {activeTab === 'customers' && (
