@@ -2074,6 +2074,7 @@ const shortenCompanyName = (name) => {
 });
           const [creatingInvoice, setCreatingInvoice] = useState(false);
           const [invoiceJobId, setInvoiceJobId] = useState(null);
+          const [deleteConfirmation, setDeleteConfirmation] = useState({ show: false, jobId: null, jobNumber: '' });
 
 const handleCreateInvoice = async (job) => {
   setCreatingInvoice(true);
@@ -7321,7 +7322,6 @@ useEffect(() => {
           
           // State for data management
          const [jobs, setJobs] = useState([]);
-         const [deleteConfirmation, setDeleteConfirmation] = useState({ show: false, jobId: null, jobNumber: '' });
 const [customers, setCustomers] = useState([]);
 const [suppliers, setSuppliers] = useState([]);
 const [jobAttachments, setJobAttachments] = useState([]);
