@@ -2675,25 +2675,25 @@ className="w-2 h-8 rounded mr-3"
 style={{ backgroundColor: jobColors[job.jobType] }}
 />
 <div>
-<div className={`text-sm font-medium text-gray-900 ${isFinished ? 'bg-green-400 rounded px-1' : ''}`}>
+<div className={`text-sm font-medium text-gray-900 ${isFinished ? 'bg-green-400 line-through decoration-black' : ''}`}>
 {job.jobNumber}
 {job.quoteReference && (
 <div className="text-xs text-gray-500 mt-1">From Quote: {job.quoteReference}</div>
 )}
 </div>
-<div className={`text-sm text-gray-500 ${isFinished ? 'bg-green-400 rounded px-1' : ''}`}>
+<div className={`text-sm text-gray-500 ${isFinished ? 'bg-green-400 line-through decoration-black' : ''}`}>
 {new Date(job.jobDate).toLocaleDateString('en-GB')}
 </div>
 </div>
 </div>
 </td>
-<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400 line-through decoration-black' : ''}`}>
 <span title={job.customerName}>{shortenCompanyName(job.customerName)}</span>
 </td>
-<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400 line-through decoration-black' : ''}`}>
 <span title={job.supplierName}>{shortenCompanyName(job.supplierName)}</span>
 </td>
-<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400 line-through decoration-black' : ''}`}>
 {job.lineItems && job.lineItems.length > 0
  ? <span title={job.lineItems[0].product_name || job.lineItems[0].description}>
 {(job.lineItems[0].product_name || job.lineItems[0].description || '-').substring(0, 30)}
@@ -2702,16 +2702,16 @@ style={{ backgroundColor: jobColors[job.jobType] }}
  : job.sageProductName || '-'
 }
 </td>
-<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400 line-through decoration-black' : ''}`}>
 <span title={job.haulierName}>{shortenCompanyName(job.haulierName)}</span>
 </td>
-<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400 line-through decoration-black' : ''}`}>
 {job.siteAddress1 || job.siteAddress || '-'}
 </td>
-<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400 line-through decoration-black' : ''}`}>
 {job.sitePostcode || '-'}
 </td>
-<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400' : ''}`}>
+<td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-400 line-through decoration-black' : ''}`}>
 {job.jobType}
 </td>
 <td className="px-3 py-3 whitespace-nowrap">
