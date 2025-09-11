@@ -2421,14 +2421,14 @@ const uploadJobAttachment = async () => {
                   </div>
                 </div>
                 <div className="grid grid-cols-7 gap-2">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                    <div key={day} className="text-center font-medium text-gray-600 p-2">
-                      {day}
-                    </div>
-                  ))}
-                  {Array(firstDay.getDay()).fill(null).map((_, index) => (
-                    <div key={`empty-${index}`} className="p-2"></div>
-                  ))}
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+  <div key={day} className="text-center font-medium text-gray-600 p-2">
+    {day}
+  </div>
+))}
+                  {Array((firstDay.getDay() + 6) % 7).fill(null).map((_, index) => (
+  <div key={`empty-${index}`} className="p-2"></div>
+))}
                   {days.map(day => {
                     const dateKey = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
                     const dayJobs = jobsByDate[dateKey] || [];
