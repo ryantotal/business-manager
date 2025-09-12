@@ -7912,6 +7912,7 @@ collection_date: updatedJob.collectionDate || null,
       payment_status: updatedJob.paymentStatus || 'Not Paid',
       collection_date: updatedJob.collectionDate || null,
       sage_si_number: updatedJob.sage_si_number,  // ADD THIS LINE
+      sage_line_items: updatedJob.lineItems ? JSON.stringify(updatedJob.lineItems) : null,
   sage_invoice_id: updatedJob.sage_invoice_id
     };
 
@@ -8143,9 +8144,7 @@ sage_product_name: fullJob?.sage_product_name || null,
     sage_line_items: fullJob?.sage_line_items || null,
     sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
         };
-        console.log('Job being saved to database:', jobForDatabase);
-console.log('Description being saved:', jobForDatabase.description);
-console.log('sage_line_items being saved:', jobForDatabase.sage_line_items);
+
         
        // Save directly to database
 const { data, error } = await window.supabase
