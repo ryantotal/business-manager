@@ -7984,11 +7984,10 @@ const handleCompleteJob = async (job) => {
     alert('Job marked as completed!');
     
     // Reload the page data to ensure sync
-    window.location.reload();
-  } catch (error) {
-    console.error('Error completing job:', error);
-    alert('Error completing job: ' + error.message);
-  }
+ } catch (error) {
+console.error('Error completing job:', error);
+alert('Error completing job: ' + error.message);
+ }
 };
 const handleDeleteAttachment = async (attachment) => {
   if (!confirm(`Are you sure you want to delete ${attachment.file_name}?`)) return;
