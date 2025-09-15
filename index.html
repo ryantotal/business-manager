@@ -2054,7 +2054,10 @@ const shortenCompanyName = (name) => {
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
           const [currentMonth, setCurrentMonth] = useState(new Date());
           const [searchQuery, setSearchQuery] = useState('');
+          const [sortBy, setSortBy] = React.useState('jobDate');
+const [sortOrder, setSortOrder] = React.useState('desc');
           const [filters, setFilters] = useState({
+            
   status: '',
   jobType: '',
   rejectionReason: ''
@@ -2228,30 +2231,56 @@ setTimeout(() => {
              return bNum - aNum;
             });
 
-          const filteredJobs = sortedJobs.filter(job => {
-  if (searchQuery) {
-    const query = searchQuery.toLowerCase();
-    const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
-   const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
-    const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
-    const matchesPostcode = ((job.sitePostcode || '').toLowerCase().includes(query)) || 
-                        ((job.postcode || '').toLowerCase().includes(query));
-const matchesAddress = ((job.siteAddress1 || '').toLowerCase().includes(query)) || 
-                       ((job.siteAddress || '').toLowerCase().includes(query));    
-    if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
-      return false;
+          const filteredJobs = React.useMemo(() => {
+  let filtered = sortedJobs.filter(job => {
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
+      const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
+      const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
+      const matchesPostcode = (job.sitePostcode || '').toLowerCase().includes(query);
+      const matchesAddress = (job.siteAddress || '').toLowerCase().includes(query);
+      
+      if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
+        return false;
+      }
     }
-  }
-            if (filters.jobType && job.jobType !== filters.jobType) return false;
-            if (filters.status) {
-              if (filters.status === 'COMPLETED' && !job.isCompleted) return false;
-              if (filters.status === 'CANCELLED' && !job.isCancelled) return false;
-              if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') return false;
-              if (filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
-                  (job.status !== filters.status || job.isCompleted || job.isCancelled)) return false;
-            }
-            return true;
-          });
+    
+    if (filters.jobType && job.jobType !== filters.jobType) return false;
+    if (filters.status) {
+      if (filters.status === 'COMPLETED' && !job.isCompleted) return false;
+      if (filters.status === 'CANCELLED' && !job.isCancelled) return false;
+      if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') return false;
+      if (filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
+          job.status !== filters.status) return false;
+    }
+    return true;
+  });
+  
+  // Apply sorting
+  return [...filtered].sort((a, b) => {
+    let compareValue = 0;
+    
+    switch(sortBy) {
+      case 'jobDate':
+        compareValue = new Date(a.jobDate) - new Date(b.jobDate);
+        break;
+      case 'createdAt':
+        compareValue = new Date(a.createdAt) - new Date(b.createdAt);
+        break;
+      case 'customerName':
+        compareValue = (a.customerName || '').localeCompare(b.customerName || '');
+        break;
+      case 'jobNumber':
+        compareValue = (a.jobNumber || '').localeCompare(b.jobNumber || '');
+        break;
+      default:
+        return 0;
+    }
+    
+    return sortOrder === 'asc' ? compareValue : -compareValue;
+  });
+}, [sortedJobs, searchQuery, filters, sortBy, sortOrder]);
 
     const handleJobClick = (job) => {
   setShowFullPageJob(job); // ADD THIS LINE - opens full page view
@@ -2555,7 +2584,7 @@ const uploadJobAttachment = async () => {
               </div>
 
               {/* Filters */}
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
+<div className="bg-white rounded-lg border border-gray-200 p-4">
   <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
     <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
       <Filter size={16} className="text-gray-600 hidden sm:block" />
@@ -2586,30 +2615,47 @@ const uploadJobAttachment = async () => {
       >
         <option value="">All Statuses</option>
         <option value="CONFIRMED">Confirmed</option>
-        <option value="IN_PROGRESS">In Progress</option>
         <option value="COLLECTED">Collected</option>
         <option value="COMPLETED">Completed</option>
-        <option value="CANCELLED">Cancelled</option>
       </select>
       <select
+        value={sortBy}
+        onChange={(e) => setSortBy(e.target.value)}
+        className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
       >
-        <option value="">All Priorities</option>
-        <option value="Low">Low</option>
-        <option value="Medium">Medium</option>
-        <option value="High">High</option>
-        <option value="Urgent">Urgent</option>
+        <option value="jobDate">Delivery Date</option>
+        <option value="createdAt">Creation Date</option>
+        <option value="customerName">Customer Name</option>
+        <option value="jobNumber">Job Number</option>
       </select>
+      <button
+        onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+        className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2"
+      >
+        {sortOrder === 'asc' ? (
+          <>
+            <lucideReact.ArrowUp size={16} />
+            <span>Asc</span>
+          </>
+        ) : (
+          <>
+            <lucideReact.ArrowDown size={16} />
+            <span>Desc</span>
+          </>
+        )}
+      </button>
       <button
         onClick={() => {
           setSearchQuery('');
-          setFilters({ jobType: '', status: '', });
+          setFilters({ jobType: '', status: '' });
+          setSortBy('jobDate');
+          setSortOrder('desc');
         }}
         className="w-full sm:w-auto px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
       >
         Clear
       </button>
     </div>
-    
     <div className="flex items-center justify-end gap-2">
       <button
         onClick={() => setViewMode('list')}
