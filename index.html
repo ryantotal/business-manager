@@ -706,7 +706,6 @@ if (window.refreshFullPageAttachments) {
             timeSlot: '',
             collectionDate: '',
             status: 'CONFIRMED',
-            priority: 'Medium',
             siteAddress1: '',
 siteAddress2: '',
 siteCity: '',
@@ -1064,17 +1063,6 @@ if (!newJobNumber) {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                          <select
-                            value={formData.priority}
-                            onChange={(e) => setFormData({...formData, priority: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
-                            <option value="Low">Low</option>
-                            <option value="Medium">Medium</option>
-                            <option value="High">High</option>
-                            <option value="Urgent">Urgent</option>
-                          </select>
                         </div>
                       </div>
 
@@ -2069,7 +2057,6 @@ const shortenCompanyName = (name) => {
           const [filters, setFilters] = useState({
   status: '',
   jobType: '',
-  priority: '',
   rejectionReason: ''
 });
           const [creatingInvoice, setCreatingInvoice] = useState(false);
@@ -2263,7 +2250,6 @@ const matchesAddress = ((job.siteAddress1 || '').toLowerCase().includes(query)) 
               if (filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
                   (job.status !== filters.status || job.isCompleted || job.isCancelled)) return false;
             }
-            if (filters.priority && job.priority !== filters.priority) return false;
             return true;
           });
 
@@ -2606,9 +2592,6 @@ const uploadJobAttachment = async () => {
         <option value="CANCELLED">Cancelled</option>
       </select>
       <select
-        value={filters.priority}
-        onChange={(e) => setFilters({...filters, priority: e.target.value})}
-        className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
       >
         <option value="">All Priorities</option>
         <option value="Low">Low</option>
@@ -2619,7 +2602,7 @@ const uploadJobAttachment = async () => {
       <button
         onClick={() => {
           setSearchQuery('');
-          setFilters({ jobType: '', status: '', priority: '' });
+          setFilters({ jobType: '', status: '', });
         }}
         className="w-full sm:w-auto px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
       >
@@ -3091,7 +3074,6 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
   const [filters, setFilters] = useState({
   status: '',
   jobType: '',
-  priority: ''
 });
 
   // Sort quotes by quote number descending (newest first)        
@@ -3119,7 +3101,6 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
   
   if (filters.status && quote.status !== filters.status) return false;
   if (filters.jobType && quote.jobType !== filters.jobType) return false;
-  if (filters.priority && quote.priority !== filters.priority) return false;
   if (filters.rejectionReason && quote.status === 'REJECTED' && 
       (!quote.rejected_reason || !quote.rejected_reason.toLowerCase().includes(filters.rejectionReason.toLowerCase()))) {
     return false;
@@ -3189,15 +3170,8 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
       <option value="Roll-on Roll-off">Roll-on Roll-off</option>
     </select>
     <select
-      value={filters.priority}
-      onChange={(e) => setFilters({...filters, priority: e.target.value})}
-      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
     >
-      <option value="">All Priorities</option>
-      <option value="Low">Low</option>
-      <option value="Medium">Medium</option>
-      <option value="High">High</option>
-      <option value="Urgent">Urgent</option>
+    
     </select>
     <select
       value={filters.rejectionReason}
@@ -3214,7 +3188,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <button
       onClick={() => {
         setSearchQuery('');
-        setFilters({ status: '', jobType: '', priority: '', rejectionReason: '' });
+        setFilters({ status: '', jobType: '', rejectionReason: '' });
       }}
       className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
     >
@@ -3617,15 +3591,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                job.isCancelled ? 'Cancelled' : 
                job.status}
             </span>
-            {job.priority && (
-              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                job.priority === 'High' || job.priority === 'Urgent' ? 'bg-red-100 text-red-700' :
-                job.priority === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
-                'bg-green-100 text-green-700'
-              }`}>
-                {job.priority} Priority
-              </span>
-            )}
+           
           </div>
           
           <div className="flex items-center space-x-2">
@@ -7537,7 +7503,6 @@ collectionDate: job.collection_date,
   timeSlot: job.time_slot,
   collectionDate: job.collection_date,
   status: job.status || 'CONFIRMED',
-  priority: job.priority || 'Medium',
   isCompleted: job.is_completed || false,
   isCancelled: job.is_cancelled || false,
   wasteTransferNote: job.waste_transfer_note,
@@ -7631,7 +7596,6 @@ const refreshJobs = async () => {
                 deliveryInstructions: job.delivery_instructions,
                 timeSlot: job.time_slot,
                 status: job.status || 'CONFIRMED',
-                priority: job.priority || 'Medium',
                 isCompleted: job.is_completed || false,
                 isCancelled: job.is_cancelled || false,
                 wasteTransferNote: job.waste_transfer_note,
@@ -7811,7 +7775,6 @@ job_value: parseFloat(newJob.jobValue) || 0,
       delivery_date: newJob.deliveryDate || null,
 collection_date: newJob.collectionDate || null,
       status: newJob.status || 'CONFIRMED',
-      priority: newJob.priority || 'Medium',
       is_completed: newJob.isCompleted || false,
       is_cancelled: newJob.isCancelled || false,
       waste_transfer_note: newJob.wasteTransferNote || null,
@@ -7901,7 +7864,6 @@ job_value: parseFloat(updatedJob.jobValue) || 0,
 collection_date: updatedJob.collectionDate || null,
       time_slot: updatedJob.timeSlot,
       status: updatedJob.status || 'CONFIRMED',
-      priority: updatedJob.priority || 'Medium',
       is_completed: updatedJob.isCompleted || false,
       is_cancelled: updatedJob.isCancelled || false,
       waste_transfer_note: updatedJob.wasteTransferNote,
@@ -8270,7 +8232,6 @@ const refreshJobs = async () => {
                 deliveryInstructions: job.delivery_instructions,
                 timeSlot: job.time_slot,
                 status: job.status || 'CONFIRMED',
-                priority: job.priority || 'Medium',
                 isCompleted: job.is_completed || false,
                 isCancelled: job.is_cancelled || false,
                 wasteTransferNote: job.waste_transfer_note,
@@ -8687,7 +8648,6 @@ const handleAcceptQuote = async (quote) => {
       vatRate: 20,
       jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
       status: 'CONFIRMED',
-      priority: 'Medium',
       siteAddress1: quote.siteAddress || '',
       sitePostcode: quote.sitePostcode || '',
       siteContact: quote.customerContact || '',
@@ -8803,7 +8763,6 @@ const jobNumber = `TWS-${currentYear}-${String(lastJobNumber + 1).padStart(4, '0
       jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
       collectionDate: null,  // Add this
       status: 'CONFIRMED',
-      priority: quote.priority || 'Medium',
       siteAddress: quote.siteAddress || '',
       siteAddress1: quote.siteAddress1 || '',
       siteAddress2: '',  // Add this
@@ -11142,7 +11101,6 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     timeSlot: '',
     collectionDate: '',
     status: 'PENDING',
-    priority: 'Medium',
     siteAddress1: '',
     siteAddress2: '',
     siteCity: '',
@@ -11359,17 +11317,8 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                  <select
-                    value={formData.priority}
-                    onChange={(e) => setFormData({...formData, priority: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                    <option value="Urgent">Urgent</option>
-                  </select>
+                  
+              
                 </div>
               </div>
 
