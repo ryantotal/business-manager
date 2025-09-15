@@ -2514,15 +2514,6 @@ const uploadJobAttachment = async () => {
                       <span>{type}</span>
                     </div>
                   ))}
-                  {Object.entries(jobColors).map(([type, color]) => (
-  <div key={type} className="flex items-center space-x-2 text-sm">
-    <div
-      className="w-4 h-4 rounded"
-      style={{ backgroundColor: color }}
-    />
-    <span>{type}</span>
-  </div>
-))}
 {/* Add Completed status with "C" */}
 <div className="flex items-center space-x-2 text-sm">
   <div
