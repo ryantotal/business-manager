@@ -3613,93 +3613,103 @@ console.log(JSON.stringify(invoiceData, null, 2));
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header Section */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
-            >
-              <LucideIcon icon="ChevronUp" size={24} className="rotate-90" />
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{job.jobNumber}</h1>
-              <p className="text-gray-600">{job.jobType}</p>
-            </div>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
-              job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
-              job.isCancelled ? 'bg-red-100 text-red-800' :
-              'bg-blue-100 text-blue-800'
-            }`}>
-              {job.status === 'COLLECTED' ? 'Collected' :
-               job.isCompleted ? 'Completed' : 
-               job.isCancelled ? 'Cancelled' : 
-               job.status}
-            </span>
-           
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <button
-             onClick={() => {
-  onEdit(job);
-  // Store a reference to reload attachments after edit
-  window.refreshFullPageAttachments = () => loadJobAttachments(job.id);
-}}
-              className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
-              title="Edit Job"
-            >
-              <Edit3 size={20} />
-            </button>
-            <button
-              onClick={() => onDuplicate(job)}
-              className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
-              title="Duplicate Job"
-            >
-              <Copy size={20} />
-            </button>
-            {job.jobType !== 'Skip Hire' && job.jobType !== 'Roll-on Roll-off' && !job.isCompleted && job.status !== 'COMPLETED' && (
-  <button
-   onClick={() => onComplete(job)}
-    className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
-    title="Mark as Completed"
-  >
-  <LucideIcon icon="CheckCircle" size={20} />
-  </button>
-)}
-            {(job.jobType === 'Skip Hire' || job.jobType === 'Roll-on Roll-off') && 
-             !job.isCompleted && job.status !== 'COLLECTED' && (
-              <>
-                <button
-                  onClick={() => onExchange(job)}
-                  className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg"
-                  title="Exchange"
-                >
-                  <Repeat size={20} />
-                </button>
-                <button
-                  onClick={() => onCollection(job)}
-                  className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
-                  title="Mark as Collected"
-                >
-                  <Package size={20} />
-                </button>
-              </>
-              
-            )}
-            {user?.role === 'ADMIN' && (
-              <button
-                onClick={() => setDeleteConfirmation({ show: true, jobId: job.id, jobNumber: job.jobNumber || 'this job' })}
-                className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
-                title="Delete Job"
-              >
-                <Trash2 size={20} />
-              </button>
-            )}
-          </div>
-        </div>
+<div className="bg-white border-b border-gray-200 px-6 py-4">
+  <div className="flex justify-between items-center">
+    <div className="flex items-center space-x-4">
+      <button
+        onClick={onClose}
+        className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+      >
+        <LucideIcon icon="ChevronUp" size={24} className="rotate-90" />
+      </button>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">{job.jobNumber}</h1>
+        <p className="text-gray-600">{job.jobType}</p>
       </div>
+      <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+        job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
+        job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
+        job.isCancelled ? 'bg-red-100 text-red-800' :
+        'bg-blue-100 text-blue-800'
+      }`}>
+        {job.status === 'COLLECTED' ? 'Collected' :
+         job.isCompleted ? 'Completed' :
+         job.isCancelled ? 'Cancelled' :
+         job.status}
+      </span>
+    </div>
+    <div className="flex items-center space-x-2">
+      <button
+        onClick={() => {
+          onEdit(job);
+          // Store a reference to reload attachments after edit
+          window.refreshFullPageAttachments = () => loadJobAttachments(job.id);
+        }}
+        className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
+        title="Edit Job"
+      >
+        <Edit3 size={20} />
+      </button>
+      <button
+        onClick={() => onDuplicate(job)}
+        className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
+        title="Duplicate Job"
+      >
+        <Copy size={20} />
+      </button>
+      
+      {/* Complete button for non-Skip/RoRo jobs */}
+      {job.jobType !== 'Skip Hire' && job.jobType !== 'Roll-on Roll-off' && !job.isCompleted && job.status !== 'COMPLETED' && (
+        <button
+          onClick={() => onComplete(job)}
+          className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
+          title="Mark as Completed"
+        >
+          <LucideIcon icon="CheckCircle" size={20} />
+        </button>
+      )}
+      
+      {/* Skip Hire and Roll-on Roll-off buttons */}
+      {(job.jobType === 'Skip Hire' || job.jobType === 'Roll-on Roll-off') &&
+       !job.isCompleted && job.status !== 'COLLECTED' && job.status !== 'COMPLETED' && (
+        <>
+          <button
+            onClick={() => onExchange(job)}
+            className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg"
+            title="Exchange"
+          >
+            <Repeat size={20} />
+          </button>
+          <button
+            onClick={() => onCollection(job)}
+            className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
+            title="Mark as Collected"
+          >
+            <Package size={20} />
+          </button>
+          {/* NEW: Completed button for Skip Hire - same as Collected but marks as COMPLETED */}
+          <button
+            onClick={() => onComplete(job)}
+            className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
+            title="Mark as Completed"
+          >
+            <LucideIcon icon="CheckCircle" size={20} />
+          </button>
+        </>
+      )}
+      
+      {user?.role === 'ADMIN' && (
+        <button
+          onClick={() => setDeleteConfirmation({ show: true, jobId: job.id, jobNumber: job.jobNumber || 'this job' })}
+          className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
+          title="Delete Job"
+        >
+          <Trash2 size={20} />
+        </button>
+      )}
+    </div>
+  </div>
+</div>
 
       {/* Tab Navigation */}
       <div className="bg-white border-b border-gray-200">
@@ -7942,42 +7952,43 @@ alert('Job updated successfully!');
   }
 };
 const handleCompleteJob = async (job) => {
-    try {
-        // For Skip Hire jobs, set status to COLLECTED when marking as complete
-        const updateData = {
-            is_completed: true,  // Database field name
-            status: job.jobType === 'Skip Hire' ? 'COLLECTED' : 'COMPLETED'
-        };
-        
-        const { error } = await window.supabase
-            .from('jobs')
-            .update(updateData)
-            .eq('id', job.id);
-            
-        if (error) throw error;
-        
-        // Update local state with camelCase
-        const updatedJob = {
-            ...job,
-            isCompleted: true,  // JavaScript field name
-            is_completed: true, // Keep both for compatibility
-            status: updateData.status
-        };
-        
-        setJobs(jobs.map(j => j.id === job.id ? updatedJob : j));
-        
-        // Force update the full page view
-        if (setShowFullPageJob) {
-            setShowFullPageJob(updatedJob);
-        }
-        
-        alert('Job marked as completed!');
-        
-        // Reload the page data to ensure sync
-    } catch (error) {
-        console.error('Error completing job:', error);
-        alert('Error completing job: ' + error.message);
+  try {
+    // Always set status to COMPLETED for all job types
+    const updateData = {
+      is_completed: true,
+      status: 'COMPLETED'  // Changed this - no longer setting Skip Hire to COLLECTED
+    };
+    
+    const { error } = await window.supabase
+      .from('jobs')
+      .update(updateData)
+      .eq('id', job.id);
+    
+    if (error) throw error;
+    
+    // Update local state with camelCase
+    const updatedJob = {
+      ...job,
+      isCompleted: true,
+      is_completed: true,
+      status: 'COMPLETED'  // Always COMPLETED
+    };
+    
+    setJobs(jobs.map(j => j.id === job.id ? updatedJob : j));
+    
+    // Force update the full page view
+    if (setShowFullPageJob) {
+      setShowFullPageJob(updatedJob);
     }
+    
+    alert('Job marked as completed!');
+    
+    // Reload the page data to ensure sync
+    window.location.reload();
+  } catch (error) {
+    console.error('Error completing job:', error);
+    alert('Error completing job: ' + error.message);
+  }
 };
 const handleDeleteAttachment = async (attachment) => {
   if (!confirm(`Are you sure you want to delete ${attachment.file_name}?`)) return;
