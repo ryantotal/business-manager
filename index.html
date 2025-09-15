@@ -2634,12 +2634,12 @@ const uploadJobAttachment = async () => {
       >
         {sortOrder === 'asc' ? (
           <>
-            <ArrowUp size={16} />
+            {React.createElement(lucideReact.ArrowUp, {size: 16})}
             <span>Asc</span>
           </>
         ) : (
           <>
-            <ArrowDown size={16} />
+            {React.createElement(lucideReact.ArrowDown, {size: 16})}
             <span>Desc</span>
           </>
         )}
