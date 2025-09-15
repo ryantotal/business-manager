@@ -2231,8 +2231,8 @@ setTimeout(() => {
              return bNum - aNum;
             });
 
-          const filteredJobs = React.useMemo(() => {
-  let filtered = sortedJobs.filter(job => {
+         const filteredJobs = React.useMemo(() => {
+  let filtered = jobs.filter(job => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
@@ -2280,7 +2280,7 @@ setTimeout(() => {
     
     return sortOrder === 'asc' ? compareValue : -compareValue;
   });
-}, [sortedJobs, searchQuery, filters, sortBy, sortOrder]);
+}, [jobs, searchQuery, filters, sortBy, sortOrder]);
 
     const handleJobClick = (job) => {
   setShowFullPageJob(job); // ADD THIS LINE - opens full page view
