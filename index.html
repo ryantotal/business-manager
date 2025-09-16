@@ -3649,64 +3649,63 @@ console.log(JSON.stringify(invoiceData, null, 2));
       </span>
     </div>
     <div className="flex items-center space-x-2">
+     <button
+  onClick={() => {
+    onEdit(job);
+    // Store a reference to reload attachments after edit
+    window.refreshFullPageAttachments = () => loadJobAttachments(job.id);
+  }}
+  className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
+  title="Edit Job"
+>
+  <Edit3 size={20} />
+</button>
+<button
+  onClick={() => onDuplicate(job)}
+  className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
+  title="Duplicate Job"
+>
+  <Copy size={20} />
+</button>
+{/* Complete button for non-Skip/RoRo jobs - only check status, not isCompleted */}
+{job.jobType !== 'Skip Hire' && job.jobType !== 'Roll-on Roll-off' && job.status !== 'COMPLETED' && (
+  <button
+    onClick={() => onComplete(job)}
+    className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
+    title="Mark as Completed"
+  >
+    <LucideIcon icon="CheckCircle" size={20} />
+  </button>
+)}
+      
+      {/* Skip Hire and Roll-on Roll-off buttons - remove completed/collected checks */}
+{(job.jobType === 'Skip Hire' || job.jobType === 'Roll-on Roll-off') && (
+  <>
+    <button
+      onClick={() => onExchange(job)}
+      className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg"
+      title="Exchange"
+    >
+      <Repeat size={20} />
+    </button>
+    <button
+      onClick={() => onCollection(job)}
+      className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
+      title="Mark as Collected"
+    >
+      <Package size={20} />
+    </button>
+    {job.status !== 'COMPLETED' && (
       <button
-        onClick={() => {
-          onEdit(job);
-          // Store a reference to reload attachments after edit
-          window.refreshFullPageAttachments = () => loadJobAttachments(job.id);
-        }}
-        className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
-        title="Edit Job"
-      >
-        <Edit3 size={20} />
-      </button>
-      <button
-        onClick={() => onDuplicate(job)}
+        onClick={() => onComplete(job)}
         className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
-        title="Duplicate Job"
+        title="Mark as Completed"
       >
-        <Copy size={20} />
+        <LucideIcon icon="CheckCircle" size={20} />
       </button>
-      
-      {/* Complete button for non-Skip/RoRo jobs */}
-      {job.jobType !== 'Skip Hire' && job.jobType !== 'Roll-on Roll-off' && !job.isCompleted && job.status !== 'COMPLETED' && (
-        <button
-          onClick={() => onComplete(job)}
-          className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
-          title="Mark as Completed"
-        >
-          <LucideIcon icon="CheckCircle" size={20} />
-        </button>
-      )}
-      
-      {/* Skip Hire and Roll-on Roll-off buttons */}
-      {(job.jobType === 'Skip Hire' || job.jobType === 'Roll-on Roll-off') &&
-       !job.isCompleted && job.status !== 'COLLECTED' && job.status !== 'COMPLETED' && (
-        <>
-          <button
-            onClick={() => onExchange(job)}
-            className="p-2 text-orange-600 hover:bg-orange-100 rounded-lg"
-            title="Exchange"
-          >
-            <Repeat size={20} />
-          </button>
-          <button
-            onClick={() => onCollection(job)}
-            className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
-            title="Mark as Collected"
-          >
-            <Package size={20} />
-          </button>
-          {/* NEW: Completed button for Skip Hire - same as Collected but marks as COMPLETED */}
-          <button
-            onClick={() => onComplete(job)}
-            className="p-2 text-green-600 hover:bg-green-100 rounded-lg"
-            title="Mark as Completed"
-          >
-            <LucideIcon icon="CheckCircle" size={20} />
-          </button>
-        </>
-      )}
+    )}
+  </>
+)}
       
       {user?.role === 'ADMIN' && (
         <button
