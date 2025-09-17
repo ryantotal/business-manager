@@ -2298,7 +2298,8 @@ setTimeout(() => {
 }, [jobs, searchQuery, filters, sortBy, sortOrder]);
 
     const handleJobClick = (job) => {
-  setShowFullPageJob(job); // ADD THIS LINE - opens full page view
+  setShowFullPageJob(job);  // ADD THIS LINE - opens full page view
+window.scrollTo(0, 0);  // Scroll to top when opening full page view
 };
 
 // Add loadJobAttachments function
