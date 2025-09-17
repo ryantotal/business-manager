@@ -3042,7 +3042,7 @@ job.status.replace('_', ' ')}
       <div className="bg-gray-50 px-4 py-2 border-t border-gray-200">
         <p className="text-sm text-gray-600">
           Total items: {selectedJob.lineItems.length} | 
-          Total quantity: {selectedJob.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}
+          Total quantity: {(selectedJob.lineItems || []).reduce((sum, item) => sum + (item.quantity || 1), 0)}
         </p>
       </div>
     </div>
@@ -3956,33 +3956,33 @@ console.log(JSON.stringify(invoiceData, null, 2));
               </div>
               <div className="bg-gray-50 rounded p-2 text-center">
                 <div className="text-xs text-gray-600">Qty</div>
-                <div className="text-base font-bold">{job.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}</div>
+                <div className="text-base font-bold">{(job.lineItems || []).reduce((sum, item) => sum + (item.quantity || 1), 0)}</div>
               </div>
               <div className="bg-blue-50 rounded p-2 text-center">
                 <div className="text-xs text-blue-600">Value</div>
                 <div className="text-base font-bold text-blue-700">
-                  £{job.lineItems.reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
+                 £{(job.lineItems || []).reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
                 </div>
               </div>
               <div className="bg-red-50 rounded p-2 text-center">
                 <div className="text-xs text-red-600">Cost</div>
                 <div className="text-base font-bold text-red-700">
-                  £{job.lineItems.reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
+                  £{(job.lineItems || []).reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
                 </div>
               </div>
               <div className="bg-green-50 rounded p-2 text-center">
                 <div className="text-xs text-green-600">Profit</div>
                 <div className="text-base font-bold text-green-700">
-                  £{(job.lineItems.reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0) - 
-                     job.lineItems.reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0)).toFixed(0)}
+                 £{((job.lineItems || []).reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0) -
+  (job.lineItems || []).reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0)).toFixed(0)}
                 </div>
               </div>
               <div className="bg-purple-50 rounded p-2 text-center">
                 <div className="text-xs text-purple-600">Margin</div>
                 <div className="text-base font-bold text-purple-700">
                   {(() => {
-                    const totalRRP = job.lineItems.reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0);
-                    const totalCost = job.lineItems.reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0);
+                    const totalRRP = (job.lineItems || []).reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0);
+                    const totalCost = (job.lineItems || []).reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0);
                     return totalRRP > 0 ? ((totalRRP - totalCost) / totalRRP * 100).toFixed(1) : 0;
                   })()}%
                 </div>
@@ -8473,6 +8473,10 @@ console.log('Looking for sage_line_items:', job.sage_line_items);
 console.log('Looking for sageLineItems:', job.sageLineItems);
 console.log('Final lineItems:', job.lineItems);
 console.log('All job properties:', Object.keys(job));
+
+if (!Array.isArray(job.lineItems)) {
+    job.lineItems = [];
+}
     // Convert the job data to the format expected by the form
     const editableJob = {
         ...job,
