@@ -683,7 +683,7 @@ if (window.refreshFullPageAttachments) {
     alert('Error uploading attachment: ' + error.message);
   }
 };
-          const [formData, setFormData] = useState(job || {
+          const [formData, setFormData] = useState(job ? {...job, lineItems: job.lineItems || []} : {
             customerName: '',
             id: job?.id,
             customerPO: '',
