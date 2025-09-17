@@ -3781,158 +3781,76 @@ console.log(JSON.stringify(invoiceData, null, 2));
         {activeTab === 'overview' && (
           <div className="space-y-8">
             
-            {/* Job & Customer Information */}
-            <div className="bg-white rounded-lg border border-gray-200">
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-800">Job & Customer Information</h2>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Customer:</span>
-                      <span className="font-semibold text-gray-900">{job.customerName}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Customer PO:</span>
-                      <span className="text-gray-900">{job.customerPO || 'Not provided'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Supplier:</span>
-                      <span className="font-semibold text-gray-900">{job.supplierName}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Supplier Reference:</span>
-                      <span className="font-semibold text-gray-900">{job.supplierRef || 'Not provided'}</span>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Job Type:</span>
-                      <span className="text-gray-900">{job.jobType}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Created Date:</span>
-                     <span className="text-gray-900">{job.createdDate ? new Date(job.createdDate).toLocaleDateString() : new Date(job.jobDate).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Delivery Date:</span>
-                      <span className="text-gray-900 font-semibold">{new Date(job.jobDate).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-  <span className="text-gray-600 font-medium">Collection Date:</span>
-  <span className="text-gray-900">{job.collectionDate ? new Date(job.collectionDate).toLocaleDateString() : 'Not provided'}</span>
-</div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Quantity:</span>
-                      <span className="text-gray-900">{job.quantity} {job.unit}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* Customer Extended Information */}
-<div className="bg-white rounded-lg border border-gray-200 p-4 mt-4">
-  <h2 className="text-lg font-semibold text-gray-800 mb-4">Customer Details</h2>
-  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <div className="space-y-4">
-      <div className="flex justify-between">
-        <span className="text-gray-600 font-medium">Reference:</span>
-        <span className="font-medium text-gray-900">{job.customerReference || 'Not provided'}</span>
+            {/* Combined Job, Customer & Site Information */}
+    <div className="bg-white rounded-lg border border-gray-200">
+      <div className="bg-gray-50 border-b border-gray-200 px-6 py-3">
+        <h2 className="text-lg font-semibold text-gray-800">Job & Customer Information</h2>
       </div>
-      <div className="flex justify-between">
-        <span className="text-gray-600 font-medium">Main Contact:</span>
-        <span className="font-medium text-gray-900">{job.customerMainContact || 'Not provided'}</span>
-      </div>
-      <div className="flex justify-between">
-        <span className="text-gray-600 font-medium">Mobile:</span>
-        <span className="font-medium text-gray-900">{job.customerMobile || 'Not provided'}</span>
-      </div>
-    </div>
-    <div className="space-y-4">
-      <div className="flex justify-between">
-        <span className="text-gray-600 font-medium">Credit Limit:</span>
-        <span className="font-medium text-gray-900">£{(job.customerCreditLimit || 0).toLocaleString()}</span>
-      </div>
-      <div className="flex justify-between">
-        <span className="text-gray-600 font-medium">Payment Terms:</span>
-        <span className="font-medium text-gray-900">{job.customerCreditDays || 30} days</span>
-      </div>
-      <div className="flex justify-between">
-        <span className="text-gray-600 font-medium">Account Status:</span>
-        <span className={`font-semibold ${job.customerAccountStatus === 'Active' ? 'text-green-600' : 'text-gray-500'}`}>
-          {job.customerAccountStatus || 'Active'}
-        </span>
-      </div>
-    </div>
-    {job.customerDeliveryAddress && (
-      <div className="col-span-2 pt-4 border-t border-gray-200">
-        <div className="flex justify-between">
-          <span className="text-gray-600 font-medium">Delivery Address:</span>
-          <span className="font-medium text-gray-900 text-right">
-            {job.customerDeliveryAddress.address_line_1}
-            {job.customerDeliveryAddress.address_line_2 && `, ${job.customerDeliveryAddress.address_line_2}`}
-            {job.customerDeliveryAddress.city && `, ${job.customerDeliveryAddress.city}`}
-            {job.customerDeliveryAddress.postal_code && ` ${job.customerDeliveryAddress.postal_code}`}
-          </span>
+      <div className="p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3">
+          
+          {/* Customer Column */}
+          <div>
+            <span className="text-sm text-gray-600">Customer:</span>
+            <p className="font-semibold">{job.customerName}</p>
+            {job.customerMainContact && <p className="text-sm">{job.customerMainContact}</p>}
+            {job.customerMobile && <p className="text-sm">{job.customerMobile}</p>}
+          </div>
+          
+          {/* Supplier Column */}
+          <div>
+            <span className="text-sm text-gray-600">Supplier:</span>
+            <p className="font-semibold">{job.supplierName}</p>
+            {job.supplierRef && <p className="text-sm">Ref: {job.supplierRef}</p>}
+          </div>
+          
+          {/* Job Info Column */}
+          <div>
+            <span className="text-sm text-gray-600">Job Type:</span>
+            <p className="font-semibold">{job.jobType}</p>
+            <p className="text-sm">Qty: {job.quantity} {job.unit}</p>
+          </div>
+          
+          {/* Dates Column */}
+          <div>
+            <span className="text-sm text-gray-600">Delivery:</span>
+            <p className="font-semibold text-red-600">{new Date(job.jobDate).toLocaleDateString()}</p>
+            {job.collectionDate && <p className="text-sm">Collection: {new Date(job.collectionDate).toLocaleDateString()}</p>}
+          </div>
+          
+          {/* PO Column */}
+          <div>
+            <span className="text-sm text-gray-600">Customer PO:</span>
+            <p className="font-semibold">{job.customerPO || 'Not provided'}</p>
+          </div>
+          
+          {/* Payment Column */}
+          <div>
+            <span className="text-sm text-gray-600">Terms:</span>
+            <p className="font-semibold">{job.customerCreditDays || 30} days</p>
+            <p className="text-sm">Limit: £{(job.customerCreditLimit || 0).toLocaleString()}</p>
+          </div>
+          
+          {/* Site Address - spans 2 columns */}
+          <div className="col-span-2">
+            <span className="text-sm text-gray-600">Site:</span>
+            <p className="font-semibold">
+              {job.siteAddress1}
+              {job.siteAddress2 && `, ${job.siteAddress2}`}
+              {job.sitePostcode && ` ${job.sitePostcode}`}
+            </p>
+          </div>
+          
+          {/* Status Column */}
+          <div>
+            <span className="text-sm text-gray-600">Status:</span>
+            <p className={`font-semibold ${job.customerAccountStatus === 'Active' ? 'text-green-600' : 'text-gray-500'}`}>
+              {job.customerAccountStatus || 'Active'}
+            </p>
+          </div>
         </div>
       </div>
-    )}
-  </div>
-</div>
-
-            {/* Site & Logistics */}
-            <div className="bg-white rounded-lg border border-gray-200">
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-800">Site & Logistics</h2>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <span className="text-gray-600 font-medium block mb-1">Site Address:</span>
-                      <div className="text-gray-900">
-                        <div>{job.siteAddress1}</div>
-                        {job.siteAddress2 && <div>{job.siteAddress2}</div>}
-                        <div>{job.sitePostcode}</div>
-                      </div>
-                    </div>
-                    {job.siteContact && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Site Contact:</span>
-                        <span className="text-gray-900">{job.siteContact}</span>
-                      </div>
-                    )}
-                    {job.sitePhone && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Contact Phone:</span>
-                        <span className="text-gray-900">{job.sitePhone}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-4">
-                    {job.haulierName && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Haulier:</span>
-                        <span className="font-semibold text-gray-900">{job.haulierName}</span>
-                      </div>
-                    )}
-                    {job.timeSlot && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Time Slot:</span>
-                        <span className="text-gray-900">{job.timeSlot}</span>
-                      </div>
-                    )}
-                    {job.deliveryInstructions && (
-                      <div>
-                        <span className="text-gray-600 font-medium block mb-1">Delivery Instructions:</span>
-                        <span className="text-gray-900">{job.deliveryInstructions}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+    </div>
 
             {/* Products & Services Summary */}
 <div className="bg-white rounded-lg border border-gray-200">
