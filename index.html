@@ -683,52 +683,65 @@ if (window.refreshFullPageAttachments) {
     alert('Error uploading attachment: ' + error.message);
   }
 };
-          const [formData, setFormData] = useState(job ? {...job, lineItems: job.lineItems || []} : {
-            customerName: '',
-            id: job?.id,
-            customerPO: '',
-            supplierName: '',
-            supplierRef: '',
-            haulierName: '',
-            jobType: 'Skip Hire',
-            lineItems: [],
-            wasteType: '',
-            skipSize: '',
-            aggregateType: '',
-            quantity: 1,
-            unit: 'skip',
-            weight: '',
-            customerUnitPrice: 0,
-            customerFinalPrice: 0,
-            supplierUnitPrice: 0,
-            supplierFinalPrice: 0,
-            vatRate: 20,
-            jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
-            timeSlot: '',
-            collectionDate: '',
-            status: 'CONFIRMED',
-            siteAddress1: '',
-siteAddress2: '',
-siteCity: '',
-sitePostcode: '',
-siteContact: '',
-sitePhone: '',
-siteNotes: '',
-            deliveryInstructions: '',
-            accessRestrictions: '',
-            wasteTransferNote: '',
-            hazardousWaste: false,
-            consignmentNote: '',
-            invoiceNumber: '',
-            invoiceStatus: 'Not Invoiced',
-            paymentStatus: 'Not Paid',
-            notes: '',
-            isCompleted: false,
-            isCancelled: false,
-            sageProductId: '',
-            sageProductName: '',
-            sage_si_number: ''
-          });
+       const [formData, setFormData] = useState(() => {
+  const initialData = {
+    customerName: '',
+    id: job?.id,
+    customerPO: '',
+    supplierName: '',
+    supplierRef: '',
+    haulierName: '',
+    jobType: 'Skip Hire',
+    lineItems: [],
+    wasteType: '',
+    skipSize: '',
+    aggregateType: '',
+    quantity: 1,
+    unit: 'skip',
+    weight: '',
+    customerUnitPrice: 0,
+    customerFinalPrice: 0,
+    supplierUnitPrice: 0,
+    supplierFinalPrice: 0,
+    vatRate: 20,
+    jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
+    timeSlot: '',
+    collectionDate: '',
+    status: 'CONFIRMED',
+    siteAddress1: '',
+    siteAddress2: '',
+    siteCity: '',
+    sitePostcode: '',
+    siteContact: '',
+    sitePhone: '',
+    siteNotes: '',
+    deliveryInstructions: '',
+    accessRestrictions: '',
+    wasteTransferNote: '',
+    hazardousWaste: false,
+    consignmentNote: '',
+    invoiceNumber: '',
+    invoiceStatus: 'Not Invoiced',
+    paymentStatus: 'Not Paid',
+    notes: '',
+    isCompleted: false,
+    isCancelled: false,
+    sageProductId: '',
+    sageProductName: '',
+    sage_si_number: ''
+  };
+  
+  // If editing, merge job data but ensure lineItems is always an array
+  if (job) {
+    return {
+      ...initialData,
+      ...job,
+      lineItems: job.lineItems || []
+    };
+  }
+  
+  return initialData;
+});
 
           const [activeTab, setActiveTab] = useState('details');
 
