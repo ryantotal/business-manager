@@ -8506,7 +8506,17 @@ const handlePhoneSearch = async (searchText) => {
    
     
     // Add line items to the job object - check both naming conventions
-job.lineItems = job.sage_line_items || job.sageLineItems || [];
+// Parse lineItems if it's a string from the database
+let lineItems = job.sage_line_items || job.sageLineItems || [];
+if (typeof lineItems === 'string') {
+  try {
+    lineItems = JSON.parse(lineItems);
+  } catch (e) {
+    console.error('Error parsing lineItems:', e);
+    lineItems = [];
+  }
+}
+job.lineItems = lineItems;
 console.log('Looking for sage_line_items:', job.sage_line_items);
 console.log('Looking for sageLineItems:', job.sageLineItems);
 console.log('Final lineItems:', job.lineItems);
