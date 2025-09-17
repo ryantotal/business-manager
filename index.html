@@ -1169,7 +1169,7 @@ tax_code: product.tax_rate_id || 'T1'
           </tr>
         </thead>
         <tbody>
-  {formData.lineItems && formData.lineItems.length > 0 ? formData.lineItems.map((item, index) => {
+    {formData.lineItems && Array.isArray(formData.lineItems) && formData.lineItems.length > 0 ? formData.lineItems.map((item, index) => {
     const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
     return (
       <tr key={item.id} className="border-t hover:bg-gray-50">
