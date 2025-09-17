@@ -1267,13 +1267,13 @@ tax_code: product.tax_rate_id || 'T1'
     <div className="text-center">
       <div className="text-gray-600">Total Quantity</div>
       <div className="font-semibold">
-        {formData.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}
+        {((formData.lineItems || []).reduce((sum, item) => sum + (item.quantity || 1), 0))}
       </div>
     </div>
     <div className="text-center">
       <div className="text-gray-600">Total Cost</div>
       <div className="font-semibold text-red-600">
-        £{formData.lineItems.reduce((sum, item) => 
+          £{(formData.lineItems || []).reduce((sum, item) =>
           sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
         ).toFixed(2)}
       </div>
@@ -1281,7 +1281,7 @@ tax_code: product.tax_rate_id || 'T1'
     <div className="text-center">
       <div className="text-gray-600">Total RRP</div>
       <div className="font-semibold text-blue-600">
-        £{formData.lineItems.reduce((sum, item) => 
+          £{(formData.lineItems || []).reduce((sum, item) =>
           sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
         ).toFixed(2)}
       </div>
@@ -1289,9 +1289,9 @@ tax_code: product.tax_rate_id || 'T1'
     <div className="text-center">
       <div className="text-gray-600">Total Profit</div>
       <div className="font-semibold text-green-600">
-        £{(formData.lineItems.reduce((sum, item) => 
+            £{((formData.lineItems || []).reduce((sum, item) =>
           sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
-        ) - formData.lineItems.reduce((sum, item) => 
+        ) - (formData.lineItems || []).reduce((sum, item) =>
           sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
         )).toFixed(2)}
       </div>
@@ -11555,7 +11555,7 @@ tax_code: product.tax_rate_id || 'T1'
                     </table>
                   </div>
                   <div className="mt-4 text-sm text-gray-600">
-                    Total items: {formData.lineItems.length} | Total quantity: {formData.lineItems.reduce((sum, item) => sum + item.quantity, 0)}
+                    Total items: {(formData.lineItems || []).length} | Total quantity: {(formData.lineItems || []).reduce((sum, item) => sum + item.quantity, 0)}
                   </div>
                 </div>
               )}
