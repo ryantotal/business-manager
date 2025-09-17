@@ -3781,231 +3781,221 @@ console.log(JSON.stringify(invoiceData, null, 2));
         {activeTab === 'overview' && (
           <div className="space-y-8">
             
-           {/* Combined Job, Customer & Site Information */}
+           {/* Combined Job, Customer & Site Information - COMPACT & MOBILE FRIENDLY */}
     <div className="bg-white rounded-lg border border-gray-200">
-      <div className="bg-gray-50 border-b border-gray-200 px-6 py-3">
-        <h2 className="text-lg font-semibold text-gray-800">Job & Customer Information</h2>
+      <div className="bg-gray-50 border-b border-gray-200 px-3 md:px-4 py-2">
+        <h2 className="text-sm md:text-base font-semibold text-gray-800">Job & Customer Information</h2>
       </div>
-      <div className="p-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3">
+      <div className="p-3 md:p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           
-          {/* Customer Column */}
-          <div>
-            <span className="text-sm text-gray-600">Customer:</span>
+          {/* Customer */}
+          <div className="border-b sm:border-0 pb-2 sm:pb-0">
+            <span className="text-xs text-gray-600">Customer:</span>
             <p className="font-semibold">{job.customerName}</p>
-            {job.customerMainContact && <p className="text-sm">{job.customerMainContact}</p>}
-            {job.customerMobile && <p className="text-sm">{job.customerMobile}</p>}
+            {job.customerMainContact && <p className="text-xs text-gray-600">{job.customerMainContact} {job.customerMobile && `• ${job.customerMobile}`}</p>}
           </div>
           
-          {/* Supplier Column */}
-          <div>
-            <span className="text-sm text-gray-600">Supplier:</span>
+          {/* Supplier */}
+          <div className="border-b sm:border-0 pb-2 sm:pb-0">
+            <span className="text-xs text-gray-600">Supplier:</span>
             <p className="font-semibold">{job.supplierName}</p>
-            {job.supplierRef && <p className="text-sm">Ref: {job.supplierRef}</p>}
+            {job.supplierRef && <p className="text-xs text-gray-600">Ref: {job.supplierRef}</p>}
           </div>
           
-          {/* Job Info Column */}
-          <div>
-            <span className="text-sm text-gray-600">Job Type:</span>
+          {/* Job Type */}
+          <div className="border-b sm:border-0 pb-2 sm:pb-0">
+            <span className="text-xs text-gray-600">Job Type:</span>
             <p className="font-semibold">{job.jobType}</p>
-            <p className="text-sm">Qty: {job.quantity} {job.unit}</p>
+            <p className="text-xs text-gray-600">Qty: {job.quantity} {job.unit}</p>
           </div>
           
-          {/* Created Date Column */}
-          <div>
-            <span className="text-sm text-gray-600">Created:</span>
-            <p className="font-semibold">{job.createdDate ? new Date(job.createdDate).toLocaleDateString() : new Date(job.jobDate).toLocaleDateString()}</p>
-          </div>
-          
-          {/* Delivery Date Column */}
-          <div>
-            <span className="text-sm text-gray-600">Delivery:</span>
-            <p className="font-semibold text-red-600">{new Date(job.jobDate).toLocaleDateString()}</p>
-          </div>
-          
-          {/* Collection Date Column */}
-          <div>
-            <span className="text-sm text-gray-600">Collection:</span>
-            <p className="font-semibold">{job.collectionDate ? new Date(job.collectionDate).toLocaleDateString() : 'Not scheduled'}</p>
-          </div>
-          
-          {/* PO Column */}
-          <div>
-            <span className="text-sm text-gray-600">Customer PO:</span>
-            <p className="font-semibold">{job.customerPO || 'Not provided'}</p>
-            {job.customerReference && <p className="text-sm">Ref: {job.customerReference}</p>}
-          </div>
-          
-          {/* Haulier Column */}
-          <div>
-            <span className="text-sm text-gray-600">Haulier:</span>
+          {/* Haulier */}
+          <div className="border-b sm:border-0 pb-2 sm:pb-0">
+            <span className="text-xs text-gray-600">Haulier:</span>
             <p className="font-semibold">{job.haulierName || 'Not specified'}</p>
-            {job.timeSlot && <p className="text-sm">Time: {job.timeSlot}</p>}
+            {job.timeSlot && <p className="text-xs text-gray-600">{job.timeSlot}</p>}
           </div>
           
-          {/* Payment Column */}
+          {/* Dates Row */}
           <div>
-            <span className="text-sm text-gray-600">Payment Terms:</span>
-            <p className="font-semibold">{job.customerCreditDays || 30} days</p>
-            <p className="text-sm">Limit: £{(job.customerCreditLimit || 0).toLocaleString()}</p>
+            <span className="text-xs text-gray-600">Created:</span>
+            <p className="font-semibold text-xs">{job.createdDate ? new Date(job.createdDate).toLocaleDateString() : new Date(job.jobDate).toLocaleDateString()}</p>
+          </div>
+          
+          <div>
+            <span className="text-xs text-gray-600">Delivery:</span>
+            <p className="font-semibold text-red-600 text-xs">{new Date(job.jobDate).toLocaleDateString()}</p>
+          </div>
+          
+          <div>
+            <span className="text-xs text-gray-600">Collection:</span>
+            <p className="font-semibold text-xs">{job.collectionDate ? new Date(job.collectionDate).toLocaleDateString() : 'Not scheduled'}</p>
+          </div>
+          
+          <div>
+            <span className="text-xs text-gray-600">PO:</span>
+            <p className="font-semibold text-xs">{job.customerPO || 'Not provided'}</p>
           </div>
           
           {/* Site Address - spans 2 columns */}
-          <div className="col-span-2">
-            <span className="text-sm text-gray-600">Site Address:</span>
-            <p className="font-semibold">
-              {job.siteAddress1}
-              {job.siteAddress2 && `, ${job.siteAddress2}`}
-              {job.sitePostcode && ` ${job.sitePostcode}`}
+          <div className="col-span-1 sm:col-span-2">
+            <span className="text-xs text-gray-600">Site Address:</span>
+            <p className="font-semibold text-xs">
+              {job.siteAddress1}{job.siteAddress2 && `, ${job.siteAddress2}`}{job.sitePostcode && ` ${job.sitePostcode}`}
             </p>
-            {job.siteContact && <p className="text-sm">Contact: {job.siteContact} {job.sitePhone && `- ${job.sitePhone}`}</p>}
           </div>
           
-          {/* Status Column */}
+          {/* Payment Info */}
           <div>
-            <span className="text-sm text-gray-600">Account Status:</span>
-            <p className={`font-semibold ${job.customerAccountStatus === 'Active' ? 'text-green-600' : 'text-gray-500'}`}>
+            <span className="text-xs text-gray-600">Terms:</span>
+            <p className="font-semibold text-xs">{job.customerCreditDays || 30} days • £{(job.customerCreditLimit || 0).toLocaleString()}</p>
+          </div>
+          
+          <div>
+            <span className="text-xs text-gray-600">Status:</span>
+            <p className={`font-semibold text-xs ${job.customerAccountStatus === 'Active' ? 'text-green-600' : 'text-gray-500'}`}>
               {job.customerAccountStatus || 'Active'}
             </p>
           </div>
         </div>
         
-        {/* Delivery Instructions if present */}
         {job.deliveryInstructions && (
-          <div className="mt-3 pt-3 border-t border-gray-200">
-            <span className="text-sm text-gray-600">Delivery Instructions: </span>
-            <span className="text-sm">{job.deliveryInstructions}</span>
+          <div className="mt-2 pt-2 border-t border-gray-200">
+            <span className="text-xs text-gray-600">Instructions: </span>
+            <span className="text-xs">{job.deliveryInstructions}</span>
           </div>
         )}
       </div>
     </div>
 
-            {/* Products & Services Summary */}
-<div className="bg-white rounded-lg border border-gray-200">
-  <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-    <h2 className="text-lg font-semibold text-gray-800">Products & Services</h2>
-  </div>
-  <div className="p-6">
-    {job.lineItems && job.lineItems.length > 0 ? (
-      <>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 font-medium text-gray-700">Product/Service</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-700">Description</th>
-                <th className="text-center py-3 px-4 font-medium text-gray-700">Qty</th>
-                <th className="text-right py-3 px-4 font-medium text-gray-700">Cost</th>
-                <th className="text-right py-3 px-4 font-medium text-gray-700">RRP</th>
-                <th className="text-right py-3 px-4 font-medium text-gray-700">Line Profit</th>
-              </tr>
-            </thead>
-            <tbody>
+    {/* Products & Services - COMPACT & MOBILE FRIENDLY */}
+    <div className="bg-white rounded-lg border border-gray-200 mt-4">
+      <div className="bg-gray-50 border-b border-gray-200 px-3 md:px-4 py-2">
+        <h2 className="text-sm md:text-base font-semibold text-gray-800">Products & Services</h2>
+      </div>
+      <div className="p-3 md:p-4">
+        {job.lineItems && job.lineItems.length > 0 ? (
+          <>
+            {/* Desktop Table - Compact */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs">
+                    <th className="text-left py-2 px-2 font-medium text-gray-700">Product/Service</th>
+                    <th className="text-left py-2 px-2 font-medium text-gray-700">Description</th>
+                    <th className="text-center py-2 px-2 font-medium text-gray-700">Qty</th>
+                    <th className="text-right py-2 px-2 font-medium text-gray-700">Cost</th>
+                    <th className="text-right py-2 px-2 font-medium text-gray-700">RRP</th>
+                    <th className="text-right py-2 px-2 font-medium text-gray-700">Line Profit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {job.lineItems.map((item, index) => {
+                    const lineCost = (item.supplier_price || 0) * (item.quantity || 1);
+                    const lineRRP = (item.customer_price || 0) * (item.quantity || 1);
+                    const lineProfit = lineRRP - lineCost;
+                    
+                    return (
+                      <tr key={item.id || index} className="border-b border-gray-100">
+                        <td className="py-2 px-2">
+                          <div className="font-medium text-xs">{item.product_name || item.name}</div>
+                          <div className="text-xs text-gray-500">Code: {item.item_code || 'N/A'}</div>
+                        </td>
+                        <td className="py-2 px-2 text-gray-600 text-xs">
+                          {item.description || '-'}
+                        </td>
+                        <td className="py-2 px-2 text-center text-xs">
+                          {item.quantity || 1}
+                        </td>
+                        <td className="py-2 px-2 text-right text-xs text-red-600 font-medium">
+                          £{lineCost.toFixed(2)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-xs text-blue-600 font-medium">
+                          £{lineRRP.toFixed(2)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-xs">
+                          <span className={`font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            £{lineProfit.toFixed(2)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Mobile Cards - Compact */}
+            <div className="md:hidden space-y-2">
               {job.lineItems.map((item, index) => {
                 const lineCost = (item.supplier_price || 0) * (item.quantity || 1);
                 const lineRRP = (item.customer_price || 0) * (item.quantity || 1);
                 const lineProfit = lineRRP - lineCost;
-                const profitMargin = lineRRP > 0 ? ((lineProfit / lineRRP) * 100).toFixed(1) : 0;
                 
                 return (
-                  <tr key={item.id || index} className="border-b border-gray-100">
-                    <td className="py-3 px-4">
-                      <div className="font-medium">{item.product_name || item.name}</div>
-                      <div className="text-xs text-gray-500">Code: {item.item_code || 'N/A'}</div>
-                    </td>
-                    <td className="py-3 px-4 text-gray-600">
-                      {item.description || 'No description'}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="font-medium">{item.quantity || 1}</span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="text-red-600 font-medium">
-                        £{lineCost.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        @ £{(item.supplier_unit_price || 0).toFixed(2)}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="text-blue-600 font-medium">
-                        £{lineRRP.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        @ £{(item.customer_unit_price || 0).toFixed(2)}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className={`font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        £{lineProfit.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {profitMargin}%
-                      </div>
-                    </td>
-                  </tr>
+                  <div key={item.id || index} className="border border-gray-200 rounded p-2 text-xs">
+                    <div className="font-medium">{item.product_name || item.name}</div>
+                    <div className="text-gray-500">Code: {item.item_code || 'N/A'}</div>
+                    <div className="grid grid-cols-2 gap-1 mt-1">
+                      <div>Qty: <span className="font-medium">{item.quantity || 1}</span></div>
+                      <div>Cost: <span className="text-red-600 font-medium">£{lineCost.toFixed(2)}</span></div>
+                      <div>RRP: <span className="text-blue-600 font-medium">£{lineRRP.toFixed(2)}</span></div>
+                      <div>Profit: <span className={`font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>£{lineProfit.toFixed(2)}</span></div>
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-        
-        {/* Summary Cards */}
-<div className="grid grid-cols-5 gap-4 mt-6 pt-6 border-t">
-  <div className="bg-gray-50 rounded-lg p-4">
-    <div className="text-sm text-gray-600 font-medium">Total Items</div>
-    <div className="text-2xl font-bold text-gray-700">
-      {job.lineItems.length}
+            </div>
+            
+            {/* Summary Cards - Compact */}
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-3 pt-3 border-t">
+              <div className="bg-gray-50 rounded p-2 text-center">
+                <div className="text-xs text-gray-600">Items</div>
+                <div className="text-base font-bold">{job.lineItems.length}</div>
+              </div>
+              <div className="bg-gray-50 rounded p-2 text-center">
+                <div className="text-xs text-gray-600">Qty</div>
+                <div className="text-base font-bold">{job.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}</div>
+              </div>
+              <div className="bg-blue-50 rounded p-2 text-center">
+                <div className="text-xs text-blue-600">Value</div>
+                <div className="text-base font-bold text-blue-700">
+                  £{job.lineItems.reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
+                </div>
+              </div>
+              <div className="bg-red-50 rounded p-2 text-center">
+                <div className="text-xs text-red-600">Cost</div>
+                <div className="text-base font-bold text-red-700">
+                  £{job.lineItems.reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
+                </div>
+              </div>
+              <div className="bg-green-50 rounded p-2 text-center">
+                <div className="text-xs text-green-600">Profit</div>
+                <div className="text-base font-bold text-green-700">
+                  £{(job.lineItems.reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0) - 
+                     job.lineItems.reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0)).toFixed(0)}
+                </div>
+              </div>
+              <div className="bg-purple-50 rounded p-2 text-center">
+                <div className="text-xs text-purple-600">Margin</div>
+                <div className="text-base font-bold text-purple-700">
+                  {(() => {
+                    const totalRRP = job.lineItems.reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0);
+                    const totalCost = job.lineItems.reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0);
+                    return totalRRP > 0 ? ((totalRRP - totalCost) / totalRRP * 100).toFixed(1) : 0;
+                  })()}%
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-4 text-gray-500 text-sm">
+            <p>No products or services added</p>
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-  <div className="bg-gray-50 rounded-lg p-4">
-    <div className="text-sm text-gray-600 font-medium">Total Quantity</div>
-    <div className="text-2xl font-bold text-gray-700">
-      {job.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}
-    </div>
-  </div>
-  <div className="bg-blue-50 rounded-lg p-4">
-    <div className="text-sm text-blue-600 font-medium">Total Job Value</div>
-    <div className="text-2xl font-bold text-blue-700">
-      £{job.lineItems.reduce((sum, item) =>
-        sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
-      ).toFixed(2)}
-    </div>
-  </div>
-  <div className="bg-green-50 rounded-lg p-4">
-    <div className="text-sm text-green-600 font-medium">Total Job Profit</div>
-    <div className="text-2xl font-bold text-green-700">
-      £{(job.lineItems.reduce((sum, item) =>
-        sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
-      ) - job.lineItems.reduce((sum, item) =>
-        sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
-      )).toFixed(2)}
-    </div>
-  </div>
-  <div className="bg-purple-50 rounded-lg p-4">
-    <div className="text-sm text-purple-600 font-medium">Profit Margin</div>
-    <div className="text-2xl font-bold text-purple-700">
-      {(() => {
-        const totalRRP = job.lineItems.reduce((sum, item) =>
-          sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
-        );
-        const totalCost = job.lineItems.reduce((sum, item) =>
-          sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
-        );
-        const margin = totalRRP > 0 ? ((totalRRP - totalCost) / totalRRP * 100) : 0;
-        return margin.toFixed(1);
-      })()}%
-    </div>
-  </div>
-</div>
-</>
-) : (
-  <div className="text-center py-8 text-gray-500">
-    <p>No products or services added</p>
-  </div>
-)}
-</div>
-</div>
 
             {/* Special Information */}
             {(job.parentJobId || (job.linkedJobs && job.linkedJobs.length > 0)) && (
