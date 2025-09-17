@@ -8099,7 +8099,17 @@ const handleDeleteAttachment = async (attachment) => {
               status: 'CONFIRMED',
               notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
              jobDate: new Date().toISOString().split('T')[0],
-              linkedJobs: []
+              linkedJobs: [],
+               sage_id: null,
+    sageId: null,
+    sage_invoice_number: null,
+    sageInvoiceNumber: null,
+    invoice_status: null,
+    invoiceStatus: null,
+    invoice_date: null,
+    invoiceDate: null,
+    invoice_number: null,
+    invoiceNumber: null
             };
             
             // Remove the old id and jobNumber completely
