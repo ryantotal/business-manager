@@ -3453,7 +3453,7 @@ const handleCreateInvoice = async (jobToInvoice) => {
       const taxAmount = lineTotal * 0.20;
       // Use the stored sage_line_items for invoice line items
       const lineItems = jobToInvoice.lineItems && jobToInvoice.lineItems.length > 0
-      ? jobToInvoice.lineItems.map(item => {
+  ? jobToInvoice.lineItems.map(item => {
       const line = {
           description: item.description || item.product_name,
           quantity: item.quantity || 1,
