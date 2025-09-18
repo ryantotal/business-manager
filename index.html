@@ -2097,7 +2097,7 @@ const handleCreateInvoice = async (job) => {
         invoiceNumber: invoiceNumber,
         invoiceStatus: 'Invoiced'
       });
-      
+      setCreatingInvoice(false);  // Stop loading after success
       alert(`Demo Mode: Invoice ${invoiceNumber} created successfully!`);
     } else {
       // Production mode - use real Sage API
@@ -3425,10 +3425,12 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // This works with your existing code structure and won't break anything
 
 const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user, onUpdateDisplay,setDeleteConfirmation }) => {
+  const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
   const [currentJob, setCurrentJob] = useState(job);
 const handleCreateInvoice = async (jobToInvoice) => {
+  setCreatingInvoice(true)
   try {
     const isDemoMode = false;
     
@@ -3559,11 +3561,13 @@ console.log(JSON.stringify(invoiceData, null, 2));
       }
       
       alert(`Invoice created! SI: ${siNumber}`);
+      setCreatingInvoice(false)
       
     }
   } catch (error) {
     console.error('Full error:', error);
     alert('Failed to create invoice: ' + error.message);
+    setCreatingInvoice(false); 
   }
 };
   // Load attachments when component mounts
@@ -4038,12 +4042,21 @@ console.log(JSON.stringify(invoiceData, null, 2));
         <h3 className="text-lg font-semibold text-gray-800 mb-4">Sage Integration</h3>
         <button
   onClick={() => handleCreateInvoice(job)}
-  disabled={job.sageInvoiceId ? true : false}
+  disabled={job.sageInvoiceId || creatingInvoice}
   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
 >
-          <FileText className="inline mr-2" size={20} />
-          Create Invoice in Sage
-        </button>
+  {creatingInvoice ? (
+    <>
+      <FileText className="inline mr-2 animate-spin" size={20} />
+      Creating Invoice...
+    </>
+  ) : (
+    <>
+      <FileText className="inline mr-2" size={20} />
+      Create Invoice in Sage
+    </>
+  )}
+</button>
         {job.sageInvoiceId && (
           <p className="mt-2 text-sm text-gray-600">
             Sage Invoice ID: {job.sage_invoice_id}
