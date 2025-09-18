@@ -2063,6 +2063,11 @@ const shortenCompanyName = (name) => {
   return name;
 };
         // Jobs Management Component
+        const truncateText = (text, maxLength = 25) => {
+  if (!text) return '-';
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+};
         const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setJobs, setShowFullPageJob, deleteConfirmation, setDeleteConfirmation }) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
@@ -2773,7 +2778,7 @@ style={{ backgroundColor: jobColors[job.jobType] }}
 <span title={job.customerName}>{shortenCompanyName(job.customerName)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-500' : ''}`}>
-<span title={job.supplierName}>{shortenCompanyName(job.supplierName)}</span>
+<span title={job.supplierName}>{truncateText(job.supplierName, 20)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-500' : ''}`}>
 {job.lineItems && job.lineItems.length > 0
@@ -2788,7 +2793,9 @@ style={{ backgroundColor: jobColors[job.jobType] }}
 <span title={job.haulierName}>{shortenCompanyName(job.haulierName)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-500' : ''}`}>
-{job.siteAddress1 || job.siteAddress || '-'}
+<span title={job.siteAddress1 || job.siteAddress || '-'}>
+  {truncateText(job.siteAddress1 || job.siteAddress, 25)}
+</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-500' : ''}`}>
 {job.sitePostcode || '-'}
