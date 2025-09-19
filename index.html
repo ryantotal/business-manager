@@ -8945,23 +8945,24 @@ const CollectionCalendarModal = () => {
     
   const handleConfirmCollection = async () => {
   try {
-    // Update the database AND get the updated data back
+    // Only update columns that actually exist in your database
     const { data: updatedJob, error } = await window.supabase
       .from('jobs')
       .update({ 
         status: 'COLLECTED',
         collection_date: selectedCollectionDate,
-        collected_at: selectedCollectionDate,
-        is_collected: true
+        is_completed: true  // Use is_completed instead of is_collected
+        // Remove: collected_at - doesn't exist
+        // Remove: is_collected - doesn't exist
       })
       .eq('id', selectedJobForCollection.id)
-      .select()  // THIS IS IMPORTANT - returns the updated data
+      .select()
       .single();
 
     if (error) throw error;
 
-    // Now refresh ALL the jobs to update the main list
-    await refreshJobs();  // This will update the main jobs list
+    // Refresh the jobs list to update the UI
+    await refreshJobs();
     
     // Close the modal
     setShowCollectionCalendar(false);
