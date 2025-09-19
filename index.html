@@ -8945,15 +8945,13 @@ const CollectionCalendarModal = () => {
     
   const handleConfirmCollection = async () => {
   try {
-    // Only update columns that actually exist in your database
+    // Update in database and get the updated data back
     const { data: updatedJob, error } = await window.supabase
       .from('jobs')
       .update({ 
         status: 'COLLECTED',
         collection_date: selectedCollectionDate,
-        is_completed: true  // Use is_completed instead of is_collected
-        // Remove: collected_at - doesn't exist
-        // Remove: is_collected - doesn't exist
+        is_completed: true
       })
       .eq('id', selectedJobForCollection.id)
       .select()
@@ -8961,7 +8959,27 @@ const CollectionCalendarModal = () => {
 
     if (error) throw error;
 
-    // Refresh the jobs list to update the UI
+    // Convert the updated job to camelCase format (matching your app's format)
+    const formattedJob = {
+      ...selectedJobForCollection,  // Keep all existing properties
+      status: 'COLLECTED',
+      collectionDate: selectedCollectionDate,
+      collection_date: selectedCollectionDate,
+      isCompleted: true,
+      is_completed: true
+    };
+
+    // Update the full page view if it's showing this job
+    if (showFullPageJob && showFullPageJob.id === selectedJobForCollection.id) {
+      setShowFullPageJob(formattedJob);
+    }
+    
+    // Also update selectedJob if it exists
+    if (selectedJob && selectedJob.id === selectedJobForCollection.id) {
+      setSelectedJob(formattedJob);
+    }
+
+    // Refresh the main jobs list
     await refreshJobs();
     
     // Close the modal
