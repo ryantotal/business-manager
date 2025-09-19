@@ -8948,22 +8948,20 @@ const CollectionCalendarModal = () => {
         const { error } = await window.supabase
           .from('jobs')
           .update({ 
-            status: 'COLLECTED',
-            collection_date: selectedCollectionDate,
-            collected_at: selectedCollectionDate,
-            is_completed: true
-          })
+  status: 'COLLECTED',
+  collection_date: selectedCollectionDate,
+  isCompleted: true
+})
           .eq('id', selectedJobForCollection.id);
         
         if (error) throw error;
         
-        const updatedJob = { 
-          ...selectedJobForCollection, 
-          status: 'COLLECTED',
-          collection_date: selectedCollectionDate,
-          collected_at: selectedCollectionDate,
-          is_completed: true
-        };
+       const updatedJob = { 
+  ...selectedJobForCollection, 
+  status: 'COLLECTED',
+  collection_date: selectedCollectionDate,
+  isCompleted: true
+};
         
         setJobs(jobs.map(j => j.id === updatedJob.id ? updatedJob : j));
         
