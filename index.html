@@ -8944,45 +8944,50 @@ const CollectionCalendarModal = () => {
     if (!showCollectionCalendar) return null;
     
     const handleConfirmCollection = async () => {
-      try {
-        const { error } = await window.supabase
-          .from('jobs')
-          .update({ 
-  status: 'COLLECTED',
-  collection_date: selectedCollectionDate,
-  is_completed: true
-})
-          .eq('id', selectedJobForCollection.id);
-        
-        if (error) throw error;
-        
-       const updatedJob = { 
-  ...selectedJobForCollection, 
-  status: 'COLLECTED',
-  collection_date: selectedCollectionDate,
-  isCompleted: true  // JavaScript uses camelCase
-};
-        
-       // Update jobs list using functional update
-      setJobs(prevJobs => prevJobs.map(j => 
-        j.id === updatedJob.id ? updatedJob : j
-      ));
-      
-      // Update the full page view if it's showing this job
-      if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
-        setShowFullPageJob(updatedJob);
-      }
-      
-      // Update selectedJob if it exists
-      if (selectedJob && selectedJob.id === updatedJob.id) {
-        setSelectedJob(updatedJob);
-      }
-        alert(`Collection date set to ${selectedCollectionDate}`);
-      } catch (error) {
-        console.error('Error setting collection date:', error);
-        alert('Error setting collection date: ' + error.message);
-      }
+  // Close modal immediately for better UX
+  setShowCollectionCalendar(false);
+  
+  try {
+    const { error } = await window.supabase
+      .from('jobs')
+      .update({ 
+        status: 'COLLECTED',
+        collection_date: selectedCollectionDate,
+        is_completed: true
+      })
+      .eq('id', selectedJobForCollection.id);
+    
+    if (error) throw error;
+    
+    // Create updated job object
+    const updatedJob = { 
+      ...selectedJobForCollection, 
+      status: 'COLLECTED',
+      collection_date: selectedCollectionDate,
+      isCompleted: true
     };
+    
+    // Update all relevant state
+    setJobs(prevJobs => prevJobs.map(j => 
+      j.id === updatedJob.id ? updatedJob : j
+    ));
+    
+    // Force update of FullPageJobView by setting to null then back
+    if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
+      setShowFullPageJob(null);
+      setTimeout(() => setShowFullPageJob(updatedJob), 10);
+    }
+    
+    alert(`Collection date set to ${selectedCollectionDate}`);
+    
+    // Cleanup
+    setSelectedJobForCollection(null);
+    
+  } catch (error) {
+    console.error('Error setting collection date:', error);
+    alert('Error setting collection date: ' + error.message);
+  }
+};
     
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
