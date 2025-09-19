@@ -8963,15 +8963,20 @@ const CollectionCalendarModal = () => {
   isCompleted: true  // JavaScript uses camelCase
 };
         
-        setJobs(jobs.map(j => j.id === updatedJob.id ? updatedJob : j));
-        
-        if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
-          setShowFullPageJob(updatedJob);
-        }
-        
-        setShowCollectionCalendar(false);
-        setSelectedJobForCollection(null);
-        
+       // Update jobs list using functional update
+      setJobs(prevJobs => prevJobs.map(j => 
+        j.id === updatedJob.id ? updatedJob : j
+      ));
+      
+      // Update the full page view if it's showing this job
+      if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
+        setShowFullPageJob(updatedJob);
+      }
+      
+      // Update selectedJob if it exists
+      if (selectedJob && selectedJob.id === updatedJob.id) {
+        setSelectedJob(updatedJob);
+      }
         alert(`Collection date set to ${selectedCollectionDate}`);
       } catch (error) {
         console.error('Error setting collection date:', error);
