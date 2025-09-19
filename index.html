@@ -8940,6 +8940,101 @@ await handleAddJob(newJob);
   }
   
 };
+const CollectionCalendarModal = () => {
+    if (!showCollectionCalendar) return null;
+    
+    const handleConfirmCollection = async () => {
+      try {
+        const { error } = await window.supabase
+          .from('jobs')
+          .update({ 
+            status: 'COLLECTED',
+            collection_date: selectedCollectionDate,
+            collected_at: selectedCollectionDate,
+            is_completed: true
+          })
+          .eq('id', selectedJobForCollection.id);
+        
+        if (error) throw error;
+        
+        const updatedJob = { 
+          ...selectedJobForCollection, 
+          status: 'COLLECTED',
+          collection_date: selectedCollectionDate,
+          collected_at: selectedCollectionDate,
+          is_completed: true
+        };
+        
+        setJobs(jobs.map(j => j.id === updatedJob.id ? updatedJob : j));
+        
+        if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
+          setShowFullPageJob(updatedJob);
+        }
+        
+        setShowCollectionCalendar(false);
+        setSelectedJobForCollection(null);
+        
+        alert(`Collection date set to ${selectedCollectionDate}`);
+        window.location.reload();
+      } catch (error) {
+        console.error('Error setting collection date:', error);
+        alert('Error setting collection date: ' + error.message);
+      }
+    };
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold">Set Collection Date</h3>
+            <button
+              onClick={() => setShowCollectionCalendar(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Collection Date:
+            </label>
+            <input
+              type="date"
+              value={selectedCollectionDate}
+              onChange={(e) => setSelectedCollectionDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+          
+          <div className="mb-4 p-3 bg-gray-50 rounded">
+            <p className="text-sm text-gray-600">
+              <strong>Job:</strong> {selectedJobForCollection?.jobNumber}
+            </p>
+            <p className="text-sm text-gray-600">
+              <strong>Customer:</strong> {selectedJobForCollection?.customerName}
+            </p>
+          </div>
+          
+          <div className="flex gap-3">
+            <button
+              onClick={handleConfirmCollection}
+              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+            >
+              Confirm Collection
+            </button>
+            <button
+              onClick={() => setShowCollectionCalendar(false)}
+              className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
           return (
             <div className="min-h-screen bg-gray-50">
               <div className="bg-white border-b border-gray-200">
@@ -9008,102 +9103,6 @@ await handleAddJob(newJob);
                      tab.icon === 'Users' ? Users :
                      tab.icon === 'Truck' ? Truck :
                      tab.icon === 'FileText' ? FileText : Settings;
-                     // Collection Date Calendar Modal
-  const CollectionCalendarModal = () => {
-    if (!showCollectionCalendar) return null;
-
-    const handleConfirmCollection = async () => {
-      try {
-        const { error } = await window.supabase
-          .from('jobs')
-          .update({ 
-            status: 'COLLECTED',
-            collection_date: selectedCollectionDate,
-            collected_at: selectedCollectionDate,
-            is_completed: true
-          })
-          .eq('id', selectedJobForCollection.id);
-
-        if (error) throw error;
-
-        const updatedJob = { 
-          ...selectedJobForCollection, 
-          status: 'COLLECTED',
-          collection_date: selectedCollectionDate,
-          collected_at: selectedCollectionDate,
-          is_completed: true
-        };
-
-        setJobs(jobs.map(j => j.id === updatedJob.id ? updatedJob : j));
-        
-        if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
-          setShowFullPageJob(updatedJob);
-        }
-
-        setShowCollectionCalendar(false);
-        setSelectedJobForCollection(null);
-        
-        alert(`Collection date set to ${selectedCollectionDate}`);
-        window.location.reload();
-      } catch (error) {
-        console.error('Error setting collection date:', error);
-        alert('Error setting collection date: ' + error.message);
-      }
-    };
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold">Set Collection Date</h3>
-            <button
-              onClick={() => setShowCollectionCalendar(false)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Collection Date:
-            </label>
-            <input
-              type="date"
-              value={selectedCollectionDate}
-              onChange={(e) => setSelectedCollectionDate(e.target.value)}
-              min={new Date().toISOString().split('T')[0]}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
-
-          <div className="mb-4 p-3 bg-gray-50 rounded">
-            <p className="text-sm text-gray-600">
-              <strong>Job:</strong> {selectedJobForCollection?.jobNumber}
-            </p>
-            <p className="text-sm text-gray-600">
-              <strong>Customer:</strong> {selectedJobForCollection?.customerName}
-            </p>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleConfirmCollection}
-              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              Confirm Collection
-            </button>
-            <button
-              onClick={() => setShowCollectionCalendar(false)}
-              className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
         return (
           <button
             key={tab.id}
