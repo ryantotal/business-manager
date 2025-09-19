@@ -8943,12 +8943,11 @@ await handleAddJob(newJob);
 const CollectionCalendarModal = () => {
     if (!showCollectionCalendar) return null;
     
-   const handleConfirmCollection = async () => {
+    const handleConfirmCollection = async () => {
+  // Close modal immediately for better UX
   setShowCollectionCalendar(false);
-  setSelectedJobForCollection(null);
   
   try {
-    // Update in database
     const { error } = await window.supabase
       .from('jobs')
       .update({ 
@@ -8960,26 +8959,29 @@ const CollectionCalendarModal = () => {
     
     if (error) throw error;
     
-    // Fetch the updated job from database to get all fields with correct names
-    const { data: refreshedJob, error: fetchError } = await window.supabase
-      .from('jobs')
-      .select('*')
-      .eq('id', selectedJobForCollection.id)
-      .single();
+    // Create updated job object
+    const updatedJob = { 
+      ...selectedJobForCollection, 
+      status: 'COLLECTED',
+      collection_date: selectedCollectionDate,
+      isCompleted: true
+    };
     
-    if (fetchError) throw fetchError;
-    
-    // Update jobs list
+    // Update all relevant state
     setJobs(prevJobs => prevJobs.map(j => 
-      j.id === refreshedJob.id ? refreshedJob : j
+      j.id === updatedJob.id ? updatedJob : j
     ));
     
-    // Update the full page view with fresh data
-    if (showFullPageJob && showFullPageJob.id === refreshedJob.id) {
-      setShowFullPageJob(refreshedJob);
+    // Force update of FullPageJobView by setting to null then back
+    if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
+      setShowFullPageJob(null);
+      setTimeout(() => setShowFullPageJob(updatedJob), 10);
     }
     
     alert(`Collection date set to ${selectedCollectionDate}`);
+    
+    // Cleanup
+    setSelectedJobForCollection(null);
     
   } catch (error) {
     console.error('Error setting collection date:', error);
