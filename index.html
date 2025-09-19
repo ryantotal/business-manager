@@ -9226,7 +9226,7 @@ exchangeJob.id = jobNumber;
     onDeleteAttachment={handleDeleteAttachment}
   />
 )}
-<CollectionCalendarModal />
+{showCollectionCalendar && <CollectionCalendarModal />}
 {/* Full Page Quote View - ADD this RIGHT AFTER showFullPageJob section */}
 {showFullPageQuote && (
   <FullPageQuoteView 
