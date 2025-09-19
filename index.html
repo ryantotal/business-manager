@@ -4757,9 +4757,6 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
           const [showSyncDialog, setShowSyncDialog] = useState(false);
 const [syncResults, setSyncResults] = useState(null);
 const [syncing, setSyncing] = useState(false);
-const [showCollectionCalendar, setShowCollectionCalendar] = useState(false);
-const [selectedJobForCollection, setSelectedJobForCollection] = useState(null);
-const [selectedCollectionDate, setSelectedCollectionDate] = useState('');
 // Add auto-sync interval after your other useEffect hooks
 useEffect(() => {
   // Run quick sync every 30 minutes
@@ -7383,6 +7380,9 @@ const [contactSuggestions, setContactSuggestions] = useState([]);
 const [showContactSuggestions, setShowContactSuggestions] = useState(false);
 const [phoneSuggestions, setPhoneSuggestions] = useState([]);
 const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
+const [showCollectionCalendar, setShowCollectionCalendar] = useState(false);
+const [selectedJobForCollection, setSelectedJobForCollection] = useState(null);
+const [selectedCollectionDate, setSelectedCollectionDate] = useState('');
           // Load suppliers from Supabase when app starts
 useEffect(() => {
   const loadSuppliersFromSupabase = async () => {
