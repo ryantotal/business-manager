@@ -8950,7 +8950,7 @@ const CollectionCalendarModal = () => {
           .update({ 
   status: 'COLLECTED',
   collection_date: selectedCollectionDate,
-  isCompleted: true
+  is_completed: true
 })
           .eq('id', selectedJobForCollection.id);
         
@@ -8960,7 +8960,7 @@ const CollectionCalendarModal = () => {
   ...selectedJobForCollection, 
   status: 'COLLECTED',
   collection_date: selectedCollectionDate,
-  isCompleted: true
+  isCompleted: true  // JavaScript uses camelCase
 };
         
         setJobs(jobs.map(j => j.id === updatedJob.id ? updatedJob : j));
