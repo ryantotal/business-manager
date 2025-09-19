@@ -8943,10 +8943,10 @@ await handleAddJob(newJob);
 const CollectionCalendarModal = () => {
     if (!showCollectionCalendar) return null;
     
-   const handleConfirmCollection = async () => {
+  const handleConfirmCollection = async () => {
   try {
-    // Update the job in the database
-    const { data: updatedJobData, error } = await window.supabase
+    // Update the database AND get the updated data back
+    const { data: updatedJob, error } = await window.supabase
       .from('jobs')
       .update({ 
         status: 'COLLECTED',
@@ -8955,36 +8955,19 @@ const CollectionCalendarModal = () => {
         is_collected: true
       })
       .eq('id', selectedJobForCollection.id)
-      .select()  // Important: return the updated data
+      .select()  // THIS IS IMPORTANT - returns the updated data
       .single();
 
     if (error) throw error;
 
-    // Update the local state immediately with the returned data
-    const updatedJob = updatedJobData;
-
-    // Update the jobs list in your main state
-    setJobs(prevJobs => 
-      prevJobs.map(j => j.id === updatedJob.id ? updatedJob : j)
-    );
+    // Now refresh ALL the jobs to update the main list
+    await refreshJobs();  // This will update the main jobs list
     
-    // If the job is currently shown in full page view, update it too
-    if (showFullPageJob && showFullPageJob.id === updatedJob.id) {
-      setShowFullPageJob(updatedJob);
-    }
-    
-    // If you're in the JobsView component, update selectedJob
-    if (selectedJob && selectedJob.id === updatedJob.id) {
-      setSelectedJob(updatedJob);
-    }
-
     // Close the modal
     setShowCollectionCalendar(false);
     setSelectedJobForCollection(null);
     
     alert(`Collection date set to ${selectedCollectionDate}`);
-    
-    // DON'T use window.location.reload() - we've updated the state
     
   } catch (error) {
     console.error('Error setting collection date:', error);
