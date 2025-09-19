@@ -8973,7 +8973,6 @@ const CollectionCalendarModal = () => {
         setSelectedJobForCollection(null);
         
         alert(`Collection date set to ${selectedCollectionDate}`);
-        window.location.reload();
       } catch (error) {
         console.error('Error setting collection date:', error);
         alert('Error setting collection date: ' + error.message);
