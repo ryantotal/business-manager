@@ -9273,7 +9273,10 @@ exchangeJob.id = jobNumber;
                   <JobsView 
                     jobs={jobs} 
                     setJobs={setJobs}
-                    onAddJob={() => setShowJobForm(true)}
+                    onAddJob={() => {
+  setEditingJob(null);  // Clear any old job data
+  setShowJobForm(true);
+}}
                     onUpdateJob={handleUpdateJob}
                     onDeleteJob={handleDeleteJob}
                     onDuplicateJob={handleDuplicateJob}
