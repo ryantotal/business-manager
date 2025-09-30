@@ -8218,24 +8218,16 @@ const { data, error } = await window.supabase
 if (error) throw error;
         if (error) throw error;
         
-        // Wait a moment for database to fully process
-// Wait for database to process, then refresh
-setTimeout(async () => {
-    await refreshJobs();  // Use our new refresh function
+     // AUTOMATICALLY OPEN THE EDIT FORM FOR THE NEW JOB
+    setEditingJob(data);
+    setIsAddingJob(true);
     setShowFullPageJob(null);
-    // AUTOMATICALLY OPEN THE EDIT FORM FOR THE NEW JOB
-        const { data: newJob } = await window.supabase
-          .from('jobs')
-          .select('*')
-          .eq('job_number', jobNumber)
-          .single();
-        
-        if (newJob) {
-          setEditingJob(newJob);
-          setIsAddingJob(true);
-        }
-    alert('Job duplicated successfully!');
-}, 500);
+    
+    // Wait a moment for database to fully process
+    setTimeout(async () => {
+      await refreshJobs();
+      alert('Job duplicated successfully!');
+    }, 500);
 
 // Fetch updated jobs list
 const { data: updatedJobs, error: fetchError } = await window.supabase
