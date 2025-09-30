@@ -8223,6 +8223,17 @@ if (error) throw error;
 setTimeout(async () => {
     await refreshJobs();  // Use our new refresh function
     setShowFullPageJob(null);
+    // AUTOMATICALLY OPEN THE EDIT FORM FOR THE NEW JOB
+        const { data: newJob } = await window.supabase
+          .from('jobs')
+          .select('*')
+          .eq('job_number', jobNumber)
+          .single();
+        
+        if (newJob) {
+          setEditingJob(newJob);
+          setIsAddingJob(true);
+        }
     alert('Job duplicated successfully!');
 }, 500);
 
