@@ -8218,16 +8218,24 @@ const { data, error } = await window.supabase
 if (error) throw error;
         if (error) throw error;
         
-     // AUTOMATICALLY OPEN THE EDIT FORM FOR THE NEW JOB
-   setEditingJob(data[0]);
-   setShowJobForm(true);
-    setShowFullPageJob(null);
-    
-    // Wait a moment for database to fully process
-    setTimeout(async () => {
-      await refreshJobs();
-      alert('Job duplicated successfully!');
-    }, 500);
+  // AUTOMATICALLY OPEN THE EDIT FORM FOR THE NEW JOB
+// Wait a moment for database to fully process
+setTimeout(async () => {
+  // Fetch the complete newly created job with all fields
+  const { data: newJob, error: fetchError } = await window.supabase
+    .from('jobs')
+    .select('*')
+    .eq('job_number', jobNumber)  // Use the job number we just created
+    .single();
+  
+  if (newJob && !fetchError) {
+    // Now call handleEditJob with the complete job data
+    await handleEditJob(newJob);
+  }
+  
+  await refreshJobs();
+  alert('Job duplicated successfully!');
+}, 500);
 
 // Fetch updated jobs list
 const { data: updatedJobs, error: fetchError } = await window.supabase
