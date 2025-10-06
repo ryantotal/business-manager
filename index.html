@@ -11319,7 +11319,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     customerUnitPrice: 0,
     customerFinalPrice: 0,
     vatRate: 20,
-    jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
+    jobDate: quote?.jobDate || new Date().toISOString().split('T')[0],
     timeSlot: '',
     collectionDate: '',
     status: 'PENDING',
