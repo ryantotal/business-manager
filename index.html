@@ -4224,7 +4224,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
 </div>
 );
 };
-// Full Page Quote View Component - Add this RIGHT AFTER FullPageJobView (around line 3400)
+// Full Page Quote View Component - UPDATED TO MATCH JOB LAYOUT
 const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [quoteAttachments, setQuoteAttachments] = useState([]);
@@ -4237,20 +4237,20 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
   }, [quote?.id]);
 
   const loadQuoteAttachments = async (quoteId) => {
-  try {
-    const { data, error } = await window.supabase
-      .from('quote_attachments')
-      .select('*')
-      .eq('quote_id', quoteId)
-      .order('created_at', { ascending: false }); // Changed to created_at
-    
-    if (error) throw error;
-    setQuoteAttachments(data || []);
-  } catch (error) {
-    console.error('Error loading quote attachments:', error);
-    setQuoteAttachments([]);
-  }
-};
+    try {
+      const { data, error } = await window.supabase
+        .from('quote_attachments')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setQuoteAttachments(data || []);
+    } catch (error) {
+      console.error('Error loading quote attachments:', error);
+      setQuoteAttachments([]);
+    }
+  };
 
   const uploadQuoteAttachment = async () => {
     const attachmentType = document.getElementById('quote-attachment-type')?.value;
@@ -4344,65 +4344,60 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
               quote.status === 'ACCEPTED' ? 'bg-green-100 text-green-800' :
               quote.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
               quote.status === 'SENT' ? 'bg-blue-100 text-blue-800' :
+              quote.status === 'CONVERTED' ? 'bg-purple-100 text-purple-800' :
               'bg-yellow-100 text-yellow-800'
             }`}>
               {isExpired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
             </span>
-            {quote.status === 'REJECTED' && quote.rejectedReason && (
-  <div className="ml-4 text-sm text-red-600">
-    Reason: {quote.rejectedReason}
-  </div>
-)}
-            {quote.validUntil && (
-              <span className="text-sm text-gray-600">
-                Valid until: {new Date(quote.validUntil).toLocaleDateString()}
-              </span>
-            )}
           </div>
           
           <div className="flex items-center space-x-2">
             {quote.status === 'PENDING' && (
-  <button
-    onClick={() => onSend(quote)}
-    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
-    title="Send to Sage"
-  >
-    <Mail size={16} className="mr-2" />
-    Send to Sage
-  </button>
-)}
+              <button
+                onClick={() => onSend(quote)}
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+                title="Send Quote"
+              >
+                <Mail size={16} className="mr-2" />
+                Send Quote
+              </button>
+            )}
             {quote.status === 'SENT' && !isExpired && (
-  <>
-    <button
-      onClick={() => onAccept(quote)}
-      className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
-      title="Accept Quote"
-    >
-      <LucideIcon icon="CheckCircle" size={16} className="mr-2" />
-      Accept Quote
-    </button>
-    <button
-      onClick={() => onReject(quote)}
-      className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
-      title="Reject Quote"
-    >
-      <X size={16} className="mr-2" />
-      Reject
-    </button>
-  </>
-)}
-{(quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired && (
-  <button
-    onClick={() => onConvertToJob(quote)}
-    className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
-    title="Convert to Job"
-  >
-    <Package size={16} className="mr-2" />
-    Convert to Job
-  </button>
-)}
+              <>
+                <button
+                  onClick={() => onAccept(quote)}
+                  className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+                  title="Accept Quote"
+                >
+                  <LucideIcon icon="CheckCircle" size={16} className="mr-2" />
+                  Accept Quote
+                </button>
+                <button
+                  onClick={() => onReject(quote)}
+                  className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
+                  title="Reject Quote"
+                >
+                  <X size={16} className="mr-2" />
+                  Reject
+                </button>
+              </>
+            )}
+            {(quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired && (
+              <button
+                onClick={() => onConvertToJob(quote)}
+                className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
+                title="Convert to Job"
+              >
+                <Package size={16} className="mr-2" />
+                Convert to Job
+              </button>
+            )}
             <button
-              onClick={() => onEdit(quote)}
+              onClick={() => {
+                onEdit(quote);
+                // Store a reference to reload attachments after edit
+                window.refreshFullPageQuoteAttachments = () => loadQuoteAttachments(quote.id);
+              }}
               className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
               title="Edit Quote"
             >
@@ -4415,15 +4410,6 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             >
               <Copy size={20} />
             </button>
-            {quote.status !== 'REJECTED' && (
-  <button
-    onClick={() => onReject(quote)}
-    className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
-    title="Reject Quote"
-  >
-    <X size={20} />
-  </button>
-)}
             {user?.role === 'ADMIN' && (
               <button
                 onClick={() => onDelete(quote.id)}
@@ -4459,7 +4445,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              Pricing Details
+              Pricing & Details
             </button>
             <button
               onClick={() => setActiveTab('documents')}
@@ -4482,70 +4468,207 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
         {activeTab === 'overview' && (
           <div className="space-y-8">
             
-            {/* Customer Information */}
+            {/* Combined Quote & Customer Information - COMPACT & MOBILE FRIENDLY */}
             <div className="bg-white rounded-lg border border-gray-200">
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-800">Customer Information</h2>
+              <div className="bg-gray-50 border-b border-gray-200 px-3 md:px-4 py-2">
+                <h2 className="text-sm md:text-base font-semibold text-gray-800">Quote & Customer Information</h2>
               </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Customer:</span>
-                      <span className="font-semibold text-gray-900">{quote.customerName}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Contact:</span>
-                      <span className="text-gray-900">{quote.customerContact || 'Not provided'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Email:</span>
-                      <span className="text-gray-900">{quote.customerEmail || 'Not provided'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Phone:</span>
-                      <span className="text-gray-900">{quote.customerPhone || 'Not provided'}</span>
-                    </div>
+              <div className="p-3 md:p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  
+                  {/* Customer */}
+                  <div className="border-b sm:border-0 pb-2 sm:pb-0">
+                    <span className="text-xs text-gray-600">Customer:</span>
+                    <p className="font-semibold">{quote.customerName}</p>
+                    {quote.customerContact && <p className="text-xs text-gray-600">{quote.customerContact}</p>}
                   </div>
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Quote Type:</span>
-                      <span className="text-gray-900">{quote.jobType}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Created Date:</span>
-                      <span className="text-gray-900">{quote.created_at ? new Date(quote.created_at).toLocaleDateString() : 'Not provided'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Valid Until:</span>
-                      <span className={`font-semibold ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
-                        {new Date(quote.validUntil).toLocaleDateString()}
-                      </span>
-                    </div>
-                    {quote.deliveryDate && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Proposed Delivery:</span>
-                        <span className="text-gray-900">{new Date(quote.deliveryDate).toLocaleDateString()}</span>
-                      </div>
-                    )}
+                  
+                  {/* Supplier */}
+                  <div className="border-b sm:border-0 pb-2 sm:pb-0">
+                    <span className="text-xs text-gray-600">Supplier:</span>
+                    <p className="font-semibold">{quote.supplierName || 'Not specified'}</p>
+                    {quote.supplierRef && <p className="text-xs text-gray-600">Ref: {quote.supplierRef}</p>}
+                  </div>
+                  
+                  {/* Quote Type */}
+                  <div className="border-b sm:border-0 pb-2 sm:pb-0">
+                    <span className="text-xs text-gray-600">Quote Type:</span>
+                    <p className="font-semibold">{quote.jobType}</p>
+                    <p className="text-xs text-gray-600">Qty: {quote.quantity} {quote.unit}</p>
+                  </div>
+                  
+                  {/* Status/Validity */}
+                  <div className="border-b sm:border-0 pb-2 sm:pb-0">
+                    <span className="text-xs text-gray-600">Valid Until:</span>
+                    <p className={`font-semibold text-xs ${isExpired ? 'text-red-600' : 'text-green-600'}`}>
+                      {new Date(quote.validUntil).toLocaleDateString()}
+                    </p>
+                    {isExpired && <p className="text-xs text-red-600">EXPIRED</p>}
+                  </div>
+                  
+                  {/* Dates Row */}
+                  <div>
+                    <span className="text-xs text-gray-600">Created:</span>
+                    <p className="font-semibold text-xs">
+                      {quote.createdDate ? new Date(quote.createdDate).toLocaleDateString() : 
+                       quote.created_at ? new Date(quote.created_at).toLocaleDateString() : 'Not provided'}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <span className="text-xs text-gray-600">Proposed Delivery:</span>
+                    <p className="font-semibold text-red-600 text-xs">
+                      {quote.deliveryDate ? new Date(quote.deliveryDate).toLocaleDateString() : 
+                       quote.jobDate ? new Date(quote.jobDate).toLocaleDateString() : 'Not specified'}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <span className="text-xs text-gray-600">Contact:</span>
+                    <p className="font-semibold text-xs">{quote.customerPhone || 'Not provided'}</p>
+                  </div>
+                  
+                  <div>
+                    <span className="text-xs text-gray-600">PO:</span>
+                    <p className="font-semibold text-xs">{quote.customerPO || 'Not provided'}</p>
+                  </div>
+                  
+                  {/* Site Address - spans 2 columns */}
+                  <div className="col-span-1 sm:col-span-2">
+                    <span className="text-xs text-gray-600">Site Address:</span>
+                    <p className="font-semibold text-xs">
+                      {quote.siteAddress || quote.siteAddress1 || 'Not specified'}
+                      {quote.siteAddress2 && `, ${quote.siteAddress2}`}
+                      {quote.sitePostcode && ` ${quote.sitePostcode}`}
+                    </p>
+                  </div>
+                  
+                  {/* Quote Value */}
+                  <div>
+                    <span className="text-xs text-gray-600">Unit Price:</span>
+                    <p className="font-semibold text-xs">£{(quote.price || quote.customerUnitPrice || 0).toFixed(2)}</p>
+                  </div>
+                  
+                  <div>
+                    <span className="text-xs text-gray-600">Total Value:</span>
+                    <p className="font-semibold text-green-600 text-xs">
+                      £{(quote.totalPrice || quote.customerFinalPrice || 0).toFixed(2)}
+                    </p>
                   </div>
                 </div>
+                
+                {quote.notes && (
+                  <div className="mt-2 pt-2 border-t border-gray-200">
+                    <span className="text-xs text-gray-600">Notes: </span>
+                    <span className="text-xs">{quote.notes}</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Site Information */}
-            {(quote.siteAddress || quote.sitePostcode) && (
+            {/* Products & Services - COMPACT & MOBILE FRIENDLY */}
+            {quote.lineItems && quote.lineItems.length > 0 && (
               <div className="bg-white rounded-lg border border-gray-200">
-                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Site Information</h2>
+                <div className="bg-gray-50 border-b border-gray-200 px-3 md:px-4 py-2">
+                  <h2 className="text-sm md:text-base font-semibold text-gray-800">Products & Services</h2>
                 </div>
-                <div className="p-6">
-                  <div className="space-y-4">
-                    <div>
-                      <span className="text-gray-600 font-medium block mb-1">Site Address:</span>
-                      <div className="text-gray-900">
-                        {quote.siteAddress && <div>{quote.siteAddress}</div>}
-                        {quote.sitePostcode && <div>{quote.sitePostcode}</div>}
+                <div className="p-3 md:p-4">
+                  {/* Desktop Table - Compact */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200 text-xs">
+                          <th className="text-left py-2 px-2 font-medium text-gray-700">Product/Service</th>
+                          <th className="text-left py-2 px-2 font-medium text-gray-700">Description</th>
+                          <th className="text-center py-2 px-2 font-medium text-gray-700">Qty</th>
+                          <th className="text-right py-2 px-2 font-medium text-gray-700">Unit Price</th>
+                          <th className="text-right py-2 px-2 font-medium text-gray-700">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {quote.lineItems.map((item, index) => {
+                          const unitPrice = item.unit_price || item.customer_price || 0;
+                          const lineTotal = unitPrice * (item.quantity || 1);
+                          
+                          return (
+                            <tr key={item.id || index} className="border-b border-gray-100">
+                              <td className="py-2 px-2">
+                                <div className="font-medium text-xs">{item.product_name || item.name}</div>
+                                <div className="text-xs text-gray-500">Code: {item.item_code || 'N/A'}</div>
+                              </td>
+                              <td className="py-2 px-2 text-gray-600 text-xs">
+                                {item.description || '-'}
+                              </td>
+                              <td className="py-2 px-2 text-center text-xs">
+                                {item.quantity || 1}
+                              </td>
+                              <td className="py-2 px-2 text-right text-xs font-medium">
+                                £{unitPrice.toFixed(2)}
+                              </td>
+                              <td className="py-2 px-2 text-right text-xs text-blue-600 font-medium">
+                                £{lineTotal.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {/* Mobile Cards - Compact */}
+                  <div className="md:hidden space-y-2">
+                    {quote.lineItems.map((item, index) => {
+                      const unitPrice = item.unit_price || item.customer_price || 0;
+                      const lineTotal = unitPrice * (item.quantity || 1);
+                      
+                      return (
+                        <div key={item.id || index} className="border border-gray-200 rounded p-2 text-xs">
+                          <div className="font-medium">{item.product_name || item.name}</div>
+                          <div className="text-gray-500">Code: {item.item_code || 'N/A'}</div>
+                          <div className="grid grid-cols-2 gap-1 mt-1">
+                            <div>Qty: <span className="font-medium">{item.quantity || 1}</span></div>
+                            <div>Unit: <span className="font-medium">£{unitPrice.toFixed(2)}</span></div>
+                            <div className="col-span-2">Total: <span className="text-blue-600 font-medium">£{lineTotal.toFixed(2)}</span></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Summary Cards - Compact */}
+                  <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mt-3 pt-3 border-t">
+                    <div className="bg-gray-50 rounded p-2 text-center">
+                      <div className="text-xs text-gray-600">Items</div>
+                      <div className="text-base font-bold">{quote.lineItems.length}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded p-2 text-center">
+                      <div className="text-xs text-gray-600">Qty</div>
+                      <div className="text-base font-bold">
+                        {quote.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}
+                      </div>
+                    </div>
+                    <div className="bg-blue-50 rounded p-2 text-center">
+                      <div className="text-xs text-blue-600">Subtotal</div>
+                      <div className="text-base font-bold text-blue-700">
+                        £{quote.lineItems.reduce((sum, item) => 
+                          sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
+                        ).toFixed(0)}
+                      </div>
+                    </div>
+                    <div className="bg-green-50 rounded p-2 text-center">
+                      <div className="text-xs text-green-600">VAT (20%)</div>
+                      <div className="text-base font-bold text-green-700">
+                        £{(quote.lineItems.reduce((sum, item) => 
+                          sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
+                        ) * 0.20).toFixed(0)}
+                      </div>
+                    </div>
+                    <div className="bg-purple-50 rounded p-2 text-center">
+                      <div className="text-xs text-purple-600">Total</div>
+                      <div className="text-base font-bold text-purple-700">
+                        £{(quote.lineItems.reduce((sum, item) => 
+                          sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
+                        ) * 1.20).toFixed(0)}
                       </div>
                     </div>
                   </div>
@@ -4553,81 +4676,86 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
               </div>
             )}
 
-            {/* Products & Services */}
-            {quote.lineItems && quote.lineItems.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200">
-                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Products & Services</h2>
-                </div>
-                <div className="p-6">
-                  <div className="space-y-4">
-                    {quote.lineItems.map((item, index) => (
-                      <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                          <div>
-                            <div className="text-sm text-gray-600 font-medium">Product/Service</div>
-                            <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
-                            {item.item_code && (
-                              <div className="text-sm text-gray-600">Code: {item.item_code}</div>
-                            )}
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-600 font-medium">Description</div>
-                            <div className="text-gray-900">{item.description || 'No description'}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-600 font-medium">Quantity</div>
-                            <div className="text-gray-900">
-                              <div className="font-semibold">{item.quantity || 1}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+            {/* Quote Status Information */}
+            {quote.status === 'REJECTED' && quote.rejectedReason && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <h3 className="font-semibold text-red-900 mb-2">Rejection Information</h3>
+                <p className="text-red-700">Reason: {quote.rejectedReason}</p>
+                {quote.rejected_date && (
+                  <p className="text-red-600 text-sm mt-1">
+                    Rejected on: {new Date(quote.rejected_date).toLocaleDateString()}
+                  </p>
+                )}
               </div>
             )}
 
-            {/* Notes */}
-            {quote.notes && (
-              <div className="bg-white rounded-lg border border-gray-200">
-                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Quote Notes</h2>
-                </div>
-                <div className="p-6">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <p className="text-yellow-800">{quote.notes}</p>
-                  </div>
-                </div>
+            {quote.status === 'CONVERTED' && quote.job_reference && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <h3 className="font-semibold text-purple-900 mb-2">Conversion Information</h3>
+                <p className="text-purple-700">
+                  Converted to Job: <span className="font-semibold">{quote.job_reference}</span>
+                </p>
+                {quote.converted_date && (
+                  <p className="text-purple-600 text-sm mt-1">
+                    Converted on: {new Date(quote.converted_date).toLocaleDateString()}
+                  </p>
+                )}
               </div>
             )}
 
           </div>
         )}
 
-        {/* Pricing Details Tab */}
+        {/* Financial Tab */}
         {activeTab === 'financial' && (
           <div className="space-y-8">
             
             {/* Pricing Summary */}
             <div className="bg-white rounded-lg border border-gray-200">
               <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-800">Pricing Summary</h2>
+                <h2 className="text-lg font-semibold text-gray-800">Quote Summary</h2>
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="text-center">
                     <div className="text-sm text-gray-600 font-medium">Quantity</div>
-                    <div className="text-2xl font-bold text-gray-900">{quote.quantity} {quote.unit}</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {quote.quantity} {quote.unit}
+                    </div>
                   </div>
                   <div className="text-center">
                     <div className="text-sm text-gray-600 font-medium">Unit Price</div>
-                    <div className="text-2xl font-bold text-blue-600">£{quote.price?.toFixed(2) || '0.00'}</div>
+                    <div className="text-2xl font-bold text-blue-600">
+                      £{(quote.price || quote.customerUnitPrice || 0).toFixed(2)}
+                    </div>
                   </div>
                   <div className="text-center">
                     <div className="text-sm text-gray-600 font-medium">Total Quote Value</div>
-                    <div className="text-2xl font-bold text-green-600">£{quote.totalPrice?.toFixed(2) || '0.00'}</div>
+                    <div className="text-2xl font-bold text-green-600">
+                      £{(quote.totalPrice || quote.customerFinalPrice || 0).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* VAT Calculation */}
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <span className="text-gray-600">Net Amount:</span>
+                      <p className="font-semibold">£{(quote.totalPrice || quote.customerFinalPrice || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">VAT ({quote.vatRate || 20}%):</span>
+                      <p className="font-semibold">
+                        £{((quote.totalPrice || quote.customerFinalPrice || 0) * ((quote.vatRate || 20) / 100)).toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Gross Total:</span>
+                      <p className="font-semibold text-green-600">
+                        £{((quote.totalPrice || quote.customerFinalPrice || 0) * (1 + ((quote.vatRate || 20) / 100))).toFixed(2)}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4639,29 +4767,79 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                 <h2 className="text-lg font-semibold text-gray-800">Quote Details</h2>
               </div>
               <div className="p-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 font-medium">Service Type:</span>
-                    <span className="text-gray-900">{quote.jobType}</span>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Quote Number:</span>
+                      <span className="text-gray-900 font-semibold">{quote.quoteNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-medium">Service Type:</span>
+                      <span className="text-gray-900">{quote.jobType}</span>
+                    </div>
+                    {quote.wasteType && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Waste Type:</span>
+                        <span className="text-gray-900">{quote.wasteType}</span>
+                      </div>
+                    )}
+                    {quote.skipSize && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Skip Size:</span>
+                        <span className="text-gray-900">{quote.skipSize}</span>
+                      </div>
+                    )}
+                    {quote.aggregateType && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Aggregate Type:</span>
+                        <span className="text-gray-900">{quote.aggregateType}</span>
+                      </div>
+                    )}
                   </div>
-                  {quote.wasteType && (
+                  <div className="space-y-4">
                     <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Waste Type:</span>
-                      <span className="text-gray-900">{quote.wasteType}</span>
+                      <span className="text-gray-600 font-medium">Status:</span>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        isExpired && quote.status === 'PENDING' ? 'bg-gray-100 text-gray-700' :
+                        quote.status === 'ACCEPTED' ? 'bg-green-100 text-green-700' :
+                        quote.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                        quote.status === 'SENT' ? 'bg-blue-100 text-blue-700' :
+                        quote.status === 'CONVERTED' ? 'bg-purple-100 text-purple-700' :
+                        'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {isExpired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
+                      </span>
                     </div>
-                  )}
-                  {quote.skipSize && (
                     <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Skip Size:</span>
-                      <span className="text-gray-900">{quote.skipSize}</span>
+                      <span className="text-gray-600 font-medium">Created:</span>
+                      <span className="text-gray-900">
+                        {quote.createdDate ? new Date(quote.createdDate).toLocaleDateString() :
+                         quote.created_at ? new Date(quote.created_at).toLocaleDateString() : 'Not provided'}
+                      </span>
                     </div>
-                  )}
-                  {quote.aggregateType && (
                     <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Aggregate Type:</span>
-                      <span className="text-gray-900">{quote.aggregateType}</span>
+                      <span className="text-gray-600 font-medium">Valid Until:</span>
+                      <span className={`font-semibold ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
+                        {new Date(quote.validUntil).toLocaleDateString()}
+                      </span>
                     </div>
-                  )}
+                    {quote.deliveryDate && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Proposed Delivery:</span>
+                        <span className="text-gray-900">
+                          {new Date(quote.deliveryDate || quote.jobDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                    {quote.supplierName && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Supplier Cost:</span>
+                        <span className="text-red-600">
+                          £{(quote.supplierUnitPrice || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -4688,6 +4866,8 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                       <option value="Quote Document">Quote Document</option>
                       <option value="Supporting Document">Supporting Document</option>
                       <option value="Terms & Conditions">Terms & Conditions</option>
+                      <option value="Specifications">Specifications</option>
+                      <option value="Site Photos">Site Photos</option>
                       <option value="Other">Other</option>
                     </select>
                     <input type="file" id="quote-attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.html,.png" />
@@ -4721,7 +4901,27 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                           {user?.role === 'ADMIN' && (
                             <button
                               type="button"
-                              onClick={() => handleDeleteAttachment(attachment.id)}
+                              onClick={async () => {
+                                if (confirm(`Are you sure you want to delete ${attachment.file_name}?`)) {
+                                  try {
+                                    const { error } = await window.supabase
+                                      .from('quote_attachments')
+                                      .delete()
+                                      .eq('id', attachment.id);
+                                    
+                                    if (error) throw error;
+                                    
+                                    setQuoteAttachments(prevAttachments => 
+                                      prevAttachments.filter(att => att.id !== attachment.id)
+                                    );
+                                    
+                                    alert('Attachment deleted successfully!');
+                                  } catch (error) {
+                                    console.error('Error deleting attachment:', error);
+                                    alert('Error deleting attachment: ' + error.message);
+                                  }
+                                }
+                              }}
                               className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
                             >
                               Delete
@@ -4734,6 +4934,20 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                 </div>
               </div>
             </div>
+
+            {/* Quote Notes */}
+            {quote.notes && (
+              <div className="bg-white rounded-lg border border-gray-200">
+                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                  <h2 className="text-lg font-semibold text-gray-800">Quote Notes</h2>
+                </div>
+                <div className="p-6">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <p className="text-yellow-800">{quote.notes}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
           </div>
         )}
