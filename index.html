@@ -4514,7 +4514,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Created Date:</span>
-                      <span className="text-gray-900">{job.created_at ? new Date(job.created_at).toLocaleDateString() : 'Not provided'}</span>
+                      <span className="text-gray-900">{quote.created_at ? new Date(quote.created_at).toLocaleDateString() : 'Not provided'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 font-medium">Valid Until:</span>
