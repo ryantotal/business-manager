@@ -4355,15 +4355,19 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             {quote.status === 'PENDING' && (
               <button
                 onClick={() => {
-  // Calculate the actual total from line items
-  let calculatedTotal = 0;
+  // Calculate totals
+  let subtotal = 0;
   if (quote?.lineItems && quote.lineItems.length > 0) {
     quote.lineItems.forEach(item => {
       const price = item?.customer_price || item?.supplier_price || item?.unit_price || item?.price || 0;
       const qty = item?.quantity || 1;
-      calculatedTotal += (qty * price);
+      subtotal += (qty * price);
     });
   }
+  
+  const vatRate = 0.20; // 20% VAT
+  const vatAmount = subtotal * vatRate;
+  const grandTotal = subtotal + vatAmount;
   
   const newWindow = window.open('', '_blank');
   newWindow.document.write(`
@@ -4377,8 +4381,18 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
         table { width: 100%; border-collapse: collapse; margin-top: 30px; }
         th { background: #2c5f2d; color: white; padding: 12px; text-align: left; }
         td { padding: 12px; border-bottom: 1px solid #ddd; }
-        .total { font-size: 24px; font-weight: bold; text-align: right; margin-top: 30px; color: #2c5f2d; }
-        .footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }
+        .totals-box { margin-top: 30px; float: right; width: 300px; }
+        .total-line { display: flex; justify-content: space-between; padding: 8px 0; }
+        .total-line.subtotal { border-bottom: 1px solid #ddd; }
+        .total-line.grand-total { 
+          font-size: 20px; 
+          font-weight: bold; 
+          color: #2c5f2d; 
+          border-top: 2px solid #2c5f2d;
+          margin-top: 10px;
+          padding-top: 15px;
+        }
+        .footer { margin-top: 150px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; clear: both; }
       </style>
     </head>
     <body>
@@ -4392,7 +4406,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
       <div class="info-row"><strong>Valid Until:</strong> ${quote?.validUntil ? new Date(quote.validUntil).toLocaleDateString('en-GB') : 'N/A'}</div>
       <div class="info-row"><strong>Customer:</strong> ${quote?.customerName || 'N/A'}</div>
       <div class="info-row"><strong>Email:</strong> ${quote?.customerEmail || 'N/A'}</div>
-      <div class="info-row"><strong>Phone:</strong> ${quote?.customerPhone || quote?.phone || ''}</div>
+      <div class="info-row"><strong>Phone:</strong> ${quote?.customerPhone || quote?.phone || quote?.customerTelephone || 'Not provided'}</div>
       <div class="info-row"><strong>Site Address:</strong> ${quote?.siteAddress || 'N/A'}</div>
       <div class="info-row"><strong>Status:</strong> ${quote?.status || 'PENDING'}</div>
       
@@ -4427,18 +4441,29 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
         </tbody>
       </table>
       
-      <div class="total">
-        Total: £${calculatedTotal.toFixed(2)}
+      <div class="totals-box">
+        <div class="total-line subtotal">
+          <span>Subtotal (Net):</span>
+          <span>£${subtotal.toFixed(2)}</span>
+        </div>
+        <div class="total-line">
+          <span>VAT (20%):</span>
+          <span>£${vatAmount.toFixed(2)}</span>
+        </div>
+        <div class="total-line grand-total">
+          <span>TOTAL:</span>
+          <span>£${grandTotal.toFixed(2)}</span>
+        </div>
       </div>
       
       <div class="footer">
         <p><strong>Terms & Conditions</strong></p>
         <p>• Valid for 30 days from date of issue</p>
-        <p>• Subject to VAT at current rate</p>
+        <p>• All prices subject to VAT at current rate</p>
         <p>• Payment terms: Net 30 days (subject to account status)</p>
         <br>
         <p>Thank you for your business!</p>
-        <p>Total Waste Services Ltd | ${quote?.supplierName || ''}</p>
+        <p>Total Waste Services Ltd</p>
       </div>
     </body>
     </html>
