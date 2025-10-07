@@ -4768,7 +4768,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                       <div className="text-base font-bold text-blue-700">
                         £{quote.lineItems.reduce((sum, item) => 
                           sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
-                        ).toFixed(0)}
+                        ).toFixed(2)}
                       </div>
                     </div>
                     <div className="bg-green-50 rounded p-2 text-center">
@@ -4776,7 +4776,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                       <div className="text-base font-bold text-green-700">
                         £{(quote.lineItems.reduce((sum, item) => 
                           sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
-                        ) * 0.20).toFixed(0)}
+                        ) * 0.20).toFixed(2)}
                       </div>
                     </div>
                     <div className="bg-purple-50 rounded p-2 text-center">
@@ -4784,7 +4784,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                       <div className="text-base font-bold text-purple-700">
                         £{(quote.lineItems.reduce((sum, item) => 
                           sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
-                        ) * 1.20).toFixed(0)}
+                        ) * 1.20).toFixed(2)}
                       </div>
                     </div>
                   </div>
