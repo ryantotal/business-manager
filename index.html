@@ -11418,10 +11418,10 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
        // Replace the existing QuoteForm component (around line 7141) with this FULLY TESTED version:
 
+// Quote Form Component - UPDATED TO MATCH JOB FORM LAYOUT
 const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user }) => {
-  const { wasteTypes } = useWasteTypes();
-  const [uploadFile, setUploadFile] = useState(null);
   const [quoteAttachments, setQuoteAttachments] = useState([]);
+  const [uploadFile, setUploadFile] = useState(null);
   
   // Load attachments when quote changes
   useEffect(() => {
@@ -11436,7 +11436,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
         .from('quote_attachments')
         .select('*')
         .eq('quote_id', quoteId)
-        .order('uploaded_at', { ascending: false });
+        .order('created_at', { ascending: false });
       
       if (error) throw error;
       setQuoteAttachments(data || []);
@@ -11445,8 +11445,6 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     }
   };
 
-  const [attachmentType, setAttachmentType] = useState('Quote Document');
-  
   const handleDeleteAttachment = async (attachmentId) => {
     if (!window.confirm('Are you sure you want to delete this attachment?')) {
       return;
@@ -11463,6 +11461,9 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       alert('Attachment deleted successfully!');
       await loadQuoteAttachments(quote.id);
       
+      if (window.refreshFullPageQuoteAttachments) {
+        window.refreshFullPageQuoteAttachments();
+      }
     } catch (error) {
       console.error('Error deleting attachment:', error);
       alert('Error deleting attachment: ' + error.message);
@@ -11470,12 +11471,17 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
   };
 
   const handleUploadInForm = async () => {
-    const attachmentType = document.getElementById('attachment-type')?.value || 'Quote Document';
-    const fileInput = document.getElementById('attachment-file');
+    const attachmentType = document.getElementById('quote-attachment-type')?.value || 'Quote Document';
+    const fileInput = document.getElementById('quote-attachment-file');
     const file = fileInput?.files[0];
 
-    if (!attachmentType || !file || !quote) {
-      alert('Please select attachment type, file, and ensure a quote is saved first');
+    if (!attachmentType || !file) {
+      alert('Please select both an attachment type and a file');
+      return;
+    }
+
+    if (!quote || !quote.id) {
+      alert('Please save the quote first before uploading attachments.\n\n1. Fill in the quote details\n2. Click "Create Quote" to save\n3. Then you can add documents to the saved quote');
       return;
     }
 
@@ -11505,10 +11511,13 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       if (error) throw error;
 
       alert('Attachment uploaded successfully!');
-      await loadQuoteAttachments(quote.id);
       
-      // Clear the file input
-      document.getElementById('attachment-file').value = '';
+      if (window.refreshFullPageQuoteAttachments) {
+        window.refreshFullPageQuoteAttachments();
+      }
+      
+      await loadQuoteAttachments(quote.id);
+      document.getElementById('quote-attachment-file').value = '';
       
     } catch (error) {
       console.error('Error uploading attachment:', error);
@@ -11516,45 +11525,60 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     }
   };
 
-  const [formData, setFormData] = useState(quote || {
-    customerName: '',
-    id: quote?.id,
-    customerPO: '',
-    supplierName: '',
-    supplierRef: '',
-    haulierName: '',
-    jobType: 'Skip Hire',
-    wasteType: '',
-    skipSize: '',
-    aggregateType: '',
-    quantity: 1,
-    unit: 'skip',
-    weight: '',
-    customerUnitPrice: 0,
-    customerFinalPrice: 0,
-    vatRate: 20,
-    jobDate: quote?.jobDate || new Date().toISOString().split('T')[0],
-    timeSlot: '',
-    collectionDate: '',
-    status: 'PENDING',
-    siteAddress1: '',
-    siteAddress2: '',
-    siteCity: '',
-    sitePostcode: '',
-    siteContact: '',
-    sitePhone: '',
-    siteNotes: '',
-    deliveryInstructions: '',
-    accessRestrictions: '',
-    hazardousWaste: false,
-    consignmentNote: '',
-    notes: '',
-    isDeclined: false,
-    sageProductId: '',
-    sageProductName: '',
-    lineItems: quote?.lineItems || [],
-    validUntil: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    createdDate: quote?.createdDate || new Date().toISOString().split('T')[0]
+  const [formData, setFormData] = useState(() => {
+    const initialData = {
+      customerName: '',
+      id: quote?.id,
+      customerPO: '',
+      supplierName: '',
+      supplierRef: '',
+      haulierName: '',
+      jobType: 'Skip Hire',
+      lineItems: [],
+      wasteType: '',
+      skipSize: '',
+      aggregateType: '',
+      quantity: 1,
+      unit: 'skip',
+      weight: '',
+      customerUnitPrice: 0,
+      customerFinalPrice: 0,
+      supplierUnitPrice: 0,
+      supplierFinalPrice: 0,
+      vatRate: 20,
+      jobDate: quote?.jobDate || new Date().toISOString().split('T')[0],
+      deliveryDate: quote?.deliveryDate || '',
+      timeSlot: '',
+      status: 'PENDING',
+      siteAddress1: '',
+      siteAddress2: '',
+      siteCity: '',
+      sitePostcode: '',
+      siteContact: '',
+      sitePhone: '',
+      siteNotes: '',
+      deliveryInstructions: '',
+      accessRestrictions: '',
+      notes: '',
+      isDeclined: false,
+      rejectedReason: '',
+      sageProductId: '',
+      sageProductName: '',
+      validUntil: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+      createdDate: quote?.createdDate || new Date().toISOString().split('T')[0]
+    };
+    
+    // If editing, merge quote data
+    if (quote) {
+      return {
+        ...initialData,
+        ...quote,
+        lineItems: quote.lineItems || [],
+        jobDate: quote.deliveryDate || quote.jobDate || new Date().toISOString().split('T')[0]
+      };
+    }
+    
+    return initialData;
   });
 
   const [activeTab, setActiveTab] = useState('details');
@@ -11568,15 +11592,21 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
 
   const calculatePrices = () => {
     const customerTotal = formData.customerUnitPrice * formData.quantity;
+    const supplierTotal = formData.supplierUnitPrice * formData.quantity;
     setFormData(prev => ({
       ...prev,
-      customerFinalPrice: customerTotal
+      customerFinalPrice: customerTotal,
+      supplierFinalPrice: supplierTotal
     }));
   };
 
   useEffect(() => {
-    calculatePrices();
-  }, [formData.customerUnitPrice, formData.quantity]);
+    const customerTotal = formData.customerUnitPrice * formData.quantity;
+    const supplierTotal = formData.supplierUnitPrice * formData.quantity;
+    if (customerTotal !== formData.customerFinalPrice || supplierTotal !== formData.supplierFinalPrice) {
+      calculatePrices();
+    }
+  }, [formData.customerUnitPrice, formData.supplierUnitPrice, formData.quantity]);
 
   const generateQuoteNumber = () => {
     const year = new Date().getFullYear();
@@ -11594,23 +11624,21 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       quoteNumber: newQuoteNumber,
       createdDate: quote?.createdDate || new Date().toISOString().split('T')[0],
       totalPrice: formData.customerFinalPrice,
+      price: formData.customerUnitPrice,
       customerEmail: formData.customerEmail || customers.find(c => c.companyName === formData.customerName)?.email || '',
       customerContact: formData.customerContact || customers.find(c => c.companyName === formData.customerName)?.primaryContact || '',
-      customerPhone: formData.customerPhone || customers.find(c => c.companyName === formData.customerName)?.phone || ''
+      customerPhone: formData.customerPhone || customers.find(c => c.companyName === formData.customerName)?.phone || '',
+      deliveryDate: formData.jobDate,
+      siteAddress: formData.siteAddress1,
+      lineItems: formData.lineItems || []
     };
     onSave(newQuote);
   };
 
-  const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed', 
+  const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed',
                      '12 yard', '12 yard enclosed', '14 yard', '14 yard enclosed', '16 yard', '16 yard enclosed'];
   const roroSizes = ['20 yard', '40 yard'];
   const timeSlots = ['AM (8:00-12:00)', 'PM (12:00-17:00)'];
-
-  // Filter suppliers who provide haulage services (same as Job Form)
-  const hauliers = suppliers.filter(s => 
-    s.primaryServices?.includes('Haulage') || 
-    s.primaryServices?.includes('Transport')
-  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -11626,32 +11654,40 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
         <div className="flex border-b border-gray-200">
           <button
             onClick={() => setActiveTab('details')}
-            className={`px-6 py-3 font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
           >
             Quote Details
           </button>
           <button
             onClick={() => setActiveTab('site')}
-            className={`px-6 py-3 font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
           >
             Site Information
           </button>
           <button
             onClick={() => setActiveTab('financial')}
-            className={`px-6 py-3 font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
           >
             Pricing & Status
           </button>
           <button
             onClick={() => setActiveTab('documents')}
-            className={`px-6 py-3 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
           >
             Documents
           </button>
         </div>
 
         <div className="p-6">
-          {/* Quote Details Tab - EXACT COPY OF JOB DETAILS TAB */}
+          {/* Quote Details Tab - MATCHING JOB DETAILS */}
           {activeTab === 'details' && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -11668,6 +11704,13 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                       setFormData({
                         ...formData,
                         customerName: value,
+                        customerReference: customer?.reference || '',
+                        customerMobile: customer?.mobile || '',
+                        customerMainContact: customer?.main_contact_name || '',
+                        customerCreditLimit: customer?.credit_limit || 0,
+                        customerCreditDays: customer?.credit_days || 30,
+                        customerDeliveryAddress: customer?.delivery_address || null,
+                        customerAccountStatus: customer?.account_status || 'Active',
                         siteContact: customer?.primaryContact || formData.siteContact,
                         customerPhone: customer?.phone || formData.customerPhone,
                         customerEmail: customer?.email || formData.customerEmail
@@ -11678,6 +11721,48 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                     valueField="name"
                   />
                 </div>
+
+                {/* Customer Extended Details - Auto-populated */}
+                {formData.customerName && (() => {
+                  const customer = customers.find(c => (c.companyName || c.name) === formData.customerName);
+                  return customer ? (
+                    <div className="col-span-2 bg-gray-50 rounded-lg p-4 mb-4">
+                      <h3 className="text-sm font-medium text-gray-700 mb-3">Customer Information</h3>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">Reference:</span>
+                          <span className="ml-2 font-medium">{customer.reference || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Contact:</span>
+                          <span className="ml-2 font-medium">{customer.main_contact_name || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Mobile:</span>
+                          <span className="ml-2 font-medium">{customer.mobile || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Credit:</span>
+                          <span className="ml-2 font-medium">
+                            £{customer.credit_limit?.toLocaleString() || '0'} / {customer.credit_days || 30} days
+                          </span>
+                        </div>
+                        {customer.delivery_address && (
+                          <div className="col-span-2 pt-2 border-t">
+                            <span className="text-gray-600">Delivery Address:</span>
+                            <span className="ml-2 font-medium">
+                              {customer.delivery_address.address_line_1}
+                              {customer.delivery_address.address_line_2 && `, ${customer.delivery_address.address_line_2}`}
+                              {customer.delivery_address.city && `, ${customer.delivery_address.city}`}
+                              {customer.delivery_address.postal_code && ` ${customer.delivery_address.postal_code}`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Customer PO Number</label>
                   <input
@@ -11712,7 +11797,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                     value={formData.supplierRef}
                     onChange={(e) => setFormData({...formData, supplierRef: e.target.value})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="Supplier job reference"
+                    placeholder="Supplier quote reference"
                   />
                 </div>
               </div>
@@ -11752,21 +11837,16 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                     <option value="Roll-on Roll-off">Roll-on Roll-off</option>
                   </select>
                 </div>
-                <div>
-                  
-              
-                </div>
               </div>
 
-              {/* SAGE PRODUCT SELECTION - EXACT COPY FROM JOB FORM */}
+              {/* SAGE PRODUCT SELECTION FOR EACH JOB TYPE */}
               {formData.jobType === 'Skip Hire' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <SageProductSelector 
+                    <SageProductSelector
                       jobType="Skip Hire"
                       selectedProduct={formData.sageProductName}
                       onSelect={(product) => {
-                        console.log('Selected product:', product);  // ADD THIS
                         setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
                         const newLineItem = {
                           id: Date.now(),
@@ -11776,13 +11856,15 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          supplier_price: 0.00,
+                          customer_price: 0.00,
                           unit_price: 0.00,
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
                           sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
+                          nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                          tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
                         setFormData({...formData, lineItems: updatedLineItems});
@@ -11793,7 +11875,7 @@ tax_code: product.tax_rate_id || 'T1'
                 </div>
               )}
 
-              {/* LINE ITEMS TABLE - EXACT COPY FROM JOB FORM */}
+              {/* LINE ITEMS TABLE - MATCHING JOB FORM EXACTLY */}
               {formData.lineItems && formData.lineItems.length > 0 && (
                 <div className="mt-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
                   <h3 className="text-xl font-semibold mb-6">Selected Products & Services</h3>
@@ -11802,79 +11884,151 @@ tax_code: product.tax_rate_id || 'T1'
                       <thead className="bg-gray-100">
                         <tr>
                           <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
-                          <th className="px-4 py-3 text-left font-medium w-2/5">Description (Editable)</th>
-                          <th className="px-2 py-3 text-left font-medium w-20">Code</th>
-                          <th className="px-4 py-3 text-left font-medium w-20">Type</th>
-                          <th className="px-4 py-3 text-left font-medium w-20">Quantity</th>
+                          <th className="px-4 py-3 text-left font-medium w-1/3">Description (Editable)</th>
+                          <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
+                          <th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
+                          <th className="px-2 py-3 text-left font-medium w-20">RRP £</th>
+                          <th className="px-2 py-3 text-left font-medium w-20">Profit</th>
                           <th className="px-4 py-3 text-left font-medium w-20">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {formData.lineItems.map((item, index) => (
-                          <tr key={item.id} className="border-t hover:bg-gray-50">
-                            <td className="px-4 py-3">{item.product_name}</td>
-                            <td className="px-4 py-3">
-                              <input
-                                type="text"
-                                value={item.description}
-                                onChange={(e) => {
-                                  const updatedItems = [...formData.lineItems];
-                                  updatedItems[index].description = e.target.value;
-                                  setFormData({...formData, lineItems: updatedItems});
-                                }}
-                                className="w-full px-3 py-2 border border-gray-300 rounded"
-                                placeholder="Edit description..."
-                              />
-                            </td>
-                            <td className="px-2 py-3 text-xs text-gray-500 max-w-20 truncate" title={item.item_code || 'N/A'}>
-                              {item.item_code || 'N/A'}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`px-2 py-1 rounded text-xs ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                                {item.type}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <input
-                                type="number"
-                                value={item.quantity}
-                                onChange={(e) => {
-                                  const updatedItems = [...formData.lineItems];
-                                  updatedItems[index].quantity = parseInt(e.target.value) || 1;
-                                  setFormData({...formData, lineItems: updatedItems});
-                                  setFormData(prev => ({...prev, quantity: parseInt(e.target.value) || 1}));
-                                }}
-                                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-                                min="1"
-                              />
-                            </td>
-                            <td className="px-4 py-3">
-                              <button 
-                                onClick={() => {
-                                  const updatedItems = formData.lineItems.filter((_, i) => i !== index);
-                                  setFormData({...formData, lineItems: updatedItems});
-                                }}
-                                className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-                              >
-                                Remove
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {formData.lineItems.map((item, index) => {
+                          const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
+                          return (
+                            <tr key={item.id} className="border-t hover:bg-gray-50">
+                              <td className="px-4 py-3">
+                                <div>{item.product_name}</div>
+                                <div className="text-xs text-gray-500">{item.item_code}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <input
+                                  type="text"
+                                  value={item.description}
+                                  onChange={(e) => {
+                                    const updatedItems = [...formData.lineItems];
+                                    updatedItems[index].description = e.target.value;
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <input
+                                  type="number"
+                                  className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                                  step="0.01"
+                                  value={item.quantity || ''}
+                                  onChange={(e) => {
+                                    const updatedItems = [...formData.lineItems];
+                                    updatedItems[index] = {
+                                      ...updatedItems[index],
+                                      quantity: parseFloat(e.target.value) || ''
+                                    };
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <input
+                                  type="text"
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                                  value={item.supplier_price || ''}
+                                  onChange={(e) => {
+                                    const updatedItems = [...formData.lineItems];
+                                    updatedItems[index] = {
+                                      ...updatedItems[index],
+                                      supplier_price: e.target.value
+                                    };
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <input
+                                  type="text"
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                                  value={item.customer_price || ''}
+                                  onChange={(e) => {
+                                    const updatedItems = [...formData.lineItems];
+                                    updatedItems[index] = {
+                                      ...updatedItems[index],
+                                      customer_price: e.target.value
+                                    };
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <div className={`text-sm font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  £{lineProfit.toFixed(2)}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <button
+                                  onClick={() => {
+                                    const updatedItems = formData.lineItems.filter((_, i) => i !== index);
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                  className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
-                  <div className="mt-4 text-sm text-gray-600">
-                    Total items: {(formData.lineItems || []).length} | Total quantity: {(formData.lineItems || []).reduce((sum, item) => sum + item.quantity, 0)}
+                  <div className="mt-4 border-t pt-4">
+                    <div className="grid grid-cols-5 gap-4 text-sm">
+                      <div className="text-center">
+                        <div className="text-gray-600">Total Items</div>
+                        <div className="font-semibold">{formData.lineItems.length}</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-600">Total Quantity</div>
+                        <div className="font-semibold">
+                          {formData.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-600">Total Cost</div>
+                        <div className="font-semibold text-red-600">
+                          £{formData.lineItems.reduce((sum, item) =>
+                            sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
+                          ).toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-600">Total RRP</div>
+                        <div className="font-semibold text-blue-600">
+                          £{formData.lineItems.reduce((sum, item) =>
+                            sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
+                          ).toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-600">Total Profit</div>
+                        <div className="font-semibold text-green-600">
+                          £{(formData.lineItems.reduce((sum, item) =>
+                            sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
+                          ) - formData.lineItems.reduce((sum, item) =>
+                            sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
+                          )).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* ALL OTHER JOB TYPES - EXACT COPY */}
+              {/* Add other job type product selectors */}
               {formData.jobType === 'Roll-on Roll-off' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <SageProductSelector 
+                    <SageProductSelector
                       jobType="Roll-on Roll-off"
                       selectedProduct={formData.sageProductName}
                       onSelect={(product) => {
@@ -11887,13 +12041,15 @@ tax_code: product.tax_rate_id || 'T1'
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          supplier_price: 0.00,
+                          customer_price: 0.00,
                           unit_price: 0.00,
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
                           sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
+                          nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                          tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
                         setFormData({...formData, lineItems: updatedLineItems});
@@ -11907,7 +12063,7 @@ tax_code: product.tax_rate_id || 'T1'
               {formData.jobType === 'Aggregates' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <SageProductSelector 
+                    <SageProductSelector
                       jobType="Aggregates"
                       selectedProduct={formData.sageProductName}
                       onSelect={(product) => {
@@ -11920,13 +12076,15 @@ tax_code: product.tax_rate_id || 'T1'
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          supplier_price: 0.00,
+                          customer_price: 0.00,
                           unit_price: 0.00,
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
                           sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
+                          nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                          tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
                         setFormData({...formData, lineItems: updatedLineItems});
@@ -11940,7 +12098,7 @@ tax_code: product.tax_rate_id || 'T1'
               {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <SageProductSelector 
+                    <SageProductSelector
                       jobType={formData.jobType}
                       selectedProduct={formData.sageProductName}
                       onSelect={(product) => {
@@ -11953,13 +12111,15 @@ tax_code: product.tax_rate_id || 'T1'
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          supplier_price: 0.00,
+                          customer_price: 0.00,
                           unit_price: 0.00,
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
                           sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
+                          nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                          tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
                         setFormData({...formData, lineItems: updatedLineItems});
@@ -11969,7 +12129,7 @@ tax_code: product.tax_rate_id || 'T1'
                   </div>
                 </div>
               )}
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
@@ -12034,17 +12194,29 @@ tax_code: product.tax_rate_id || 'T1'
                       ))}
                     </select>
                   </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Collection Date</label>
-                    <input
-                      type="date"
-                      value={formData.collectionDate}
-                      onChange={(e) => setFormData({...formData, collectionDate: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                )}
+                ) : null}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until *</label>
+                  <input
+                    type="date"
+                    value={formData.validUntil}
+                    onChange={(e) => setFormData({...formData, validUntil: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Created Date</label>
+                  <input
+                    type="date"
+                    value={formData.createdDate}
+                    onChange={(e) => setFormData({...formData, createdDate: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    disabled
+                  />
+                </div>
               </div>
 
               <div>
@@ -12074,7 +12246,7 @@ tax_code: product.tax_rate_id || 'T1'
             </div>
           )}
 
-          {/* Site Information Tab - EXACT COPY FROM JOB FORM */}
+          {/* Site Information Tab - MATCHING JOB FORM */}
           {activeTab === 'site' && (
             <div className="space-y-4">
               <div>
@@ -12132,7 +12304,7 @@ tax_code: product.tax_rate_id || 'T1'
                   onChange={(e) => setFormData({...formData, siteNotes: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   rows={3}
-                  placeholder="Any additional site information, access instructions, etc."
+                  placeholder="Any additional site information..."
                 />
               </div>
 
@@ -12171,33 +12343,31 @@ tax_code: product.tax_rate_id || 'T1'
             </div>
           )}
 
-         
-{activeTab === 'financial' && (
-  <div className="space-y-4">
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Customer Unit Price (£) *</label>
-        <input
-          type="number"
-          step="0.01"
-          value={formData.customerUnitPrice}
-          onChange={(e) => setFormData({...formData, customerUnitPrice: parseFloat(e.target.value) || 0})}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Unit Cost (£)</label>
-        <input
-          type="number"
-          step="0.01"
-          value={formData.supplierUnitPrice}
-          onChange={(e) => setFormData({...formData, supplierUnitPrice: parseFloat(e.target.value) || 0})}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-        />
-      </div>
-    </div>
-    
-    
+          {/* Pricing & Status Tab - ADAPTED FOR QUOTES */}
+          {activeTab === 'financial' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer Unit Price (£) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.customerUnitPrice}
+                    onChange={(e) => setFormData({...formData, customerUnitPrice: parseFloat(e.target.value) || 0})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Unit Cost (£)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.supplierUnitPrice}
+                    onChange={(e) => setFormData({...formData, supplierUnitPrice: parseFloat(e.target.value) || 0})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
@@ -12227,72 +12397,70 @@ tax_code: product.tax_rate_id || 'T1'
                     <option value="EXPIRED">Expired</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Created Date</label>
-                  <input
-                    type="date"
-                    value={formData.createdDate}
-                    onChange={(e) => setFormData({...formData, createdDate: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    disabled
-                  />
-                </div>
               </div>
 
-            <div className="space-y-3">
-  <label className="flex items-center">
-    <input
-      type="checkbox"
-      checked={formData.isDeclined}
-      onChange={(e) => setFormData({...formData, isDeclined: e.target.checked, status: e.target.checked ? 'REJECTED' : 'PENDING'})}
-      className="mr-2"
-    />
-    <span className="text-sm font-medium text-red-600">Quote Declined</span>
-  </label>
-  
-  {formData.isDeclined && (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">Rejection Reason</label>
-      <textarea
-        value={formData.rejectedReason || ''}
-        onChange={(e) => setFormData({...formData, rejectedReason: e.target.value})}
-        className="w-full px-3 py-2 border border-red-300 rounded-lg"
-        rows={2}
-        placeholder="Please provide a reason for rejection..."
-      />
-    </div>
-  )}
-</div>
+              <div className="space-y-3">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.isDeclined}
+                    onChange={(e) => setFormData({...formData, isDeclined: e.target.checked, status: e.target.checked ? 'REJECTED' : 'PENDING'})}
+                    className="mr-2"
+                  />
+                  <span className="text-sm font-medium text-red-600">Quote Declined</span>
+                </label>
+                {formData.isDeclined && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Rejection Reason</label>
+                    <textarea
+                      value={formData.rejectedReason || ''}
+                      onChange={(e) => setFormData({...formData, rejectedReason: e.target.value})}
+                      className="w-full px-3 py-2 border border-red-300 rounded-lg"
+                      rows={2}
+                      placeholder="Please provide a reason for rejection..."
+                    />
+                  </div>
+                )}
+              </div>
 
               {formData.customerUnitPrice > 0 && (
                 <div className="bg-green-50 p-4 rounded-lg">
                   <h4 className="font-medium text-green-900 mb-3">Quote Calculation</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                     <div>
-                      <span className="text-green-700">Unit Price:</span>
-                      <p className="font-semibold">£{formData.customerUnitPrice.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <span className="text-green-700">Quantity:</span>
-                      <p className="font-semibold">{formData.quantity} {formData.unit}</p>
-                    </div>
-                    <div>
-                      <span className="text-green-700">Net Total:</span>
+                      <span className="text-green-700">Customer Total:</span>
                       <p className="font-semibold">£{formData.customerFinalPrice.toFixed(2)}</p>
+                      <p className="text-xs text-gray-600">+ VAT: £{(formData.customerFinalPrice * formData.vatRate / 100).toFixed(2)}</p>
                     </div>
-                    <div>
-                      <span className="text-green-700">Total + VAT:</span>
-                      <p className="font-semibold text-green-600">
-                        £{(formData.customerFinalPrice * (1 + formData.vatRate / 100)).toFixed(2)}
-                      </p>
-                    </div>
+                    {formData.supplierUnitPrice > 0 && (
+                      <>
+                        <div>
+                          <span className="text-green-700">Supplier Cost:</span>
+                          <p className="font-semibold">£{formData.supplierFinalPrice.toFixed(2)}</p>
+                          <p className="text-xs text-gray-600">+ VAT: £{(formData.supplierFinalPrice * formData.vatRate / 100).toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">Gross Profit:</span>
+                          <p className="font-semibold text-green-600">
+                            £{(formData.customerFinalPrice - formData.supplierFinalPrice).toFixed(2)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">Margin:</span>
+                          <p className="font-semibold text-green-600">
+                            {formData.customerFinalPrice > 0 ?
+                              (((formData.customerFinalPrice - formData.supplierFinalPrice) / formData.customerFinalPrice) * 100).toFixed(1) : 0}%
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Documents Tab - EXACT COPY FROM JOB FORM BUT FOR QUOTES */}
+          {/* Documents Tab - MATCHING JOB FORM */}
           {activeTab === 'documents' && (
             <div className="space-y-4">
               <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -12301,7 +12469,7 @@ tax_code: product.tax_rate_id || 'T1'
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Attachment Type</label>
-                    <select id="attachment-type" className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    <select id="quote-attachment-type" className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                       <option value="Quote Document">Quote Document</option>
                       <option value="Terms & Conditions">Terms & Conditions</option>
                       <option value="Specifications">Specifications</option>
@@ -12313,7 +12481,7 @@ tax_code: product.tax_rate_id || 'T1'
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Choose File</label>
                     <input
-                      id="attachment-file"
+                      id="quote-attachment-file"
                       type="file"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                       accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.html"
@@ -12327,40 +12495,40 @@ tax_code: product.tax_rate_id || 'T1'
                   >
                     Upload Attachment
                   </button>
-                </div>
 
-                {/* Display existing attachments */}
-                {quoteAttachments.length > 0 && (
-                  <div className="mt-6">
-                    <h4 className="font-medium text-gray-800 mb-3">Existing Attachments</h4>
-                    <div className="space-y-2">
-                      {quoteAttachments.map(attachment => (
-                        <div key={attachment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
-                          <div className="flex gap-2">
-                            <a 
-                              href={attachment.file_url} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-                            >
-                              View
-                            </a>
-                            {user?.role === 'ADMIN' && (
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteAttachment(attachment.id)}
-                                className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                  {/* Display existing attachments */}
+                  {quoteAttachments.length > 0 && (
+                    <div className="mt-6">
+                      <h4 className="font-medium text-gray-800 mb-3">Existing Attachments</h4>
+                      <div className="space-y-2">
+                        {quoteAttachments.map(attachment => (
+                          <div key={attachment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
+                            <div className="flex gap-2">
+                              <a
+                                href={attachment.file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
                               >
-                                Delete
-                              </button>
-                            )}
+                                View
+                              </a>
+                              {user?.role === 'ADMIN' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAttachment(attachment.id)}
+                                  className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           )}
