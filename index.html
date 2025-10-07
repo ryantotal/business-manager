@@ -4355,39 +4355,52 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             {quote.status === 'PENDING' && (
               <button
                 onClick={() => {
-  // Create the PDF content
+  // Create the PDF content with the actual quote data
   const pdfContent = `
     <html>
     <head>
-      <title>Quote ${quote.quote_number}</title>
+      <title>Quote ${quote?.quote_number || quote?.id || 'DRAFT'}</title>
       <style>
         body { font-family: Arial; padding: 20px; }
         h1 { color: #2c5f2d; }
-        table { width: 100%; border-collapse: collapse; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
         th { background: #2c5f2d; color: white; }
+        .total { font-size: 20px; font-weight: bold; margin-top: 20px; }
       </style>
     </head>
     <body>
       <h1>TOTAL WASTE SERVICES LTD</h1>
-      <h2>Quote #${quote.quote_number}</h2>
-      <p><strong>Customer:</strong> ${quote.customer_name || 'Customer'}</p>
-      <p><strong>Date:</strong> ${new Date(quote.created_at).toLocaleDateString('en-GB')}</p>
-      <p><strong>Status:</strong> ${quote.status}</p>
+      <h2>Quote #${quote?.quote_number || quote?.id || 'DRAFT'}</h2>
+      <p><strong>Customer:</strong> ${quote?.customer_name || quote?.customer?.name || 'Customer'}</p>
+      <p><strong>Site:</strong> ${quote?.site_address || 'Not specified'}</p>
+      <p><strong>Date:</strong> ${quote?.created_at ? new Date(quote.created_at).toLocaleDateString('en-GB') : 'Today'}</p>
+      <p><strong>Valid Until:</strong> ${quote?.valid_until ? new Date(quote.valid_until).toLocaleDateString('en-GB') : 'N/A'}</p>
+      <p><strong>Status:</strong> ${quote?.status || 'PENDING'}</p>
       
       <h3>Services</h3>
       <table>
-        <tr><th>Description</th><th>Quantity</th><th>Price</th></tr>
-        ${(quote.items || []).map(item => `
+        <tr><th>Description</th><th>Quantity</th><th>Unit Price</th><th>Total</th></tr>
+        ${(quote?.items || quote?.services || quote?.line_items || []).map(item => `
           <tr>
-            <td>${item.description || item.service || ''}</td>
-            <td>${item.quantity || 1}</td>
-            <td>£${item.price || 0}</td>
+            <td>${item?.description || item?.service || item?.name || 'Service'}</td>
+            <td>${item?.quantity || 1}</td>
+            <td>£${item?.unit_price || item?.price || 0}</td>
+            <td>£${(item?.quantity || 1) * (item?.unit_price || item?.price || 0)}</td>
           </tr>
         `).join('')}
       </table>
       
-      <h3>Total: £${quote.total || 0}</h3>
+      <div class="total">
+        <p>Subtotal: £${quote?.subtotal || quote?.total || 0}</p>
+        <p>VAT (20%): £${quote?.vat || (quote?.total * 0.2) || 0}</p>
+        <p>Total: £${quote?.grand_total || quote?.total * 1.2 || 0}</p>
+      </div>
+      
+      <p style="margin-top: 40px; font-size: 12px; color: #666;">
+        Company Registration No: 11143143<br>
+        Thank you for your business!
+      </p>
     </body>
     </html>
   `;
@@ -4398,8 +4411,8 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
   printWindow.document.close();
   setTimeout(() => { printWindow.print(); }, 500);
   
-  // Still update the status
-  onSend(quote);
+  // DON'T send to customer - just update status to show it was downloaded
+  console.log('PDF generated for quote:', quote);
 }}
                 className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
                 title="Download PDF"
