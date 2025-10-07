@@ -4355,26 +4355,61 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             {quote.status === 'PENDING' && (
               <button
                 onClick={() => {
-  // FIRST - Let's see what data we have
-  console.log('Quote data:', quote);
-  alert(`Quote has these fields: ${Object.keys(quote).join(', ')}`);
-  
-  // For now, just show what we have
+  // Create the PDF content - SAFE version
   const pdfContent = `
     <html>
     <head>
-      <title>Debug Quote</title>
+      <title>Quote</title>
+      <style>
+        body { font-family: Arial; padding: 20px; }
+        h1 { color: #2c5f2d; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background: #2c5f2d; color: white; padding: 10px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; }
+      </style>
     </head>
     <body>
-      <h1>QUOTE DEBUG - What data do we have?</h1>
-      <pre>${JSON.stringify(quote, null, 2)}</pre>
+      <h1>TOTAL WASTE SERVICES LTD</h1>
+      <h2>QUOTATION</h2>
+      <p>Company Reg: 11143143</p>
+      <hr>
+      
+      <p><strong>Quote Number:</strong> ${quote.quote_number || quote.id || 'N/A'}</p>
+      <p><strong>Customer:</strong> ${quote.customer_name || 'Customer'}</p>
+      <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')}</p>
+      <p><strong>Status:</strong> ${quote.status || 'PENDING'}</p>
+      
+      <h3>Items/Services</h3>
+      <table>
+        <tr>
+          <th>Description</th>
+          <th>Qty</th>
+          <th>Price</th>
+        </tr>
+        <tr>
+          <td>Waste Services</td>
+          <td>1</td>
+          <td>£${quote.total || '0.00'}</td>
+        </tr>
+      </table>
+      
+      <h3>Total Amount: £${quote.total || '0.00'}</h3>
+      
+      <p style="margin-top: 50px;">
+        <strong>Valid for 30 days</strong><br>
+        Thank you for your business
+      </p>
     </body>
     </html>
   `;
   
+  // Open and print
   const printWindow = window.open('', '_blank');
   printWindow.document.write(pdfContent);
   printWindow.document.close();
+  setTimeout(() => { 
+    printWindow.print(); 
+  }, 500);
 }}
                 className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
                 title="Download PDF"
