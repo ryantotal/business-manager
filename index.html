@@ -4397,14 +4397,21 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
         </thead>
         <tbody>
           ${quote?.lineItems && quote.lineItems.length > 0 ? 
-            quote.lineItems.map(item => `
-              <tr>
-                <td>${item?.product_name || item?.description || 'Service'}</td>
-                <td style="text-align: center;">${item?.quantity || 1}</td>
-                <td style="text-align: right;">£${(parseFloat(item?.unit_price) || 0).toFixed(2)}</td>
-                <td style="text-align: right;">£${((item?.quantity || 1) * (parseFloat(item?.unit_price) || 0)).toFixed(2)}</td>
-              </tr>
-            `).join('') 
+            quote.lineItems.map(item => {
+              // Try different price fields
+              const price = item?.customer_price || item?.supplier_price || item?.unit_price || item?.price || 0;
+              const qty = item?.quantity || 1;
+              const itemTotal = qty * price;
+              
+              return `
+                <tr>
+                  <td>${item?.product_name || item?.description || 'Service'}</td>
+                  <td style="text-align: center;">${qty}</td>
+                  <td style="text-align: right;">£${parseFloat(price).toFixed(2)}</td>
+                  <td style="text-align: right;">£${itemTotal.toFixed(2)}</td>
+                </tr>
+              `;
+            }).join('') 
             : 
             '<tr><td colspan="4" style="text-align: center;">No items in this quote</td></tr>'
           }
@@ -4419,7 +4426,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
         <p><strong>Terms & Conditions</strong></p>
         <p>• Valid for 30 days from date of issue</p>
         <p>• Subject to VAT at current rate</p>
-        <p>• Payment terms: Net 30 days</p>
+        <p>• Payment terms: Net 30 days (subject to account status)</p>
         <br>
         <p>Thank you for your business!</p>
         <p>Total Waste Services Ltd | ${quote?.supplierName || ''}</p>
