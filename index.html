@@ -4355,6 +4355,16 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             {quote.status === 'PENDING' && (
               <button
                 onClick={() => {
+  // Calculate the actual total from line items
+  let calculatedTotal = 0;
+  if (quote?.lineItems && quote.lineItems.length > 0) {
+    quote.lineItems.forEach(item => {
+      const price = item?.customer_price || item?.supplier_price || item?.unit_price || item?.price || 0;
+      const qty = item?.quantity || 1;
+      calculatedTotal += (qty * price);
+    });
+  }
+  
   const newWindow = window.open('', '_blank');
   newWindow.document.write(`
     <html>
@@ -4382,7 +4392,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
       <div class="info-row"><strong>Valid Until:</strong> ${quote?.validUntil ? new Date(quote.validUntil).toLocaleDateString('en-GB') : 'N/A'}</div>
       <div class="info-row"><strong>Customer:</strong> ${quote?.customerName || 'N/A'}</div>
       <div class="info-row"><strong>Email:</strong> ${quote?.customerEmail || 'N/A'}</div>
-      <div class="info-row"><strong>Phone:</strong> ${quote?.customerPhone || 'N/A'}</div>
+      <div class="info-row"><strong>Phone:</strong> ${quote?.customerPhone || quote?.phone || ''}</div>
       <div class="info-row"><strong>Site Address:</strong> ${quote?.siteAddress || 'N/A'}</div>
       <div class="info-row"><strong>Status:</strong> ${quote?.status || 'PENDING'}</div>
       
@@ -4398,7 +4408,6 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
         <tbody>
           ${quote?.lineItems && quote.lineItems.length > 0 ? 
             quote.lineItems.map(item => {
-              // Try different price fields
               const price = item?.customer_price || item?.supplier_price || item?.unit_price || item?.price || 0;
               const qty = item?.quantity || 1;
               const itemTotal = qty * price;
@@ -4419,7 +4428,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
       </table>
       
       <div class="total">
-        Total: £${(parseFloat(quote?.totalPrice) || 0).toFixed(2)}
+        Total: £${calculatedTotal.toFixed(2)}
       </div>
       
       <div class="footer">
