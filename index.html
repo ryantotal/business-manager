@@ -4608,7 +4608,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                                 {item.quantity || 1}
                               </td>
                               <td className="py-2 px-2 text-right text-xs font-medium">
-                                £{unitPrice.toFixed(2)}
+                                £{(parseFloat(unitPrice) || 0).toFixed(2)}
                               </td>
                               <td className="py-2 px-2 text-right text-xs text-blue-600 font-medium">
                                 £{lineTotal.toFixed(2)}
@@ -4632,7 +4632,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                           <div className="text-gray-500">Code: {item.item_code || 'N/A'}</div>
                           <div className="grid grid-cols-2 gap-1 mt-1">
                             <div>Qty: <span className="font-medium">{item.quantity || 1}</span></div>
-                            <div>Unit: <span className="font-medium">£{unitPrice.toFixed(2)}</span></div>
+                            <div>Unit: <span className="font-medium">£{(parseFloat(unitPrice) || 0).toFixed(2)}</span></div>
                             <div className="col-span-2">Total: <span className="text-blue-600 font-medium">£{lineTotal.toFixed(2)}</span></div>
                           </div>
                         </div>
