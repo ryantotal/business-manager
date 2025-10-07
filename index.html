@@ -4355,77 +4355,26 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             {quote.status === 'PENDING' && (
               <button
                 onClick={() => {
+  // Let's see what's actually in the quote object
+  console.log('Full quote object:', quote);
+  
   const newWindow = window.open('', '_blank');
   newWindow.document.write(`
     <html>
     <head>
       <style>
-        body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
-        h1 { color: #2c5f2d; border-bottom: 3px solid #2c5f2d; padding-bottom: 10px; }
-        .info-row { margin: 10px 0; }
-        .info-row strong { display: inline-block; width: 150px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 30px; }
-        th { background: #2c5f2d; color: white; padding: 12px; text-align: left; }
-        td { padding: 12px; border-bottom: 1px solid #ddd; }
-        .total { font-size: 24px; font-weight: bold; text-align: right; margin-top: 30px; color: #2c5f2d; }
-        .footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }
+        body { font-family: Arial; padding: 20px; }
+        pre { background: #f0f0f0; padding: 20px; overflow: auto; }
       </style>
     </head>
     <body>
-      <h1>TOTAL WASTE SERVICES LTD</h1>
-      <p style="color: #666;">Company Registration No: 11143143</p>
-      
-      <h2>QUOTATION</h2>
-      
-      <div class="info-row"><strong>Quote Number:</strong> ${quote?.quote_number || quote?.id || 'QT-001'}</div>
-      <div class="info-row"><strong>Date:</strong> ${quote?.created_at ? new Date(quote.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')}</div>
-      <div class="info-row"><strong>Valid Until:</strong> ${quote?.valid_until ? new Date(quote.valid_until).toLocaleDateString('en-GB') : 'N/A'}</div>
-      <div class="info-row"><strong>Customer:</strong> ${quote?.customer_name || quote?.customer?.name || 'N/A'}</div>
-      <div class="info-row"><strong>Site Address:</strong> ${quote?.site_address || 'N/A'}</div>
-      <div class="info-row"><strong>Status:</strong> ${quote?.status || 'PENDING'}</div>
-      
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 50%;">Description</th>
-            <th style="width: 15%;">Quantity</th>
-            <th style="width: 15%;">Unit Price</th>
-            <th style="width: 20%;">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${(quote?.items || quote?.line_items || []).length > 0 ? 
-            (quote?.items || quote?.line_items || []).map(item => `
-              <tr>
-                <td>${item?.description || item?.service || item?.name || 'Service'}</td>
-                <td>${item?.quantity || 1}</td>
-                <td>£${(parseFloat(item?.unit_price) || parseFloat(item?.price) || 0).toFixed(2)}</td>
-                <td>£${((item?.quantity || 1) * (parseFloat(item?.unit_price) || parseFloat(item?.price) || 0)).toFixed(2)}</td>
-              </tr>
-            `).join('') 
-            : 
-            '<tr><td colspan="4">No items in this quote</td></tr>'
-          }
-        </tbody>
-      </table>
-      
-      <div class="total">
-        Total: £${(parseFloat(quote?.total) || parseFloat(quote?.grand_total) || 0).toFixed(2)}
-      </div>
-      
-      <div class="footer">
-        <p><strong>Terms & Conditions</strong></p>
-        <p>• Valid for 30 days from date of issue</p>
-        <p>• Subject to VAT at current rate</p>
-        <p>• Payment terms: Net 30 days</p>
-        <br>
-        <p>Thank you for your business!</p>
-      </div>
+      <h1>Quote Data Structure</h1>
+      <p>This shows all the data in your quote object:</p>
+      <pre>${JSON.stringify(quote, null, 2)}</pre>
     </body>
     </html>
   `);
   newWindow.document.close();
-  newWindow.print();
 }}
                 className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
                 title="Download PDF"
