@@ -4650,17 +4650,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                     </p>
                   </div>
                   
-                  {/* Quote Value */}
-                  <div>
-  <span className="text-xs text-gray-600">Unit Price:</span>
-  <p className="font-semibold text-xs">
-    £{quote.lineItems && quote.lineItems.length > 0 ? 
-      (quote.lineItems.reduce((sum, item) => 
-        sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
-      ) / quote.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)).toFixed(2) 
-      : '0.00'}
-  </p>
-</div>
+                 
                   
                   <div>
   <span className="text-xs text-gray-600">Total Value:</span>
