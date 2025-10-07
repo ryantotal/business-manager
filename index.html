@@ -4354,12 +4354,58 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
           <div className="flex items-center space-x-2">
             {quote.status === 'PENDING' && (
               <button
-                onClick={() => onSend(quote)}
+                onClick={() => {
+  // Create the PDF content
+  const pdfContent = `
+    <html>
+    <head>
+      <title>Quote ${quote.quote_number}</title>
+      <style>
+        body { font-family: Arial; padding: 20px; }
+        h1 { color: #2c5f2d; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #2c5f2d; color: white; }
+      </style>
+    </head>
+    <body>
+      <h1>TOTAL WASTE SERVICES LTD</h1>
+      <h2>Quote #${quote.quote_number}</h2>
+      <p><strong>Customer:</strong> ${quote.customer_name || 'Customer'}</p>
+      <p><strong>Date:</strong> ${new Date(quote.created_at).toLocaleDateString('en-GB')}</p>
+      <p><strong>Status:</strong> ${quote.status}</p>
+      
+      <h3>Services</h3>
+      <table>
+        <tr><th>Description</th><th>Quantity</th><th>Price</th></tr>
+        ${(quote.items || []).map(item => `
+          <tr>
+            <td>${item.description || item.service || ''}</td>
+            <td>${item.quantity || 1}</td>
+            <td>£${item.price || 0}</td>
+          </tr>
+        `).join('')}
+      </table>
+      
+      <h3>Total: £${quote.total || 0}</h3>
+    </body>
+    </html>
+  `;
+  
+  // Open in new window and print
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(pdfContent);
+  printWindow.document.close();
+  setTimeout(() => { printWindow.print(); }, 500);
+  
+  // Still update the status
+  onSend(quote);
+}}
                 className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
-                title="Send Quote"
+                title="Download PDF"
               >
                 <Mail size={16} className="mr-2" />
-                Send Quote
+                Download PDF
               </button>
             )}
             {quote.status === 'SENT' && !isExpired && (
