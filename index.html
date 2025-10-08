@@ -8880,8 +8880,13 @@ const { error } = await window.supabase
       .eq('id', updatedQuote.id);
 
     if (error) throw error;
-  await loadQuotesFromSupabase();
-    setQuotes(quotes.map(quote => quote.id === updatedQuote.id ? updatedQuote : quote));
+    setQuotes(prevQuotes => 
+  prevQuotes.map(q => 
+    q.id === updatedQuote.id 
+      ? { ...updatedQuote, lineItems: updatedQuote.lineItems }
+      : q
+  )
+);
     setEditingQuote(null);
 setShowQuoteForm(false);
 setShowFullPageQuote(updatedQuote);
