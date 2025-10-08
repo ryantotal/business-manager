@@ -4428,7 +4428,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
               
               return `
                 <tr>
-                  <td>${item?.product_name || item?.description || 'Service'}</td>
+<td>${item?.description || item?.product_name || 'Service'}</td>
                   <td style="text-align: center;">${qty}</td>
                   <td style="text-align: right;">£${parseFloat(price).toFixed(2)}</td>
                   <td style="text-align: right;">£${itemTotal.toFixed(2)}</td>
