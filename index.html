@@ -8889,7 +8889,10 @@ const { error } = await window.supabase
 );
     setEditingQuote(null);
 setShowQuoteForm(false);
-setShowFullPageQuote(updatedQuote);
+setShowFullPageQuote({
+  ...updatedQuote,
+  lineItems: updatedQuote.lineItems
+});
 alert('Quote updated successfully!');
   } catch (error) {
     console.error('Error updating quote:', error);
