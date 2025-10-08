@@ -7949,6 +7949,17 @@ useEffect(() => {
           validUntil: quote.valid_until,
           deliveryDate: quote.delivery_date,
           siteAddress: quote.site_address,
+          siteAddress: quote.site_address,
+sitePostcode: quote.site_postcode,
+siteContact: quote.site_contact,          // ADD THIS
+sitePhone: quote.site_phone,              // ADD THIS
+siteNotes: quote.site_notes,              // ADD THIS
+siteAddress1: quote.site_address1,        // ADD THIS
+siteAddress2: quote.site_address2,        // ADD THIS
+siteCity: quote.site_city,                // ADD THIS
+deliveryInstructions: quote.delivery_instructions,  // ADD THIS
+accessRestrictions: quote.access_restrictions,      // ADD THIS
+notes: quote.notes,
           sitePostcode: quote.site_postcode,
           notes: quote.notes,
           status: quote.status || 'PENDING',
@@ -8838,6 +8849,7 @@ const { error } = await window.supabase
       total_price: updatedQuote.totalPrice || 0,
       valid_until: updatedQuote.validUntil,
       delivery_date: updatedQuote.deliveryDate || null,
+       line_items: updatedQuote.lineItems ? JSON.stringify(updatedQuote.lineItems) : null,
       
       // ADD ALL THESE SITE FIELDS (matching your job update):
       site_address: updatedQuote.siteAddress || '',
