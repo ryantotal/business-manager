@@ -4441,20 +4441,22 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
         </tbody>
       </table>
       
-      <div class="totals-box">
-        <div class="total-line subtotal">
-          <span>Subtotal (Net):</span>
-          <span>£${subtotal.toFixed(2)}</span>
-        </div>
-        <div class="total-line">
-          <span>VAT (20%):</span>
-          <span>£${vatAmount.toFixed(2)}</span>
-        </div>
-        <div class="total-line grand-total">
-          <span>TOTAL:</span>
-          <span>£${grandTotal.toFixed(2)}</span>
-        </div>
-      </div>
+      ${!quote?.hidePricesOnPDF ? `
+  <div class="totals-box">
+    <div class="total-line subtotal">
+      <span>Subtotal (Net):</span>
+      <span>£${subtotal.toFixed(2)}</span>
+    </div>
+    <div class="total-line">
+      <span>VAT (20%):</span>
+      <span>£${vatAmount.toFixed(2)}</span>
+    </div>
+    <div class="total-line grand-total">
+      <span>TOTAL:</span>
+      <span>£${grandTotal.toFixed(2)}</span>
+    </div>
+  </div>
+` : ''}
       
       <div class="footer">
         <p><strong>Terms & Conditions</strong></p>
