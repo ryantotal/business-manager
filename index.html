@@ -7951,6 +7951,7 @@ useEffect(() => {
           siteAddress: quote.site_address,
           siteAddress: quote.site_address,
 sitePostcode: quote.site_postcode,
+hidePricesOnPDF: quote.hide_prices_on_pdf || false,
 siteContact: quote.site_contact,          // ADD THIS
 sitePhone: quote.site_phone,              // ADD THIS
 siteNotes: quote.site_notes,              // ADD THIS
@@ -8862,7 +8863,7 @@ const { error } = await window.supabase
       site_notes: updatedQuote.siteNotes || '',
       delivery_instructions: updatedQuote.deliveryInstructions || '',
       access_restrictions: updatedQuote.accessRestrictions || '',  // Add this one too
-      
+      hide_prices_on_pdf: updatedQuote.hidePricesOnPDF || false,
       notes: updatedQuote.notes || '',
       status: updatedQuote.status || 'PENDING'
     };
@@ -12024,6 +12025,19 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                   </div>
                 </div>
               )}
+              {/* Hide totals checkbox - DEFAULT CHECKED */}
+<div className="mt-4 p-3 bg-gray-50 rounded-lg flex items-center">
+  <input
+    type="checkbox"
+    id="hidePrices"
+    checked={formData.hidePricesOnPDF !== false}  
+    onChange={(e) => setFormData({...formData, hidePricesOnPDF: e.target.checked})}
+    className="mr-3 h-4 w-4"
+  />
+  <label htmlFor="hidePrices" className="text-sm text-gray-700 font-medium">
+    Hide totals section on PDF (remove subtotal, VAT and grand total)
+  </label>
+</div>
 
               {/* Add other job type product selectors */}
               {formData.jobType === 'Roll-on Roll-off' && (
