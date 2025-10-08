@@ -4396,8 +4396,15 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
       </style>
     </head>
     <body>
-      <h1>TOTAL WASTE SERVICES LTD</h1>
-      <p style="color: #666;">Company Registration No: 11143143</p>
+      <div style="display: flex; align-items: center; margin-bottom: 20px;">
+  ${localStorage.getItem('companyLogo') ? `
+    <img src="${localStorage.getItem('companyLogo')}" style="height: 60px; margin-right: 20px;" alt="Total Waste Services">
+  ` : ''}
+  <div>
+    <h1>TOTAL WASTE SERVICES LTD</h1>
+    <p style="color: #666;">Company Registration No: 11143143</p>
+  </div>
+</div>
       
       <h2>QUOTATION</h2>
       
