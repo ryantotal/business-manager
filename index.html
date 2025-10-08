@@ -8821,7 +8821,7 @@ const { error } = await window.supabase
   }
 };
 
-         const handleUpdateQuote = async (updatedQuote) => {
+  const handleUpdateQuote = async (updatedQuote) => {
   try {
     const quoteForDatabase = {
       customer_name: updatedQuote.customerName,
@@ -8838,11 +8838,24 @@ const { error } = await window.supabase
       total_price: updatedQuote.totalPrice || 0,
       valid_until: updatedQuote.validUntil,
       delivery_date: updatedQuote.deliveryDate || null,
-      site_address: updatedQuote.siteAddress || updatedQuote.siteAddress1 || '',
+      
+      // ADD ALL THESE SITE FIELDS (matching your job update):
+      site_address: updatedQuote.siteAddress || '',
+      site_address1: updatedQuote.siteAddress1 || '',
+      site_address2: updatedQuote.siteAddress2 || '',
+      site_city: updatedQuote.siteCity || '',
       site_postcode: updatedQuote.sitePostcode || '',
+      site_contact: updatedQuote.siteContact || '',
+      site_phone: updatedQuote.sitePhone || '',
+      site_notes: updatedQuote.siteNotes || '',
+      delivery_instructions: updatedQuote.deliveryInstructions || '',
+      access_restrictions: updatedQuote.accessRestrictions || '',  // Add this one too
+      
       notes: updatedQuote.notes || '',
       status: updatedQuote.status || 'PENDING'
     };
+    
+    // rest of your update code...
 
     // Only add line_items if your quotes table has this column
     if (updatedQuote.lineItems) {
