@@ -8734,14 +8734,8 @@ if (!Array.isArray(job.lineItems)) {
         isCompleted: job.is_completed || job.isCompleted || false,
         isCancelled: job.is_cancelled || job.isCancelled || false,
         notes: job.notes || '',
-        lineItems: job.lineItems || [],  // ← ADD THIS LINE
-        siteAddress1: job.site_address1 || job.siteAddress1 || '',
-  siteAddress2: job.site_address2 || job.siteAddress2 || '',
-  siteCity: job.site_city || job.siteCity || '',
-  sitePostcode: job.site_postcode || job.sitePostcode || '',
-  siteContact: job.site_contact || job.siteContact || '',
-  sitePhone: job.site_phone || job.sitePhone || '',
-  siteNotes: job.site_notes || job.siteNotes || ''
+        lineItems: job.lineItems || []  // ← ADD THIS LINE
+        
     };
     
     setEditingJob(editableJob);
