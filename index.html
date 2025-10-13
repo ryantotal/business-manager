@@ -8733,7 +8733,8 @@ if (!Array.isArray(job.lineItems)) {
         status: job.status || 'CONFIRMED',
         isCompleted: job.is_completed || job.isCompleted || false,
         isCancelled: job.is_cancelled || job.isCancelled || false,
-        notes: job.notes || ''
+        notes: job.notes || '',
+        lineItems: job.lineItems || []  // ← ADD THIS LINE
     };
     
     setEditingJob(editableJob);
