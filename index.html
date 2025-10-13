@@ -3511,9 +3511,9 @@ address_line_2: jobToInvoice.siteAddress2 || '',  // Changed from site_address2
 city: jobToInvoice.siteCity || '',                // Changed from site_city
 region: jobToInvoice.siteCounty || '',            // Changed from site_county
 postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
-    country_code: 'GB',
-    invoice_lines: lineItems
+    country_code: 'GB'
 },
+        invoice_lines: lineItems
     }
 };
       console.log('=== FULL INVOICE DATA BEING SENT TO SAGE ===');
