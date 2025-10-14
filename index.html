@@ -8734,8 +8734,7 @@ if (!Array.isArray(job.lineItems)) {
         isCompleted: job.is_completed || job.isCompleted || false,
         isCancelled: job.is_cancelled || job.isCancelled || false,
         notes: job.notes || '',
-        lineItems: job.lineItems || []  // ← ADD THIS LINE
-        
+lineItems: lineItems,        
     };
     
     setEditingJob(editableJob);
