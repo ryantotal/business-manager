@@ -252,23 +252,23 @@ const searchPostcodePrices = async () => {
             ? JSON.parse(job.sage_line_items) 
             : job.sage_line_items;
           
-          lineItems.forEach(item => {
-            const key = `${item.product_name}_${item.description || ''}`;
-            if (!productsMap.has(key)) {
-              productsMap.set(key, []);
-            }
-            productsMap.get(key).push({
-              job_number: job.job_number,
-              customer_name: job.customer_name,
-              product_name: item.product_name || item.description,
-              description: item.description || '',  // Add description
-              // Try different price fields
-              unit_price: item.rrp_price || item.unit_price || job.customer_final_price || job.customer_unit_price || 0,
-              cost_price: item.cost_price || job.supplier_final_price || job.supplier_unit_price || 0,
-              quantity: item.quantity || 1,  // Add quantity
-              date: job.created_at
-            });
-          });
+         lineItems.forEach(item => {
+  const key = `${item.product_name}_${item.description || ''}`;
+  if (!productsMap.has(key)) {
+    productsMap.set(key, []);
+  }
+  productsMap.get(key).push({
+    job_number: job.job_number,
+    customer_name: job.customer_name,
+    product_name: item.product_name || item.description,
+    description: item.description || '',
+    quantity: item.quantity || 1,
+    // Use the actual price fields from the job
+    unit_price: parseFloat(job.customer_final_price) || parseFloat(job.customer_unit_price) || 0,
+    cost_price: parseFloat(job.supplier_final_price) || parseFloat(job.supplier_unit_price) || 0,
+    date: job.created_at
+  });
+});
         }
       });
       
@@ -303,25 +303,22 @@ const PostcodePricesPopup = () => {
             </button>
           </div>
           
-          <div className="mt-4 flex gap-2">
-            <input
-  type="text"
-  value={postcodeSearch}
-  onChange={(e) => setPostcodeSearch(e.target.value)}
-  placeholder="Enter postcode (e.g., B1 2RT)"
-  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
-  onKeyPress={(e) => e.key === 'Enter' && searchPostcodePrices()}
-  autoFocus={true}
-  key="postcode-input"  // Add this to maintain focus
-/>
-            <button
-              onClick={searchPostcodePrices}
-              disabled={loadingPrices}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
-            >
-              {loadingPrices ? 'Searching...' : 'Search'}
-            </button>
-          </div>
+         <div className="flex gap-2">
+  <input
+    type="text"
+    value={searchTerm}
+    onChange={(e) => setSearchTerm(e.target.value)}
+    placeholder="Search Sage products/services..."  // NOT "Enter postcode"
+    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+  />
+  <button
+    type="button"
+    onClick={() => setShowPostcodePrices(true)}
+    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm whitespace-nowrap"
+  >
+    🔍 Check Previous Prices
+  </button>
+</div>
         </div>
         
         <div className="p-4 overflow-y-auto max-h-[60vh]">
