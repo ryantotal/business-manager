@@ -270,13 +270,13 @@ unit_price:
   parseFloat(job.customerFinalPrice) || 
   parseFloat(job.customer_unit_price) || 
   parseFloat(job.customerUnitPrice) || 
-  0,
+  2,
 cost_price: 
   parseFloat(job.supplier_final_price) || 
   parseFloat(job.supplierFinalPrice) || 
   parseFloat(job.supplier_unit_price) || 
   parseFloat(job.supplierUnitPrice) || 
-  0,
+  2,
     date: job.created_at
   });
 });
