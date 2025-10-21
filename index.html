@@ -305,15 +305,12 @@ const PostcodePricesPopup = () => {
           
         <div className="mt-4 flex gap-2">
   <input
-    type="text"
-    value={postcodeSearch}  // CORRECT - for postcode
-    onChange={(e) => setPostcodeSearch(e.target.value)}  // CORRECT
-    placeholder="Enter postcode (e.g., B1 2RT)"  // CORRECT placeholder
-    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
-    onKeyPress={(e) => e.key === 'Enter' && searchPostcodePrices()}
-    autoFocus={true}
-    key="postcode-input"
-  />
+  type="text"
+  value={searchTerm}
+  onChange={(e) => setSearchTerm(e.target.value)}
+  placeholder="Search Sage products/services..."  // CORRECT
+  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+/>
   <button
     onClick={searchPostcodePrices}  // CORRECT - search for postcodes
     disabled={loadingPrices}
