@@ -186,6 +186,10 @@ const SearchableDropdown = ({
 const SageProductSelector = ({ jobType, selectedProduct, onSelect, products }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showPostcodePrices, setShowPostcodePrices] = useState(false);
+const [postcodeSearch, setPostcodeSearch] = useState('');
+const [postcodePrices, setPostcodePrices] = useState([]);
+const [loadingPrices, setLoadingPrices] = useState(false);
 
   // Smart filtering based on job type and waste type
 const getFilteredProducts = () => {
@@ -213,44 +217,224 @@ const getFilteredProducts = () => {
     });
   }
 
-  // Sort alphabetically by name
+// Sort alphabetically by name
   return filtered.sort((a, b) => {
     const aName = (a.name || '').toString();
     const bName = (b.name || '').toString();
     return aName.localeCompare(bName);
   });
 };
-  const filteredProducts = getFilteredProducts();
-  const selectedProductDetails = products.find(p => p.sage_id === selectedProduct);
 
-  if (products.length === 0) {
-    return (
-      <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
-        Loading Sage products...
-      </div>
-    );
+const searchPostcodePrices = async () => {
+  if (!postcodeSearch) {
+    alert('Please enter a postcode');
+    return;
   }
-
-  if (products.length === 0) {
-    return (
-      <div className="w-full px-3 py-2 border border-red-300 rounded-lg bg-red-50 text-red-600">
-        No Sage products found. Please sync products in Admin Panel first.
-      </div>
-    );
+  
+  setLoadingPrices(true);
+  try {
+    const { data, error } = await window.supabase
+      .from('jobs')
+      .select('job_number, customer_name, sage_line_items, customer_unit_price, supplier_unit_price, created_at')
+      .eq('site_postcode', postcodeSearch.toUpperCase())
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    if (data && data.length > 0) {
+      // Extract unique products with their prices
+      const productsMap = new Map();
+      
+      data.forEach(job => {
+        if (job.sage_line_items) {
+          const lineItems = typeof job.sage_line_items === 'string' 
+            ? JSON.parse(job.sage_line_items) 
+            : job.sage_line_items;
+          
+          lineItems.forEach(item => {
+            const key = item.sage_id || item.product_name;
+            if (!productsMap.has(key)) {
+              productsMap.set(key, []);
+            }
+            productsMap.get(key).push({
+              job_number: job.job_number,
+              customer_name: job.customer_name,
+              product_name: item.product_name,
+              unit_price: item.unit_price || item.rrp_price || job.customer_unit_price || 0,
+              cost_price: item.cost_price || job.supplier_unit_price || 0,
+              date: job.created_at
+            });
+          });
+        }
+      });
+      
+      setPostcodePrices(Array.from(productsMap.entries()));
+    } else {
+      setPostcodePrices([]);
+      alert('No jobs found for this postcode');
+    }
+  } catch (error) {
+    console.error('Error searching postcode prices:', error);
+    alert('Error searching prices');
+  } finally {
+    setLoadingPrices(false);
   }
+};
 
+// Postcode Prices Popup Component
+const PostcodePricesPopup = () => {
+  if (!showPostcodePrices) return null;
+  
   return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-hidden">
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold">Check Previous Prices by Postcode</h2>
+            <button
+              onClick={() => setShowPostcodePrices(false)}
+              className="text-gray-400 hover:text-gray-500"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="mt-4 flex gap-2">
+            <input
+              type="text"
+              value={postcodeSearch}
+              onChange={(e) => setPostcodeSearch(e.target.value)}
+              placeholder="Enter postcode (e.g., B1 2RT)"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+              onKeyPress={(e) => e.key === 'Enter' && searchPostcodePrices()}
+            />
+            <button
+              onClick={searchPostcodePrices}
+              disabled={loadingPrices}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
+            >
+              {loadingPrices ? 'Searching...' : 'Search'}
+            </button>
+          </div>
+        </div>
+        
+        <div className="p-4 overflow-y-auto max-h-[60vh]">
+          {postcodePrices.length > 0 ? (
+            <div className="space-y-4">
+              {postcodePrices.map(([productKey, prices], index) => (
+                <div key={index} className="border border-gray-200 rounded-lg p-3">
+                  <h3 className="font-semibold text-lg mb-2">
+                    {prices[0].product_name || productKey}
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Job #</th>
+                          <th className="px-3 py-2 text-left">Customer</th>
+                          <th className="px-3 py-2 text-left">Unit Price</th>
+                          <th className="px-3 py-2 text-left">Cost Price</th>
+                          <th className="px-3 py-2 text-left">Date</th>
+                          <th className="px-3 py-2 text-left">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {prices.map((price, idx) => (
+                          <tr key={idx}>
+                            <td className="px-3 py-2">{price.job_number}</td>
+                            <td className="px-3 py-2">{price.customer_name}</td>
+                            <td className="px-3 py-2 font-semibold">£{price.unit_price.toFixed(2)}</td>
+                            <td className="px-3 py-2">£{price.cost_price.toFixed(2)}</td>
+                            <td className="px-3 py-2">
+                              {new Date(price.date).toLocaleDateString()}
+                            </td>
+                            <td className="px-3 py-2">
+                              <button
+                                onClick={() => {
+                                  // Find the product in the main products list
+                                  const product = products.find(p => 
+                                    p.id === productKey || p.name === price.product_name
+                                  );
+                                  if (product) {
+                                    // Set the product with custom prices
+                                    onSelect({
+                                      ...product,
+                                      unit_price: price.unit_price,
+                                      cost_price: price.cost_price,
+                                      rrp_price: price.unit_price,
+                                      supplier_price: price.cost_price
+                                    });
+                                    setShowPostcodePrices(false);
+                                    setPostcodeSearch('');
+                                  } else {
+                                    alert('Product not found in current product list');
+                                  }
+                                }}
+                                className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                              >
+                                Use Price
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center text-gray-500 py-8">
+              {postcodeSearch ? 'No prices found for this postcode' : 'Enter a postcode to search'}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const filteredProducts = getFilteredProducts();
+const selectedProductDetails = products.find(p => p.sage_id === selectedProduct);
+
+if (products.length === 0) {
+  return (
+    <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
+      Loading Sage products...
+    </div>
+  );
+}
+
+if (products.length === 0) {
+  return (
+    <div className="w-full px-3 py-2 border border-red-300 rounded-lg bg-red-50 text-red-600">
+      No Sage products found. Please sync products in Admin Panel first.
+    </div>
+  );
+}
+
+return (
+  <>
+    <PostcodePricesPopup />
     <div className="space-y-2">
       {/* Search input */}
       <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search Sage products/services..."
-          className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
-        />
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search Sage products/services..."
+            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPostcodePrices(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm whitespace-nowrap"
+          >
+            🔍 Check Previous Prices
+          </button>
+        </div>
       </div>
 
       {/* Selected product display */}
@@ -314,7 +498,8 @@ const getFilteredProducts = () => {
         {products.length} products available from Sage
       </div>
     </div>
-  );
+  </>
+);
 };
         // Create icon components
         const Plus = (props) => <LucideIcon icon="Plus" {...props} />;
