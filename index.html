@@ -264,8 +264,19 @@ const searchPostcodePrices = async () => {
     description: item.description || '',
     quantity: item.quantity || 1,
     // Use the actual price fields from the job
-    unit_price: parseFloat(job.customer_final_price) || parseFloat(job.customer_unit_price) || 0,
-    cost_price: parseFloat(job.supplier_final_price) || parseFloat(job.supplier_unit_price) || 0,
+// Try both snake_case and camelCase
+unit_price: 
+  parseFloat(job.customer_final_price) || 
+  parseFloat(job.customerFinalPrice) || 
+  parseFloat(job.customer_unit_price) || 
+  parseFloat(job.customerUnitPrice) || 
+  0,
+cost_price: 
+  parseFloat(job.supplier_final_price) || 
+  parseFloat(job.supplierFinalPrice) || 
+  parseFloat(job.supplier_unit_price) || 
+  parseFloat(job.supplierUnitPrice) || 
+  0,
     date: job.created_at
   });
 });
