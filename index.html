@@ -411,27 +411,23 @@ const PostcodePricesPopup = () => {
                             <td className="px-3 py-2">
                               <button
   onClick={() => {
-    // Find the product in the main products list
-    const product = products.find(p => 
-      p.name === price.product_name || 
-      p.description === price.description
-    );
-    
-    if (product) {
-      // Pass the product with the historical prices
-      onSelect({
-        ...product,
-        customer_price: price.unit_price.toString(), // Convert to string
-        supplier_price: price.cost_price.toString(), // Convert to string
-        rrp_price: price.unit_price,
-        cost_price: price.cost_price
-      });
-      setShowPostcodePrices(false);
-      setPostcodeSearch('');
-    } else {
-      alert('Product not found in current product list');
-    }
-  }}
+  // Create a product object with the historical prices
+  const productWithPrices = {
+    sage_id: productKey.split('_')[0], // Get the sage_id from the key
+    product_name: price.product_name,
+    description: price.description,
+    quantity: price.quantity,
+    customer_price: price.unit_price.toString(),
+    supplier_price: price.cost_price.toString(),
+    type: 'product'
+  };
+  
+  // Call onSelect with this custom product
+  onSelect(productWithPrices);
+  
+  setShowPostcodePrices(false);
+  setPostcodeSearch('');
+}}
   className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
 >
   Use Price
