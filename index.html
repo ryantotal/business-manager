@@ -190,6 +190,7 @@ const SageProductSelector = ({ jobType, selectedProduct, onSelect, products }) =
 const [postcodeSearch, setPostcodeSearch] = useState('');
 const [postcodePrices, setPostcodePrices] = useState([]);
 const [loadingPrices, setLoadingPrices] = useState(false);
+const [postcodeOptions, setPostcodeOptions] = useState([]);
 
   // Smart filtering based on job type and waste type
 const getFilteredProducts = () => {
@@ -289,7 +290,27 @@ const searchPostcodePrices = async () => {
     setLoadingPrices(false);
   }
 };
-
+const fetchPostcodeSuggestions = async (input) => {
+  if (input.length >= 3) {
+    try {
+      const { data, error } = await window.supabase
+        .from('jobs')
+        .select('site_postcode')
+        .ilike('site_postcode', `${input}%`)
+        .limit(10);
+      
+      if (data) {
+        // Get unique postcodes
+        const uniquePostcodes = [...new Set(data.map(job => job.site_postcode).filter(Boolean))];
+        setPostcodeOptions(uniquePostcodes);
+      }
+    } catch (error) {
+      console.error('Error fetching postcodes:', error);
+    }
+  } else {
+    setPostcodeOptions([]);
+  }
+};
 // Postcode Prices Popup Component
 const PostcodePricesPopup = () => {
   if (!showPostcodePrices) return null;
@@ -308,24 +329,48 @@ const PostcodePricesPopup = () => {
             </button>
           </div>
           
-        <div className="mt-4 flex gap-2">
-  <input
-    type="text"
-    value={postcodeSearch}  // CORRECT - for postcode
-    onChange={(e) => setPostcodeSearch(e.target.value)}  // CORRECT
-    placeholder="Enter postcode (e.g., B1 2RT)"  // CORRECT placeholder
-    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
-    onKeyPress={(e) => e.key === 'Enter' && searchPostcodePrices()}
-    autoFocus={true}
-    key="postcode-input"
-  />
-  <button
-    onClick={searchPostcodePrices}  // CORRECT - search for postcodes
-    disabled={loadingPrices}
-    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
-  >
-    {loadingPrices ? 'Searching...' : 'Search'}
-  </button>
+        <div className="mt-4">
+  <div className="flex gap-2">
+    <div className="flex-1 relative">
+      <input
+        type="text"
+        value={postcodeSearch}
+        onChange={(e) => {
+          setPostcodeSearch(e.target.value);
+          fetchPostcodeSuggestions(e.target.value);
+        }}
+        placeholder="Enter postcode (e.g., B1 2RT)"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        onKeyPress={(e) => e.key === 'Enter' && searchPostcodePrices()}
+        autoFocus={true}
+        key="postcode-input"
+      />
+      {/* Dropdown for suggestions */}
+      {postcodeOptions.length > 0 && (
+        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+          {postcodeOptions.map(postcode => (
+            <div
+              key={postcode}
+              onClick={() => {
+                setPostcodeSearch(postcode);
+                setPostcodeOptions([]);
+              }}
+              className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
+            >
+              {postcode}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+    <button
+      onClick={searchPostcodePrices}
+      disabled={loadingPrices}
+      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
+    >
+      {loadingPrices ? 'Searching...' : 'Search'}
+    </button>
+  </div>
 </div>
         </div>
         
@@ -365,30 +410,32 @@ const PostcodePricesPopup = () => {
       </td>
                             <td className="px-3 py-2">
                               <button
-                                onClick={() => {
-                                  // Find the product in the main products list
-                                  const product = products.find(p => 
-                                    p.id === productKey || p.name === price.product_name
-                                  );
-                                  if (product) {
-                                    // Set the product with custom prices
-                                    onSelect({
-                                      ...product,
-                                      unit_price: price.unit_price,
-                                      cost_price: price.cost_price,
-                                      rrp_price: price.unit_price,
-                                      supplier_price: price.cost_price
-                                    });
-                                    setShowPostcodePrices(false);
-                                    setPostcodeSearch('');
-                                  } else {
-                                    alert('Product not found in current product list');
-                                  }
-                                }}
-                                className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                              >
-                                Use Price
-                              </button>
+  onClick={() => {
+    // Find the product in the main products list
+    const product = products.find(p => 
+      p.name === price.product_name || 
+      p.description === price.description
+    );
+    
+    if (product) {
+      // Pass the product with the historical prices
+      onSelect({
+        ...product,
+        customer_price: price.unit_price.toString(), // Convert to string
+        supplier_price: price.cost_price.toString(), // Convert to string
+        rrp_price: price.unit_price,
+        cost_price: price.cost_price
+      });
+      setShowPostcodePrices(false);
+      setPostcodeSearch('');
+    } else {
+      alert('Product not found in current product list');
+    }
+  }}
+  className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+>
+  Use Price
+</button>
                             </td>
                           </tr>
                         ))}
