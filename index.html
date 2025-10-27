@@ -47,20 +47,40 @@ html, body {
   max-width: 100vw;
   overscroll-behavior-x: none;
 }
-/* Reduce padding for Customer and Supplier columns */
+/* Reduce padding but add proper separation for Customer and Supplier columns */
   th:nth-child(2), th:nth-child(3),
   td:nth-child(2), td:nth-child(3) {
-    padding-left: 8px !important;
-    padding-right: 8px !important;
-    max-width: 150px;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   
-  /* Make the table more compact overall */
-  .min-w-full th {
-    padding: 8px 12px;
+  /* Add visual separation between columns */
+  th:nth-child(2), td:nth-child(2) {
+    border-right: 1px solid #e5e7eb;
   }
   
-  /* Optional: Reduce font size slightly for more space */
+  /* Ensure Product/Service column has proper spacing */
+  th:nth-child(4), td:nth-child(4) {
+    padding-left: 12px !important;
+  }
+  
+  /* Make the table more compact overall but readable */
+  .min-w-full th, .min-w-full td {
+    padding: 10px 12px;
+  }
+  
+  /* Ensure proper text truncation with ellipsis */
+  td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  /* Optional: Slightly smaller font for more space */
   table {
     font-size: 14px;
   }
