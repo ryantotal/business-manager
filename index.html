@@ -2491,9 +2491,6 @@ const updatedJobWithAllFields = {
 // This will update the job in the parent's jobs array
 onUpdateJob(updatedJobWithAllFields);
 
-// Update the currentJob state directly (this is what FullPageJobView uses)
-setCurrentJob(updatedJobWithAllFields);
-
 // If you're using showFullPageJob, update it too
 if (showFullPageJob && showFullPageJob.id === job.id) {
   setShowFullPageJob(updatedJobWithAllFields);
@@ -3724,6 +3721,12 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
   const [jobAttachments, setJobAttachments] = useState([]);
   const [currentJob, setCurrentJob] = useState(job);
 const handleCreateInvoice = async (jobToInvoice) => {
+  const [currentJob, setCurrentJob] = useState(job);
+
+// ADD THIS useEffect to update currentJob when job prop changes
+useEffect(() => {
+  setCurrentJob(job);
+}, [job]);
   setCreatingInvoice(true)
   try {
     const isDemoMode = false;
