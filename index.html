@@ -8534,53 +8534,59 @@ const handleDeleteAttachment = async (attachment) => {
     alert('Error deleting attachment: ' + error.message);
   }
 };
-  const handleExchange = (job) => {
-            // Create new exchange job - duplicate all details
-            const exchangeJob = {
-              ...job,
-              id: null,
-              jobNumber: null,
-              parentJobId: job.id,
-              isCompleted: false,
-              isCancelled: false,
-              status: 'CONFIRMED',
-              notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
-             jobDate: new Date().toISOString().split('T')[0],
-              linkedJobs: [],
-    sage_id: null,
-    sageId: null,
-    sage_invoice_number: null,
-    sageInvoiceNumber: null,
-    invoice_status: null,
-    invoiceStatus: null,
-    invoice_date: null,
-    invoiceDate: null,
-    invoice_number: null,
-    invoiceNumber: null,
-    sage_si_number: null,  // Add this line
-    si_number: null,
-    siNumber: null,
-    sales_invoice_number: null,
-    salesInvoiceNumber: null,
-    sage_si_number: null,
-sage_sales_invoice_id: null,
-invoiced: false,
-invoiced_at: null,
-invoice_date: null,
-is_invoiced: false,
+const handleExchange = (job) => {
+    // Create new exchange job - duplicate all details
+    const exchangeJob = {
+        ...job,
+        id: null,
+        jobNumber: null,
+        parentJobId: job.id,
+        isCompleted: false,
+        isCancelled: false,
+        status: 'CONFIRMED',
+        notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
+        jobDate: new Date().toISOString().split('T')[0],
+        linkedJobs: [],
+        
+        // Clear ALL invoice-related fields (removed duplicates)
+        sage_id: null,
+        sageId: null,
+        sage_invoice_number: null,
+        sageInvoiceNumber: null,
+        invoice_status: null,
+        invoiceStatus: null,
+        invoice_date: null,
+        invoiceDate: null,
+        invoice_number: null,
+        invoiceNumber: null,
+        sage_si_number: null,
+        si_number: null,
+        siNumber: null,
+        sales_invoice_number: null,
+        salesInvoiceNumber: null,
+        sage_sales_invoice_id: null,
+        invoiced: false,
+        invoiced_at: null,
+        is_invoiced: false,
+        
+        // Clear completion-related fields
+        is_completed: false,
+        collection_date: null,
+        collected_at: null,
+        is_collected: false
+    };
+    
+    // Remove the old id and jobNumber completely
+    delete exchangeJob.id;
+    delete exchangeJob.jobNumber;
+    
+    // Mark original job as collected
+    onUpdateJob({ ...job, status: 'COLLECTED', isCompleted: true });
+    
+    // Add the exchange job
+    onAddJob(exchangeJob);
+    setSelectedJob(null);
 };
-            
-            // Remove the old id and jobNumber completely
-            delete exchangeJob.id;
-            delete exchangeJob.jobNumber;
-            
-            // Mark original job as collected
-            onUpdateJob({ ...job, status: 'COLLECTED', isCompleted: true });
-            
-            // Add the exchange job
-            onAddJob(exchangeJob);
-            setSelectedJob(null);
-          };
           const handleCollection = (job) => {
   console.log('Collection job:', job);
 };
