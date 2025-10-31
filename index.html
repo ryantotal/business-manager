@@ -2491,10 +2491,11 @@ const updatedJobWithAllFields = {
 // This will update the job in the parent's jobs array
 onUpdateJob(updatedJobWithAllFields);
 
-// If you're using showFullPageJob, update it too
-if (showFullPageJob && showFullPageJob.id === job.id) {
+// Close and reopen the job view to force refresh
+setShowFullPageJob(null);
+setTimeout(() => {
   setShowFullPageJob(updatedJobWithAllFields);
-}
+}, 100);
   // Force a re-render
   setActiveTab(activeTab);
 }
@@ -2509,11 +2510,7 @@ if (showFullPageJob && showFullPageJob.id === job.id) {
         });
       }
       
-     alert(`Invoice created successfully in Sage! SI: ${siNumber}`);
-// Just close the full page view
-setShowFullPageJob(null);
-// Refresh the jobs list in the background
-refreshJobs();
+      alert(`Invoice created successfully in Sage! SI: ${siNumber}`);
     }
   } catch (error) {
     console.error('Error creating invoice:', error);
@@ -3725,8 +3722,6 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
   const [jobAttachments, setJobAttachments] = useState([]);
   const [currentJob, setCurrentJob] = useState(job);
 const handleCreateInvoice = async (jobToInvoice) => {
-  const [currentJob, setCurrentJob] = useState(job);
-
   setCreatingInvoice(true)
   try {
     const isDemoMode = false;
@@ -8706,9 +8701,15 @@ site_phone: fullJob?.site_phone || null,
     sage_line_items: fullJob?.sage_line_items || null,
     sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
     sage_si_number: null,
+sage_sales_invoice_id: null,
+invoiced: false,
+invoiced_at: null,
+invoice_date: null,
+is_invoiced: false,
 
 // Also clear collection-related fields for a fresh start
 collection_date: null,
+is_collected: false,
         };
 
         
