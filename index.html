@@ -8547,18 +8547,28 @@ const handleDeleteAttachment = async (attachment) => {
               notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
              jobDate: new Date().toISOString().split('T')[0],
               linkedJobs: [],
-    // CLEAR ALL INVOICE-RELATED FIELDS
-    sage_si_number: null,
-    sage_invoice_id: null,
-    invoice_number: null,
-    invoice_status: null,
-    sent_to_sage: false,
-    sage_sync_status: null,
     sage_id: null,
-    
-    // Clear collection field
-    collection_date: null
-  };
+    sageId: null,
+    sage_invoice_number: null,
+    sageInvoiceNumber: null,
+    invoice_status: null,
+    invoiceStatus: null,
+    invoice_date: null,
+    invoiceDate: null,
+    invoice_number: null,
+    invoiceNumber: null,
+    sage_si_number: null,  // Add this line
+    si_number: null,
+    siNumber: null,
+    sales_invoice_number: null,
+    salesInvoiceNumber: null,
+    sage_si_number: null,
+sage_sales_invoice_id: null,
+invoiced: false,
+invoiced_at: null,
+invoice_date: null,
+is_invoiced: false,
+};
             
             // Remove the old id and jobNumber completely
             delete exchangeJob.id;
