@@ -2491,11 +2491,13 @@ const updatedJobWithAllFields = {
 // This will update the job in the parent's jobs array
 onUpdateJob(updatedJobWithAllFields);
 
-// Close and reopen the job view to force refresh
-setShowFullPageJob(null);
-setTimeout(() => {
+// Update the currentJob state directly (this is what FullPageJobView uses)
+setCurrentJob(updatedJobWithAllFields);
+
+// If you're using showFullPageJob, update it too
+if (showFullPageJob && showFullPageJob.id === job.id) {
   setShowFullPageJob(updatedJobWithAllFields);
-}, 100);
+}
   // Force a re-render
   setActiveTab(activeTab);
 }
@@ -2510,7 +2512,7 @@ setTimeout(() => {
         });
       }
       
-      alert(`Invoice created successfully in Sage! SI: ${siNumber}`);
+     alert(`Invoice created successfully in Sage! SI: ${siNumber}`);
     }
   } catch (error) {
     console.error('Error creating invoice:', error);
