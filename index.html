@@ -3723,8 +3723,9 @@ const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchan
 const handleCreateInvoice = async (jobToInvoice) => {
   const [currentJob, setCurrentJob] = useState(job);
 
-// ADD THIS useEffect to update currentJob when job prop changes
+ // ADD THIS - Update currentJob whenever the job prop changes
 useEffect(() => {
+  console.log('FullPageJobView received updated job:', job);
   setCurrentJob(job);
 }, [job]);
   setCreatingInvoice(true)
