@@ -8547,22 +8547,28 @@ const handleDeleteAttachment = async (attachment) => {
               notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
              jobDate: new Date().toISOString().split('T')[0],
               linkedJobs: [],
-    // CLEAR ALL INVOICE-RELATED FIELDS (only fields that exist)
-  sage_si_number: null,
-  sage_invoice_id: null,
-  invoice_number: null,
-  invoice_status: null,
-  sent_to_sage: false,
-  sage_sync_status: null,
-  sage_id: null,
-  
-  // Clear collection field
-  collection_date: null
+    sage_id: null,
+    sageId: null,
+    sage_invoice_number: null,
+    sageInvoiceNumber: null,
+    invoice_status: null,
+    invoiceStatus: null,
+    invoice_date: null,
+    invoiceDate: null,
+    invoice_number: null,
+    invoiceNumber: null,
+    sage_si_number: null,  // Add this line
+    si_number: null,
+    siNumber: null,
+    sales_invoice_number: null,
+    salesInvoiceNumber: null,
+    sage_si_number: null,
+sage_sales_invoice_id: null,
+invoiced: false,
+invoiced_at: null,
+invoice_date: null,
+is_invoiced: false,
 };
-
-// Remove the old id and jobNumber completely
-delete exchangeJob.id;
-delete exchangeJob.jobNumber;
             
             // Remove the old id and jobNumber completely
             delete exchangeJob.id;
@@ -8695,26 +8701,9 @@ site_phone: fullJob?.site_phone || null,
     sage_line_items: fullJob?.sage_line_items || null,
     sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
     sage_si_number: null,
-sage_sales_invoice_id: null,
-invoiced: false,
-invoiced_at: null,
-invoice_date: null,
-is_invoiced: false,
 
 // Also clear collection-related fields for a fresh start
-// CLEAR ALL INVOICE-RELATED FIELDS (only fields that actually exist)
-sage_si_number: null,
-sage_invoice_id: null,
-invoice_number: null,
-invoice_status: null,
-sent_to_sage: false,
-sage_sync_status: null,
-
-// Clear collection-related field
 collection_date: null,
-
-// Clear any parent job reference
-parent_job_id: null
         };
 
         
