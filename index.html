@@ -8534,75 +8534,101 @@ const handleDeleteAttachment = async (attachment) => {
     alert('Error deleting attachment: ' + error.message);
   }
 };
-const handleExchange = (job) => {
-    // Create new exchange job with DATABASE field names (underscores, not camelCase)
-    const exchangeJob = {
-        // Copy basic job details
-        customer_name: job.customerName || job.customer_name,
-        supplier_name: job.supplierName || job.supplier_name,
-        job_type: job.jobType || job.job_type,
-        waste_type: job.wasteType || job.waste_type,
-        skip_size: job.skipSize || job.skip_size,
-        quantity: job.quantity || 1,
-        unit: job.unit || 'skip',
-        customer_unit_price: job.customerUnitPrice || job.customer_unit_price || 0,
-        supplier_unit_price: job.supplierUnitPrice || job.supplier_unit_price || 0,
-        customer_final_price: job.customerFinalPrice || job.customer_final_price || 0,
-        supplier_final_price: job.supplierFinalPrice || job.supplier_final_price || 0,
+const handleExchange = async (job) => {
+    try {
+        // Get the next job number from Supabase
+        const { data: jobNumber, error: seqError } = await window.supabase
+            .rpc('get_next_job_number');
         
-        // Site information
-        site_address: job.siteAddress || job.site_address,
-        site_address1: job.siteAddress1 || job.site_address1,
-        site_address2: job.siteAddress2 || job.site_address2,
-        site_city: job.siteCity || job.site_city,
-        site_postcode: job.sitePostcode || job.site_postcode,
-        site_contact: job.siteContact || job.site_contact,
-        site_phone: job.sitePhone || job.site_phone,
-        site_notes: job.siteNotes || job.site_notes,
+        if (seqError) {
+            console.error('Error getting job number:', seqError);
+            alert('Error getting job number. Please try again.');
+            return;
+        }
         
-        // Product/service information
-        description: job.description,
-        sage_product_name: job.sageProductName || job.sage_product_name,
-        sage_line_items: job.sage_line_items || job.sageLineItems,
+        // Create the exchange job for database (similar to duplicate)
+        const exchangeJobForDatabase = {
+            job_number: jobNumber,
+            customer_name: job.customerName || job.customer_name,
+            supplier_name: job.supplierName || job.supplier_name,
+            job_type: job.jobType || job.job_type,
+            waste_type: job.wasteType || job.waste_type,
+            skip_size: job.skipSize || job.skip_size,
+            quantity: job.quantity || 1,
+            unit: job.unit || 'skip',
+            customer_unit_price: job.customerUnitPrice || job.customer_unit_price || 0,
+            supplier_unit_price: job.supplierUnitPrice || job.supplier_unit_price || 0,
+            customer_final_price: job.customerFinalPrice || job.customer_final_price || 0,
+            supplier_final_price: job.supplierFinalPrice || job.supplier_final_price || 0,
+            job_date: new Date().toISOString().split('T')[0],
+            status: 'CONFIRMED',
+            is_completed: false,
+            is_cancelled: false,
+            notes: `Exchange for job ${job.jobNumber || job.job_number}. ${job.notes || ''}`.trim(),
+            parent_job_id: job.id,
+            
+            // Site information
+            site_address: job.siteAddress || job.site_address,
+            site_address1: job.siteAddress1 || job.site_address1,
+            site_address2: job.siteAddress2 || job.site_address2,
+            site_city: job.siteCity || job.site_city,
+            site_postcode: job.sitePostcode || job.site_postcode,
+            site_contact: job.siteContact || job.site_contact,
+            site_phone: job.sitePhone || job.site_phone,
+            site_notes: job.siteNotes || job.site_notes,
+            
+            // Product information
+            description: job.description,
+            sage_product_name: job.sageProductName || job.sage_product_name,
+            sage_line_items: job.sage_line_items || job.sageLineItems,
+            
+            // EXPLICITLY NULL - NO INVOICE DATA
+            sage_si_number: null,
+            sage_sales_invoice_id: null,
+            invoice_number: null,
+            invoice_status: null,
+            invoiced: false,
+            invoiced_at: null,
+            is_invoiced: false,
+            
+            // EXPLICITLY NULL - NO COLLECTION DATA
+            collection_date: null,
+            collected_at: null,
+            is_collected: false
+        };
         
-        // New job specifics
-        parent_job_id: job.id,
-        status: 'CONFIRMED',
-        job_date: new Date().toISOString().split('T')[0],
-        notes: `Exchange for job ${job.jobNumber || job.job_number}. ${job.notes || ''}`.trim(),
+        // Save directly to database (like duplicate does)
+        const { data: newJob, error } = await window.supabase
+            .from('jobs')
+            .insert([exchangeJobForDatabase])
+            .select()
+            .single();
         
-        // EXPLICITLY SET TO FALSE/NULL - using database field names
-        is_completed: false,
-        is_cancelled: false,
+        if (error) throw error;
         
-        // CLEAR ALL INVOICE FIELDS - using database field names
-        sage_si_number: null,
-        sage_sales_invoice_id: null,
-        sage_invoice_id: null,
-        invoice_number: null,
-        invoice_status: null,
-        invoice_date: null,
-        invoiced: false,
-        invoiced_at: null,
-        is_invoiced: false,
-        sent_to_sage: false,
-        sage_sync_status: null,
-        sage_id: null,
+        // Mark original job as collected
+        await window.supabase
+            .from('jobs')
+            .update({ 
+                status: 'COLLECTED', 
+                is_completed: true,
+                collection_date: new Date().toISOString().split('T')[0]
+            })
+            .eq('id', job.id);
         
-        // CLEAR COLLECTION FIELDS
-        collection_date: null,
-        collected_at: null,
-        is_collected: false
-    };
-    
-    console.log('Creating exchange job:', exchangeJob);
-    
-    // Mark original job as collected
-    onUpdateJob({ ...job, status: 'COLLECTED', isCompleted: true });
-    
-    // Add the exchange job
-    onAddJob(exchangeJob);
-    setSelectedJob(null);
+        // Refresh the jobs list
+        await refreshJobs();
+        
+        // Close any open views
+        setSelectedJob(null);
+        setShowFullPageJob(null);
+        
+        alert(`Exchange job created successfully!`);
+        
+    } catch (error) {
+        console.error('Error creating exchange job:', error);
+        alert('Error creating exchange job: ' + error.message);
+    }
 };
           const handleCollection = (job) => {
   console.log('Collection job:', job);
