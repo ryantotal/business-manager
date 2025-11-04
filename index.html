@@ -8121,7 +8121,6 @@ const refreshJobs = async () => {
         if (error) throw error;
         
         if (data && data.length > 0) {
-            // Use EXACT same conversion as loadJobsFromSupabase
             const jobsWithCamelCase = data.map(job => ({
                 id: job.id,
                 jobNumber: job.job_number,
@@ -8168,17 +8167,21 @@ const refreshJobs = async () => {
                 paymentStatus: job.payment_status || 'Not Paid',
                 sageProductId: job.sage_product_id,
                 sageProductName: job.sage_product_name,
-                 description: job.description,
-    sage_product_name: job.sage_product_name,
-    sageProductName: job.sage_product_name,
-    product_service: job.description || job.sage_product_name || '',
                 sageId: job.sage_id,
+                sageSiNumber: job.sage_si_number,
+                description: job.description,
+                product_service: job.sage_product_name || job.description || '',
                 sageLineItems: job.sage_line_items || [],
-                // Handle sage_line_items for lineItems
                 lineItems: (() => {
                     try {
                         if (job.sage_line_items) {
-                            return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : job.sage_line_items;
+                            const items = typeof job.sage_line_items === 'string' 
+                                ? JSON.parse(job.sage_line_items) 
+                                : job.sage_line_items;
+                            return items.map(item => ({
+                                ...item,
+                                product_service: item.product_name || item.description || ''
+                            }));
                         }
                         return [];
                     } catch (e) {
