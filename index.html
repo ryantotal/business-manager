@@ -8168,6 +8168,10 @@ const refreshJobs = async () => {
                 paymentStatus: job.payment_status || 'Not Paid',
                 sageProductId: job.sage_product_id,
                 sageProductName: job.sage_product_name,
+                 description: job.description,
+    sage_product_name: job.sage_product_name,
+    sageProductName: job.sage_product_name,
+    product_service: job.description || job.sage_product_name || '',
                 sageId: job.sage_id,
                 sageLineItems: job.sage_line_items || [],
                 // Handle sage_line_items for lineItems
