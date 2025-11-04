@@ -8540,57 +8540,69 @@ const handleExchange = async (job) => {
         const { data: jobNumber, error: seqError } = await window.supabase
             .rpc('get_next_job_number');
         
-        if (seqError) throw seqError;
+        if (seqError) {
+            console.error('Error getting job number:', seqError);
+            alert('Error getting job number. Please try again.');
+            return;
+        }
         
-        // Create a completely fresh job object
-        // DO NOT use any spread operators or copy mechanisms
-        const freshExchangeJob = {
+        // Fetch the complete job data (JUST LIKE DUPLICATE DOES)
+        const { data: fullJob } = await window.supabase
+            .from('jobs')
+            .select('*')
+            .eq('id', job.id)
+            .single();
+        
+        // Create exchange job with ONLY the fields we want (SAME PATTERN AS DUPLICATE)
+        const exchangeJobForDatabase = {
             job_number: jobNumber,
+            customer_name: fullJob?.customer_name,
+            supplier_name: fullJob?.supplier_name,
+            description: fullJob?.description || null,
+            sage_product_name: fullJob?.sage_product_name || null,
+            job_type: fullJob?.job_type,
+            waste_type: fullJob?.waste_type,
+            skip_size: fullJob?.skip_size,
+            quantity: 1,
+            unit: fullJob?.unit || 'skip',
+            customer_unit_price: fullJob?.customer_unit_price || 0,
+            supplier_unit_price: fullJob?.supplier_unit_price || 0,
+            customer_final_price: fullJob?.customer_final_price || 0,
+            supplier_final_price: fullJob?.supplier_final_price || 0,
             job_date: new Date().toISOString().split('T')[0],
             status: 'CONFIRMED',
+            is_completed: false,
+            is_cancelled: false,
+            notes: `Exchange for job ${fullJob?.job_number}`,
             parent_job_id: job.id,
-            notes: `Exchange for job ${job.job_number || job.jobNumber}`,
             
-            // Copy ONLY these specific fields
-            customer_name: job.customer_name || job.customerName,
-            supplier_name: job.supplier_name || job.supplierName,
-            job_type: job.job_type || job.jobType,
-            waste_type: job.waste_type || job.wasteType,
-            skip_size: job.skip_size || job.skipSize,
-            quantity: 1,
-            unit: 'skip',
+            // Site information
+            site_address: fullJob?.site_address || null,
+            site_address1: fullJob?.site_address1 || null,
+            site_address2: fullJob?.site_address2 || null,
+            site_city: fullJob?.site_city || null,
+            site_postcode: fullJob?.site_postcode || null,
+            site_contact: fullJob?.site_contact || null,
+            site_phone: fullJob?.site_phone || null,
+            site_notes: fullJob?.site_notes || null,
             
-            // Site info
-            site_address: job.site_address || job.siteAddress,
-            site_address1: job.site_address1 || job.siteAddress1,
-            site_address2: job.site_address2 || job.siteAddress2,
-            site_city: job.site_city || job.siteCity,
-            site_postcode: job.site_postcode || job.sitePostcode,
-            site_contact: job.site_contact || job.siteContact,
-            site_phone: job.site_phone || job.sitePhone,
+            // Product data (SAME AS DUPLICATE)
+            sage_line_items: fullJob?.sage_line_items || null,
             
-            // Prices
-            customer_unit_price: job.customer_unit_price || job.customerUnitPrice || 0,
-            supplier_unit_price: job.supplier_unit_price || job.supplierUnitPrice || 0,
-            customer_final_price: job.customer_final_price || job.customerFinalPrice || 0,
-            supplier_final_price: job.supplier_final_price || job.supplierFinalPrice || 0,
-            
-            // Products
-            description: job.description,
-            sage_product_name: job.sage_product_name || job.sageProductName,
-            sage_line_items: job.sage_line_items || job.sageLineItems
+            // EXPLICITLY SET TO NULL (LIKE DUPLICATE DOES)
+            sage_si_number: null,
+            collection_date: null,
         };
         
-        // Insert the new job
+        // Save directly to database (SAME AS DUPLICATE)
         const { data: newJob, error } = await window.supabase
             .from('jobs')
-            .insert([freshExchangeJob])
-            .select()
-            .single();
+            .insert([exchangeJobForDatabase])
+            .select();
         
         if (error) throw error;
         
-        // Update original job
+        // Mark original job as collected
         await window.supabase
             .from('jobs')
             .update({ 
@@ -8600,17 +8612,17 @@ const handleExchange = async (job) => {
             })
             .eq('id', job.id);
         
-        // Clear views first
-        setSelectedJob(null);
+        // Use the SAME refresh pattern as duplicate
+        setTimeout(async () => {
+            await refreshJobs();
+            alert('Exchange job created successfully!');
+        }, 500);
+        
+        // Close the full page view
         setShowFullPageJob(null);
         
-        // Then refresh
-        await refreshJobs();
-        
-        alert('Exchange job created successfully!');
-        
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error creating exchange job:', error);
         alert('Error creating exchange job: ' + error.message);
     }
 };
