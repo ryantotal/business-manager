@@ -8536,95 +8536,62 @@ const handleDeleteAttachment = async (attachment) => {
 };
 const handleExchange = async (job) => {
     try {
-        // DEBUG: Check what SI fields exist in the original job
-        console.log('=== EXCHANGE DEBUG ===');
-        console.log('Original job:', job);
-        console.log('SI related fields in original job:', {
-            sage_si_number: job.sage_si_number,
-            si_number: job.si_number,
-            siNumber: job.siNumber,
-            sageSiNumber: job.sageSiNumber,
-            sales_invoice_number: job.sales_invoice_number,
-            salesInvoiceNumber: job.salesInvoiceNumber,
-        });
-        
         // Get the next job number from Supabase
         const { data: jobNumber, error: seqError } = await window.supabase
             .rpc('get_next_job_number');
         
         if (seqError) throw seqError;
         
-        // Build exchange job with ONLY the fields we want
-        const exchangeJobForDatabase = {
-            // Basic job info
+        // Create a completely fresh job object
+        // DO NOT use any spread operators or copy mechanisms
+        const freshExchangeJob = {
             job_number: jobNumber,
             job_date: new Date().toISOString().split('T')[0],
             status: 'CONFIRMED',
             parent_job_id: job.id,
-            notes: `Exchange for job ${job.jobNumber || job.job_number}. ${job.notes || ''}`.trim(),
+            notes: `Exchange for job ${job.job_number || job.jobNumber}`,
             
-            // Customer/Supplier info
-            customer_name: job.customerName || job.customer_name,
-            supplier_name: job.supplierName || job.supplier_name,
-            
-            // Job details
-            job_type: job.jobType || job.job_type,
-            waste_type: job.wasteType || job.waste_type,
-            skip_size: job.skipSize || job.skip_size,
+            // Copy ONLY these specific fields
+            customer_name: job.customer_name || job.customerName,
+            supplier_name: job.supplier_name || job.supplierName,
+            job_type: job.job_type || job.jobType,
+            waste_type: job.waste_type || job.wasteType,
+            skip_size: job.skip_size || job.skipSize,
             quantity: 1,
-            unit: job.unit || 'skip',
+            unit: 'skip',
             
-            // Pricing
-            customer_unit_price: job.customerUnitPrice || job.customer_unit_price || 0,
-            supplier_unit_price: job.supplierUnitPrice || job.supplier_unit_price || 0,
-            customer_final_price: job.customerFinalPrice || job.customer_final_price || 0,
-            supplier_final_price: job.supplierFinalPrice || job.supplier_final_price || 0,
+            // Site info
+            site_address: job.site_address || job.siteAddress,
+            site_address1: job.site_address1 || job.siteAddress1,
+            site_address2: job.site_address2 || job.siteAddress2,
+            site_city: job.site_city || job.siteCity,
+            site_postcode: job.site_postcode || job.sitePostcode,
+            site_contact: job.site_contact || job.siteContact,
+            site_phone: job.site_phone || job.sitePhone,
             
-            // Site information
-            site_address: job.siteAddress || job.site_address,
-            site_address1: job.siteAddress1 || job.site_address1,
-            site_address2: job.siteAddress2 || job.site_address2,
-            site_city: job.siteCity || job.site_city,
-            site_postcode: job.sitePostcode || job.site_postcode,
-            site_contact: job.siteContact || job.site_contact,
-            site_phone: job.sitePhone || job.site_phone,
-            site_notes: job.siteNotes || job.site_notes,
+            // Prices
+            customer_unit_price: job.customer_unit_price || job.customerUnitPrice || 0,
+            supplier_unit_price: job.supplier_unit_price || job.supplierUnitPrice || 0,
+            customer_final_price: job.customer_final_price || job.customerFinalPrice || 0,
+            supplier_final_price: job.supplier_final_price || job.supplierFinalPrice || 0,
             
-            // Product information
+            // Products
             description: job.description,
-            sage_product_name: job.sageProductName || job.sage_product_name,
-            sage_line_items: job.sage_line_items || job.sageLineItems,
-            
-            // Explicitly set these to false
-            is_completed: false,
-            is_cancelled: false,
-            invoiced: false,
-            is_invoiced: false,
-            is_collected: false
+            sage_product_name: job.sage_product_name || job.sageProductName,
+            sage_line_items: job.sage_line_items || job.sageLineItems
         };
         
-        // DEBUG: Check what we're about to save
-        console.log('Exchange job to save:', exchangeJobForDatabase);
-        console.log('Fields in exchange job:', Object.keys(exchangeJobForDatabase));
-        
-        // Save the exchange job
+        // Insert the new job
         const { data: newJob, error } = await window.supabase
             .from('jobs')
-            .insert([exchangeJobForDatabase])
+            .insert([freshExchangeJob])
             .select()
             .single();
         
         if (error) throw error;
         
-        // DEBUG: Check what came back from database
-        console.log('New job from database:', newJob);
-        console.log('New job SI fields:', {
-            sage_si_number: newJob.sage_si_number,
-            si_number: newJob.si_number,
-        });
-        
-        // Mark original job as collected
-        const { error: updateError } = await window.supabase
+        // Update original job
+        await window.supabase
             .from('jobs')
             .update({ 
                 status: 'COLLECTED', 
@@ -8633,24 +8600,17 @@ const handleExchange = async (job) => {
             })
             .eq('id', job.id);
         
-        if (updateError) throw updateError;
+        // Clear views first
+        setSelectedJob(null);
+        setShowFullPageJob(null);
         
-        // Wait a moment before refreshing to ensure database writes complete
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Refresh the jobs list
+        // Then refresh
         await refreshJobs();
-        
-        // Clear any open modals/views AFTER refresh
-        setTimeout(() => {
-            setSelectedJob(null);
-            setShowFullPageJob(null);
-        }, 100);
         
         alert('Exchange job created successfully!');
         
     } catch (error) {
-        console.error('Error creating exchange job:', error);
+        console.error('Error:', error);
         alert('Error creating exchange job: ' + error.message);
     }
 };
