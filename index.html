@@ -9769,7 +9769,7 @@ onClick={() => {
     onExchange={async (job) => {
     try {
         // Create exchange job
-       const exchangeJob = {
+   const exchangeJob = {
     ...job,
     id: null,
     jobNumber: null,
@@ -9780,10 +9780,14 @@ onClick={() => {
     notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
     jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
     linkedJobs: [],
-    sage_si_number: null,  // ADD THIS LINE
-    sage_id: null,         // ADD THIS TOO
-    sage_invoice_id: null, // AND THIS
-    invoice_number: null   // AND THIS
+    sage_si_number: null,
+    sageSiNumber: null,      // ADD THIS - camelCase version!
+    sage_id: null,
+    sageId: null,             // ADD THIS TOO
+    sage_invoice_id: null,
+    sageInvoiceId: null,      // AND THIS
+    invoice_number: null,
+    invoiceNumber: null       // AND THIS
 };
         
         // Generate new job number
