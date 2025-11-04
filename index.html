@@ -9769,19 +9769,22 @@ onClick={() => {
     onExchange={async (job) => {
     try {
         // Create exchange job
-        const exchangeJob = {
-            ...job,
-            id: null,
-            jobNumber: null,
-            isCompleted: false,
-            is_completed: false,
-            isCancelled: false,
-            status: 'CONFIRMED',
-            sage_si_number: null, 
-            notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
-            jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
-            linkedJobs: []
-        };
+       const exchangeJob = {
+    ...job,
+    id: null,
+    jobNumber: null,
+    isCompleted: false,
+    is_completed: false,
+    isCancelled: false,
+    status: 'CONFIRMED',
+    notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
+    jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
+    linkedJobs: [],
+    sage_si_number: null,  // ADD THIS LINE
+    sage_id: null,         // ADD THIS TOO
+    sage_invoice_id: null, // AND THIS
+    invoice_number: null   // AND THIS
+};
         
         // Generate new job number
         // Get the next job number from Supabase sequence
