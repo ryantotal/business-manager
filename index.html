@@ -8535,8 +8535,44 @@ const handleDeleteAttachment = async (attachment) => {
   }
 };
 const handleExchange = async (job) => {
-    console.error('HANDLE EXCHANGE CALLED');
-    alert('Handle Exchange was called!');
+    try {
+        console.log('Creating exchange for job:', job.jobNumber);
+        
+        const { data: newJob, error } = await window.supabase
+            .from('jobs')
+            .insert([{
+                customer_name: job.customerName,
+                site_address: job.siteAddress,
+                site_postcode: job.sitePostcode,
+                skip_size: job.skipSize,
+                skip_type: job.skipType,
+                job_type: job.jobType,
+                status: 'CONFIRMED',
+                parent_job_id: job.id,
+                job_date: new Date().toISOString().split('T')[0],
+                notes: `Exchange for job ${job.jobNumber}`
+            }])
+            .select('*')
+            .single();
+        
+        if (error) throw error;
+        
+        // Mark original as collected
+        await window.supabase
+            .from('jobs')
+            .update({ 
+                status: 'COLLECTED', 
+                is_completed: true 
+            })
+            .eq('id', job.id);
+        
+        await refreshJobs();
+        alert(`Exchange created: Job #${newJob.job_number}`);
+        
+    } catch (error) {
+        console.error('Exchange error:', error);
+        alert('Error creating exchange: ' + error.message);
+    }
 };
           const handleCollection = (job) => {
   console.log('Collection job:', job);
