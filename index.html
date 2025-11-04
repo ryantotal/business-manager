@@ -8587,9 +8587,16 @@ const handleExchange = async (job) => {
             description: job.description,
             sage_product_name: job.sageProductName || job.sage_product_name,
             sage_line_items: job.sage_line_items || job.sageLineItems
-            
             // DO NOT include any invoice fields - they should NOT exist in the exchange job
         };
+        
+        // DEBUG: Log what we're about to insert
+        console.log('=== EXCHANGE DEBUG ===');
+        console.log('Creating exchange job with:', exchangeJobForDatabase);
+        console.log('Check for invoice fields:', {
+            has_invoice_number: 'invoice_number' in exchangeJobForDatabase,
+            has_sage_si_number: 'sage_si_number' in exchangeJobForDatabase
+        });
         
         // Save the new exchange job FIRST
         const { data: newJob, error } = await window.supabase
@@ -8599,6 +8606,23 @@ const handleExchange = async (job) => {
             .single();
         
         if (error) throw error;
+        
+        // DEBUG: Check what was actually saved
+        console.log('Exchange job created in DB:', {
+            job_number: newJob.job_number,
+            invoice_number: newJob.invoice_number,
+            sage_si_number: newJob.sage_si_number,
+            parent_job_id: newJob.parent_job_id
+        });
+        
+        // DEBUG: Double-check by fetching it again
+        const { data: verifyJob } = await window.supabase
+            .from('jobs')
+            .select('job_number, invoice_number, sage_si_number, parent_job_id')
+            .eq('id', newJob.id)
+            .single();
+        
+        console.log('Verified from DB:', verifyJob);
         
         // Then mark original job as collected
         const { error: updateError } = await window.supabase
@@ -8624,6 +8648,17 @@ const handleExchange = async (job) => {
         
         // Now refresh with clean state
         await refreshJobs();
+        
+        // DEBUG: Check what's in state after refresh
+        setTimeout(() => {
+            const exchangeInState = jobs.find(j => j.jobNumber === jobNumber);
+            console.log('Exchange job in state after refresh:', {
+                jobNumber: exchangeInState?.jobNumber,
+                invoiceNumber: exchangeInState?.invoiceNumber,
+                sageSiNumber: exchangeInState?.sageSiNumber,
+                parentJobId: exchangeInState?.parentJobId
+            });
+        }, 500);
         
         alert('Exchange job created successfully!');
         
