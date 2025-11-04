@@ -8597,17 +8597,8 @@ const handleExchange = async (job) => {
             is_collected: false
         };
         
-        // Save directly to database (like duplicate does)
-        const { data: newJob, error } = await window.supabase
-            .from('jobs')
-            .insert([exchangeJobForDatabase])
-            .select()
-            .single();
-        
-        if (error) throw error;
-        
-        // Mark original job as collected
-        await window.supabase
+        // Mark original job as collected FIRST
+        const { error: updateError } = await window.supabase
             .from('jobs')
             .update({ 
                 status: 'COLLECTED', 
@@ -8616,14 +8607,28 @@ const handleExchange = async (job) => {
             })
             .eq('id', job.id);
         
-        // Refresh the jobs list
-        await refreshJobs();
+        if (updateError) throw updateError;
         
-        // Close any open views
+        // Then save the new exchange job
+        const { data: newJob, error } = await window.supabase
+            .from('jobs')
+            .insert([exchangeJobForDatabase])
+            .select()
+            .single();
+        
+        if (error) throw error;
+        
+        // Clear any open views BEFORE refreshing
         setSelectedJob(null);
         setShowFullPageJob(null);
         
-        alert(`Exchange job created successfully!`);
+        // Wait a moment for state to clear
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // NOW refresh the jobs list
+        await refreshJobs();
+        
+        alert('Exchange job created successfully!');
         
     } catch (error) {
         console.error('Error creating exchange job:', error);
