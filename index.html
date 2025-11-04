@@ -8536,6 +8536,18 @@ const handleDeleteAttachment = async (attachment) => {
 };
 const handleExchange = async (job) => {
     try {
+        // DEBUG: Check what SI fields exist in the original job
+        console.log('=== EXCHANGE DEBUG ===');
+        console.log('Original job:', job);
+        console.log('SI related fields in original job:', {
+            sage_si_number: job.sage_si_number,
+            si_number: job.si_number,
+            siNumber: job.siNumber,
+            sageSiNumber: job.sageSiNumber,
+            sales_invoice_number: job.sales_invoice_number,
+            salesInvoiceNumber: job.salesInvoiceNumber,
+        });
+        
         // Get the next job number from Supabase
         const { data: jobNumber, error: seqError } = await window.supabase
             .rpc('get_next_job_number');
@@ -8543,7 +8555,6 @@ const handleExchange = async (job) => {
         if (seqError) throw seqError;
         
         // Build exchange job with ONLY the fields we want
-        // DO NOT use spread operator or copy the whole job
         const exchangeJobForDatabase = {
             // Basic job info
             job_number: jobNumber,
@@ -8579,24 +8590,24 @@ const handleExchange = async (job) => {
             site_phone: job.sitePhone || job.site_phone,
             site_notes: job.siteNotes || job.site_notes,
             
-            // Product information - COPY THIS!
+            // Product information
             description: job.description,
             sage_product_name: job.sageProductName || job.sage_product_name,
             sage_line_items: job.sage_line_items || job.sageLineItems,
             
-            // Explicitly set these to default values (not null)
+            // Explicitly set these to false
             is_completed: false,
             is_cancelled: false,
             invoiced: false,
             is_invoiced: false,
             is_collected: false
-            
-            // DO NOT include ANY of these fields:
-            // sage_si_number, si_number, invoice_number, invoice_status,
-            // sage_sales_invoice_id, invoiced_at, collection_date, collected_at
         };
         
-        // Save the exchange job first
+        // DEBUG: Check what we're about to save
+        console.log('Exchange job to save:', exchangeJobForDatabase);
+        console.log('Fields in exchange job:', Object.keys(exchangeJobForDatabase));
+        
+        // Save the exchange job
         const { data: newJob, error } = await window.supabase
             .from('jobs')
             .insert([exchangeJobForDatabase])
@@ -8605,7 +8616,14 @@ const handleExchange = async (job) => {
         
         if (error) throw error;
         
-        // Then mark original job as collected
+        // DEBUG: Check what came back from database
+        console.log('New job from database:', newJob);
+        console.log('New job SI fields:', {
+            sage_si_number: newJob.sage_si_number,
+            si_number: newJob.si_number,
+        });
+        
+        // Mark original job as collected
         const { error: updateError } = await window.supabase
             .from('jobs')
             .update({ 
@@ -8617,12 +8635,17 @@ const handleExchange = async (job) => {
         
         if (updateError) throw updateError;
         
+        // Wait a moment before refreshing to ensure database writes complete
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         // Refresh the jobs list
         await refreshJobs();
         
-        // Clear any open modals/views
-        setSelectedJob(null);
-        setShowFullPageJob(null);
+        // Clear any open modals/views AFTER refresh
+        setTimeout(() => {
+            setSelectedJob(null);
+            setShowFullPageJob(null);
+        }, 100);
         
         alert('Exchange job created successfully!');
         
