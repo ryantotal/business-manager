@@ -9806,8 +9806,14 @@ exchangeJob.id = jobNumber;
             .update({ status: 'COLLECTED', is_completed: true })
             .eq('id', job.id);
         
-        // Add the exchange job
-        await handleAddJob(exchangeJob);
+      // Right before line 9806, add:
+console.log('Exchange job being sent to handleAddJob:', {
+    sage_si_number: exchangeJob.sage_si_number,
+    sageSiNumber: exchangeJob.sageSiNumber,
+    sage_invoice_id: exchangeJob.sage_invoice_id,
+    invoice_number: exchangeJob.invoice_number
+});
+await handleAddJob(exchangeJob);
         
         alert('Exchange job created!');
         setShowFullPageJob(null);  // Close the full page view
