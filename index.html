@@ -8173,22 +8173,23 @@ const refreshJobs = async () => {
                 product_service: job.sage_product_name || job.description || '',
                 sageLineItems: job.sage_line_items || [],
                 lineItems: (() => {
-                    try {
-                        if (job.sage_line_items) {
-                            const items = typeof job.sage_line_items === 'string' 
-                                ? JSON.parse(job.sage_line_items) 
-                                : job.sage_line_items;
-                            return items.map(item => ({
-                                ...item,
-                                product_service: item.product_name || item.description || ''
-                            }));
-                        }
-                        return [];
-                    } catch (e) {
-                        console.warn('Error parsing line_items for job', job.id);
-                        return [];
-                    }
-                })(),
+    try {
+        if (job.sage_line_items) {
+            const items = typeof job.sage_line_items === 'string' 
+                ? JSON.parse(job.sage_line_items) 
+                : job.sage_line_items;
+            // Make sure each item has product_name
+            return items.map(item => ({
+                ...item,
+                product_name: item.product_name || item.description || item.product_service || ''
+            }));
+        }
+        return [];
+    } catch (e) {
+        console.warn('Error parsing line_items for job', job.id);
+        return [];
+    }
+})(),
                 parentJobId: job.parent_job_id,
                 linkedJobs: (() => {
                     try {
