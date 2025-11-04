@@ -8079,6 +8079,7 @@ collectionDate: job.collection_date,
   sageProductId: job.sage_product_id,
   sageProductName: job.sage_product_name,
   sageId: job.sage_id,
+  sageSiNumber: job.sage_si_number,
   //sageLineItems: job.sage_line_items || [],
   lineItems: (() => {
   try {
@@ -8173,6 +8174,7 @@ const refreshJobs = async () => {
                 sageProductId: job.sage_product_id,
                 sageProductName: job.sage_product_name,
                 sageId: job.sage_id,
+                sageSiNumber: job.sage_si_number,
                 sageLineItems: job.sage_line_items || [],
                 // Handle sage_line_items for lineItems
                 lineItems: (() => {
