@@ -2489,7 +2489,11 @@ const updatedJobWithAllFields = {
 };
 
 // This will update the job in the parent's jobs array
-onUpdateJob(updatedJobWithAllFields);
+// Only update this specific job, not child jobs
+const updatedJobs = jobs.map(j => 
+    j.id === updatedJobWithAllFields.id ? updatedJobWithAllFields : j
+);
+setJobs(updatedJobs);
 
 // Close and reopen the job view to force refresh
 setShowFullPageJob(null);
