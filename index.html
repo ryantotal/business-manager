@@ -47,6 +47,34 @@ html, body {
   max-width: 100vw;
   overscroll-behavior-x: none;
 }
+/* Simple truncation for all table cells */
+  td {
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 8px 10px !important;
+  }
+  
+  /* Slightly wider for address column */
+  td:nth-child(6) {
+    max-width: 200px;
+  }
+  
+  /* Smaller width for type and status columns */
+  td:nth-child(8), td:nth-child(9) {
+    max-width: 100px;
+  }
+  
+  /* Keep headers aligned */
+  th {
+    padding: 8px 10px !important;
+  }
+  
+  /* Optional: Slightly smaller font for more space */
+  table {
+    font-size: 14px;
+  }
 </style>
 </head>
 <body>
@@ -186,6 +214,11 @@ const SearchableDropdown = ({
 const SageProductSelector = ({ jobType, selectedProduct, onSelect, products }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showPostcodePrices, setShowPostcodePrices] = useState(false);
+const [postcodeSearch, setPostcodeSearch] = useState('');
+const [postcodePrices, setPostcodePrices] = useState([]);
+const [loadingPrices, setLoadingPrices] = useState(false);
+const [postcodeOptions, setPostcodeOptions] = useState([]);
 
   // Smart filtering based on job type and waste type
 const getFilteredProducts = () => {
@@ -213,44 +246,295 @@ const getFilteredProducts = () => {
     });
   }
 
-  // Sort alphabetically by name
+// Sort alphabetically by name
   return filtered.sort((a, b) => {
     const aName = (a.name || '').toString();
     const bName = (b.name || '').toString();
     return aName.localeCompare(bName);
   });
 };
-  const filteredProducts = getFilteredProducts();
-  const selectedProductDetails = products.find(p => p.sage_id === selectedProduct);
 
-  if (products.length === 0) {
-    return (
-      <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
-        Loading Sage products...
-      </div>
-    );
+const searchPostcodePrices = async () => {
+  if (!postcodeSearch) {
+    alert('Please enter a postcode');
+    return;
   }
-
-  if (products.length === 0) {
-    return (
-      <div className="w-full px-3 py-2 border border-red-300 rounded-lg bg-red-50 text-red-600">
-        No Sage products found. Please sync products in Admin Panel first.
-      </div>
-    );
+  
+  setLoadingPrices(true);
+  try {
+    const { data, error } = await window.supabase
+      .from('jobs')
+      .select('*')  // Get ALL fields so we can see what's available
+      .eq('site_postcode', postcodeSearch.toUpperCase().trim())
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    console.log('Full job data:', data); // Check what fields have actual prices
+    
+    if (data && data.length > 0) {
+      const productsMap = new Map();
+      
+      data.forEach(job => {
+        if (job.sage_line_items) {
+          const lineItems = typeof job.sage_line_items === 'string' 
+            ? JSON.parse(job.sage_line_items) 
+            : job.sage_line_items;
+          
+        lineItems.forEach(item => {
+  const key = `${item.product_name}_${item.description || ''}`;
+  if (!productsMap.has(key)) {
+    productsMap.set(key, []);
   }
-
+  
+  // Debug log to verify we're getting the right data
+  console.log('Item customer_price:', item.customer_price);
+  console.log('Item supplier_price:', item.supplier_price);
+  
+  productsMap.get(key).push({
+    job_number: job.job_number,
+    customer_name: job.customer_name,
+    product_name: item.product_name || item.description,
+    description: item.description || '',
+    quantity: item.quantity || 1,
+    // Use the CORRECT field names and parse the STRING to number
+    unit_price: parseFloat(item.customer_price) || 0,
+    cost_price: parseFloat(item.supplier_price) || 0,
+    date: job.created_at
+  });
+});
+        }
+      });
+      
+      setPostcodePrices(Array.from(productsMap.entries()));
+    } else {
+      setPostcodePrices([]);
+      alert('No jobs found for postcode: ' + postcodeSearch);
+    }
+  } catch (error) {
+    console.error('Error searching postcode prices:', error);
+    alert('Error searching prices');
+  } finally {
+    setLoadingPrices(false);
+  }
+};
+const fetchPostcodeSuggestions = async (input) => {
+  if (input.length >= 3) {
+    try {
+      const { data, error } = await window.supabase
+        .from('jobs')
+        .select('site_postcode')
+        .ilike('site_postcode', `${input}%`)
+        .limit(10);
+      
+      if (data) {
+        // Get unique postcodes
+        const uniquePostcodes = [...new Set(data.map(job => job.site_postcode).filter(Boolean))];
+        setPostcodeOptions(uniquePostcodes);
+      }
+    } catch (error) {
+      console.error('Error fetching postcodes:', error);
+    }
+  } else {
+    setPostcodeOptions([]);
+  }
+};
+// Postcode Prices Popup Component
+const PostcodePricesPopup = () => {
+  if (!showPostcodePrices) return null;
+  
   return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-hidden">
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold">Check Previous Prices by Postcode</h2>
+            <button
+              onClick={() => setShowPostcodePrices(false)}
+              className="text-gray-400 hover:text-gray-500"
+            >
+              ✕
+            </button>
+          </div>
+          
+        <div className="mt-4">
+  <div className="flex gap-2">
+    <div className="flex-1 relative">
+      <input
+        type="text"
+        value={postcodeSearch}
+        onChange={(e) => {
+          setPostcodeSearch(e.target.value);
+          fetchPostcodeSuggestions(e.target.value);
+        }}
+        placeholder="Enter postcode (e.g., B1 2RT)"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        onKeyPress={(e) => e.key === 'Enter' && searchPostcodePrices()}
+        autoFocus={true}
+        key="postcode-input"
+      />
+      {/* Dropdown for suggestions */}
+      {postcodeOptions.length > 0 && (
+        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+          {postcodeOptions.map(postcode => (
+            <div
+              key={postcode}
+              onClick={() => {
+                setPostcodeSearch(postcode);
+                setPostcodeOptions([]);
+              }}
+              className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
+            >
+              {postcode}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+    <button
+      onClick={searchPostcodePrices}
+      disabled={loadingPrices}
+      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
+    >
+      {loadingPrices ? 'Searching...' : 'Search'}
+    </button>
+  </div>
+</div>
+        </div>
+        
+        <div className="p-4 overflow-y-auto max-h-[60vh]">
+          {postcodePrices.length > 0 ? (
+            <div className="space-y-4">
+              {postcodePrices.map(([productKey, prices], index) => (
+                <div key={index} className="border border-gray-200 rounded-lg p-3">
+                  <h3 className="font-semibold text-lg mb-2">
+                    {prices[0].product_name || productKey}
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50">
+  <tr>
+    <th className="px-3 py-2 text-left">Job #</th>
+    <th className="px-3 py-2 text-left">Customer</th>
+    <th className="px-3 py-2 text-left">Description</th>  {/* Add this */}
+    <th className="px-3 py-2 text-left">Qty</th>  {/* Add this */}
+    <th className="px-3 py-2 text-left">Unit Price</th>
+    <th className="px-3 py-2 text-left">Cost Price</th>
+    <th className="px-3 py-2 text-left">Date</th>
+    <th className="px-3 py-2 text-left">Action</th>
+  </tr>
+</thead>
+<tbody className="divide-y divide-gray-200">
+  {prices.map((price, idx) => (
+    <tr key={idx}>
+      <td className="px-3 py-2">{price.job_number}</td>
+      <td className="px-3 py-2">{price.customer_name}</td>
+      <td className="px-3 py-2">{price.description}</td>  {/* Add this */}
+      <td className="px-3 py-2">{price.quantity}</td>  {/* Add this */}
+      <td className="px-3 py-2 font-semibold">£{price.unit_price.toFixed(2)}</td>
+      <td className="px-3 py-2">£{price.cost_price.toFixed(2)}</td>
+      <td className="px-3 py-2">
+        {new Date(price.date).toLocaleDateString()}
+      </td>
+                            <td className="px-3 py-2">
+                              <button
+  onClick={() => {
+  const sageProduct = products.find(p => 
+    p.name === price.product_name || 
+    (p.description && p.description === price.description)
+  );
+  
+  if (sageProduct) {
+    // Pass the product with prices in BOTH snake_case and camelCase
+    const productWithPrices = {
+      ...sageProduct,
+      // snake_case versions
+      customer_price: price.unit_price.toString(),
+      supplier_price: price.cost_price.toString(),
+      unit_price: price.unit_price,
+      cost_price: price.cost_price,
+      rrp_price: price.unit_price,
+      // camelCase versions
+      customerPrice: price.unit_price.toString(),
+      supplierPrice: price.cost_price.toString(),
+      unitPrice: price.unit_price,
+      costPrice: price.cost_price,
+      rrpPrice: price.unit_price
+    };
+    
+    console.log('Sending product with prices:', productWithPrices);
+    onSelect(productWithPrices);
+    setShowPostcodePrices(false);
+    setPostcodeSearch('');
+  } else {
+    alert('Product not found in Sage products.');
+  }
+}}
+  className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+>
+  Use Price
+</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center text-gray-500 py-8">
+              {postcodeSearch ? 'No prices found for this postcode' : 'Enter a postcode to search'}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const filteredProducts = getFilteredProducts();
+const selectedProductDetails = products.find(p => p.sage_id === selectedProduct);
+
+if (products.length === 0) {
+  return (
+    <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
+      Loading Sage products...
+    </div>
+  );
+}
+
+if (products.length === 0) {
+  return (
+    <div className="w-full px-3 py-2 border border-red-300 rounded-lg bg-red-50 text-red-600">
+      No Sage products found. Please sync products in Admin Panel first.
+    </div>
+  );
+}
+
+return (
+  <>
+    <PostcodePricesPopup />
     <div className="space-y-2">
       {/* Search input */}
       <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search Sage products/services..."
-          className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
-        />
+        <div className="flex gap-2">
+         <input
+  type="text"
+  value={searchTerm}
+  onChange={(e) => setSearchTerm(e.target.value)}
+  placeholder="Search Sage products/services..."  // CORRECT
+  className="w-full pl-1 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+/>
+          <button
+            type="button"
+            onClick={() => setShowPostcodePrices(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm whitespace-nowrap"
+          >
+            🔍 Check Previous Prices
+          </button>
+        </div>
       </div>
 
       {/* Selected product display */}
@@ -314,7 +598,8 @@ const getFilteredProducts = () => {
         {products.length} products available from Sage
       </div>
     </div>
-  );
+  </>
+);
 };
         // Create icon components
         const Plus = (props) => <LucideIcon icon="Plus" {...props} />;
@@ -1100,8 +1385,8 @@ console.log('Product item_code:', product.item_code);
   item_code: product.item_code,
   type: product.type,
   quantity: 1,
-  supplier_price: 0.00,  // Add this line
-  customer_price: 0.00,  // Add this line
+  supplier_price: product.supplier_price || product.supplierPrice || 0.00,
+customer_price: product.customer_price || product.customerPrice || 0.00,
   unit_price: 0.00,
   discount: 0.00,
   vat_rate: 20,
@@ -1134,8 +1419,8 @@ tax_code: product.tax_rate_id || 'T1'
             item_code: product.item_code,
             type: product.type,
             quantity: 1,
-            supplier_price: 0.00,
-            customer_price: 0.00,
+            supplier_price: product.supplier_price || product.supplierPrice || 0.00,
+customer_price: product.customer_price || product.customerPrice || 0.00,
             unit_price: 0.00,
             discount: 0.00,
             vat_rate: 20,
@@ -1317,8 +1602,8 @@ tax_code: product.tax_rate_id || 'T1'
     item_code: product.item_code,
     type: product.type,
     quantity: 1,
-    supplier_price: 0.00,
-    customer_price: 0.00,
+    supplier_price: product.supplier_price || product.supplierPrice || 0.00,
+customer_price: product.customer_price || product.customerPrice || 0.00,
     unit_price: 0.00,
     discount: 0.00,
     vat_rate: 20,
@@ -1352,8 +1637,8 @@ tax_code: product.tax_rate_id || 'T1'
     item_code: product.item_code,
     type: product.type,
     quantity: 1,
-    supplier_price: 0.00,
-    customer_price: 0.00,
+    supplier_price: product.supplier_price || product.supplierPrice || 0.00,
+customer_price: product.customer_price || product.customerPrice || 0.00,
     unit_price: 0.00,
     discount: 0.00,
     vat_rate: 20,
@@ -2723,16 +3008,16 @@ const uploadJobAttachment = async () => {
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
       <tr>
-        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job Number & Date</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product/Service</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Haulier</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Postcode</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SI Number</th>
+        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job Number & Date</th>
+<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product/Service</th>
+<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Haulier</th>
+<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
+<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Postcode</th>
+<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+          <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SI Number</th>
         </tr>
       </thead>
 <tbody className="bg-white divide-y divide-gray-200">
@@ -4224,7 +4509,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
 </div>
 );
 };
-// Full Page Quote View Component - Add this RIGHT AFTER FullPageJobView (around line 3400)
+// Full Page Quote View Component - UPDATED TO MATCH JOB LAYOUT
 const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [quoteAttachments, setQuoteAttachments] = useState([]);
@@ -4237,20 +4522,20 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
   }, [quote?.id]);
 
   const loadQuoteAttachments = async (quoteId) => {
-  try {
-    const { data, error } = await window.supabase
-      .from('quote_attachments')
-      .select('*')
-      .eq('quote_id', quoteId)
-      .order('created_at', { ascending: false }); // Changed to created_at
-    
-    if (error) throw error;
-    setQuoteAttachments(data || []);
-  } catch (error) {
-    console.error('Error loading quote attachments:', error);
-    setQuoteAttachments([]);
-  }
-};
+    try {
+      const { data, error } = await window.supabase
+        .from('quote_attachments')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setQuoteAttachments(data || []);
+    } catch (error) {
+      console.error('Error loading quote attachments:', error);
+      setQuoteAttachments([]);
+    }
+  };
 
   const uploadQuoteAttachment = async () => {
     const attachmentType = document.getElementById('quote-attachment-type')?.value;
@@ -4344,65 +4629,185 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
               quote.status === 'ACCEPTED' ? 'bg-green-100 text-green-800' :
               quote.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
               quote.status === 'SENT' ? 'bg-blue-100 text-blue-800' :
+              quote.status === 'CONVERTED' ? 'bg-purple-100 text-purple-800' :
               'bg-yellow-100 text-yellow-800'
             }`}>
               {isExpired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
             </span>
-            {quote.status === 'REJECTED' && quote.rejectedReason && (
-  <div className="ml-4 text-sm text-red-600">
-    Reason: {quote.rejectedReason}
-  </div>
-)}
-            {quote.validUntil && (
-              <span className="text-sm text-gray-600">
-                Valid until: {new Date(quote.validUntil).toLocaleDateString()}
-              </span>
-            )}
           </div>
           
           <div className="flex items-center space-x-2">
             {quote.status === 'PENDING' && (
-  <button
-    onClick={() => onSend(quote)}
-    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
-    title="Send to Sage"
-  >
-    <Mail size={16} className="mr-2" />
-    Send to Sage
-  </button>
-)}
+              <button
+                onClick={() => {
+  // Calculate totals
+  let subtotal = 0;
+  if (quote?.lineItems && quote.lineItems.length > 0) {
+    quote.lineItems.forEach(item => {
+      const price = item?.customer_price || item?.supplier_price || item?.unit_price || item?.price || 0;
+      const qty = item?.quantity || 1;
+      subtotal += (qty * price);
+    });
+  }
+  
+  const vatRate = 0.20; // 20% VAT
+  const vatAmount = subtotal * vatRate;
+  const grandTotal = subtotal + vatAmount;
+  
+  const newWindow = window.open('', '_blank');
+  newWindow.document.write(`
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
+        h1 { color: #2c5f2d; border-bottom: 3px solid #2c5f2d; padding-bottom: 10px; }
+        .info-row { margin: 10px 0; }
+        .info-row strong { display: inline-block; width: 150px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 30px; }
+        th { background: #2c5f2d; color: white; padding: 12px; text-align: left; }
+        td { padding: 12px; border-bottom: 1px solid #ddd; }
+        .totals-box { margin-top: 30px; float: right; width: 300px; }
+        .total-line { display: flex; justify-content: space-between; padding: 8px 0; }
+        .total-line.subtotal { border-bottom: 1px solid #ddd; }
+        .total-line.grand-total { 
+          font-size: 20px; 
+          font-weight: bold; 
+          color: #2c5f2d; 
+          border-top: 2px solid #2c5f2d;
+          margin-top: 10px;
+          padding-top: 15px;
+        }
+        .footer { margin-top: 150px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; clear: both; }
+      </style>
+    </head>
+    <body>
+      <div style="display: flex; align-items: center; margin-bottom: 20px;">
+  ${localStorage.getItem('companyLogo') ? `
+    <img src="${localStorage.getItem('companyLogo')}" style="height: 60px; margin-right: 20px;" alt="Total Waste Services">
+  ` : ''}
+  <div>
+    <h1>TOTAL WASTE SERVICES LTD</h1>
+    <p style="color: #666;">Company Registration No: 11143143</p>
+  </div>
+</div>
+      
+      <h2>QUOTATION</h2>
+      
+      <div class="info-row"><strong>Quote Number:</strong> ${quote?.quoteNumber || 'N/A'}</div>
+      <div class="info-row"><strong>Date:</strong> ${quote?.created_at ? new Date(quote.created_at).toLocaleDateString('en-GB') : 'N/A'}</div>
+      <div class="info-row"><strong>Valid Until:</strong> ${quote?.validUntil ? new Date(quote.validUntil).toLocaleDateString('en-GB') : 'N/A'}</div>
+      <div class="info-row"><strong>Customer:</strong> ${quote?.customerName || 'N/A'}</div>
+      <div class="info-row"><strong>Email:</strong> ${quote?.customerEmail || 'N/A'}</div>
+      <div class="info-row"><strong>Phone:</strong> ${quote?.customerPhone || quote?.phone || quote?.customerTelephone || 'Not provided'}</div>
+      <div class="info-row"><strong>Site Address:</strong> ${quote?.siteAddress || 'N/A'}</div>
+      <div class="info-row"><strong>Status:</strong> ${quote?.status || 'PENDING'}</div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 50%;">Description</th>
+            <th style="width: 15%;">Quantity</th>
+            <th style="width: 15%;">Unit Price</th>
+            <th style="width: 20%;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${quote?.lineItems && quote.lineItems.length > 0 ? 
+            quote.lineItems.map(item => {
+              const price = item?.customer_price || item?.supplier_price || item?.unit_price || item?.price || 0;
+              const qty = item?.quantity || 1;
+              const itemTotal = qty * price;
+              
+              return `
+                <tr>
+<td>${item?.description || item?.product_name || 'Service'}</td>
+                  <td style="text-align: center;">${qty}</td>
+                  <td style="text-align: right;">£${parseFloat(price).toFixed(2)}</td>
+                  <td style="text-align: right;">£${itemTotal.toFixed(2)}</td>
+                </tr>
+              `;
+            }).join('') 
+            : 
+            '<tr><td colspan="4" style="text-align: center;">No items in this quote</td></tr>'
+          }
+        </tbody>
+      </table>
+      
+      ${!quote?.hidePricesOnPDF ? `
+  <div class="totals-box">
+    <div class="total-line subtotal">
+      <span>Subtotal (Net):</span>
+      <span>£${subtotal.toFixed(2)}</span>
+    </div>
+    <div class="total-line">
+      <span>VAT (20%):</span>
+      <span>£${vatAmount.toFixed(2)}</span>
+    </div>
+    <div class="total-line grand-total">
+      <span>TOTAL:</span>
+      <span>£${grandTotal.toFixed(2)}</span>
+    </div>
+  </div>
+` : ''}
+      
+      <div class="footer">
+        <p><strong>Terms & Conditions</strong></p>
+        <p>• Valid for 30 days from date of issue</p>
+        <p>• All prices subject to VAT at current rate</p>
+        <p>• Payment terms: Net 30 days (subject to account status)</p>
+        <br>
+        <p>Thank you for your business!</p>
+        <p>Total Waste Services Ltd</p>
+      </div>
+    </body>
+    </html>
+  `);
+  newWindow.document.close();
+  newWindow.print();
+}}
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+                title="Download PDF"
+              >
+                <Mail size={16} className="mr-2" />
+                Download PDF
+              </button>
+            )}
             {quote.status === 'SENT' && !isExpired && (
-  <>
-    <button
-      onClick={() => onAccept(quote)}
-      className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
-      title="Accept Quote"
-    >
-      <LucideIcon icon="CheckCircle" size={16} className="mr-2" />
-      Accept Quote
-    </button>
-    <button
-      onClick={() => onReject(quote)}
-      className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
-      title="Reject Quote"
-    >
-      <X size={16} className="mr-2" />
-      Reject
-    </button>
-  </>
-)}
-{(quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired && (
-  <button
-    onClick={() => onConvertToJob(quote)}
-    className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
-    title="Convert to Job"
-  >
-    <Package size={16} className="mr-2" />
-    Convert to Job
-  </button>
-)}
+              <>
+                <button
+                  onClick={() => onAccept(quote)}
+                  className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+                  title="Accept Quote"
+                >
+                  <LucideIcon icon="CheckCircle" size={16} className="mr-2" />
+                  Accept Quote
+                </button>
+                <button
+                  onClick={() => onReject(quote)}
+                  className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
+                  title="Reject Quote"
+                >
+                  <X size={16} className="mr-2" />
+                  Reject
+                </button>
+              </>
+            )}
+            {(quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired && (
+              <button
+                onClick={() => onConvertToJob(quote)}
+                className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
+                title="Convert to Job"
+              >
+                <Package size={16} className="mr-2" />
+                Convert to Job
+              </button>
+            )}
             <button
-              onClick={() => onEdit(quote)}
+              onClick={() => {
+                onEdit(quote);
+                // Store a reference to reload attachments after edit
+                window.refreshFullPageQuoteAttachments = () => loadQuoteAttachments(quote.id);
+              }}
               className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
               title="Edit Quote"
             >
@@ -4415,15 +4820,6 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             >
               <Copy size={20} />
             </button>
-            {quote.status !== 'REJECTED' && (
-  <button
-    onClick={() => onReject(quote)}
-    className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
-    title="Reject Quote"
-  >
-    <X size={20} />
-  </button>
-)}
             {user?.role === 'ADMIN' && (
               <button
                 onClick={() => onDelete(quote.id)}
@@ -4451,16 +4847,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             >
               Quote Overview
             </button>
-            <button
-              onClick={() => setActiveTab('financial')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
-                activeTab === 'financial'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Pricing Details
-            </button>
+            
             <button
               onClick={() => setActiveTab('documents')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
@@ -4482,192 +4869,244 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
         {activeTab === 'overview' && (
           <div className="space-y-8">
             
-            {/* Customer Information */}
+            {/* Combined Quote & Customer Information - COMPACT & MOBILE FRIENDLY */}
             <div className="bg-white rounded-lg border border-gray-200">
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-800">Customer Information</h2>
+              <div className="bg-gray-50 border-b border-gray-200 px-3 md:px-4 py-2">
+                <h2 className="text-sm md:text-base font-semibold text-gray-800">Quote & Customer Information</h2>
               </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Customer:</span>
-                      <span className="font-semibold text-gray-900">{quote.customerName}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Contact:</span>
-                      <span className="text-gray-900">{quote.customerContact || 'Not provided'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Email:</span>
-                      <span className="text-gray-900">{quote.customerEmail || 'Not provided'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Phone:</span>
-                      <span className="text-gray-900">{quote.customerPhone || 'Not provided'}</span>
-                    </div>
+              <div className="p-3 md:p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  
+                  {/* Customer */}
+                  <div className="border-b sm:border-0 pb-2 sm:pb-0">
+                    <span className="text-xs text-gray-600">Customer:</span>
+                    <p className="font-semibold">{quote.customerName}</p>
+                    {quote.customerContact && <p className="text-xs text-gray-600">{quote.customerContact}</p>}
                   </div>
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Quote Type:</span>
-                      <span className="text-gray-900">{quote.jobType}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Created Date:</span>
-                      <span className="text-gray-900">{job.created_at ? new Date(job.created_at).toLocaleDateString() : 'Not provided'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Valid Until:</span>
-                      <span className={`font-semibold ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
-                        {new Date(quote.validUntil).toLocaleDateString()}
-                      </span>
-                    </div>
-                    {quote.deliveryDate && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Proposed Delivery:</span>
-                        <span className="text-gray-900">{new Date(quote.deliveryDate).toLocaleDateString()}</span>
-                      </div>
-                    )}
+                  
+                  {/* Supplier */}
+                  <div className="border-b sm:border-0 pb-2 sm:pb-0">
+                    <span className="text-xs text-gray-600">Supplier:</span>
+                    <p className="font-semibold">{quote.supplierName || 'Not specified'}</p>
+                    {quote.supplierRef && <p className="text-xs text-gray-600">Ref: {quote.supplierRef}</p>}
                   </div>
+                  
+                  {/* Quote Type */}
+                  <div className="border-b sm:border-0 pb-2 sm:pb-0">
+                    <span className="text-xs text-gray-600">Quote Type:</span>
+                    <p className="font-semibold">{quote.jobType}</p>
+                    <p className="text-xs text-gray-600">Qty: {quote.quantity} {quote.unit}</p>
+                  </div>
+                  
+                  {/* Status/Validity */}
+                  <div className="border-b sm:border-0 pb-2 sm:pb-0">
+                    <span className="text-xs text-gray-600">Valid Until:</span>
+                    <p className={`font-semibold text-xs ${isExpired ? 'text-red-600' : 'text-green-600'}`}>
+                      {new Date(quote.validUntil).toLocaleDateString()}
+                    </p>
+                    {isExpired && <p className="text-xs text-red-600">EXPIRED</p>}
+                  </div>
+                  
+                  {/* Dates Row */}
+                  <div>
+                    <span className="text-xs text-gray-600">Created:</span>
+                    <p className="font-semibold text-xs">
+                      {quote.createdDate ? new Date(quote.createdDate).toLocaleDateString() : 
+                       quote.created_at ? new Date(quote.created_at).toLocaleDateString() : 'Not provided'}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <span className="text-xs text-gray-600">Proposed Delivery:</span>
+                    <p className="font-semibold text-red-600 text-xs">
+                      {quote.deliveryDate ? new Date(quote.deliveryDate).toLocaleDateString() : 
+                       quote.jobDate ? new Date(quote.jobDate).toLocaleDateString() : 'Not specified'}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <span className="text-xs text-gray-600">Contact:</span>
+                    <p className="font-semibold text-xs">{quote.customerPhone || 'Not provided'}</p>
+                  </div>
+                  
+                  <div>
+                    <span className="text-xs text-gray-600">PO:</span>
+                    <p className="font-semibold text-xs">{quote.customerPO || 'Not provided'}</p>
+                  </div>
+                  
+                  {/* Site Address - spans 2 columns */}
+                  <div className="col-span-1 sm:col-span-2">
+                    <span className="text-xs text-gray-600">Site Address:</span>
+                    <p className="font-semibold text-xs">
+                      {quote.siteAddress || quote.siteAddress1 || 'Not specified'}
+                      {quote.siteAddress2 && `, ${quote.siteAddress2}`}
+                      {quote.sitePostcode && ` ${quote.sitePostcode}`}
+                    </p>
+                  </div>
+                  
+                 
+                  
+                  <div>
+  <span className="text-xs text-gray-600">Total Value:</span>
+  <p className="font-semibold text-green-600 text-xs">
+    £{quote.lineItems ? 
+      (quote.lineItems.reduce((sum, item) => 
+        sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
+      ) * 1.20).toFixed(2) : '0.00'}
+  </p>
+</div>
                 </div>
+                
+                {quote.notes && (
+                  <div className="mt-2 pt-2 border-t border-gray-200">
+                    <span className="text-xs text-gray-600">Notes: </span>
+                    <span className="text-xs">{quote.notes}</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Site Information */}
-            {(quote.siteAddress || quote.sitePostcode) && (
-              <div className="bg-white rounded-lg border border-gray-200">
-                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Site Information</h2>
-                </div>
-                <div className="p-6">
-                  <div className="space-y-4">
-                    <div>
-                      <span className="text-gray-600 font-medium block mb-1">Site Address:</span>
-                      <div className="text-gray-900">
-                        {quote.siteAddress && <div>{quote.siteAddress}</div>}
-                        {quote.sitePostcode && <div>{quote.sitePostcode}</div>}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Products & Services */}
+            {/* Products & Services - COMPACT & MOBILE FRIENDLY */}
             {quote.lineItems && quote.lineItems.length > 0 && (
               <div className="bg-white rounded-lg border border-gray-200">
-                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Products & Services</h2>
+                <div className="bg-gray-50 border-b border-gray-200 px-3 md:px-4 py-2">
+                  <h2 className="text-sm md:text-base font-semibold text-gray-800">Products & Services</h2>
                 </div>
-                <div className="p-6">
-                  <div className="space-y-4">
-                    {quote.lineItems.map((item, index) => (
-                      <div key={item.id || index} className="border border-gray-200 rounded-lg p-4 bg-green-50 border-green-200">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                          <div>
-                            <div className="text-sm text-gray-600 font-medium">Product/Service</div>
-                            <div className="text-lg font-semibold text-gray-900">{item.product_name || item.name}</div>
-                            {item.item_code && (
-                              <div className="text-sm text-gray-600">Code: {item.item_code}</div>
-                            )}
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-600 font-medium">Description</div>
-                            <div className="text-gray-900">{item.description || 'No description'}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-600 font-medium">Quantity</div>
-                            <div className="text-gray-900">
-                              <div className="font-semibold">{item.quantity || 1}</div>
-                            </div>
+                <div className="p-3 md:p-4">
+                  {/* Desktop Table - Compact */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200 text-xs">
+                          <th className="text-left py-2 px-2 font-medium text-gray-700">Product/Service</th>
+                          <th className="text-left py-2 px-2 font-medium text-gray-700">Description</th>
+                          <th className="text-center py-2 px-2 font-medium text-gray-700">Qty</th>
+                          <th className="text-right py-2 px-2 font-medium text-gray-700">Unit Price</th>
+                          <th className="text-right py-2 px-2 font-medium text-gray-700">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {quote.lineItems.map((item, index) => {
+                          const unitPrice = item.unit_price || item.customer_price || 0;
+                          const lineTotal = unitPrice * (item.quantity || 1);
+                          
+                          return (
+                            <tr key={item.id || index} className="border-b border-gray-100">
+                              <td className="py-2 px-2">
+                                <div className="font-medium text-xs">{item.product_name || item.name}</div>
+                                <div className="text-xs text-gray-500">Code: {item.item_code || 'N/A'}</div>
+                              </td>
+                              <td className="py-2 px-2 text-gray-600 text-xs">
+                                {item.description || '-'}
+                              </td>
+                              <td className="py-2 px-2 text-center text-xs">
+                                {item.quantity || 1}
+                              </td>
+                              <td className="py-2 px-2 text-right text-xs font-medium">
+                                £{(parseFloat(unitPrice) || 0).toFixed(2)}
+                              </td>
+                              <td className="py-2 px-2 text-right text-xs text-blue-600 font-medium">
+                                £{lineTotal.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {/* Mobile Cards - Compact */}
+                  <div className="md:hidden space-y-2">
+                    {quote.lineItems.map((item, index) => {
+                      const unitPrice = item.unit_price || item.customer_price || 0;
+                      const lineTotal = unitPrice * (item.quantity || 1);
+                      
+                      return (
+                        <div key={item.id || index} className="border border-gray-200 rounded p-2 text-xs">
+                          <div className="font-medium">{item.product_name || item.name}</div>
+                          <div className="text-gray-500">Code: {item.item_code || 'N/A'}</div>
+                          <div className="grid grid-cols-2 gap-1 mt-1">
+                            <div>Qty: <span className="font-medium">{item.quantity || 1}</span></div>
+                            <div>Unit: <span className="font-medium">£{(parseFloat(unitPrice) || 0).toFixed(2)}</span></div>
+                            <div className="col-span-2">Total: <span className="text-blue-600 font-medium">£{lineTotal.toFixed(2)}</span></div>
                           </div>
                         </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Summary Cards - Compact */}
+                  <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mt-3 pt-3 border-t">
+                    <div className="bg-gray-50 rounded p-2 text-center">
+                      <div className="text-xs text-gray-600">Items</div>
+                      <div className="text-base font-bold">{quote.lineItems.length}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded p-2 text-center">
+                      <div className="text-xs text-gray-600">Qty</div>
+                      <div className="text-base font-bold">
+                        {quote.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}
                       </div>
-                    ))}
+                    </div>
+                    <div className="bg-blue-50 rounded p-2 text-center">
+                      <div className="text-xs text-blue-600">Subtotal</div>
+                      <div className="text-base font-bold text-blue-700">
+                        £{quote.lineItems.reduce((sum, item) => 
+                          sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
+                        ).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="bg-green-50 rounded p-2 text-center">
+                      <div className="text-xs text-green-600">VAT (20%)</div>
+                      <div className="text-base font-bold text-green-700">
+                        £{(quote.lineItems.reduce((sum, item) => 
+                          sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
+                        ) * 0.20).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="bg-purple-50 rounded p-2 text-center">
+                      <div className="text-xs text-purple-600">Total</div>
+                      <div className="text-base font-bold text-purple-700">
+                        £{(quote.lineItems.reduce((sum, item) => 
+                          sum + ((item.unit_price || item.customer_price || 0) * (item.quantity || 1)), 0
+                        ) * 1.20).toFixed(2)}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Notes */}
-            {quote.notes && (
-              <div className="bg-white rounded-lg border border-gray-200">
-                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                  <h2 className="text-lg font-semibold text-gray-800">Quote Notes</h2>
-                </div>
-                <div className="p-6">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <p className="text-yellow-800">{quote.notes}</p>
-                  </div>
-                </div>
+            {/* Quote Status Information */}
+            {quote.status === 'REJECTED' && quote.rejectedReason && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <h3 className="font-semibold text-red-900 mb-2">Rejection Information</h3>
+                <p className="text-red-700">Reason: {quote.rejectedReason}</p>
+                {quote.rejected_date && (
+                  <p className="text-red-600 text-sm mt-1">
+                    Rejected on: {new Date(quote.rejected_date).toLocaleDateString()}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {quote.status === 'CONVERTED' && quote.job_reference && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <h3 className="font-semibold text-purple-900 mb-2">Conversion Information</h3>
+                <p className="text-purple-700">
+                  Converted to Job: <span className="font-semibold">{quote.job_reference}</span>
+                </p>
+                {quote.converted_date && (
+                  <p className="text-purple-600 text-sm mt-1">
+                    Converted on: {new Date(quote.converted_date).toLocaleDateString()}
+                  </p>
+                )}
               </div>
             )}
 
           </div>
         )}
 
-        {/* Pricing Details Tab */}
-        {activeTab === 'financial' && (
-          <div className="space-y-8">
-            
-            {/* Pricing Summary */}
-            <div className="bg-white rounded-lg border border-gray-200">
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-800">Pricing Summary</h2>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="text-center">
-                    <div className="text-sm text-gray-600 font-medium">Quantity</div>
-                    <div className="text-2xl font-bold text-gray-900">{quote.quantity} {quote.unit}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm text-gray-600 font-medium">Unit Price</div>
-                    <div className="text-2xl font-bold text-blue-600">£{quote.price?.toFixed(2) || '0.00'}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm text-gray-600 font-medium">Total Quote Value</div>
-                    <div className="text-2xl font-bold text-green-600">£{quote.totalPrice?.toFixed(2) || '0.00'}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Quote Details */}
-            <div className="bg-white rounded-lg border border-gray-200">
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-800">Quote Details</h2>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 font-medium">Service Type:</span>
-                    <span className="text-gray-900">{quote.jobType}</span>
-                  </div>
-                  {quote.wasteType && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Waste Type:</span>
-                      <span className="text-gray-900">{quote.wasteType}</span>
-                    </div>
-                  )}
-                  {quote.skipSize && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Skip Size:</span>
-                      <span className="text-gray-900">{quote.skipSize}</span>
-                    </div>
-                  )}
-                  {quote.aggregateType && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 font-medium">Aggregate Type:</span>
-                      <span className="text-gray-900">{quote.aggregateType}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-          </div>
-        )}
+     
 
         {/* Documents Tab */}
         {activeTab === 'documents' && (
@@ -4688,6 +5127,8 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                       <option value="Quote Document">Quote Document</option>
                       <option value="Supporting Document">Supporting Document</option>
                       <option value="Terms & Conditions">Terms & Conditions</option>
+                      <option value="Specifications">Specifications</option>
+                      <option value="Site Photos">Site Photos</option>
                       <option value="Other">Other</option>
                     </select>
                     <input type="file" id="quote-attachment-file" className="block" accept=".pdf,.doc,.docx,.jpg,.html,.png" />
@@ -4721,7 +5162,27 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                           {user?.role === 'ADMIN' && (
                             <button
                               type="button"
-                              onClick={() => handleDeleteAttachment(attachment.id)}
+                              onClick={async () => {
+                                if (confirm(`Are you sure you want to delete ${attachment.file_name}?`)) {
+                                  try {
+                                    const { error } = await window.supabase
+                                      .from('quote_attachments')
+                                      .delete()
+                                      .eq('id', attachment.id);
+                                    
+                                    if (error) throw error;
+                                    
+                                    setQuoteAttachments(prevAttachments => 
+                                      prevAttachments.filter(att => att.id !== attachment.id)
+                                    );
+                                    
+                                    alert('Attachment deleted successfully!');
+                                  } catch (error) {
+                                    console.error('Error deleting attachment:', error);
+                                    alert('Error deleting attachment: ' + error.message);
+                                  }
+                                }
+                              }}
                               className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
                             >
                               Delete
@@ -4734,6 +5195,20 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
                 </div>
               </div>
             </div>
+
+            {/* Quote Notes */}
+            {quote.notes && (
+              <div className="bg-white rounded-lg border border-gray-200">
+                <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                  <h2 className="text-lg font-semibold text-gray-800">Quote Notes</h2>
+                </div>
+                <div className="p-6">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <p className="text-yellow-800">{quote.notes}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
           </div>
         )}
@@ -7601,18 +8076,19 @@ collectionDate: job.collection_date,
   sageProductName: job.sage_product_name,
   sageId: job.sage_id,
   //sageLineItems: job.sage_line_items || [],
-  // Handle both old and new line_items format
   lineItems: (() => {
-    try {
-      if (job.sage_line_items) {  // CHANGE from job.line_items to job.sage_line_items
-        return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : (job.sage_line_items || []);
-}
-      return [];
-    } catch (e) {
-      console.warn('Error parsing line_items for job', job.id);
-      return [];
+  try {
+    if (job.sage_line_items) {
+      return typeof job.sage_line_items === 'string' 
+        ? JSON.parse(job.sage_line_items) 
+        : job.sage_line_items;
     }
-  })(),
+    return [];
+  } catch (e) {
+    console.warn('Error parsing line_items for job', job.id);
+    return [];
+  }
+})(),
   parentJobId: job.parent_job_id,
   linkedJobs: (() => {
     try {
@@ -7768,6 +8244,18 @@ useEffect(() => {
           validUntil: quote.valid_until,
           deliveryDate: quote.delivery_date,
           siteAddress: quote.site_address,
+          siteAddress: quote.site_address,
+sitePostcode: quote.site_postcode,
+hidePricesOnPDF: quote.hide_prices_on_pdf || false,
+siteContact: quote.site_contact,          // ADD THIS
+sitePhone: quote.site_phone,              // ADD THIS
+siteNotes: quote.site_notes,              // ADD THIS
+siteAddress1: quote.site_address1,        // ADD THIS
+siteAddress2: quote.site_address2,        // ADD THIS
+siteCity: quote.site_city,                // ADD THIS
+deliveryInstructions: quote.delivery_instructions,  // ADD THIS
+accessRestrictions: quote.access_restrictions,      // ADD THIS
+notes: quote.notes,
           sitePostcode: quote.site_postcode,
           notes: quote.notes,
           status: quote.status || 'PENDING',
@@ -8046,75 +8534,80 @@ const handleDeleteAttachment = async (attachment) => {
     alert('Error deleting attachment: ' + error.message);
   }
 };
- const handleExchange = async (job) => {
+const handleExchange = async (job) => {
     try {
-        console.log('=== STARTING EXCHANGE - METHOD 1 ===');
-        console.log('Original job:', {
-            id: job.id,
-            jobNumber: job.jobNumber,
-            customerName: job.customerName,
-            address: job.address,
-            skipSize: job.skipSize,
-            skipType: job.skipType
-        });
+        // Get the next job number from Supabase
+        const { data: jobNumber, error: seqError } = await window.supabase
+            .rpc('get_next_job_number');
         
-        // Create exchange job
-        const exchangeJob = {
-            ...job,
-            id: null,
-            jobNumber: null,
-            job_number: null,
-            parentJobId: job.id,
-            parent_job_id: job.id,
-            isCompleted: false,
-            is_completed: false,
-            isCancelled: false,
-            is_cancelled: false,
+        if (seqError) {
+            console.error('Error getting job number:', seqError);
+            alert('Error getting job number. Please try again.');
+            return;
+        }
+        
+        // Create the exchange job for database (similar to duplicate)
+        const exchangeJobForDatabase = {
+            job_number: jobNumber,
+            customer_name: job.customerName || job.customer_name,
+            supplier_name: job.supplierName || job.supplier_name,
+            job_type: job.jobType || job.job_type,
+            waste_type: job.wasteType || job.waste_type,
+            skip_size: job.skipSize || job.skip_size,
+            quantity: job.quantity || 1,
+            unit: job.unit || 'skip',
+            customer_unit_price: job.customerUnitPrice || job.customer_unit_price || 0,
+            supplier_unit_price: job.supplierUnitPrice || job.supplier_unit_price || 0,
+            customer_final_price: job.customerFinalPrice || job.customer_final_price || 0,
+            supplier_final_price: job.supplierFinalPrice || job.supplier_final_price || 0,
+            job_date: new Date().toISOString().split('T')[0],
             status: 'CONFIRMED',
-            invoiceNumber: null,
-            invoice_number: null,
+            is_completed: false,
+            is_cancelled: false,
+            notes: `Exchange for job ${job.jobNumber || job.job_number}. ${job.notes || ''}`.trim(),
+            parent_job_id: job.id,
+            
+            // Site information
+            site_address: job.siteAddress || job.site_address,
+            site_address1: job.siteAddress1 || job.site_address1,
+            site_address2: job.siteAddress2 || job.site_address2,
+            site_city: job.siteCity || job.site_city,
+            site_postcode: job.sitePostcode || job.site_postcode,
+            site_contact: job.siteContact || job.site_contact,
+            site_phone: job.sitePhone || job.site_phone,
+            site_notes: job.siteNotes || job.site_notes,
+            
+            // Product information
+            description: job.description,
+            sage_product_name: job.sageProductName || job.sage_product_name,
+            sage_line_items: job.sage_line_items || job.sageLineItems,
+            
+            // EXPLICITLY NULL - NO INVOICE DATA
             sage_si_number: null,
             sage_sales_invoice_id: null,
-            sage_id: null,
-            sageId: null,
-            sage_invoice_number: null,
-            sageInvoiceNumber: null,
+            invoice_number: null,
             invoice_status: null,
-            invoiceStatus: null,
+            invoiced: false,
+            invoiced_at: null,
+            is_invoiced: false,
+            
+            // EXPLICITLY NULL - NO COLLECTION DATA
             collection_date: null,
-            collectionDate: null,
-            completionDate: null,
-            completion_date: null,
-            jobDate: new Date().toISOString().split('T')[0],
-            job_date: new Date().toISOString().split('T')[0],
-            notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
-            linkedJobs: [],
-            linked_jobs: []
+            collected_at: null,
+            is_collected: false
         };
         
-        delete exchangeJob.created_at;
-        delete exchangeJob.updated_at;
-        
-        console.log('Inserting exchange job...');
-        
-        // Insert new exchange job
-        const { data: newJob, error: insertError } = await window.supabase
+        // Save directly to database (like duplicate does)
+        const { data: newJob, error } = await window.supabase
             .from('jobs')
-            .insert([exchangeJob])
-            .select('*')
+            .insert([exchangeJobForDatabase])
+            .select()
             .single();
         
-        if (insertError) throw insertError;
+        if (error) throw error;
         
-        console.log('New job from DB:', {
-            id: newJob.id,
-            jobNumber: newJob.job_number,
-            customerName: newJob.customer_name,
-            address: newJob.address
-        });
-        
-        // Update original job
-        const { error: updateError } = await window.supabase
+        // Mark original job as collected
+        await window.supabase
             .from('jobs')
             .update({ 
                 status: 'COLLECTED', 
@@ -8123,62 +8616,17 @@ const handleDeleteAttachment = async (attachment) => {
             })
             .eq('id', job.id);
         
-        if (updateError) throw updateError;
+        // Refresh the jobs list
+        await refreshJobs();
         
-        // Clear selection state
+        // Close any open views
         setSelectedJob(null);
         setShowFullPageJob(null);
         
-        // DIRECT STATE UPDATE - No refresh
-        setJobs(prevJobs => {
-            const filteredJobs = prevJobs.filter(j => j.id !== job.id);
-            
-            const updatedOriginalJob = {
-                ...job,
-                status: 'COLLECTED',
-                isCompleted: true,
-                is_completed: true,
-                collection_date: new Date().toISOString().split('T')[0]
-            };
-            
-            // Transform DB response to match your state format
-            const transformedNewJob = {
-                ...newJob,
-                jobNumber: newJob.job_number,
-                customerName: newJob.customer_name,
-                address: newJob.address,
-                postcode: newJob.postcode,
-                skipSize: newJob.skip_size,
-                skipType: newJob.skip_type,
-                skipHire: newJob.skip_hire,
-                jobDate: newJob.job_date,
-                isCompleted: newJob.is_completed || false,
-                isCancelled: newJob.is_cancelled || false,
-                parentJobId: newJob.parent_job_id,
-                invoiceNumber: newJob.invoice_number,
-                collectionDate: newJob.collection_date,
-                completionDate: newJob.completion_date,
-                notes: newJob.notes,
-                customerPhone: newJob.customer_phone,
-                customerEmail: newJob.customer_email,
-                permitNumber: newJob.permit_number,
-                status: newJob.status
-            };
-            
-            console.log('Adding to state:', {
-                original: updatedOriginalJob.jobNumber,
-                new: transformedNewJob.jobNumber,
-                newCustomer: transformedNewJob.customerName,
-                newAddress: transformedNewJob.address
-            });
-            
-            return [...filteredJobs, updatedOriginalJob, transformedNewJob];
-        });
-        
-        alert(`Exchange job created successfully! Job #${newJob.job_number}`);
+        alert(`Exchange job created successfully!`);
         
     } catch (error) {
-        console.error('Exchange error:', error);
+        console.error('Error creating exchange job:', error);
         alert('Error creating exchange job: ' + error.message);
     }
 };
@@ -8292,15 +8740,19 @@ sage_product_name: fullJob?.sage_product_name || null,
             is_cancelled: false,
             notes: `Duplicated from ${jobTemplate.jobNumber || jobTemplate.job_number} (${jobType})`,
             site_address: jobTemplate.siteAddress || jobTemplate.site_address || null,
-    site_address1: jobTemplate.siteAddress1 || jobTemplate.site_address1 || null,
-    site_address2: jobTemplate.siteAddress2 || jobTemplate.site_address2 || null,
-    site_city: jobTemplate.siteCity || jobTemplate.site_city || null,
-    site_postcode: jobTemplate.sitePostcode || jobTemplate.site_postcode || null,
-    site_contact: jobTemplate.siteContact || jobTemplate.site_contact || null,
-    site_phone: jobTemplate.sitePhone || jobTemplate.site_phone || null,
+    site_address1: fullJob?.site_address1 || null,
+site_address2: fullJob?.site_address2 || null,
+site_city: fullJob?.site_city || null,
+site_postcode: fullJob?.site_postcode || null,
+site_contact: fullJob?.site_contact || null,
+site_phone: fullJob?.site_phone || null,
     site_notes: jobTemplate.siteNotes || jobTemplate.site_notes || null,
     sage_line_items: fullJob?.sage_line_items || null,
     sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
+    sage_si_number: null,
+
+// Also clear collection-related fields for a fresh start
+collection_date: null,
         };
 
         
@@ -8588,7 +9040,7 @@ const handlePhoneSearch = async (searchText) => {
     
     // Add line items to the job object - check both naming conventions
 // Parse lineItems if it's a string from the database
-let lineItems = job.sage_line_items || job.sageLineItems || [];
+let lineItems = job.lineItems || job.sage_line_items || job.sageLineItems || [];
 if (typeof lineItems === 'string') {
   try {
     lineItems = JSON.parse(lineItems);
@@ -8626,7 +9078,8 @@ if (!Array.isArray(job.lineItems)) {
         status: job.status || 'CONFIRMED',
         isCompleted: job.is_completed || job.isCompleted || false,
         isCancelled: job.is_cancelled || job.isCancelled || false,
-        notes: job.notes || ''
+        notes: job.notes || '',
+lineItems: lineItems,        
     };
     
     setEditingJob(editableJob);
@@ -8735,7 +9188,7 @@ const { error } = await window.supabase
   }
 };
 
-         const handleUpdateQuote = async (updatedQuote) => {
+  const handleUpdateQuote = async (updatedQuote) => {
   try {
     const quoteForDatabase = {
       customer_name: updatedQuote.customerName,
@@ -8752,11 +9205,25 @@ const { error } = await window.supabase
       total_price: updatedQuote.totalPrice || 0,
       valid_until: updatedQuote.validUntil,
       delivery_date: updatedQuote.deliveryDate || null,
-      site_address: updatedQuote.siteAddress || updatedQuote.siteAddress1 || '',
+       line_items: updatedQuote.lineItems ? JSON.stringify(updatedQuote.lineItems) : null,
+      
+      // ADD ALL THESE SITE FIELDS (matching your job update):
+      site_address: updatedQuote.siteAddress || '',
+      site_address1: updatedQuote.siteAddress1 || '',
+      site_address2: updatedQuote.siteAddress2 || '',
+      site_city: updatedQuote.siteCity || '',
       site_postcode: updatedQuote.sitePostcode || '',
+      site_contact: updatedQuote.siteContact || '',
+      site_phone: updatedQuote.sitePhone || '',
+      site_notes: updatedQuote.siteNotes || '',
+      delivery_instructions: updatedQuote.deliveryInstructions || '',
+      access_restrictions: updatedQuote.accessRestrictions || '',  // Add this one too
+      hide_prices_on_pdf: updatedQuote.hidePricesOnPDF || false,
       notes: updatedQuote.notes || '',
       status: updatedQuote.status || 'PENDING'
     };
+    
+    // rest of your update code...
 
     // Only add line_items if your quotes table has this column
     if (updatedQuote.lineItems) {
@@ -8769,11 +9236,19 @@ const { error } = await window.supabase
       .eq('id', updatedQuote.id);
 
     if (error) throw error;
-
-    setQuotes(quotes.map(quote => quote.id === updatedQuote.id ? updatedQuote : quote));
+    setQuotes(prevQuotes => 
+  prevQuotes.map(q => 
+    q.id === updatedQuote.id 
+      ? { ...updatedQuote, lineItems: updatedQuote.lineItems }
+      : q
+  )
+);
     setEditingQuote(null);
 setShowQuoteForm(false);
-setShowFullPageQuote(updatedQuote);
+setShowFullPageQuote({
+  ...updatedQuote,
+  lineItems: updatedQuote.lineItems
+});
 alert('Quote updated successfully!');
   } catch (error) {
     console.error('Error updating quote:', error);
@@ -11299,10 +11774,10 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
        // Replace the existing QuoteForm component (around line 7141) with this FULLY TESTED version:
 
+// Quote Form Component - UPDATED TO MATCH JOB FORM LAYOUT
 const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user }) => {
-  const { wasteTypes } = useWasteTypes();
-  const [uploadFile, setUploadFile] = useState(null);
   const [quoteAttachments, setQuoteAttachments] = useState([]);
+  const [uploadFile, setUploadFile] = useState(null);
   
   // Load attachments when quote changes
   useEffect(() => {
@@ -11317,7 +11792,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
         .from('quote_attachments')
         .select('*')
         .eq('quote_id', quoteId)
-        .order('uploaded_at', { ascending: false });
+        .order('created_at', { ascending: false });
       
       if (error) throw error;
       setQuoteAttachments(data || []);
@@ -11326,8 +11801,6 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     }
   };
 
-  const [attachmentType, setAttachmentType] = useState('Quote Document');
-  
   const handleDeleteAttachment = async (attachmentId) => {
     if (!window.confirm('Are you sure you want to delete this attachment?')) {
       return;
@@ -11344,6 +11817,9 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       alert('Attachment deleted successfully!');
       await loadQuoteAttachments(quote.id);
       
+      if (window.refreshFullPageQuoteAttachments) {
+        window.refreshFullPageQuoteAttachments();
+      }
     } catch (error) {
       console.error('Error deleting attachment:', error);
       alert('Error deleting attachment: ' + error.message);
@@ -11351,12 +11827,17 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
   };
 
   const handleUploadInForm = async () => {
-    const attachmentType = document.getElementById('attachment-type')?.value || 'Quote Document';
-    const fileInput = document.getElementById('attachment-file');
+    const attachmentType = document.getElementById('quote-attachment-type')?.value || 'Quote Document';
+    const fileInput = document.getElementById('quote-attachment-file');
     const file = fileInput?.files[0];
 
-    if (!attachmentType || !file || !quote) {
-      alert('Please select attachment type, file, and ensure a quote is saved first');
+    if (!attachmentType || !file) {
+      alert('Please select both an attachment type and a file');
+      return;
+    }
+
+    if (!quote || !quote.id) {
+      alert('Please save the quote first before uploading attachments.\n\n1. Fill in the quote details\n2. Click "Create Quote" to save\n3. Then you can add documents to the saved quote');
       return;
     }
 
@@ -11386,10 +11867,13 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       if (error) throw error;
 
       alert('Attachment uploaded successfully!');
-      await loadQuoteAttachments(quote.id);
       
-      // Clear the file input
-      document.getElementById('attachment-file').value = '';
+      if (window.refreshFullPageQuoteAttachments) {
+        window.refreshFullPageQuoteAttachments();
+      }
+      
+      await loadQuoteAttachments(quote.id);
+      document.getElementById('quote-attachment-file').value = '';
       
     } catch (error) {
       console.error('Error uploading attachment:', error);
@@ -11397,45 +11881,60 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     }
   };
 
-  const [formData, setFormData] = useState(quote || {
-    customerName: '',
-    id: quote?.id,
-    customerPO: '',
-    supplierName: '',
-    supplierRef: '',
-    haulierName: '',
-    jobType: 'Skip Hire',
-    wasteType: '',
-    skipSize: '',
-    aggregateType: '',
-    quantity: 1,
-    unit: 'skip',
-    weight: '',
-    customerUnitPrice: 0,
-    customerFinalPrice: 0,
-    vatRate: 20,
-    jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
-    timeSlot: '',
-    collectionDate: '',
-    status: 'PENDING',
-    siteAddress1: '',
-    siteAddress2: '',
-    siteCity: '',
-    sitePostcode: '',
-    siteContact: '',
-    sitePhone: '',
-    siteNotes: '',
-    deliveryInstructions: '',
-    accessRestrictions: '',
-    hazardousWaste: false,
-    consignmentNote: '',
-    notes: '',
-    isDeclined: false,
-    sageProductId: '',
-    sageProductName: '',
-    lineItems: quote?.lineItems || [],
-    validUntil: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-    createdDate: quote?.createdDate || new Date().toISOString().split('T')[0]
+  const [formData, setFormData] = useState(() => {
+    const initialData = {
+      customerName: '',
+      id: quote?.id,
+      customerPO: '',
+      supplierName: '',
+      supplierRef: '',
+      haulierName: '',
+      jobType: 'Skip Hire',
+      lineItems: [],
+      wasteType: '',
+      skipSize: '',
+      aggregateType: '',
+      quantity: 1,
+      unit: 'skip',
+      weight: '',
+      customerUnitPrice: 0,
+      customerFinalPrice: 0,
+      supplierUnitPrice: 0,
+      supplierFinalPrice: 0,
+      vatRate: 20,
+      jobDate: quote?.jobDate || new Date().toISOString().split('T')[0],
+      deliveryDate: quote?.deliveryDate || '',
+      timeSlot: '',
+      status: 'PENDING',
+      siteAddress1: '',
+      siteAddress2: '',
+      siteCity: '',
+      sitePostcode: '',
+      siteContact: '',
+      sitePhone: '',
+      siteNotes: '',
+      deliveryInstructions: '',
+      accessRestrictions: '',
+      notes: '',
+      isDeclined: false,
+      rejectedReason: '',
+      sageProductId: '',
+      sageProductName: '',
+      validUntil: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+      createdDate: quote?.createdDate || new Date().toISOString().split('T')[0]
+    };
+    
+    // If editing, merge quote data
+    if (quote) {
+      return {
+        ...initialData,
+        ...quote,
+        lineItems: quote.lineItems || [],
+        jobDate: quote.deliveryDate || quote.jobDate || new Date().toISOString().split('T')[0]
+      };
+    }
+    
+    return initialData;
   });
 
   const [activeTab, setActiveTab] = useState('details');
@@ -11449,15 +11948,21 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
 
   const calculatePrices = () => {
     const customerTotal = formData.customerUnitPrice * formData.quantity;
+    const supplierTotal = formData.supplierUnitPrice * formData.quantity;
     setFormData(prev => ({
       ...prev,
-      customerFinalPrice: customerTotal
+      customerFinalPrice: customerTotal,
+      supplierFinalPrice: supplierTotal
     }));
   };
 
   useEffect(() => {
-    calculatePrices();
-  }, [formData.customerUnitPrice, formData.quantity]);
+    const customerTotal = formData.customerUnitPrice * formData.quantity;
+    const supplierTotal = formData.supplierUnitPrice * formData.quantity;
+    if (customerTotal !== formData.customerFinalPrice || supplierTotal !== formData.supplierFinalPrice) {
+      calculatePrices();
+    }
+  }, [formData.customerUnitPrice, formData.supplierUnitPrice, formData.quantity]);
 
   const generateQuoteNumber = () => {
     const year = new Date().getFullYear();
@@ -11475,23 +11980,21 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       quoteNumber: newQuoteNumber,
       createdDate: quote?.createdDate || new Date().toISOString().split('T')[0],
       totalPrice: formData.customerFinalPrice,
+      price: formData.customerUnitPrice,
       customerEmail: formData.customerEmail || customers.find(c => c.companyName === formData.customerName)?.email || '',
       customerContact: formData.customerContact || customers.find(c => c.companyName === formData.customerName)?.primaryContact || '',
-      customerPhone: formData.customerPhone || customers.find(c => c.companyName === formData.customerName)?.phone || ''
+      customerPhone: formData.customerPhone || customers.find(c => c.companyName === formData.customerName)?.phone || '',
+      deliveryDate: formData.jobDate,
+      siteAddress: formData.siteAddress1,
+      lineItems: formData.lineItems || []
     };
     onSave(newQuote);
   };
 
-  const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed', 
+  const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed',
                      '12 yard', '12 yard enclosed', '14 yard', '14 yard enclosed', '16 yard', '16 yard enclosed'];
   const roroSizes = ['20 yard', '40 yard'];
   const timeSlots = ['AM (8:00-12:00)', 'PM (12:00-17:00)'];
-
-  // Filter suppliers who provide haulage services (same as Job Form)
-  const hauliers = suppliers.filter(s => 
-    s.primaryServices?.includes('Haulage') || 
-    s.primaryServices?.includes('Transport')
-  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -11507,32 +12010,40 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
         <div className="flex border-b border-gray-200">
           <button
             onClick={() => setActiveTab('details')}
-            className={`px-6 py-3 font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
           >
             Quote Details
           </button>
           <button
             onClick={() => setActiveTab('site')}
-            className={`px-6 py-3 font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
           >
             Site Information
           </button>
           <button
             onClick={() => setActiveTab('financial')}
-            className={`px-6 py-3 font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
           >
             Pricing & Status
           </button>
           <button
             onClick={() => setActiveTab('documents')}
-            className={`px-6 py-3 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
           >
             Documents
           </button>
         </div>
 
         <div className="p-6">
-          {/* Quote Details Tab - EXACT COPY OF JOB DETAILS TAB */}
+          {/* Quote Details Tab - MATCHING JOB DETAILS */}
           {activeTab === 'details' && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -11549,6 +12060,13 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                       setFormData({
                         ...formData,
                         customerName: value,
+                        customerReference: customer?.reference || '',
+                        customerMobile: customer?.mobile || '',
+                        customerMainContact: customer?.main_contact_name || '',
+                        customerCreditLimit: customer?.credit_limit || 0,
+                        customerCreditDays: customer?.credit_days || 30,
+                        customerDeliveryAddress: customer?.delivery_address || null,
+                        customerAccountStatus: customer?.account_status || 'Active',
                         siteContact: customer?.primaryContact || formData.siteContact,
                         customerPhone: customer?.phone || formData.customerPhone,
                         customerEmail: customer?.email || formData.customerEmail
@@ -11559,6 +12077,48 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                     valueField="name"
                   />
                 </div>
+
+                {/* Customer Extended Details - Auto-populated */}
+                {formData.customerName && (() => {
+                  const customer = customers.find(c => (c.companyName || c.name) === formData.customerName);
+                  return customer ? (
+                    <div className="col-span-2 bg-gray-50 rounded-lg p-4 mb-4">
+                      <h3 className="text-sm font-medium text-gray-700 mb-3">Customer Information</h3>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">Reference:</span>
+                          <span className="ml-2 font-medium">{customer.reference || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Contact:</span>
+                          <span className="ml-2 font-medium">{customer.main_contact_name || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Mobile:</span>
+                          <span className="ml-2 font-medium">{customer.mobile || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Credit:</span>
+                          <span className="ml-2 font-medium">
+                            £{customer.credit_limit?.toLocaleString() || '0'} / {customer.credit_days || 30} days
+                          </span>
+                        </div>
+                        {customer.delivery_address && (
+                          <div className="col-span-2 pt-2 border-t">
+                            <span className="text-gray-600">Delivery Address:</span>
+                            <span className="ml-2 font-medium">
+                              {customer.delivery_address.address_line_1}
+                              {customer.delivery_address.address_line_2 && `, ${customer.delivery_address.address_line_2}`}
+                              {customer.delivery_address.city && `, ${customer.delivery_address.city}`}
+                              {customer.delivery_address.postal_code && ` ${customer.delivery_address.postal_code}`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Customer PO Number</label>
                   <input
@@ -11593,7 +12153,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                     value={formData.supplierRef}
                     onChange={(e) => setFormData({...formData, supplierRef: e.target.value})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="Supplier job reference"
+                    placeholder="Supplier quote reference"
                   />
                 </div>
               </div>
@@ -11633,21 +12193,16 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                     <option value="Roll-on Roll-off">Roll-on Roll-off</option>
                   </select>
                 </div>
-                <div>
-                  
-              
-                </div>
               </div>
 
-              {/* SAGE PRODUCT SELECTION - EXACT COPY FROM JOB FORM */}
+              {/* SAGE PRODUCT SELECTION FOR EACH JOB TYPE */}
               {formData.jobType === 'Skip Hire' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <SageProductSelector 
+                    <SageProductSelector
                       jobType="Skip Hire"
                       selectedProduct={formData.sageProductName}
                       onSelect={(product) => {
-                        console.log('Selected product:', product);  // ADD THIS
                         setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
                         const newLineItem = {
                           id: Date.now(),
@@ -11657,13 +12212,15 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          supplier_price: 0.00,
+                          customer_price: 0.00,
                           unit_price: 0.00,
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
                           sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
+                          nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                          tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
                         setFormData({...formData, lineItems: updatedLineItems});
@@ -11674,7 +12231,7 @@ tax_code: product.tax_rate_id || 'T1'
                 </div>
               )}
 
-              {/* LINE ITEMS TABLE - EXACT COPY FROM JOB FORM */}
+              {/* LINE ITEMS TABLE - MATCHING JOB FORM EXACTLY */}
               {formData.lineItems && formData.lineItems.length > 0 && (
                 <div className="mt-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
                   <h3 className="text-xl font-semibold mb-6">Selected Products & Services</h3>
@@ -11683,79 +12240,165 @@ tax_code: product.tax_rate_id || 'T1'
                       <thead className="bg-gray-100">
                         <tr>
                           <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
-                          <th className="px-4 py-3 text-left font-medium w-2/5">Description (Editable)</th>
-                          <th className="px-2 py-3 text-left font-medium w-20">Code</th>
-                          <th className="px-4 py-3 text-left font-medium w-20">Type</th>
-                          <th className="px-4 py-3 text-left font-medium w-20">Quantity</th>
+                          <th className="px-4 py-3 text-left font-medium w-1/3">Description (Editable)</th>
+                          <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
+                          <th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
+                          <th className="px-2 py-3 text-left font-medium w-20">RRP £</th>
+                          <th className="px-2 py-3 text-left font-medium w-20">Profit</th>
                           <th className="px-4 py-3 text-left font-medium w-20">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {formData.lineItems.map((item, index) => (
-                          <tr key={item.id} className="border-t hover:bg-gray-50">
-                            <td className="px-4 py-3">{item.product_name}</td>
-                            <td className="px-4 py-3">
-                              <input
-                                type="text"
-                                value={item.description}
-                                onChange={(e) => {
-                                  const updatedItems = [...formData.lineItems];
-                                  updatedItems[index].description = e.target.value;
-                                  setFormData({...formData, lineItems: updatedItems});
-                                }}
-                                className="w-full px-3 py-2 border border-gray-300 rounded"
-                                placeholder="Edit description..."
-                              />
-                            </td>
-                            <td className="px-2 py-3 text-xs text-gray-500 max-w-20 truncate" title={item.item_code || 'N/A'}>
-                              {item.item_code || 'N/A'}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`px-2 py-1 rounded text-xs ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                                {item.type}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <input
-                                type="number"
-                                value={item.quantity}
-                                onChange={(e) => {
-                                  const updatedItems = [...formData.lineItems];
-                                  updatedItems[index].quantity = parseInt(e.target.value) || 1;
-                                  setFormData({...formData, lineItems: updatedItems});
-                                  setFormData(prev => ({...prev, quantity: parseInt(e.target.value) || 1}));
-                                }}
-                                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-                                min="1"
-                              />
-                            </td>
-                            <td className="px-4 py-3">
-                              <button 
-                                onClick={() => {
-                                  const updatedItems = formData.lineItems.filter((_, i) => i !== index);
-                                  setFormData({...formData, lineItems: updatedItems});
-                                }}
-                                className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-                              >
-                                Remove
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {formData.lineItems.map((item, index) => {
+                          const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
+                          return (
+                            <tr key={item.id} className="border-t hover:bg-gray-50">
+                              <td className="px-4 py-3">
+                                <div>{item.product_name}</div>
+                                <div className="text-xs text-gray-500">{item.item_code}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <textarea
+  value={item.description}
+  onChange={(e) => {
+    const updatedItems = [...formData.lineItems];
+    updatedItems[index].description = e.target.value;
+    setFormData({...formData, lineItems: updatedItems});
+  }}
+  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+  rows="3"
+  style={{ minHeight: '80px' }}
+/>
+                              </td>
+                              <td className="px-2 py-3">
+                                <input
+                                  type="number"
+                                  className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                                  step="0.01"
+                                  value={item.quantity || ''}
+                                  onChange={(e) => {
+                                    const updatedItems = [...formData.lineItems];
+                                    updatedItems[index] = {
+                                      ...updatedItems[index],
+                                      quantity: parseFloat(e.target.value) || ''
+                                    };
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <input
+                                  type="text"
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                                  value={item.supplier_price || ''}
+                                  onChange={(e) => {
+                                    const updatedItems = [...formData.lineItems];
+                                    updatedItems[index] = {
+                                      ...updatedItems[index],
+                                      supplier_price: e.target.value
+                                    };
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <input
+                                  type="text"
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                                  value={item.customer_price || ''}
+                                  onChange={(e) => {
+                                    const updatedItems = [...formData.lineItems];
+                                    updatedItems[index] = {
+                                      ...updatedItems[index],
+                                      customer_price: e.target.value
+                                    };
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <div className={`text-sm font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  £{lineProfit.toFixed(2)}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <button
+                                  onClick={() => {
+                                    const updatedItems = formData.lineItems.filter((_, i) => i !== index);
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                  className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
-                  <div className="mt-4 text-sm text-gray-600">
-                    Total items: {(formData.lineItems || []).length} | Total quantity: {(formData.lineItems || []).reduce((sum, item) => sum + item.quantity, 0)}
+                  <div className="mt-4 border-t pt-4">
+                    <div className="grid grid-cols-5 gap-4 text-sm">
+                      <div className="text-center">
+                        <div className="text-gray-600">Total Items</div>
+                        <div className="font-semibold">{formData.lineItems.length}</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-600">Total Quantity</div>
+                        <div className="font-semibold">
+                          {formData.lineItems.reduce((sum, item) => sum + (item.quantity || 1), 0)}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-600">Total Cost</div>
+                        <div className="font-semibold text-red-600">
+                          £{formData.lineItems.reduce((sum, item) =>
+                            sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
+                          ).toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-600">Total RRP</div>
+                        <div className="font-semibold text-blue-600">
+                          £{formData.lineItems.reduce((sum, item) =>
+                            sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
+                          ).toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-600">Total Profit</div>
+                        <div className="font-semibold text-green-600">
+                          £{(formData.lineItems.reduce((sum, item) =>
+                            sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
+                          ) - formData.lineItems.reduce((sum, item) =>
+                            sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
+                          )).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
+              {/* Hide totals checkbox - DEFAULT CHECKED */}
+<div className="mt-4 p-3 bg-gray-50 rounded-lg flex items-center">
+  <input
+    type="checkbox"
+    id="hidePrices"
+    checked={formData.hidePricesOnPDF !== false}  
+    onChange={(e) => setFormData({...formData, hidePricesOnPDF: e.target.checked})}
+    className="mr-3 h-4 w-4"
+  />
+  <label htmlFor="hidePrices" className="text-sm text-gray-700 font-medium">
+    Hide totals section on PDF (remove subtotal, VAT and grand total)
+  </label>
+</div>
 
-              {/* ALL OTHER JOB TYPES - EXACT COPY */}
+              {/* Add other job type product selectors */}
               {formData.jobType === 'Roll-on Roll-off' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <SageProductSelector 
+                    <SageProductSelector
                       jobType="Roll-on Roll-off"
                       selectedProduct={formData.sageProductName}
                       onSelect={(product) => {
@@ -11768,13 +12411,15 @@ tax_code: product.tax_rate_id || 'T1'
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          supplier_price: 0.00,
+                          customer_price: 0.00,
                           unit_price: 0.00,
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
                           sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
+                          nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                          tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
                         setFormData({...formData, lineItems: updatedLineItems});
@@ -11788,7 +12433,7 @@ tax_code: product.tax_rate_id || 'T1'
               {formData.jobType === 'Aggregates' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <SageProductSelector 
+                    <SageProductSelector
                       jobType="Aggregates"
                       selectedProduct={formData.sageProductName}
                       onSelect={(product) => {
@@ -11801,13 +12446,15 @@ tax_code: product.tax_rate_id || 'T1'
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          supplier_price: 0.00,
+                          customer_price: 0.00,
                           unit_price: 0.00,
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
                           sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
+                          nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                          tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
                         setFormData({...formData, lineItems: updatedLineItems});
@@ -11821,7 +12468,7 @@ tax_code: product.tax_rate_id || 'T1'
               {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <SageProductSelector 
+                    <SageProductSelector
                       jobType={formData.jobType}
                       selectedProduct={formData.sageProductName}
                       onSelect={(product) => {
@@ -11834,13 +12481,15 @@ tax_code: product.tax_rate_id || 'T1'
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          supplier_price: 0.00,
+                          customer_price: 0.00,
                           unit_price: 0.00,
                           discount: 0.00,
                           vat_rate: 20,
                           total: 0.00,
                           sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
+                          nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                          tax_code: product.tax_rate_id || 'T1'
                         };
                         const updatedLineItems = [...(formData.lineItems || []), newLineItem];
                         setFormData({...formData, lineItems: updatedLineItems});
@@ -11850,7 +12499,7 @@ tax_code: product.tax_rate_id || 'T1'
                   </div>
                 </div>
               )}
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
@@ -11915,17 +12564,29 @@ tax_code: product.tax_rate_id || 'T1'
                       ))}
                     </select>
                   </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Collection Date</label>
-                    <input
-                      type="date"
-                      value={formData.collectionDate}
-                      onChange={(e) => setFormData({...formData, collectionDate: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                )}
+                ) : null}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until *</label>
+                  <input
+                    type="date"
+                    value={formData.validUntil}
+                    onChange={(e) => setFormData({...formData, validUntil: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Created Date</label>
+                  <input
+                    type="date"
+                    value={formData.createdDate}
+                    onChange={(e) => setFormData({...formData, createdDate: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    disabled
+                  />
+                </div>
               </div>
 
               <div>
@@ -11955,7 +12616,7 @@ tax_code: product.tax_rate_id || 'T1'
             </div>
           )}
 
-          {/* Site Information Tab - EXACT COPY FROM JOB FORM */}
+          {/* Site Information Tab - MATCHING JOB FORM */}
           {activeTab === 'site' && (
             <div className="space-y-4">
               <div>
@@ -12013,7 +12674,7 @@ tax_code: product.tax_rate_id || 'T1'
                   onChange={(e) => setFormData({...formData, siteNotes: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   rows={3}
-                  placeholder="Any additional site information, access instructions, etc."
+                  placeholder="Any additional site information..."
                 />
               </div>
 
@@ -12052,33 +12713,13 @@ tax_code: product.tax_rate_id || 'T1'
             </div>
           )}
 
-         
-{activeTab === 'financial' && (
-  <div className="space-y-4">
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Customer Unit Price (£) *</label>
-        <input
-          type="number"
-          step="0.01"
-          value={formData.customerUnitPrice}
-          onChange={(e) => setFormData({...formData, customerUnitPrice: parseFloat(e.target.value) || 0})}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Unit Cost (£)</label>
-        <input
-          type="number"
-          step="0.01"
-          value={formData.supplierUnitPrice}
-          onChange={(e) => setFormData({...formData, supplierUnitPrice: parseFloat(e.target.value) || 0})}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-        />
-      </div>
-    </div>
-    
-    
+          {/* Pricing & Status Tab - ADAPTED FOR QUOTES */}
+          {activeTab === 'financial' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
@@ -12108,72 +12749,70 @@ tax_code: product.tax_rate_id || 'T1'
                     <option value="EXPIRED">Expired</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Created Date</label>
-                  <input
-                    type="date"
-                    value={formData.createdDate}
-                    onChange={(e) => setFormData({...formData, createdDate: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    disabled
-                  />
-                </div>
               </div>
 
-            <div className="space-y-3">
-  <label className="flex items-center">
-    <input
-      type="checkbox"
-      checked={formData.isDeclined}
-      onChange={(e) => setFormData({...formData, isDeclined: e.target.checked, status: e.target.checked ? 'REJECTED' : 'PENDING'})}
-      className="mr-2"
-    />
-    <span className="text-sm font-medium text-red-600">Quote Declined</span>
-  </label>
-  
-  {formData.isDeclined && (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">Rejection Reason</label>
-      <textarea
-        value={formData.rejectedReason || ''}
-        onChange={(e) => setFormData({...formData, rejectedReason: e.target.value})}
-        className="w-full px-3 py-2 border border-red-300 rounded-lg"
-        rows={2}
-        placeholder="Please provide a reason for rejection..."
-      />
-    </div>
-  )}
-</div>
+              <div className="space-y-3">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.isDeclined}
+                    onChange={(e) => setFormData({...formData, isDeclined: e.target.checked, status: e.target.checked ? 'REJECTED' : 'PENDING'})}
+                    className="mr-2"
+                  />
+                  <span className="text-sm font-medium text-red-600">Quote Declined</span>
+                </label>
+                {formData.isDeclined && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Rejection Reason</label>
+                    <textarea
+                      value={formData.rejectedReason || ''}
+                      onChange={(e) => setFormData({...formData, rejectedReason: e.target.value})}
+                      className="w-full px-3 py-2 border border-red-300 rounded-lg"
+                      rows={2}
+                      placeholder="Please provide a reason for rejection..."
+                    />
+                  </div>
+                )}
+              </div>
 
               {formData.customerUnitPrice > 0 && (
                 <div className="bg-green-50 p-4 rounded-lg">
                   <h4 className="font-medium text-green-900 mb-3">Quote Calculation</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                     <div>
-                      <span className="text-green-700">Unit Price:</span>
-                      <p className="font-semibold">£{formData.customerUnitPrice.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <span className="text-green-700">Quantity:</span>
-                      <p className="font-semibold">{formData.quantity} {formData.unit}</p>
-                    </div>
-                    <div>
-                      <span className="text-green-700">Net Total:</span>
+                      <span className="text-green-700">Customer Total:</span>
                       <p className="font-semibold">£{formData.customerFinalPrice.toFixed(2)}</p>
+                      <p className="text-xs text-gray-600">+ VAT: £{(formData.customerFinalPrice * formData.vatRate / 100).toFixed(2)}</p>
                     </div>
-                    <div>
-                      <span className="text-green-700">Total + VAT:</span>
-                      <p className="font-semibold text-green-600">
-                        £{(formData.customerFinalPrice * (1 + formData.vatRate / 100)).toFixed(2)}
-                      </p>
-                    </div>
+                    {formData.supplierUnitPrice > 0 && (
+                      <>
+                        <div>
+                          <span className="text-green-700">Supplier Cost:</span>
+                          <p className="font-semibold">£{formData.supplierFinalPrice.toFixed(2)}</p>
+                          <p className="text-xs text-gray-600">+ VAT: £{(formData.supplierFinalPrice * formData.vatRate / 100).toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">Gross Profit:</span>
+                          <p className="font-semibold text-green-600">
+                            £{(formData.customerFinalPrice - formData.supplierFinalPrice).toFixed(2)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">Margin:</span>
+                          <p className="font-semibold text-green-600">
+                            {formData.customerFinalPrice > 0 ?
+                              (((formData.customerFinalPrice - formData.supplierFinalPrice) / formData.customerFinalPrice) * 100).toFixed(1) : 0}%
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Documents Tab - EXACT COPY FROM JOB FORM BUT FOR QUOTES */}
+          {/* Documents Tab - MATCHING JOB FORM */}
           {activeTab === 'documents' && (
             <div className="space-y-4">
               <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -12182,7 +12821,7 @@ tax_code: product.tax_rate_id || 'T1'
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Attachment Type</label>
-                    <select id="attachment-type" className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    <select id="quote-attachment-type" className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                       <option value="Quote Document">Quote Document</option>
                       <option value="Terms & Conditions">Terms & Conditions</option>
                       <option value="Specifications">Specifications</option>
@@ -12194,7 +12833,7 @@ tax_code: product.tax_rate_id || 'T1'
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Choose File</label>
                     <input
-                      id="attachment-file"
+                      id="quote-attachment-file"
                       type="file"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                       accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.html"
@@ -12208,40 +12847,40 @@ tax_code: product.tax_rate_id || 'T1'
                   >
                     Upload Attachment
                   </button>
-                </div>
 
-                {/* Display existing attachments */}
-                {quoteAttachments.length > 0 && (
-                  <div className="mt-6">
-                    <h4 className="font-medium text-gray-800 mb-3">Existing Attachments</h4>
-                    <div className="space-y-2">
-                      {quoteAttachments.map(attachment => (
-                        <div key={attachment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
-                          <div className="flex gap-2">
-                            <a 
-                              href={attachment.file_url} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-                            >
-                              View
-                            </a>
-                            {user?.role === 'ADMIN' && (
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteAttachment(attachment.id)}
-                                className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                  {/* Display existing attachments */}
+                  {quoteAttachments.length > 0 && (
+                    <div className="mt-6">
+                      <h4 className="font-medium text-gray-800 mb-3">Existing Attachments</h4>
+                      <div className="space-y-2">
+                        {quoteAttachments.map(attachment => (
+                          <div key={attachment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
+                            <div className="flex gap-2">
+                              <a
+                                href={attachment.file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
                               >
-                                Delete
-                              </button>
-                            )}
+                                View
+                              </a>
+                              {user?.role === 'ADMIN' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAttachment(attachment.id)}
+                                  className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           )}
