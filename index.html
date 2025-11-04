@@ -8536,78 +8536,73 @@ const handleDeleteAttachment = async (attachment) => {
 };
 const handleExchange = async (job) => {
     try {
-        // Get the next job number from Supabase
-        const { data: jobNumber, error: seqError } = await window.supabase
-            .rpc('get_next_job_number');
+        console.log('=== STARTING EXCHANGE - METHOD 2 ===');
+        console.log('Original job:', {
+            id: job.id,
+            jobNumber: job.jobNumber,
+            customerName: job.customerName,
+            address: job.address,
+            skipSize: job.skipSize,
+            skipType: job.skipType
+        });
         
-        if (seqError) {
-            console.error('Error getting job number:', seqError);
-            alert('Error getting job number. Please try again.');
-            return;
-        }
-        
-        // Create the exchange job for database (similar to duplicate)
-        const exchangeJobForDatabase = {
-            job_number: jobNumber,
-            customer_name: job.customerName || job.customer_name,
-            supplier_name: job.supplierName || job.supplier_name,
-            job_type: job.jobType || job.job_type,
-            waste_type: job.wasteType || job.waste_type,
-            skip_size: job.skipSize || job.skip_size,
-            quantity: job.quantity || 1,
-            unit: job.unit || 'skip',
-            customer_unit_price: job.customerUnitPrice || job.customer_unit_price || 0,
-            supplier_unit_price: job.supplierUnitPrice || job.supplier_unit_price || 0,
-            customer_final_price: job.customerFinalPrice || job.customer_final_price || 0,
-            supplier_final_price: job.supplierFinalPrice || job.supplier_final_price || 0,
-            job_date: new Date().toISOString().split('T')[0],
-            status: 'CONFIRMED',
-            is_completed: false,
-            is_cancelled: false,
-            notes: `Exchange for job ${job.jobNumber || job.job_number}. ${job.notes || ''}`.trim(),
+        // Create exchange job
+        const exchangeJob = {
+            ...job,
+            id: null,
+            jobNumber: null,
+            job_number: null,
+            parentJobId: job.id,
             parent_job_id: job.id,
-            
-            // Site information
-            site_address: job.siteAddress || job.site_address,
-            site_address1: job.siteAddress1 || job.site_address1,
-            site_address2: job.siteAddress2 || job.site_address2,
-            site_city: job.siteCity || job.site_city,
-            site_postcode: job.sitePostcode || job.site_postcode,
-            site_contact: job.siteContact || job.site_contact,
-            site_phone: job.sitePhone || job.site_phone,
-            site_notes: job.siteNotes || job.site_notes,
-            
-            // Product information
-            description: job.description,
-            sage_product_name: job.sageProductName || job.sage_product_name,
-            sage_line_items: job.sage_line_items || job.sageLineItems,
-            
-            // EXPLICITLY NULL - NO INVOICE DATA
+            isCompleted: false,
+            is_completed: false,
+            isCancelled: false,
+            is_cancelled: false,
+            status: 'CONFIRMED',
+            invoiceNumber: null,
+            invoice_number: null,
             sage_si_number: null,
             sage_sales_invoice_id: null,
-            invoice_number: null,
+            sage_id: null,
+            sageId: null,
+            sage_invoice_number: null,
+            sageInvoiceNumber: null,
             invoice_status: null,
-            invoiced: false,
-            invoiced_at: null,
-            is_invoiced: false,
-            
-            // EXPLICITLY NULL - NO COLLECTION DATA
+            invoiceStatus: null,
             collection_date: null,
-            collected_at: null,
-            is_collected: false
+            collectionDate: null,
+            completionDate: null,
+            completion_date: null,
+            jobDate: new Date().toISOString().split('T')[0],
+            job_date: new Date().toISOString().split('T')[0],
+            notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
+            linkedJobs: [],
+            linked_jobs: []
         };
         
-        // Save directly to database (like duplicate does)
-        const { data: newJob, error } = await window.supabase
+        delete exchangeJob.created_at;
+        delete exchangeJob.updated_at;
+        
+        console.log('Inserting exchange job...');
+        
+        // Insert new exchange job
+        const { data: newJob, error: insertError } = await window.supabase
             .from('jobs')
-            .insert([exchangeJobForDatabase])
-            .select()
+            .insert([exchangeJob])
+            .select('*')
             .single();
         
-        if (error) throw error;
+        if (insertError) throw insertError;
         
-        // Mark original job as collected
-        await window.supabase
+        console.log('New job from DB:', {
+            id: newJob.id,
+            jobNumber: newJob.job_number,
+            customerName: newJob.customer_name,
+            address: newJob.address
+        });
+        
+        // Update original job
+        const { error: updateError } = await window.supabase
             .from('jobs')
             .update({ 
                 status: 'COLLECTED', 
@@ -8616,17 +8611,44 @@ const handleExchange = async (job) => {
             })
             .eq('id', job.id);
         
-        // Refresh the jobs list
-        await refreshJobs();
+        if (updateError) throw updateError;
         
-        // Close any open views
+        console.log('Jobs before clearing:', jobs.length);
+        
+        // CLEAR AND REFRESH METHOD
         setSelectedJob(null);
         setShowFullPageJob(null);
+        setJobs([]); // Force complete clear
         
-        alert(`Exchange job created successfully!`);
+        console.log('State cleared, waiting...');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        console.log('Calling refreshJobs...');
+        await refreshJobs();
+        
+        // Verify after refresh
+        setTimeout(() => {
+            console.log('Checking state after refresh...');
+            const newJobInState = jobs.find(j => j.id === newJob.id);
+            if (newJobInState) {
+                console.log('Found new job in state:', {
+                    jobNumber: newJobInState.jobNumber,
+                    customerName: newJobInState.customerName,
+                    address: newJobInState.address
+                });
+            } else {
+                console.log('NEW JOB NOT FOUND IN STATE!');
+                console.log('Current jobs:', jobs.map(j => ({
+                    id: j.id,
+                    jobNumber: j.jobNumber
+                })));
+            }
+        }, 1000);
+        
+        alert(`Exchange job created successfully! Job #${newJob.job_number}`);
         
     } catch (error) {
-        console.error('Error creating exchange job:', error);
+        console.error('Exchange error:', error);
         alert('Error creating exchange job: ' + error.message);
     }
 };
