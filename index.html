@@ -3435,7 +3435,74 @@ job.status.replace('_', ' ')}
             </>
           );
         };
+// ADD THE TermsSettings COMPONENT HERE (line 3437):
+const TermsSettings = () => {
+  const [termsContent, setTermsContent] = useState(() => {
+    return localStorage.getItem('quoteTermsConditions') || `TERMS & CONDITIONS
 
+1. QUOTATION VALIDITY
+This quotation is valid for 30 days from the date of issue.
+
+2. PAYMENT TERMS
+Payment is due within 30 days of invoice date (subject to account status).
+All prices are subject to VAT at the prevailing rate.
+
+3. SERVICE DELIVERY
+Services are subject to availability and site accessibility.
+Delivery dates are estimated and not guaranteed.
+
+4. CANCELLATION
+Cancellations must be made at least 24 hours before scheduled service.
+Late cancellations may incur charges.
+
+5. LIABILITY
+Our liability is limited to the value of services provided.
+We are not responsible for delays due to circumstances beyond our control.
+
+6. WASTE TRANSFER
+All waste will be disposed of at licensed facilities.
+Waste transfer notes will be provided upon request.`;
+  });
+
+  const handleSave = () => {
+    localStorage.setItem('quoteTermsConditions', termsContent);
+    alert('Terms & Conditions saved successfully!');
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Quote Terms & Conditions</h2>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Edit Terms & Conditions for Quote PDFs
+          </label>
+          <textarea
+            value={termsContent}
+            onChange={(e) => setTermsContent(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            rows={20}
+            placeholder="Enter your terms and conditions..."
+          />
+        </div>
+        <div className="flex justify-end space-x-2">
+          <button
+            onClick={() => setTermsContent(localStorage.getItem('quoteTermsConditions') || '')}
+            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+          >
+            Reset
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+          >
+            Save Terms & Conditions
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
         // REPLACE the entire QuotesView component (around line 1700-1900) with this:
 const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertToJob, onSendQuote, onAcceptQuote, onRejectQuote, onDeleteQuote, customers, suppliers, user, setShowFullPageQuote }) => {
   const [selectedQuote, setSelectedQuote] = useState(null);
@@ -4763,6 +4830,39 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
         <br>
         <p>Thank you for your business!</p>
         <p>Total Waste Services Ltd</p>
+         </table>
+            </div>
+            
+            <!-- ADD THIS TERMS & CONDITIONS SECTION HERE (before line 4833): -->
+            <div style="margin-top: 60px; padding-top: 20px; border-top: 2px solid #ddd;">
+              <h3 style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #2c5f2d;">Terms & Conditions</h3>
+              <div style="white-space: pre-wrap; font-size: 11px; line-height: 1.5; color: #333;">
+                ${quote.termsConditions || localStorage.getItem('quoteTermsConditions') || `TERMS & CONDITIONS
+                
+1. QUOTATION VALIDITY
+This quotation is valid for 30 days from the date of issue.
+
+2. PAYMENT TERMS  
+Payment is due within 30 days of invoice date (subject to account status).
+All prices are subject to VAT at the prevailing rate.
+
+3. SERVICE DELIVERY
+Services are subject to availability and site accessibility.
+Delivery dates are estimated and not guaranteed.
+
+4. CANCELLATION
+Cancellations must be made at least 24 hours before scheduled service.
+Late cancellations may incur charges.
+
+5. LIABILITY
+Our liability is limited to the value of services provided.
+We are not responsible for delays due to circumstances beyond our control.
+
+6. WASTE TRANSFER
+All waste will be disposed of at licensed facilities.
+Waste transfer notes will be provided upon request.`}
+              </div>
+            </div>
       </div>
     </body>
     </html>
@@ -12428,6 +12528,55 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
   <label htmlFor="hidePrices" className="text-sm text-gray-700 font-medium">
     Hide totals section on PDF (remove subtotal, VAT and grand total)
   </label>
+</div>
+{/* ADD THIS NEW TERMS & CONDITIONS SECTION HERE (starting at line 12499): */}
+<div className="mt-6 border-t pt-6">
+  <h3 className="text-lg font-semibold mb-3">Terms & Conditions for PDF</h3>
+  <div className="space-y-3">
+    <textarea
+      value={formData.termsConditions || localStorage.getItem('quoteTermsConditions') || ''}
+      onChange={(e) => setFormData({...formData, termsConditions: e.target.value})}
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      rows={10}
+      placeholder="Enter terms and conditions for this quote..."
+    />
+    <div className="flex space-x-2">
+      <button
+        type="button"
+        onClick={() => {
+          const defaultTerms = localStorage.getItem('quoteTermsConditions') || `TERMS & CONDITIONS
+
+1. QUOTATION VALIDITY
+This quotation is valid for 30 days from the date of issue.
+
+2. PAYMENT TERMS
+Payment is due within 30 days of invoice date (subject to account status).
+
+3. SERVICE DELIVERY
+Services are subject to availability and site accessibility.
+
+4. CANCELLATION
+Cancellations must be made at least 24 hours before scheduled service.`;
+          setFormData({...formData, termsConditions: defaultTerms});
+        }}
+        className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm"
+      >
+        Load Default T&Cs
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          if (formData.termsConditions) {
+            localStorage.setItem('quoteTermsConditions', formData.termsConditions);
+            alert('Saved as default Terms & Conditions');
+          }
+        }}
+        className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+      >
+        Save as Default
+      </button>
+    </div>
+  </div>
 </div>
 
               {/* Add other job type product selectors */}
