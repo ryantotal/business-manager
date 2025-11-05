@@ -12584,49 +12584,18 @@ Waste transfer notes will be provided upon request.`;
     className="mr-3 h-4 w-4"
   />
   <label htmlFor="hidePrices" className="text-sm text-gray-700 font-medium">
-    Hide totals section on PDF (remove subtotal, VAT and grand total)
-  </label>
+  Hide totals section on PDF (remove subtotal, VAT and grand total)
+</label>
 </div>
 <div className="mt-6 border-t pt-6">
   <h3 className="text-lg font-semibold mb-3">Terms & Conditions for PDF</h3>
-  <div className="space-y-3">
-    <textarea
-      value={formData.terms_conditions || defaultTerms}
-      onChange={(e) => setFormData({...formData, terms_conditions: e.target.value})}
-      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-      rows={10}
-      placeholder="Loading terms and conditions..."
-    />
-    <button
-      type="button"
-      onClick={async () => {
-        if (formData.terms_conditions) {
-          try {
-            const { error } = await window.supabase
-              .from('terms_conditions')
-              .update({ 
-                content: formData.terms_conditions,
-                updated_at: new Date().toISOString()
-              })
-              .eq('is_active', true);
-            
-            if (!error) {
-              alert('Default Terms & Conditions updated successfully!');
-              setDefaultTerms(formData.terms_conditions);
-            } else {
-              alert('Error saving T&Cs: ' + error.message);
-            }
-          } catch (error) {
-            console.error('Error saving T&Cs:', error);
-            alert('Error saving T&Cs');
-          }
-        }
-      }}
-      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-    >
-      Update Default T&Cs for All Quotes
-    </button>
-  </div>
+  <textarea
+    value={formData.terms_conditions || defaultTerms}
+    onChange={(e) => setFormData({...formData, terms_conditions: e.target.value})}
+    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+    rows={10}
+    placeholder="Loading terms and conditions..."
+  />
 </div>
 
               {/* Add other job type product selectors */}
