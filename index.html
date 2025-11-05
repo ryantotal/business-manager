@@ -9795,7 +9795,12 @@ onClick={() => {
     sage_invoice_id: null,
     sageInvoiceId: null,      // AND THIS
     invoice_number: null,
-    invoiceNumber: null       // AND THIS
+    invoiceNumber: null,       // AND THIS
+    // Copy products/services from parent job if they exist
+// This ensures they persist after refresh
+lineItems: job.lineItems || [],  // Copy for React state
+sage_line_items: job.lineItems ? JSON.stringify(job.lineItems) : null,  // Save to database
+products: job.products || [],  // In case you use 'products' field too
 };
         
         // Generate new job number
