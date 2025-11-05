@@ -9,6 +9,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
     /* Custom CSS Variables for theming */
     :root {
@@ -2336,7 +2337,211 @@ tax_code: product.tax_rate_id || 'T1'
               </div>
             </div>
           );
-        };
+      
+          {/* Add Reports Section */}
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Analytics & Reports</h2>
+            <span className="text-sm text-gray-500">Dynamic business insights</span>
+          </div>
+          <DynamicReports jobs={jobs} customers={customers} suppliers={[]} />
+      </div>
+    }
+
+        // Dynamic Reports Component
+const DynamicReports = ({ jobs, customers, suppliers }) => {
+  const [activeReport, setActiveReport] = React.useState('products-margin');
+  const [loading, setLoading] = React.useState(false);
+  
+  // Calculate Products with Margins
+  const getProductsWithMargins = () => {
+    const productMap = new Map();
+    
+    jobs.forEach(job => {
+      if (job.sage_line_items && Array.isArray(job.sage_line_items)) {
+       job.sage_line_items.forEach(item => {
+          const key = item.description || 'Unknown Product';
+          if (!productMap.has(key)) {
+            productMap.set(key, {
+              product: key,
+              quantity: 0,
+              revenue: 0,
+              cost: 0,
+              margin: 0,
+              marginPercent: 0,
+              jobCount: 0
+            });
+          }
+          
+          const product = productMap.get(key);
+          const itemRevenue = parseFloat(item.amount || 0);
+          const itemCost = parseFloat(item.cost || itemRevenue * 0.7);
+          
+          product.quantity += parseFloat(item.quantity || 1);
+          product.revenue += itemRevenue;
+          product.cost += itemCost;
+          product.margin = product.revenue - product.cost;
+          product.marginPercent = product.revenue > 0 ? ((product.revenue - product.cost) / product.revenue * 100) : 0;
+          product.jobCount += 1;
+        });
+      }
+    });
+    
+    return Array.from(productMap.values()).sort((a, b) => b.revenue - a.revenue);
+  };
+
+  // Calculate Top Customers
+  const getTopCustomers = () => {
+    const customerMap = new Map();
+    
+    jobs.forEach(job => {
+      const key = job.customerName || 'Unknown';
+      if (!customerMap.has(key)) {
+        customerMap.set(key, {
+          customer: key,
+          revenue: 0,
+          profit: 0,
+          jobCount: 0
+        });
+      }
+      
+      const customer = customerMap.get(key);
+      customer.revenue += parseFloat(job.jobValue || 0);
+      customer.profit += parseFloat(job.grossProfit || 0);
+      customer.jobCount += 1;
+    });
+    
+    return Array.from(customerMap.values()).sort((a, b) => b.revenue - a.revenue);
+  };
+
+  const reportButtons = [
+    { id: 'products-margin', name: 'Products with Margins', icon: Package },
+    { id: 'top-customers', name: 'Top Customers', icon: Users },
+    { id: 'products-by-site', name: 'Products by Site', icon: MapPin },
+    { id: 'highest-margins', name: 'Highest Margin Sales', icon: TrendingUp },
+    { id: 'top-suppliers', name: 'Top Suppliers', icon: Truck },
+    { id: 'top-products', name: 'Top Products Performance', icon: Package }
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Report Type Selector */}
+      <div className="bg-white rounded-lg shadow-sm p-4">
+        <div className="flex space-x-2 overflow-x-auto">
+          {reportButtons.map(report => {
+            const Icon = report.icon;
+            return (
+              <button
+                key={report.id}
+                onClick={() => setActiveReport(report.id)}
+                className={`flex items-center px-4 py-2 rounded-lg transition-all whitespace-nowrap ${
+                  activeReport === report.id 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                <Icon size={16} className="mr-2" />
+                {report.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Report Content */}
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        {activeReport === 'products-margin' && (
+          <div>
+            <h3 className="text-lg font-semibold mb-4">Products with Margins</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {getProductsWithMargins().slice(0, 10).map((product, index) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.product}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.quantity.toFixed(0)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">£{product.revenue.toFixed(2)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">£{product.cost.toFixed(2)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">£{product.margin.toFixed(2)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.marginPercent.toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeReport === 'top-customers' && (
+          <div>
+            <h3 className="text-lg font-semibold mb-4">Top Customers by Revenue & Profit</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jobs</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {getTopCustomers().slice(0, 10).map((customer, index) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{customer.customer}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{customer.jobCount}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">£{customer.revenue.toFixed(2)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">£{customer.profit.toFixed(2)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {customer.revenue > 0 ? ((customer.profit / customer.revenue) * 100).toFixed(1) : '0'}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Add placeholder for other reports */}
+        {activeReport === 'products-by-site' && (
+          <div className="text-center py-8 text-gray-500">
+            Products by Site report - Coming soon
+          </div>
+        )}
+        
+        {activeReport === 'highest-margins' && (
+          <div className="text-center py-8 text-gray-500">
+            Highest Margin Sales report - Coming soon
+          </div>
+        )}
+        
+        {activeReport === 'top-suppliers' && (
+          <div className="text-center py-8 text-gray-500">
+            Top Suppliers report - Coming soon
+          </div>
+        )}
+        
+        {activeReport === 'top-products' && (
+          <div className="text-center py-8 text-gray-500">
+            Top Products Performance report - Coming soon
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 const shortenCompanyName = (name) => {
   if (!name) return '-';
   
