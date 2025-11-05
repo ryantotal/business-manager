@@ -4830,15 +4830,15 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
             </div>
             
             <!-- ADD THIS TERMS & CONDITIONS SECTION HERE (before line 4833): -->
-            <div style="margin-top: 60px; padding-top: 20px; border-top: 2px solid #ddd;">
-              <h3 style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #2c5f2d;">Terms & Conditions</h3>
-              <div style="white-space: pre-wrap; font-size: 11px; line-height: 1.5; color: #333;">
-                ${quote.termsConditions || localStorage.getItem('quoteTermsConditions') || `TERMS & CONDITIONS
-                
+<div style="margin-top: 60px; padding-top: 20px; border-top: 2px solid #ddd;">
+  <h3 style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #2c5f2d;">Terms & Conditions</h3>
+  <div style="white-space: pre-wrap; font-size: 11px; line-height: 1.5; color: #333;">
+    ${quote.termsConditions || localStorage.getItem('quoteTermsConditions') || `TERMS & CONDITIONS
+
 1. QUOTATION VALIDITY
 This quotation is valid for 30 days from the date of issue.
 
-2. PAYMENT TERMS  
+2. PAYMENT TERMS
 Payment is due within 30 days of invoice date (subject to account status).
 All prices are subject to VAT at the prevailing rate.
 
@@ -4857,8 +4857,8 @@ We are not responsible for delays due to circumstances beyond our control.
 6. WASTE TRANSFER
 All waste will be disposed of at licensed facilities.
 Waste transfer notes will be provided upon request.`}
-              </div>
-            </div>
+  </div>
+</div>
       </div>
     </body>
     </html>
