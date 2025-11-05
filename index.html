@@ -4833,7 +4833,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
 <div style="margin-top: 60px; padding-top: 20px; border-top: 2px solid #ddd;">
   <h3 style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #2c5f2d;">Terms & Conditions</h3>
   <div style="white-space: pre-wrap; font-size: 11px; line-height: 1.5; color: #333;">
-    ${quote.termsConditions || localStorage.getItem('quoteTermsConditions') || `TERMS & CONDITIONS
+   ${quote.terms_conditions || `TERMS & CONDITIONS
 
 1. QUOTATION VALIDITY
 This quotation is valid for 30 days from the date of issue.
@@ -11910,6 +11910,61 @@ window.location.href = '/#sage-integration';  // Keep this line!
 const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user }) => {
   const [quoteAttachments, setQuoteAttachments] = useState([]);
   const [uploadFile, setUploadFile] = useState(null);
+  const [defaultTerms, setDefaultTerms] = useState('');
+  
+  // Load T&Cs from database when form opens
+  useEffect(() => {
+    const loadTermsConditions = async () => {
+      try {
+        const { data, error } = await window.supabase
+          .from('terms_conditions')
+          .select('content')
+          .eq('is_active', true)
+          .single();
+        
+        if (data) {
+          setDefaultTerms(data.content);
+          // If creating new quote or quote has no T&Cs, set the default
+          if (!quote?.terms_conditions) {
+            setFormData(prev => ({...prev, terms_conditions: data.content}));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading T&Cs:', error);
+        // Set a fallback if can't load from DB
+        const fallback = `TERMS & CONDITIONS
+
+1. QUOTATION VALIDITY
+This quotation is valid for 30 days from the date of issue.
+
+2. PAYMENT TERMS
+Payment is due within 30 days of invoice date (subject to account status).
+All prices are subject to VAT at the prevailing rate.
+
+3. SERVICE DELIVERY
+Services are subject to availability and site accessibility.
+Delivery dates are estimated and not guaranteed.
+
+4. CANCELLATION
+Cancellations must be made at least 24 hours before scheduled service.
+Late cancellations may incur charges.
+
+5. LIABILITY
+Our liability is limited to the value of services provided.
+We are not responsible for delays due to circumstances beyond our control.
+
+6. WASTE TRANSFER
+All waste will be disposed of at licensed facilities.
+Waste transfer notes will be provided upon request.`;
+        setDefaultTerms(fallback);
+        if (!quote?.terms_conditions) {
+          setFormData(prev => ({...prev, terms_conditions: fallback}));
+        }
+      }
+    };
+    
+    loadTermsConditions();
+  }, []);
   
   // Load attachments when quote changes
   useEffect(() => {
@@ -11917,7 +11972,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       loadQuoteAttachments(quote.id);
     }
   }, [quote?.id]);
-
+  
   const loadQuoteAttachments = async (quoteId) => {
     try {
       const { data, error } = await window.supabase
@@ -11932,7 +11987,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       console.error('Error loading attachments:', error);
     }
   };
-
+  
   const handleDeleteAttachment = async (attachmentId) => {
     if (!window.confirm('Are you sure you want to delete this attachment?')) {
       return;
@@ -12053,7 +12108,8 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       sageProductId: '',
       sageProductName: '',
       validUntil: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-      createdDate: quote?.createdDate || new Date().toISOString().split('T')[0]
+      createdDate: quote?.createdDate || new Date().toISOString().split('T')[0],
+      terms_conditions: '',  // ADD THIS LINE
     };
     
     // If editing, merge quote data
@@ -12118,7 +12174,8 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
       customerPhone: formData.customerPhone || customers.find(c => c.companyName === formData.customerName)?.phone || '',
       deliveryDate: formData.jobDate,
       siteAddress: formData.siteAddress1,
-      lineItems: formData.lineItems || []
+      lineItems: formData.lineItems || [],
+      terms_conditions: formData.terms_conditions || defaultTerms,
     };
     onSave(newQuote);
   };
@@ -12525,64 +12582,45 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     Hide totals section on PDF (remove subtotal, VAT and grand total)
   </label>
 </div>
-{/* ADD THIS NEW TERMS & CONDITIONS SECTION HERE (starting at line 12499): */}
 <div className="mt-6 border-t pt-6">
   <h3 className="text-lg font-semibold mb-3">Terms & Conditions for PDF</h3>
   <div className="space-y-3">
     <textarea
-      value={formData.termsConditions || localStorage.getItem('quoteTermsConditions') || ''}
-      onChange={(e) => setFormData({...formData, termsConditions: e.target.value})}
+      value={formData.terms_conditions || defaultTerms}
+      onChange={(e) => setFormData({...formData, terms_conditions: e.target.value})}
       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
       rows={10}
-      placeholder="Enter terms and conditions for this quote..."
+      placeholder="Loading terms and conditions..."
     />
-    <div className="flex space-x-2">
-      <button
-  type="button"
-  onClick={() => {
-    const defaultTerms = `TERMS & CONDITIONS
-
-1. QUOTATION VALIDITY
-This quotation is valid for 30 days from the date of issue.
-
-2. PAYMENT TERMS
-Payment is due within 30 days of invoice date (subject to account status).
-All prices are subject to VAT at the prevailing rate.
-
-3. SERVICE DELIVERY
-Services are subject to availability and site accessibility.
-Delivery dates are estimated and not guaranteed.
-
-4. CANCELLATION
-Cancellations must be made at least 24 hours before scheduled service.
-Late cancellations may incur charges.
-
-5. LIABILITY
-Our liability is limited to the value of services provided.
-We are not responsible for delays due to circumstances beyond our control.
-
-6. WASTE TRANSFER
-All waste will be disposed of at licensed facilities.
-Waste transfer notes will be provided upon request.`;
-    setFormData({...formData, termsConditions: defaultTerms});
-  }}
-  className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm"
->
-  Load Default T&Cs
-</button>
-      <button
-        type="button"
-        onClick={() => {
-          if (formData.termsConditions) {
-            localStorage.setItem('quoteTermsConditions', formData.termsConditions);
-            alert('Saved as default Terms & Conditions');
+    <button
+      type="button"
+      onClick={async () => {
+        if (formData.terms_conditions) {
+          try {
+            const { error } = await window.supabase
+              .from('terms_conditions')
+              .update({ 
+                content: formData.terms_conditions,
+                updated_at: new Date().toISOString()
+              })
+              .eq('is_active', true);
+            
+            if (!error) {
+              alert('Default Terms & Conditions updated successfully!');
+              setDefaultTerms(formData.terms_conditions);
+            } else {
+              alert('Error saving T&Cs: ' + error.message);
+            }
+          } catch (error) {
+            console.error('Error saving T&Cs:', error);
+            alert('Error saving T&Cs');
           }
-        }}
-        className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-      >
-        Save as Default
-      </button>
-    </div>
+        }
+      }}
+      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+    >
+      Update Default T&Cs for All Quotes
+    </button>
   </div>
 </div>
 
