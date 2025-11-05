@@ -2579,6 +2579,11 @@ setTimeout(() => {
       case 'jobNumber':
         compareValue = (a.jobNumber || '').localeCompare(b.jobNumber || '');
         break;
+        case 'siNumber':
+  const aSI = (a.sage_si_number || a.invoiceNumber || '');
+  const bSI = (b.sage_si_number || b.invoiceNumber || '');
+  compareValue = aSI.localeCompare(bSI);
+  break;
       default:
         return 0;
     }
@@ -2935,15 +2940,15 @@ const uploadJobAttachment = async () => {
         <option value="COMPLETED">Completed</option>
       </select>
       <select
-        value={sortBy}
-        onChange={(e) => setSortBy(e.target.value)}
-        className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
-      >
-        <option value="jobDate">Delivery Date</option>
-        <option value="createdAt">Creation Date</option>
-        <option value="customerName">Customer Name</option>
-        <option value="jobNumber">Job Number</option>
-      </select>
+  value={sortBy}
+  onChange={(e) => setSortBy(e.target.value)}
+  className="px-3 py-2 border border-gray-300 rounded-lg"
+>
+  <option value="createdAt">Creation Date</option>
+  <option value="jobDate">Job Date</option>
+  <option value="jobNumber">Job Number</option>
+  <option value="siNumber">SI Number</option>  {/* ADD THIS LINE */}
+</select>
       <button
         onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
         className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2"
