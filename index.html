@@ -12538,27 +12538,38 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
     />
     <div className="flex space-x-2">
       <button
-        type="button"
-        onClick={() => {
-          const defaultTerms = localStorage.getItem('quoteTermsConditions') || `TERMS & CONDITIONS
+  type="button"
+  onClick={() => {
+    const defaultTerms = `TERMS & CONDITIONS
 
 1. QUOTATION VALIDITY
 This quotation is valid for 30 days from the date of issue.
 
 2. PAYMENT TERMS
 Payment is due within 30 days of invoice date (subject to account status).
+All prices are subject to VAT at the prevailing rate.
 
 3. SERVICE DELIVERY
 Services are subject to availability and site accessibility.
+Delivery dates are estimated and not guaranteed.
 
 4. CANCELLATION
-Cancellations must be made at least 24 hours before scheduled service.`;
-          setFormData({...formData, termsConditions: defaultTerms});
-        }}
-        className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm"
-      >
-        Load Default T&Cs
-      </button>
+Cancellations must be made at least 24 hours before scheduled service.
+Late cancellations may incur charges.
+
+5. LIABILITY
+Our liability is limited to the value of services provided.
+We are not responsible for delays due to circumstances beyond our control.
+
+6. WASTE TRANSFER
+All waste will be disposed of at licensed facilities.
+Waste transfer notes will be provided upon request.`;
+    setFormData({...formData, termsConditions: defaultTerms});
+  }}
+  className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm"
+>
+  Load Default T&Cs
+</button>
       <button
         type="button"
         onClick={() => {
