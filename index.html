@@ -9,7 +9,6 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
     /* Custom CSS Variables for theming */
     :root {
@@ -2246,298 +2245,131 @@ tax_code: product.tax_rate_id || 'T1'
         };
 
         // Dashboard Component
-        const Dashboard = ({ jobs, customers }) => {
-          const totalRevenue = jobs.reduce((sum, job) => sum + (job.jobValue || 0), 0);
-          const totalProfit = jobs.reduce((sum, job) => sum + (job.grossProfit || 0), 0);
-          const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
-          const activeJobs = jobs.filter(j => ['CONFIRMED', 'IN_PROGRESS'].includes(j.status)).length;
-
-          const metrics = [
-            { label: 'Active Jobs', value: activeJobs, icon: 'Activity', color: 'bg-blue-500' },
-            { label: 'Monthly Revenue', value: `£${(totalRevenue/1000).toFixed(0)}k`, icon: 'DollarSign', color: 'bg-green-500' },
-            { label: 'Profit Margin', value: `${avgMargin.toFixed(1)}%`, icon: 'TrendingUp', color: 'bg-purple-500' },
-            { label: 'Customers', value: customers.length, icon: 'Users', color: 'bg-orange-500' }
-          ];
-
-          return (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-                <p className="text-gray-600">Overview of your waste management operations</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {metrics.map((metric, index) => {
-                  const Icon = metric.icon === 'Activity' ? Activity : 
-                               metric.icon === 'DollarSign' ? DollarSign :
-                               metric.icon === 'TrendingUp' ? TrendingUp : Users;
-                  return (
-                    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm text-gray-600">{metric.label}</p>
-                          <p className="text-2xl font-bold text-gray-900">{metric.value}</p>
-                        </div>
-                        <div className={`p-3 rounded-lg ${metric.color}`}>
-                          <Icon size={24} className="text-white" />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white rounded-lg border border-gray-200">
-                  <div className="p-6 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold">Recent Jobs</h3>
-                  </div>
-                  <div className="p-6">
-                    <div className="space-y-4">
-                      {jobs.slice(0, 5).map(job => (
-                        <div key={job.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <p className="font-medium">{job.jobNumber}</p>
-                            <p className="text-sm text-gray-600">{job.customerName}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-medium text-green-600">£{job.grossProfit?.toFixed(0)}</p>
-                            <p className="text-xs text-gray-500">{job.status}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-lg border border-gray-200">
-                  <div className="p-6 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold">Top Customers</h3>
-                  </div>
-                  <div className="p-6">
-                    <div className="space-y-4">
-                      {customers.slice(0, 5).map(customer => (
-                        <div key={customer.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <p className="font-medium">{customer.companyName}</p>
-                            <p className="text-sm text-gray-600">{customer.primaryContact}</p>
-                          </div>
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            customer.creditRating === 'A+' ? 'bg-green-100 text-green-700' :
-                            customer.creditRating === 'A' ? 'bg-blue-100 text-blue-700' :
-                            'bg-yellow-100 text-yellow-700'
-                          }`}>
-                            {customer.creditRating}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-      
-          {/* Add Reports Section */}
-        <div className="mt-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Analytics & Reports</h2>
-            <span className="text-sm text-gray-500">Dynamic business insights</span>
-          </div>
-          <DynamicReports jobs={jobs} customers={customers} suppliers={[]} />
-      </div>
-    }
-
-        // Dynamic Reports Component
-const DynamicReports = ({ jobs, customers, suppliers }) => {
-  const [activeReport, setActiveReport] = React.useState('products-margin');
-  const [loading, setLoading] = React.useState(false);
-  
-  // Calculate Products with Margins
-  const getProductsWithMargins = () => {
-    const productMap = new Map();
-    
-    jobs.forEach(job => {
-      if (job.sage_line_items && Array.isArray(job.sage_line_items)) {
-       job.sage_line_items.forEach(item => {
-          const key = item.description || 'Unknown Product';
-          if (!productMap.has(key)) {
-            productMap.set(key, {
-              product: key,
-              quantity: 0,
-              revenue: 0,
-              cost: 0,
-              margin: 0,
-              marginPercent: 0,
-              jobCount: 0
-            });
-          }
-          
-          const product = productMap.get(key);
-          const itemRevenue = parseFloat(item.amount || 0);
-          const itemCost = parseFloat(item.cost || itemRevenue * 0.7);
-          
-          product.quantity += parseFloat(item.quantity || 1);
-          product.revenue += itemRevenue;
-          product.cost += itemCost;
-          product.margin = product.revenue - product.cost;
-          product.marginPercent = product.revenue > 0 ? ((product.revenue - product.cost) / product.revenue * 100) : 0;
-          product.jobCount += 1;
-        });
-      }
-    });
-    
-    return Array.from(productMap.values()).sort((a, b) => b.revenue - a.revenue);
-  };
-
-  // Calculate Top Customers
-  const getTopCustomers = () => {
-    const customerMap = new Map();
-    
-    jobs.forEach(job => {
-      const key = job.customerName || 'Unknown';
-      if (!customerMap.has(key)) {
-        customerMap.set(key, {
-          customer: key,
-          revenue: 0,
-          profit: 0,
-          jobCount: 0
-        });
-      }
-      
-      const customer = customerMap.get(key);
-      customer.revenue += parseFloat(job.jobValue || 0);
-      customer.profit += parseFloat(job.grossProfit || 0);
-      customer.jobCount += 1;
-    });
-    
-    return Array.from(customerMap.values()).sort((a, b) => b.revenue - a.revenue);
-  };
-
-  const reportButtons = [
-    { id: 'products-margin', name: 'Products with Margins', icon: Package },
-    { id: 'top-customers', name: 'Top Customers', icon: Users },
-    { id: 'products-by-site', name: 'Products by Site', icon: MapPin },
-    { id: 'highest-margins', name: 'Highest Margin Sales', icon: TrendingUp },
-    { id: 'top-suppliers', name: 'Top Suppliers', icon: Truck },
-    { id: 'top-products', name: 'Top Products Performance', icon: Package }
-  ];
-
+        // Dashboard Component
+const Dashboard = ({ jobs, customers }) => {
   return (
     <div className="space-y-6">
-      {/* Report Type Selector */}
-      <div className="bg-white rounded-lg shadow-sm p-4">
-        <div className="flex space-x-2 overflow-x-auto">
-          {reportButtons.map(report => {
-            const Icon = report.icon;
-            return (
-              <button
-                key={report.id}
-                onClick={() => setActiveReport(report.id)}
-                className={`flex items-center px-4 py-2 rounded-lg transition-all whitespace-nowrap ${
-                  activeReport === report.id 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                }`}
-              >
-                <Icon size={16} className="mr-2" />
-                {report.name}
-              </button>
-            );
-          })}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
+        <p className="text-gray-600">Business Analytics & Reports</p>
+      </div>
+
+      {/* Customer Activity Report */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold mb-4">Customer Activity - Sites per Customer</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Active Sites</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Jobs</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {customers
+                .filter(c => {
+                  const customerJobs = jobs.filter(j => j.customer_id === c.id);
+                  return customerJobs.length > 0;
+                })
+                .map((customer, index) => {
+                  const customerJobs = jobs.filter(j => j.customer_id === customer.id);
+                  const uniqueSites = new Set(customerJobs.map(j => j.site_id).filter(Boolean));
+                  const totalRevenue = customerJobs.reduce((sum, j) => sum + (j.total_amount || 0), 0);
+                  
+                  return (
+                    <tr key={index}>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{customer.name}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{uniqueSites.size}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{customerJobs.length}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">£{totalRevenue.toFixed(2)}</td>
+                    </tr>
+                  );
+                })
+                .slice(0, 10)}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Report Content */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        {activeReport === 'products-margin' && (
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Products with Margins</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {getProductsWithMargins().slice(0, 10).map((product, index) => (
+      {/* Top Products Report */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold mb-4">Top Products by Revenue</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Times Ordered</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Revenue</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {(() => {
+                const productStats = {};
+                jobs.forEach(job => {
+                  if (job.items && Array.isArray(job.items)) {
+                    job.items.forEach(item => {
+                      const key = item.description || 'Unknown';
+                      if (!productStats[key]) {
+                        productStats[key] = { count: 0, revenue: 0 };
+                      }
+                      productStats[key].count++;
+                      productStats[key].revenue += (item.amount || 0);
+                    });
+                  }
+                });
+                
+                return Object.entries(productStats)
+                  .sort((a, b) => b[1].revenue - a[1].revenue)
+                  .slice(0, 10)
+                  .map(([product, stats], index) => (
                     <tr key={index}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.product}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.quantity.toFixed(0)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">£{product.revenue.toFixed(2)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">£{product.cost.toFixed(2)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">£{product.margin.toFixed(2)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.marginPercent.toFixed(1)}%</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{product}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{stats.count}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">£{stats.revenue.toFixed(2)}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                  ));
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-        {activeReport === 'top-customers' && (
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Top Customers by Revenue & Profit</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jobs</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {getTopCustomers().slice(0, 10).map((customer, index) => (
+      {/* High Margin Jobs Report */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold mb-4">Highest Revenue Jobs</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job #</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {jobs
+                .filter(j => j.total_amount > 0)
+                .sort((a, b) => b.total_amount - a.total_amount)
+                .slice(0, 10)
+                .map((job, index) => {
+                  const customer = customers.find(c => c.id === job.customer_id);
+                  
+                  return (
                     <tr key={index}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{customer.customer}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{customer.jobCount}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">£{customer.revenue.toFixed(2)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">£{customer.profit.toFixed(2)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {customer.revenue > 0 ? ((customer.profit / customer.revenue) * 100).toFixed(1) : '0'}%
-                      </td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{job.job_number}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{customer?.name || 'Unknown'}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{job.site_name || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">£{job.total_amount.toFixed(2)}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Add placeholder for other reports */}
-        {activeReport === 'products-by-site' && (
-          <div className="text-center py-8 text-gray-500">
-            Products by Site report - Coming soon
-          </div>
-        )}
-        
-        {activeReport === 'highest-margins' && (
-          <div className="text-center py-8 text-gray-500">
-            Highest Margin Sales report - Coming soon
-          </div>
-        )}
-        
-        {activeReport === 'top-suppliers' && (
-          <div className="text-center py-8 text-gray-500">
-            Top Suppliers report - Coming soon
-          </div>
-        )}
-        
-        {activeReport === 'top-products' && (
-          <div className="text-center py-8 text-gray-500">
-            Top Products Performance report - Coming soon
-          </div>
-        )}
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
