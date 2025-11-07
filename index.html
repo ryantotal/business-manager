@@ -2247,32 +2247,35 @@ tax_code: product.tax_rate_id || 'T1'
       // Dashboard Component
 const Dashboard = ({ jobs, customers, suppliers, products }) => {
   
-  // Helper to extract price data from lineItems array
+  // Debug deeper into lineItems structure
+  const testJob = jobs?.find(j => j.lineItems && j.lineItems.length > 0);
+  if (testJob && testJob.lineItems[0]) {
+    console.log('LineItem fields:', Object.keys(testJob.lineItems[0]));
+    console.log('Full lineItem:', testJob.lineItems[0]);
+  }
+  
+  // Helper to extract price data
   const getJobPricing = (job) => {
     let revenue = 0;
     let cost = 0;
     
-    // Check for lineItems as an array of objects
-    if (job.lineItems && Array.isArray(job.lineItems)) {
-      job.lineItems.forEach(item => {
-        const quantity = parseFloat(item.quantity) || 0;
-        const customerPrice = parseFloat(item.customer_price) || 0;
-        const supplierPrice = parseFloat(item.supplier_price) || 0;
-        
-        if (customerPrice > 0 || supplierPrice > 0) {
-          revenue += quantity * customerPrice;
-          cost += quantity * supplierPrice;
-        }
-      });
-    }
+    // Since lineItems doesn't have prices, check the job level fields
+    const quantity = parseFloat(job.quantity) || 1;
     
-    // If still no prices, try other fields as fallback
-    if (revenue === 0) {
-      const quantity = parseFloat(job.quantity) || 1;
-      if (job.customerUnitPrice && parseFloat(job.customerUnitPrice) > 0) {
-        revenue = parseFloat(job.customerUnitPrice) * quantity;
-        cost = (parseFloat(job.supplierUnitPrice) || 0) * quantity;
-      }
+    // Try customerUnitPrice and supplierUnitPrice
+    if (job.customerUnitPrice && parseFloat(job.customerUnitPrice) > 0) {
+      revenue = parseFloat(job.customerUnitPrice) * quantity;
+      cost = (parseFloat(job.supplierUnitPrice) || 0) * quantity;
+    }
+    // Try customerFinalPrice and supplierFinalPrice
+    else if (job.customerFinalPrice && parseFloat(job.customerFinalPrice) > 0) {
+      revenue = parseFloat(job.customerFinalPrice);
+      cost = parseFloat(job.supplierFinalPrice) || 0;
+    }
+    // Try jobValue
+    else if (job.jobValue && parseFloat(job.jobValue) > 0) {
+      revenue = parseFloat(job.jobValue);
+      cost = parseFloat(job.supplierFinalPrice) || 0;
     }
     
     const profit = revenue - cost;
@@ -2281,20 +2284,10 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
     return { revenue, cost, profit, marginPercent };
   };
 
-  // Test with first job that has lineItems
-  const testJob = jobs?.find(j => j.lineItems && j.lineItems.length > 0);
-  if (testJob) {
-    console.log('Test job pricing:', {
-      job: testJob.jobNumber,
-      lineItems: testJob.lineItems,
-      calculated: getJobPricing(testJob)
-    });
-  }
-
-  // Rest of your dashboard with all 6 reports...
+  // Your dashboard reports continue here...
   return (
     <div className="space-y-6">
-      {/* All your reports here using getJobPricing */}
+      {/* All your reports */}
     </div>
   );
 };
