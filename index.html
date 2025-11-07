@@ -2246,6 +2246,41 @@ tax_code: product.tax_rate_id || 'T1'
 
        // Dashboard Component
 const Dashboard = ({ jobs, customers, suppliers, products }) => {
+  
+  // Debug: Check first few jobs with line_items
+  console.log('=== Dashboard Debug ===');
+  const jobsWithItems = jobs?.filter(j => j.line_items && j.line_items !== '[]' && j.line_items !== null);
+  console.log('Jobs with line_items:', jobsWithItems?.length);
+  
+  if (jobsWithItems && jobsWithItems.length > 0) {
+    console.log('Sample job with items:', jobsWithItems[0]);
+    console.log('Raw line_items:', jobsWithItems[0].line_items);
+    
+    // Try to parse the line_items
+    try {
+      const parsed = JSON.parse(jobsWithItems[0].line_items);
+      console.log('Parsed items:', parsed);
+    } catch (e) {
+      console.log('Error parsing:', e);
+      // Try double parsing in case it's double-encoded
+      try {
+        const doubleParsed = JSON.parse(JSON.parse(jobsWithItems[0].line_items));
+        console.log('Double parsed items:', doubleParsed);
+      } catch (e2) {
+        console.log('Double parse also failed:', e2);
+      }
+    }
+  }
+  
+  // Check suppliers in jobs
+  const jobsWithSuppliers = jobs?.filter(j => j.supplier_name);
+  console.log('Jobs with supplier_name:', jobsWithSuppliers?.length);
+  if (jobsWithSuppliers && jobsWithSuppliers.length > 0) {
+    console.log('Sample suppliers:', jobsWithSuppliers.slice(0, 3).map(j => j.supplier_name));
+  }
+  console.log('=== End Debug ===');
+
+  // Rest of your dashboard code...
   // Helper to parse line items and calculate actual margin from your data
   const getJobMargin = (job) => {
     try {
