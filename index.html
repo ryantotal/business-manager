@@ -2245,8 +2245,30 @@ tax_code: product.tax_rate_id || 'T1'
         };
 
         // Dashboard Component
-        // Dashboard Component
 const Dashboard = ({ jobs, customers, suppliers, products }) => {
+  // Debug logging - check what data we're receiving
+  console.log('Dashboard Debug:', {
+    jobs: jobs,
+    jobsLength: jobs?.length,
+    customers: customers,
+    customersLength: customers?.length,
+    suppliers: suppliers,
+    suppliersLength: suppliers?.length,
+    sampleJob: jobs?.[0],
+    sampleJobItems: jobs?.[0]?.items
+  });
+
+  // If no data, show loading or message
+  if (!jobs || jobs.length === 0) {
+    return (
+      <div className="p-6">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Dashboard</h2>
+        <p className="text-gray-600">No job data available. Please add some jobs to see reports.</p>
+      </div>
+    );
+  }
+
+  // Rest of your dashboard code continues here...
   // Helper to calculate actual margin from your data
   const getJobMargin = (job) => {
     if (job.items && job.items.length > 0) {
@@ -10217,7 +10239,7 @@ await handleAddJob(exchangeJob);
   />
 )}
               <div className="p-4 sm:p-6">
-                {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} />}
+                {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} suppliers={suppliers} />}
                 {activeTab === 'documents' && (
                   <DocumentsView user={user} />
                 )}
