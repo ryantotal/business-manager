@@ -2246,7 +2246,31 @@ tax_code: product.tax_rate_id || 'T1'
 
         // Dashboard Component
         // Dashboard Component
-const Dashboard = ({ jobs, customers }) => {
+const Dashboard = ({ jobs, customers, suppliers, products }) => {
+  // Helper to calculate actual margin from your data
+  const getJobMargin = (job) => {
+    if (job.items && job.items.length > 0) {
+      const totalCost = job.items.reduce((sum, item) => sum + (item.cost || 0), 0);
+      const totalRevenue = job.items.reduce((sum, item) => sum + (item.rrp || item.amount || 0), 0);
+      const totalProfit = job.items.reduce((sum, item) => sum + (item.line_profit || 0), 0);
+      const marginPercent = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+      
+      return {
+        cost: totalCost,
+        revenue: totalRevenue,
+        profit: totalProfit,
+        marginPercent: marginPercent
+      };
+    }
+    // Fallback if no items data
+    return {
+      cost: 0,
+      revenue: job.total_amount || 0,
+      profit: 0,
+      marginPercent: 0
+    };
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -2254,81 +2278,171 @@ const Dashboard = ({ jobs, customers }) => {
         <p className="text-gray-600">Business Analytics & Reports</p>
       </div>
 
-      {/* Customer Activity Report */}
+      {/* Report 1: Products Sold with Margins */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Customer Activity - Sites per Customer</h3>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Active Sites</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Jobs</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {customers
-                .filter(c => {
-                  const customerJobs = jobs.filter(j => j.customer_id === c.id);
-                  return customerJobs.length > 0;
-                })
-                .map((customer, index) => {
-                  const customerJobs = jobs.filter(j => j.customer_id === customer.id);
-                  const uniqueSites = new Set(customerJobs.map(j => j.site_id).filter(Boolean));
-                  const totalRevenue = customerJobs.reduce((sum, j) => sum + (j.total_amount || 0), 0);
-                  
-                  return (
-                    <tr key={index}>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{customer.name}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{uniqueSites.size}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{customerJobs.length}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">£{totalRevenue.toFixed(2)}</td>
-                    </tr>
-                  );
-                })
-                .slice(0, 10)}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Top Products Report */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Top Products by Revenue</h3>
+        <h3 className="text-lg font-semibold mb-4">Products Sold with Margins</h3>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Times Ordered</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Units Sold</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Cost</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Revenue</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {(() => {
                 const productStats = {};
-                jobs.forEach(job => {
-                  if (job.items && Array.isArray(job.items)) {
-                    job.items.forEach(item => {
-                      const key = item.description || 'Unknown';
-                      if (!productStats[key]) {
-                        productStats[key] = { count: 0, revenue: 0 };
-                      }
-                      productStats[key].count++;
-                      productStats[key].revenue += (item.amount || 0);
-                    });
-                  }
+                jobs?.forEach(job => {
+                  job.items?.forEach(item => {
+                    const key = item.description || 'Unknown';
+                    if (!productStats[key]) {
+                      productStats[key] = { 
+                        count: 0, 
+                        cost: 0,
+                        revenue: 0, 
+                        profit: 0 
+                      };
+                    }
+                    productStats[key].count++;
+                    productStats[key].cost += (item.cost || 0);
+                    productStats[key].revenue += (item.rrp || item.amount || 0);
+                    productStats[key].profit += (item.line_profit || 0);
+                  });
                 });
                 
                 return Object.entries(productStats)
                   .sort((a, b) => b[1].revenue - a[1].revenue)
                   .slice(0, 10)
-                  .map(([product, stats], index) => (
+                  .map(([product, stats], index) => {
+                    const marginPercent = stats.revenue > 0 ? (stats.profit / stats.revenue) * 100 : 0;
+                    return (
+                      <tr key={index}>
+                        <td className="px-6 py-4 text-sm font-medium text-gray-900">{product}</td>
+                        <td className="px-6 py-4 text-sm text-gray-500">{stats.count}</td>
+                        <td className="px-6 py-4 text-sm text-gray-500">£{stats.cost.toFixed(2)}</td>
+                        <td className="px-6 py-4 text-sm text-gray-500">£{stats.revenue.toFixed(2)}</td>
+                        <td className="px-6 py-4 text-sm font-medium text-green-600">£{stats.profit.toFixed(2)}</td>
+                        <td className="px-6 py-4 text-sm font-medium text-blue-600">{marginPercent.toFixed(1)}%</td>
+                      </tr>
+                    );
+                  });
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Report 2: Top Customers with Turnover and Profit */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold mb-4">Top Customers - Turnover & Profit</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jobs</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Turnover</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actual Profit</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {customers
+                ?.map(customer => {
+                  const customerJobs = jobs?.filter(j => j.customer_id === customer.id) || [];
+                  let totalRevenue = 0;
+                  let totalProfit = 0;
+                  
+                  customerJobs.forEach(job => {
+                    const jobData = getJobMargin(job);
+                    totalRevenue += jobData.revenue;
+                    totalProfit += jobData.profit;
+                  });
+                  
+                  const marginPercent = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+                  
+                  return {
+                    ...customer,
+                    jobCount: customerJobs.length,
+                    turnover: totalRevenue,
+                    profit: totalProfit,
+                    marginPercent
+                  };
+                })
+                .filter(c => c.turnover > 0)
+                .sort((a, b) => b.turnover - a.turnover)
+                .slice(0, 10)
+                .map((customer, index) => (
+                  <tr key={index}>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{customer.name}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{customer.jobCount}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">£{customer.turnover.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-green-600">£{customer.profit.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-blue-600">{customer.marginPercent.toFixed(1)}%</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Report 3: Products Sold by Site Address */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold mb-4">Products by Site Address</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Products Delivered</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Jobs</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {(() => {
+                const siteStats = {};
+                jobs?.forEach(job => {
+                  const siteName = job.site_name || job.site_address || 'Unknown Site';
+                  if (!siteStats[siteName]) {
+                    siteStats[siteName] = { 
+                      products: new Set(), 
+                      jobCount: 0, 
+                      revenue: 0,
+                      profit: 0
+                    };
+                  }
+                  siteStats[siteName].jobCount++;
+                  
+                  const jobData = getJobMargin(job);
+                  siteStats[siteName].revenue += jobData.revenue;
+                  siteStats[siteName].profit += jobData.profit;
+                  
+                  job.items?.forEach(item => {
+                    if (item.description) {
+                      siteStats[siteName].products.add(item.description);
+                    }
+                  });
+                });
+                
+                return Object.entries(siteStats)
+                  .sort((a, b) => b[1].revenue - a[1].revenue)
+                  .slice(0, 10)
+                  .map(([site, stats], index) => (
                     <tr key={index}>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{product}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{stats.count}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{site}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {Array.from(stats.products).slice(0, 3).join(', ')}
+                        {stats.products.size > 3 ? ` +${stats.products.size - 3} more` : ''}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{stats.jobCount}</td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">£{stats.revenue.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-green-600">£{stats.profit.toFixed(2)}</td>
                     </tr>
                   ));
               })()}
@@ -2337,36 +2451,130 @@ const Dashboard = ({ jobs, customers }) => {
         </div>
       </div>
 
-      {/* High Margin Jobs Report */}
+      {/* Report 4: Highest Margin Sales */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Highest Revenue Jobs</h3>
+        <h3 className="text-lg font-semibold mb-4">Highest Margin Sales</h3>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job #</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {jobs
-                .filter(j => j.total_amount > 0)
-                .sort((a, b) => b.total_amount - a.total_amount)
+                ?.filter(j => j.items && j.items.length > 0)
+                .map(job => {
+                  const jobData = getJobMargin(job);
+                  return {
+                    ...job,
+                    ...jobData,
+                    customer: customers?.find(c => c.id === job.customer_id)
+                  };
+                })
+                .filter(j => j.marginPercent > 0)
+                .sort((a, b) => b.marginPercent - a.marginPercent)
                 .slice(0, 10)
-                .map((job, index) => {
-                  const customer = customers.find(c => c.id === job.customer_id);
-                  
-                  return (
+                .map((job, index) => (
+                  <tr key={index}>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{job.job_number}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{job.customer?.name || 'Unknown'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">£{job.revenue.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-green-600">£{job.profit.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-blue-600">{job.marginPercent.toFixed(1)}%</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Report 5: Top Suppliers */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold mb-4">Top Suppliers</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {suppliers
+                ?.slice(0, 10)
+                .map((supplier, index) => (
+                  <tr key={index}>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{supplier.name}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{supplier.contact_name || 'N/A'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{supplier.email || 'N/A'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{supplier.phone || 'N/A'}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Report 6: Top Products with Turnover and Profit */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold mb-4">Top Products - Turnover & Profit</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Times Sold</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Turnover</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actual Profit</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {(() => {
+                const productStats = {};
+                jobs?.forEach(job => {
+                  job.items?.forEach(item => {
+                    const key = item.description || 'Unknown';
+                    if (!productStats[key]) {
+                      productStats[key] = { 
+                        count: 0, 
+                        turnover: 0,
+                        profit: 0
+                      };
+                    }
+                    productStats[key].count++;
+                    productStats[key].turnover += (item.rrp || item.amount || 0);
+                    productStats[key].profit += (item.line_profit || 0);
+                  });
+                });
+                
+                return Object.entries(productStats)
+                  .map(([product, stats]) => ({
+                    product,
+                    count: stats.count,
+                    turnover: stats.turnover,
+                    profit: stats.profit,
+                    marginPercent: stats.turnover > 0 ? (stats.profit / stats.turnover) * 100 : 0
+                  }))
+                  .sort((a, b) => b.turnover - a.turnover)
+                  .slice(0, 10)
+                  .map((item, index) => (
                     <tr key={index}>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{job.job_number}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{customer?.name || 'Unknown'}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{job.site_name || 'N/A'}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">£{job.total_amount.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.product}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{item.count}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">£{item.turnover.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-green-600">£{item.profit.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.marginPercent.toFixed(1)}%</td>
                     </tr>
-                  );
-                })}
+                  ));
+              })()}
             </tbody>
           </table>
         </div>
