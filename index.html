@@ -2247,54 +2247,32 @@ tax_code: product.tax_rate_id || 'T1'
       // Dashboard Component
 const Dashboard = ({ jobs, customers, suppliers, products }) => {
   
-  // Debug: Check what field names we actually have
-  if (jobs && jobs.length > 0) {
-    const sampleJob = jobs[0];
-    console.log('Field check:', {
-      has_line_items: !!sampleJob.line_items,
-      has_lineItems: !!sampleJob.lineItems,
-      has_sage_line_items: !!sampleJob.sage_line_items,
-      lineItems_type: typeof sampleJob.lineItems,
-      line_items_type: typeof sampleJob.line_items
-    });
-  }
-  
-  // Helper to extract price data - checking both possible field names
+  // Helper to extract price data from lineItems array
   const getJobPricing = (job) => {
     let revenue = 0;
     let cost = 0;
     
-    // Check for line_items (snake_case) as a string
-    if (job.line_items && typeof job.line_items === 'string') {
-      try {
-        const items = JSON.parse(job.line_items);
-        if (Array.isArray(items)) {
-          items.forEach(item => {
-            const quantity = parseFloat(item.quantity) || 0;
-            const customerPrice = parseFloat(item.customer_price) || 0;
-            const supplierPrice = parseFloat(item.supplier_price) || 0;
-            
-            revenue += quantity * customerPrice;
-            cost += quantity * supplierPrice;
-          });
-        }
-      } catch (e) {
-        console.error('Error parsing line_items:', e);
-      }
-    }
-    // Check for lineItems (camelCase) as an array
-    else if (job.lineItems && Array.isArray(job.lineItems)) {
+    // Check for lineItems as an array of objects
+    if (job.lineItems && Array.isArray(job.lineItems)) {
       job.lineItems.forEach(item => {
-        // If the item has price data as strings (from your example)
-        if (item.customer_price || item.supplier_price) {
-          const quantity = parseFloat(item.quantity) || 0;
-          const customerPrice = parseFloat(item.customer_price) || 0;
-          const supplierPrice = parseFloat(item.supplier_price) || 0;
-          
+        const quantity = parseFloat(item.quantity) || 0;
+        const customerPrice = parseFloat(item.customer_price) || 0;
+        const supplierPrice = parseFloat(item.supplier_price) || 0;
+        
+        if (customerPrice > 0 || supplierPrice > 0) {
           revenue += quantity * customerPrice;
           cost += quantity * supplierPrice;
         }
       });
+    }
+    
+    // If still no prices, try other fields as fallback
+    if (revenue === 0) {
+      const quantity = parseFloat(job.quantity) || 1;
+      if (job.customerUnitPrice && parseFloat(job.customerUnitPrice) > 0) {
+        revenue = parseFloat(job.customerUnitPrice) * quantity;
+        cost = (parseFloat(job.supplierUnitPrice) || 0) * quantity;
+      }
     }
     
     const profit = revenue - cost;
@@ -2303,10 +2281,20 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
     return { revenue, cost, profit, marginPercent };
   };
 
-  // Your 6 reports continue here...
+  // Test with first job that has lineItems
+  const testJob = jobs?.find(j => j.lineItems && j.lineItems.length > 0);
+  if (testJob) {
+    console.log('Test job pricing:', {
+      job: testJob.jobNumber,
+      lineItems: testJob.lineItems,
+      calculated: getJobPricing(testJob)
+    });
+  }
+
+  // Rest of your dashboard with all 6 reports...
   return (
     <div className="space-y-6">
-      {/* All your report components */}
+      {/* All your reports here using getJobPricing */}
     </div>
   );
 };
