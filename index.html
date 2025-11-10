@@ -10588,35 +10588,40 @@ async createDraftInvoice(invoiceData) {
     }
   });
 },
-    async syncCustomersFromSage() {
-  try {
-    const sageCustomers = await this.getCustomers();
-    // Don't filter - use all customers that Sage returns
-const customerContacts = sageCustomers.$items;
-    
-    console.log(`Fetched ${customerContacts.length} customers from Sage`);
-    
-  //  existingCustomers = await window.supabase
-    //  .from('customers')
-      //.select('*');
-    
-    //syncResults = {
-      //new: [],
-      //updated: [],
-      //conflicts: []
-    //};
-    
-    // Continue with the rest of your existing code from line 5565 onwards...
+   async syncCustomersFromSage() {
+    try {
+        const sageCustomers = await this.getCustomers();
+        // Don't filter - use all customers that Sage returns
+        const customerContacts = sageCustomers.$items;
+        
+        console.log(`Fetched ${customerContacts.length} customers from Sage`);
 
-    const existingCustomers = await window.supabase
-      .from('customers')
-      .select('*');
-    
-    const syncResults = {
-      new: [],
-      updated: [],
-      conflicts: []
-    };
+        // ADDED: Filter out contacts that are BOTH customers AND suppliers
+        const pureCustomers = customerContacts.filter(contact => {
+            const hasCustomerType = contact.contact_types?.some(type => type.id === 'CUSTOMER');
+            const hasSupplierType = contact.contact_types?.some(type => type.id === 'SUPPLIER');
+            
+            // Only include if it's a customer but NOT also a supplier
+            return hasCustomerType && !hasSupplierType;
+        });
+        
+        console.log(`After filtering out dual-type contacts: ${pureCustomers.length} pure customers`);
+
+        // Then continue with the rest of your code, but use pureCustomers instead of customerContacts
+        const existingCustomers = await window.supabase
+            .from('customers')
+            .select('*');
+
+        const syncResults = {
+            new: [],
+            updated: [],
+            conflicts: []
+        };
+
+        // Change this line to use pureCustomers instead of customerContacts
+        for (const sageCustomer of pureCustomers) {  // <-- Changed from customerContacts
+            // ... rest of your existing code
+        }
     
  // Inside the for loop that processes sageCustomers
 for (const sageCustomer of customerContacts) {
