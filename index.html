@@ -2244,10 +2244,65 @@ tax_code: product.tax_rate_id || 'T1'
           );
         };
 
-      // Dashboard Component - FINAL VERSION
+      import { useState } from 'react';
+
+// Dashboard Component - COMPLETE WITH FILTERS AND SEARCH
 const Dashboard = ({ jobs, customers, suppliers, products }) => {
+  // State for filters
+  const [dateRange, setDateRange] = useState('all');
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
   
-  // Helper to extract price data from lineItems with string prices
+  // State for search bars
+  const [searchTerms, setSearchTerms] = useState({
+    products: '',
+    customers: '',
+    sites: '',
+    margins: '',
+    suppliers: '',
+    topProducts: ''
+  });
+
+  // Helper to filter jobs by date range
+  const filterJobsByDate = (jobsList) => {
+    if (dateRange === 'all') return jobsList;
+    
+    const now = new Date();
+    const today = new Date(now.setHours(0, 0, 0, 0));
+    
+    return jobsList.filter(job => {
+      const jobDate = new Date(job.jobDate);
+      
+      switch(dateRange) {
+        case 'day':
+          return jobDate >= today;
+        case 'week':
+          const weekAgo = new Date(today);
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          return jobDate >= weekAgo;
+        case 'month':
+          const monthAgo = new Date(today);
+          monthAgo.setMonth(monthAgo.getMonth() - 1);
+          return jobDate >= monthAgo;
+        case 'year':
+          const yearAgo = new Date(today);
+          yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+          return jobDate >= yearAgo;
+        case 'custom':
+          if (startDate && endDate) {
+            return jobDate >= new Date(startDate) && jobDate <= new Date(endDate);
+          }
+          return true;
+        default:
+          return true;
+      }
+    });
+  };
+
+  // Apply date filter to all jobs
+  const filteredJobs = filterJobsByDate(jobs || []);
+
+  // Helper to extract price data from lineItems
   const getJobPricing = (job) => {
     let revenue = 0;
     let cost = 0;
@@ -2282,9 +2337,59 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
         <p className="text-gray-600">Business Analytics & Reports</p>
       </div>
 
+      {/* Global Date Filter */}
+      <div className="bg-white rounded-lg p-4 shadow">
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="font-semibold">Date Range:</label>
+          <select 
+            value={dateRange} 
+            onChange={(e) => setDateRange(e.target.value)}
+            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Time</option>
+            <option value="day">Today</option>
+            <option value="week">Last 7 Days</option>
+            <option value="month">Last Month</option>
+            <option value="year">Last Year</option>
+            <option value="custom">Custom Range</option>
+          </select>
+          
+          {dateRange === 'custom' && (
+            <>
+              <input 
+                type="date" 
+                value={startDate || ''} 
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span>to</span>
+              <input 
+                type="date" 
+                value={endDate || ''} 
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </>
+          )}
+          
+          <span className="ml-auto text-sm text-gray-600">
+            Showing {filteredJobs.length} of {jobs?.length || 0} jobs
+          </span>
+        </div>
+      </div>
+
       {/* Report 1: Products Sold with Margins */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Products Sold with Margins</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Products Sold with Margins</h3>
+          <input 
+            type="text"
+            placeholder="Search products..."
+            value={searchTerms.products}
+            onChange={(e) => setSearchTerms({...searchTerms, products: e.target.value})}
+            className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -2301,7 +2406,7 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
             <tbody className="bg-white divide-y divide-gray-200">
               {(() => {
                 const productStats = {};
-                jobs?.forEach(job => {
+                filteredJobs?.forEach(job => {
                   const productType = job.jobType || 'Unknown';
                   const pricing = getJobPricing(job);
                   
@@ -2326,6 +2431,10 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
                     profit: stats.revenue - stats.cost,
                     marginPercent: stats.revenue > 0 ? ((stats.revenue - stats.cost) / stats.revenue) * 100 : 0
                   }))
+                  .filter(item => 
+                    searchTerms.products === '' || 
+                    item.product.toLowerCase().includes(searchTerms.products.toLowerCase())
+                  )
                   .sort((a, b) => b.revenue - a.revenue)
                   .slice(0, 10)
                   .map((item, index) => (
@@ -2347,7 +2456,16 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
 
       {/* Report 2: Top Customers with Turnover and Profit */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Top Customers with Turnover and Profit</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Top Customers with Turnover and Profit</h3>
+          <input 
+            type="text"
+            placeholder="Search customers..."
+            value={searchTerms.customers}
+            onChange={(e) => setSearchTerms({...searchTerms, customers: e.target.value})}
+            className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -2362,7 +2480,7 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
             <tbody className="bg-white divide-y divide-gray-200">
               {(() => {
                 const customerStats = {};
-                jobs?.forEach(job => {
+                filteredJobs?.forEach(job => {
                   const customerName = job.customerName || 'Unknown';
                   const pricing = getJobPricing(job);
                   
@@ -2385,6 +2503,10 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
                     profit: stats.revenue - stats.cost,
                     marginPercent: stats.revenue > 0 ? ((stats.revenue - stats.cost) / stats.revenue) * 100 : 0
                   }))
+                  .filter(item => 
+                    searchTerms.customers === '' || 
+                    item.name.toLowerCase().includes(searchTerms.customers.toLowerCase())
+                  )
                   .sort((a, b) => b.revenue - a.revenue)
                   .slice(0, 10)
                   .map((customer, index) => (
@@ -2404,7 +2526,16 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
 
       {/* Report 3: Products Sold by Site Address */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Products Sold by Site Address</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Products Sold by Site Address</h3>
+          <input 
+            type="text"
+            placeholder="Search sites..."
+            value={searchTerms.sites}
+            onChange={(e) => setSearchTerms({...searchTerms, sites: e.target.value})}
+            className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -2419,7 +2550,7 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
             <tbody className="bg-white divide-y divide-gray-200">
               {(() => {
                 const siteStats = {};
-                jobs?.forEach(job => {
+                filteredJobs?.forEach(job => {
                   const siteName = job.siteAddress1 || job.siteAddress2 || job.siteAddress || 'Unknown';
                   if (siteName && siteName !== '') {
                     if (!siteStats[siteName]) {
@@ -2442,6 +2573,10 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
                 
                 return Object.entries(siteStats)
                   .filter(([site]) => site !== 'Unknown')
+                  .filter(([site]) => 
+                    searchTerms.sites === '' || 
+                    site.toLowerCase().includes(searchTerms.sites.toLowerCase())
+                  )
                   .map(([site, stats]) => ({
                     site,
                     ...stats,
@@ -2466,7 +2601,16 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
 
       {/* Report 4: Highest Margin Sales */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Highest Margin Sales</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Highest Margin Sales</h3>
+          <input 
+            type="text"
+            placeholder="Search jobs..."
+            value={searchTerms.margins}
+            onChange={(e) => setSearchTerms({...searchTerms, margins: e.target.value})}
+            className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -2479,12 +2623,17 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {jobs
+              {filteredJobs
                 ?.map(job => ({
                   ...job,
                   ...getJobPricing(job)
                 }))
                 .filter(j => j.marginPercent > 0)
+                .filter(j => 
+                  searchTerms.margins === '' || 
+                  j.jobNumber.toLowerCase().includes(searchTerms.margins.toLowerCase()) ||
+                  (j.customerName && j.customerName.toLowerCase().includes(searchTerms.margins.toLowerCase()))
+                )
                 .sort((a, b) => b.marginPercent - a.marginPercent)
                 .slice(0, 10)
                 .map((job, index) => (
@@ -2503,7 +2652,16 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
 
       {/* Report 5: Top Suppliers */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Top Suppliers</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Top Suppliers</h3>
+          <input 
+            type="text"
+            placeholder="Search suppliers..."
+            value={searchTerms.suppliers}
+            onChange={(e) => setSearchTerms({...searchTerms, suppliers: e.target.value})}
+            className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -2518,7 +2676,7 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
             <tbody className="bg-white divide-y divide-gray-200">
               {(() => {
                 const supplierStats = {};
-                jobs?.forEach(job => {
+                filteredJobs?.forEach(job => {
                   if (job.supplierName) {
                     if (!supplierStats[job.supplierName]) {
                       supplierStats[job.supplierName] = {
@@ -2540,6 +2698,10 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
                     ...stats,
                     profit: stats.totalRevenue - stats.totalSpend
                   }))
+                  .filter(item => 
+                    searchTerms.suppliers === '' || 
+                    item.name.toLowerCase().includes(searchTerms.suppliers.toLowerCase())
+                  )
                   .sort((a, b) => b.totalRevenue - a.totalRevenue)
                   .slice(0, 10)
                   .map((supplier, index) => (
@@ -2559,7 +2721,16 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
 
       {/* Report 6: Top Products with Turnover and Profit */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Top Products with Turnover and Profit</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Top Products with Turnover and Profit</h3>
+          <input 
+            type="text"
+            placeholder="Search products..."
+            value={searchTerms.topProducts}
+            onChange={(e) => setSearchTerms({...searchTerms, topProducts: e.target.value})}
+            className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -2574,7 +2745,7 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
             <tbody className="bg-white divide-y divide-gray-200">
               {(() => {
                 const productDetails = {};
-                jobs?.forEach(job => {
+                filteredJobs?.forEach(job => {
                   if (job.lineItems && Array.isArray(job.lineItems)) {
                     job.lineItems.forEach(item => {
                       const productName = item.product_name || item.description || 'Unknown';
@@ -2600,6 +2771,10 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
                     profit: stats.revenue - stats.cost,
                     marginPercent: stats.revenue > 0 ? ((stats.revenue - stats.cost) / stats.revenue) * 100 : 0
                   }))
+                  .filter(item => 
+                    searchTerms.topProducts === '' || 
+                    item.product.toLowerCase().includes(searchTerms.topProducts.toLowerCase())
+                  )
                   .sort((a, b) => b.revenue - a.revenue)
                   .slice(0, 10)
                   .map((item, index) => (
