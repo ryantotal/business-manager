@@ -8873,10 +8873,11 @@ notes: quote.notes,
             ...(user.role === 'ADMIN' ? [{ id: 'admin', name: 'Admin', icon: 'Settings' }] : [])
           ];
 
-   const handleAddJob = async (newJob) => {
+ const handleAddJob = async (newJob) => {
   // Prevent duplicate submissions
   if (isSubmitting) return;
   setIsSubmitting(true);
+  
   try {
     // Save to Supabase database
     // Convert camelCase JavaScript fields to snake_case database fields
@@ -8916,8 +8917,8 @@ notes: quote.notes,
       access_restrictions: newJob.accessRestrictions || null,
       time_slot: newJob.timeSlot || null,
       delivery_date: newJob.deliveryDate || null,
-      collection_date: newJob.collectionDate || null,  // KEEP ONLY ONE
-      created_date: new Date().toISOString().split('T')[0],  // ADD THIS
+      collection_date: newJob.collectionDate || null,
+      // DON'T add created_date - use created_at which is automatic
       status: newJob.status || 'CONFIRMED',
       is_completed: newJob.isCompleted || false,
       is_cancelled: newJob.isCancelled || false,
@@ -8935,36 +8936,34 @@ notes: quote.notes,
       linked_jobs: JSON.stringify(newJob.linkedJobs || []),
       notes: newJob.notes || null,
       sage_product_data: newJob.sage_product_data || null,
-      // REMOVED duplicate collection_date
       sage_line_items: newJob.sage_line_items || null
     };
-// Remove id field if invalid
-if (!jobForDatabase.id || jobForDatabase.id === 'undefined' || jobForDatabase.id === 'null') {
-    delete jobForDatabase.id;
-}
+
+    // Remove id field if invalid
+    if (!jobForDatabase.id || jobForDatabase.id === 'undefined' || jobForDatabase.id === 'null') {
+      delete jobForDatabase.id;
+    }
+
     const { data, error } = await window.supabase
       .from('jobs')
       .insert([jobForDatabase])
       .select();
-    
+
     if (error) throw error;
 
-    // IMPORTANT FIX: Use the returned data which includes the generated UUID
+    // Use the returned data which includes the generated UUID
     const savedJob = {
       ...newJob,
-      id: data[0].id  // This is the generated UUID from Supabase
+      id: data[0].id,
+      createdAt: data[0].created_at  // Store the created_at timestamp
     };
 
     // Add to local jobs state with the proper ID
     setJobs(prevJobs => [savedJob, ...prevJobs]);
-
     setShowJobForm(false);
     setEditingJob(null);
-    
-    console.log('Job saved to database with ID:', data[0].id);
   } catch (error) {
-    console.error('Error saving job:', error);
-    alert('Error saving job: ' + error.message);
+    console.error('Error adding job:', error);
   } finally {
     setIsSubmitting(false);
   }
