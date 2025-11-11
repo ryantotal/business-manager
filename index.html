@@ -4644,7 +4644,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
           {/* Dates Row */}
           <div>
             <span className="text-xs text-gray-600">Created:</span>
-            <p className="font-semibold text-xs">{job.createdDate ? new Date(job.createdDate).toLocaleDateString() : new Date(job.jobDate).toLocaleDateString()}</p>
+            {job.createdDate || job.created_at ? new Date(job.createdDate || job.created_at).toLocaleDateString() : 'Not provided'}
           </div>
           
           <div>
