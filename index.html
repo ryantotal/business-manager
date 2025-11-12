@@ -3462,15 +3462,14 @@ const uploadJobAttachment = async () => {
   onClick={() => handleJobClick(job)}
   title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}`}
 >
-                                <div className="truncate font-medium text-xs">
+                               <div className="truncate font-medium text-xs">
   {job.customerName || 'No Customer'}
 </div>
 <div className="truncate text-[10px] opacity-75">
   {job.sitePostcode || job.postcode || 'No Postcode'}
-  {/* Add product/service info after postcode */}
-  {(job.description || job.sage_product_name || job.job_type) && 
-    ` - ${job.description || job.sage_product_name || job.job_type}`
-  }
+</div>
+<div className="truncate text-[10px] font-bold">
+  {job.description || job.sage_product_name || job.waste_type || job.job_type || ''}
 </div>
                               </div>
                             );
