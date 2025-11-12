@@ -3370,174 +3370,185 @@ const uploadJobAttachment = async () => {
   }
 };
 
-          // Calendar View Component
-          const CalendarView = () => {
-            const [expandedDays, setExpandedDays] = useState({});
-            const year = currentMonth.getFullYear();
-            const month = currentMonth.getMonth();
-            const firstDay = new Date(year, month, 1);
-            const lastDay = new Date(year, month + 1, 0);
-            const days = [];
+         // Calendar View Component
+const CalendarView = () => {
+  const [expandedDays, setExpandedDays] = useState({});
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const days = [];
 
-            // Get all days in the month
-            for (let d = 1; d <= lastDay.getDate(); d++) {
-              days.push(new Date(year, month, d));
-            }
+  // Get all days in the month
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    days.push(new Date(year, month, d));
+  }
 
-            // Group jobs by date
-            const jobsByDate = {};
-            filteredJobs.forEach(job => {
-              const jobDate = new Date(job.jobDate);
-              const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
-              if (!jobsByDate[dateKey]) jobsByDate[dateKey] = [];
-              jobsByDate[dateKey].push(job);
-            });
+  // Group jobs by date
+  const jobsByDate = {};
+  filteredJobs.forEach(job => {
+    const jobDate = new Date(job.jobDate);
+    const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
+    if (!jobsByDate[dateKey]) jobsByDate[dateKey] = [];
+    jobsByDate[dateKey].push(job);
+  });
 
-            const navigateMonth = (direction) => {
-              const newMonth = new Date(currentMonth);
-              newMonth.setMonth(newMonth.getMonth() + direction);
-              setCurrentMonth(newMonth);
-            };
+  const navigateMonth = (direction) => {
+    const newMonth = new Date(currentMonth);
+    newMonth.setMonth(newMonth.getMonth() + direction);
+    setCurrentMonth(newMonth);
+  };
 
-            return (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-semibold">Calendar View</h3>
-                  <div className="flex items-center space-x-4">
-                    <button
-                      onClick={() => navigateMonth(-1)}
-                      className="p-2 hover:bg-gray-100 rounded-lg"
-                    >
-                      <ChevronDown size={20} className="rotate-90" />
-                    </button>
-                    <span className="font-medium">
-                      {currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
-                    </span>
-                    <button
-                      onClick={() => navigateMonth(1)}
-                      className="p-2 hover:bg-gray-100 rounded-lg"
-                    >
-                      <ChevronDown size={20} className="-rotate-90" />
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-7 gap-2">
-                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-  <div key={day} className="text-center font-medium text-gray-600 p-2">
-    {day}
-  </div>
-))}
-                  {Array((firstDay.getDay() + 6) % 7).fill(null).map((_, index) => (
-  <div key={`empty-${index}`} className="p-2"></div>
-))}
-                  {days.map(day => {
-                    const dateKey = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
-                    const dayJobs = jobsByDate[dateKey] || [];
-                    const isToday = new Date().toDateString() === day.toDateString();
-                    
-                    return (
-                      <div 
-                        key={dateKey} 
-                        className={`border border-gray-200 rounded-lg p-2 min-h-[100px] ${
-                          isToday ? 'bg-blue-50 border-blue-300' : ''
-                        }`}
-                      >
-                        <div className={`font-medium mb-1 ${isToday ? 'text-blue-700' : 'text-gray-700'}`}>
-                          {day.getDate()}
-                        </div>
-                        <div className="space-y-1">
-                          {dayJobs.slice(0, expandedDays[day.toDateString()] ? dayJobs.length : 3).map(job => {
-                            const isFinished = job.isCompleted || job.status === 'COLLECTED';
-                            return (
-                              <div
-  key={job.id}
-  className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
-    isFinished ? 'bg-green-500' : ''
-  }`}
-  style={{ 
-    backgroundColor: isFinished ? '' : jobColors[job.jobType] + '20', 
-    color: isFinished ? 'black' : jobColors[job.jobType],
-    borderLeft: `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
-  }}
-  onClick={() => handleJobClick(job)}
-  title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}`}
->
-                               <div className="truncate font-medium text-xs">
-  {job.customerName || 'No Customer'}
-</div>
-<div className="truncate text-[10px] opacity-75">
-  {job.sitePostcode || job.postcode || 'No Postcode'}
-</div>
-<div className="truncate text-[10px] font-bold">
-  {(() => {
-    // Try to parse sage_line_items if it exists
-    if (job.sage_line_items) {
-      try {
-        const items = typeof job.sage_line_items === 'string' 
-          ? JSON.parse(job.sage_line_items) 
-          : job.sage_line_items;
-        
-        if (items && items.length > 0) {
-          // Show first product name, add "+" if multiple
-          const firstItem = items[0].description || items[0].product_name || '';
-          return items.length > 1 ? `${firstItem} +${items.length - 1}` : firstItem;
-        }
-      } catch (e) {
-        // If parsing fails, fall back
-      }
-    }
-    
-    // Fallback to other fields
-    return job.description || job.sage_product_name || job.waste_type || job.job_type || '';
-  })()}
-</div>
-                              </div>
-                            );
-                          })}
-                          {dayJobs.length > 3 && (
-  <div 
-    className="text-xs text-blue-600 text-center mt-1 py-1 bg-blue-50 rounded cursor-pointer hover:bg-blue-100 transition-colors"
-    onClick={(e) => {
-      e.stopPropagation();
-      setExpandedDays(prev => ({
-        ...prev,
-        [day.toDateString()]: !prev[day.toDateString()]
-      }));
-    }}
-  >
-    {expandedDays[day.toDateString()] ? 'Show less' : `+${dayJobs.length - 3} more`}
-  </div>
-)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-4 flex flex-wrap gap-4">
-                  <div className="text-sm text-gray-600">Job Types:</div>
-                  {Object.entries(jobColors).map(([type, color]) => (
-                    <div key={type} className="flex items-center space-x-2 text-sm">
-                      <div 
-                        className="w-4 h-4 rounded" 
-                        style={{ backgroundColor: color }}
-                      />
-                      <span>{type}</span>
-                    </div>
-                  ))}
-{/* Add Completed status with "C" */}
-<div className="flex items-center space-x-2 text-sm">
-  <div
-    className="w-4 h-4 rounded flex items-center justify-center text-xs font-bold"
-    style={{ backgroundColor: '#15803d', color: '#000' }}
-  >
-    C
-  </div>
-  <span>Completed</span>
-</div>
-                </div>
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-lg font-semibold">Calendar View</h3>
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={() => navigateMonth(-1)}
+            className="p-2 hover:bg-gray-100 rounded-lg"
+          >
+            <ChevronDown size={20} className="rotate-90" />
+          </button>
+          <span className="font-medium">
+            {currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+          </span>
+          <button
+            onClick={() => navigateMonth(1)}
+            className="p-2 hover:bg-gray-100 rounded-lg"
+          >
+            <ChevronDown size={20} className="-rotate-90" />
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 gap-2">
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+          <div key={day} className="text-center font-medium text-gray-600 p-2">
+            {day}
+          </div>
+        ))}
+        {Array((firstDay.getDay() + 6) % 7).fill(null).map((_, index) => (
+          <div key={`empty-${index}`} className="p-2"></div>
+        ))}
+        {days.map(day => {
+          const dateKey = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
+          const dayJobs = jobsByDate[dateKey] || [];
+          const isToday = new Date().toDateString() === day.toDateString();
+          
+          return (
+            <div 
+              key={dateKey} 
+              className={`border border-gray-200 rounded-lg p-2 min-h-[100px] ${
+                isToday ? 'bg-blue-50 border-blue-300' : ''
+              }`}
+            >
+              <div className={`font-medium mb-1 ${isToday ? 'text-blue-700' : 'text-gray-700'}`}>
+                {day.getDate()}
               </div>
-            );
-          };
+              <div className="space-y-1">
+                {dayJobs.slice(0, expandedDays[day.toDateString()] ? dayJobs.length : 3).map(job => {
+                  const isFinished = job.isCompleted || job.status === 'COLLECTED';
+                  return (
+                    <div
+                      key={job.id}
+                      className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
+                        isFinished ? 'bg-green-500' : ''
+                      }`}
+                      style={{ 
+                        backgroundColor: isFinished ? '' : jobColors[job.jobType] + '20', 
+                        color: isFinished ? 'black' : jobColors[job.jobType],
+                        borderLeft: `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
+                      }}
+                      onClick={() => handleJobClick(job)}
+                      title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}`}
+                    >
+                      <div className="truncate font-medium text-xs">
+                        {job.customerName || 'No Customer'}
+                      </div>
+                      <div className="truncate text-[10px] opacity-75">
+                        {job.sitePostcode || job.postcode || 'No Postcode'}
+                      </div>
+                      <div className="truncate text-[10px] font-bold">
+                        {(() => {
+                          // Debug: Log what fields are available
+                          console.log(`Job ${job.jobNumber} data:`, {
+                            sage_line_items: job.sage_line_items,
+                            description: job.description,
+                            sage_product_name: job.sage_product_name,
+                            waste_type: job.waste_type,
+                            job_type: job.job_type
+                          });
+                          
+                          // Try to parse sage_line_items if it exists
+                          if (job.sage_line_items) {
+                            try {
+                              const items = typeof job.sage_line_items === 'string' 
+                                ? JSON.parse(job.sage_line_items) 
+                                : job.sage_line_items;
+                              
+                              console.log(`Parsed items for ${job.jobNumber}:`, items);
+                              
+                              if (items && items.length > 0) {
+                                // Show first product name, add "+" if multiple
+                                const firstItem = items[0].description || items[0].product_name || '';
+                                return items.length > 1 ? `${firstItem} +${items.length - 1}` : firstItem;
+                              }
+                            } catch (e) {
+                              console.error(`Failed to parse sage_line_items for ${job.jobNumber}:`, e);
+                            }
+                          }
+                          
+                          // Fallback to other fields
+                          return job.description || job.sage_product_name || job.waste_type || job.job_type || '';
+                        })()}
+                      </div>
+                    </div>
+                  );
+                })}
+                {dayJobs.length > 3 && (
+                  <div 
+                    className="text-xs text-blue-600 text-center mt-1 py-1 bg-blue-50 rounded cursor-pointer hover:bg-blue-100 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedDays(prev => ({
+                        ...prev,
+                        [day.toDateString()]: !prev[day.toDateString()]
+                      }));
+                    }}
+                  >
+                    {expandedDays[day.toDateString()] ? 'Show less' : `+${dayJobs.length - 3} more`}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-4">
+        <div className="text-sm text-gray-600">Job Types:</div>
+        {Object.entries(jobColors).map(([type, color]) => (
+          <div key={type} className="flex items-center space-x-2 text-sm">
+            <div 
+              className="w-4 h-4 rounded" 
+              style={{ backgroundColor: color }}
+            />
+            <span>{type}</span>
+          </div>
+        ))}
+        {/* Add Completed status with "C" */}
+        <div className="flex items-center space-x-2 text-sm">
+          <div
+            className="w-4 h-4 rounded flex items-center justify-center text-xs font-bold"
+            style={{ backgroundColor: '#15803d', color: '#000' }}
+          >
+            C
+          </div>
+          <span>Completed</span>
+        </div>
+      </div>
+    </div>
+  );
+};
 
        return (
   <>
