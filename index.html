@@ -2259,7 +2259,8 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
     sites: '',
     margins: '',
     suppliers: '',
-    topProducts: ''
+    topProducts: '',
+    siteDetails: ''  // Added for new report
   });
 
   // Helper to filter jobs by date range
@@ -2783,6 +2784,105 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">£{item.revenue.toFixed(2)}</td>
                       <td className="px-6 py-4 text-sm font-medium text-green-600">£{item.profit.toFixed(2)}</td>
                       <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.marginPercent.toFixed(1)}%</td>
+                    </tr>
+                  ));
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Report 7: Site Product Details - NEW REPORT */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Site Product Details</h3>
+          <input 
+            type="text"
+            placeholder="Search site or product..."
+            value={searchTerms.siteDetails || ''}
+            onChange={(e) => setSearchTerms({...searchTerms, siteDetails: e.target.value})}
+            className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site Address</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product Delivered</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job #</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {(() => {
+                const siteProductDetails = [];
+                
+                filteredJobs?.forEach(job => {
+                  const siteName = job.siteAddress1 || job.siteAddress2 || job.siteAddress || '';
+                  
+                  if (siteName && siteName !== '') {
+                    // Check each line item for specific products
+                    if (job.lineItems && Array.isArray(job.lineItems)) {
+                      job.lineItems.forEach(item => {
+                        const productName = item.product_name || item.description || 'Unknown Product';
+                        const quantity = parseFloat(item.quantity) || 0;
+                        
+                        siteProductDetails.push({
+                          site: siteName,
+                          product: productName,
+                          quantity: quantity,
+                          date: job.jobDate,
+                          customer: job.customerName || 'Unknown',
+                          jobNumber: job.jobNumber,
+                          unit: job.unit || 'units'
+                        });
+                      });
+                    } else {
+                      // If no line items, use job type as product
+                      siteProductDetails.push({
+                        site: siteName,
+                        product: job.jobType || 'Unknown',
+                        quantity: parseFloat(job.quantity) || 0,
+                        date: job.jobDate,
+                        customer: job.customerName || 'Unknown',
+                        jobNumber: job.jobNumber,
+                        unit: job.unit || 'units'
+                      });
+                    }
+                  }
+                });
+                
+                // Filter by search term and sort by site, then date
+                return siteProductDetails
+                  .filter(item => {
+                    if (searchTerms.siteDetails === '' || !searchTerms.siteDetails) return true;
+                    const searchLower = searchTerms.siteDetails.toLowerCase();
+                    return item.site.toLowerCase().includes(searchLower) || 
+                           item.product.toLowerCase().includes(searchLower) ||
+                           item.customer.toLowerCase().includes(searchLower);
+                  })
+                  .sort((a, b) => {
+                    // First sort by site
+                    if (a.site !== b.site) return a.site.localeCompare(b.site);
+                    // Then by date (newest first)
+                    return new Date(b.date) - new Date(a.date);
+                  })
+                  .slice(0, 50) // Show more entries for this detailed view
+                  .map((item, index) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.site}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700">{item.product}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {item.quantity} {item.unit}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {new Date(item.date).toLocaleDateString('en-GB')}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{item.customer}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.jobNumber}</td>
                     </tr>
                   ));
               })()}
