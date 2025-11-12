@@ -2793,11 +2793,20 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
         </div>
       </div>
 
-    {/* Report 7: Site Product Details - FIXED VERSION */}
+ {/* Report 7: Site Product Details - WITH FULL GROUPING */}
 <div className="bg-white rounded-xl border border-gray-200 p-6">
   <div className="flex justify-between items-center mb-4">
     <h3 className="text-lg font-semibold">Site Product Details</h3>
-    <div className="flex gap-2">
+    <div className="flex gap-2 items-center">
+      <label className="flex items-center gap-2">
+        <input 
+          type="checkbox"
+          checked={groupByProduct || false}
+          onChange={(e) => setGroupByProduct(e.target.checked)}
+          className="rounded border-gray-300"
+        />
+        <span className="text-sm">Group by Product</span>
+      </label>
       <input 
         type="text"
         placeholder="Search site address..."
@@ -2820,14 +2829,28 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
         <tr>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site Address</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product Delivered</th>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost</th>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit</th>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job #</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+            {groupByProduct ? 'Total Quantity' : 'Quantity'}
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+            {groupByProduct ? 'Date Range' : 'Date'}
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+            {groupByProduct ? 'Total Jobs' : 'Customer'}
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+            {groupByProduct ? 'Total Revenue' : 'Revenue'}
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+            {groupByProduct ? 'Total Cost' : 'Cost'}
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+            {groupByProduct ? 'Total Profit' : 'Profit'}
+          </th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Margin %</th>
+          {!groupByProduct && (
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job #</th>
+          )}
         </tr>
       </thead>
       <tbody className="bg-white divide-y divide-gray-200">
@@ -2838,7 +2861,6 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
             const siteName = job.siteAddress1 || job.siteAddress2 || job.siteAddress || '';
             
             if (siteName && siteName !== '') {
-              // Check each line item for specific products
               if (job.lineItems && Array.isArray(job.lineItems)) {
                 job.lineItems.forEach(item => {
                   const productName = item.product_name || item.description || 'Unknown Product';
@@ -2865,7 +2887,6 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
                   });
                 });
               } else {
-                // If no line items, use job type as product
                 const pricing = getJobPricing(job);
                 siteProductDetails.push({
                   site: siteName,
@@ -2884,44 +2905,104 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
             }
           });
           
-          // Apply both filters
-          return siteProductDetails
-            .filter(item => {
-              // Filter by site address
-              const siteMatch = !searchTerms.siteAddress || 
-                item.site.toLowerCase().includes(searchTerms.siteAddress.toLowerCase());
-              
-              // Filter by product
-              const productMatch = !searchTerms.siteProduct || 
-                item.product.toLowerCase().includes(searchTerms.siteProduct.toLowerCase());
-              
-              return siteMatch && productMatch;
-            })
-            .sort((a, b) => {
-              // First sort by site
-              if (a.site !== b.site) return a.site.localeCompare(b.site);
-              // Then by date (newest first)
-              return new Date(b.date) - new Date(a.date);
-            })
-            .slice(0, 50) // Show more entries for this detailed view
-            .map((item, index) => (
-              <tr key={index}>
-                <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.site}</td>
-                <td className="px-6 py-4 text-sm text-gray-700">{item.product}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">
-                  {item.quantity} {item.unit}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500">
-                  {new Date(item.date).toLocaleDateString('en-GB')}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500">{item.customer}</td>
-                <td className="px-6 py-4 text-sm font-medium text-gray-900">£{item.revenue.toFixed(2)}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">£{item.cost.toFixed(2)}</td>
-                <td className="px-6 py-4 text-sm font-medium text-green-600">£{item.profit.toFixed(2)}</td>
-                <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.marginPercent.toFixed(1)}%</td>
-                <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.jobNumber}</td>
-              </tr>
-            ));
+          // Apply filters
+          let filteredData = siteProductDetails.filter(item => {
+            const siteMatch = !searchTerms.siteAddress || 
+              item.site.toLowerCase().includes(searchTerms.siteAddress.toLowerCase());
+            const productMatch = !searchTerms.siteProduct || 
+              item.product.toLowerCase().includes(searchTerms.siteProduct.toLowerCase());
+            return siteMatch && productMatch;
+          });
+
+          // Group by product if enabled
+          if (groupByProduct) {
+            const grouped = {};
+            filteredData.forEach(item => {
+              const key = `${item.site}|${item.product}`;
+              if (!grouped[key]) {
+                grouped[key] = {
+                  site: item.site,
+                  product: item.product,
+                  quantity: 0,
+                  revenue: 0,
+                  cost: 0,
+                  profit: 0,
+                  unit: item.unit,
+                  jobs: 0,
+                  dates: [],
+                  customers: new Set()
+                };
+              }
+              grouped[key].quantity += item.quantity;
+              grouped[key].revenue += item.revenue;
+              grouped[key].cost += item.cost;
+              grouped[key].profit += item.profit;
+              grouped[key].jobs += 1;
+              grouped[key].dates.push(new Date(item.date));
+              grouped[key].customers.add(item.customer);
+            });
+
+            return Object.values(grouped)
+              .map(item => {
+                // Get earliest and latest dates
+                const sortedDates = item.dates.sort((a, b) => a - b);
+                const dateRange = sortedDates.length > 1 
+                  ? `${sortedDates[0].toLocaleDateString('en-GB')} - ${sortedDates[sortedDates.length - 1].toLocaleDateString('en-GB')}`
+                  : sortedDates[0].toLocaleDateString('en-GB');
+                
+                return {
+                  ...item,
+                  dateRange,
+                  marginPercent: item.revenue > 0 ? (item.profit / item.revenue) * 100 : 0
+                };
+              })
+              .sort((a, b) => {
+                if (a.site !== b.site) return a.site.localeCompare(b.site);
+                return b.revenue - a.revenue;
+              })
+              .slice(0, 50)
+              .map((item, index) => (
+                <tr key={index} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.site}</td>
+                  <td className="px-6 py-4 text-sm text-gray-700">{item.product}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                    {item.quantity.toFixed(0)} {item.unit}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500">{item.dateRange}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500">{item.jobs}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900">£{item.revenue.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500">£{item.cost.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-green-600">£{item.profit.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.marginPercent.toFixed(1)}%</td>
+                </tr>
+              ));
+          } else {
+            // Original detailed view (unchanged)
+            return filteredData
+              .sort((a, b) => {
+                if (a.site !== b.site) return a.site.localeCompare(b.site);
+                return new Date(b.date) - new Date(a.date);
+              })
+              .slice(0, 50)
+              .map((item, index) => (
+                <tr key={index}>
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.site}</td>
+                  <td className="px-6 py-4 text-sm text-gray-700">{item.product}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    {item.quantity} {item.unit}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    {new Date(item.date).toLocaleDateString('en-GB')}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500">{item.customer}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900">£{item.revenue.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500">£{item.cost.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-green-600">£{item.profit.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.marginPercent.toFixed(1)}%</td>
+                  <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.jobNumber}</td>
+                </tr>
+              ));
+          }
         })()}
       </tbody>
     </table>
