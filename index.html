@@ -3470,36 +3470,26 @@ const CalendarView = () => {
                       </div>
                       <div className="truncate text-[10px] font-bold">
                         {(() => {
-                          // Debug: Log what fields are available
-                          console.log(`Job ${job.jobNumber} data:`, {
-                            sage_line_items: job.sage_line_items,
-                            description: job.description,
-                            sage_product_name: job.sage_product_name,
-                            waste_type: job.waste_type,
-                            job_type: job.job_type
-                          });
-                          
-                          // Try to parse sage_line_items if it exists
-                          if (job.sage_line_items) {
+                          // Try to parse sageLineItems (camelCase) or lineItems
+                          if (job.sageLineItems || job.lineItems) {
                             try {
-                              const items = typeof job.sage_line_items === 'string' 
-                                ? JSON.parse(job.sage_line_items) 
-                                : job.sage_line_items;
+                              const items = job.sageLineItems || job.lineItems;
+                              const parsedItems = typeof items === 'string' 
+                                ? JSON.parse(items) 
+                                : items;
                               
-                              console.log(`Parsed items for ${job.jobNumber}:`, items);
-                              
-                              if (items && items.length > 0) {
+                              if (parsedItems && parsedItems.length > 0) {
                                 // Show first product name, add "+" if multiple
-                                const firstItem = items[0].description || items[0].product_name || '';
-                                return items.length > 1 ? `${firstItem} +${items.length - 1}` : firstItem;
+                                const firstItem = parsedItems[0].description || parsedItems[0].product_name || parsedItems[0].productName || '';
+                                return parsedItems.length > 1 ? `${firstItem} +${parsedItems.length - 1}` : firstItem;
                               }
                             } catch (e) {
-                              console.error(`Failed to parse sage_line_items for ${job.jobNumber}:`, e);
+                              // If parsing fails, fall back
                             }
                           }
                           
-                          // Fallback to other fields
-                          return job.description || job.sage_product_name || job.waste_type || job.job_type || '';
+                          // Fallback to other fields - use camelCase
+                          return job.description || job.sageProductName || job.wasteType || job.jobType || '';
                         })()}
                       </div>
                     </div>
