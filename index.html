@@ -9842,10 +9842,6 @@ if (typeof lineItems === 'string') {
   }
 }
 job.lineItems = lineItems;
-console.log('Looking for sage_line_items:', job.sage_line_items);
-console.log('Looking for sageLineItems:', job.sageLineItems);
-console.log('Final lineItems:', job.lineItems);
-console.log('All job properties:', Object.keys(job));
 
 if (!Array.isArray(job.lineItems)) {
     job.lineItems = [];
@@ -9872,6 +9868,13 @@ if (!Array.isArray(job.lineItems)) {
         isCancelled: job.is_cancelled || job.isCancelled || false,
         notes: job.notes || '',
 lineItems: lineItems,        
+siteAddress1: job.site_address1 || job.siteAddress1 || '',
+siteAddress2: job.site_address2 || job.siteAddress2 || '',
+siteCity: job.site_city || job.siteCity || '',
+sitePostcode: job.site_postcode || job.sitePostcode || '',
+siteContact: job.site_contact || job.siteContact || '',
+sitePhone: job.site_phone || job.sitePhone || '',
+siteNotes: job.site_notes || job.siteNotes || '',
     };
     
     setEditingJob(editableJob);
