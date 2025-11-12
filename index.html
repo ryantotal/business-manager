@@ -2254,14 +2254,15 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
   
   // State for search bars
   const [searchTerms, setSearchTerms] = useState({
-    products: '',
-    customers: '',
-    sites: '',
-    margins: '',
-    suppliers: '',
-    topProducts: '',
-    siteDetails: ''  // Added for new report
-  });
+  products: '',
+  customers: '',
+  sites: '',
+  margins: '',
+  suppliers: '',
+  topProducts: '',
+  siteAddress: '',  // Add this
+  siteProduct: ''   // Add this
+});
 
   // Helper to filter jobs by date range
   const filterJobsByDate = (jobsList) => {
@@ -2792,7 +2793,7 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
         </div>
       </div>
 
-     {/* Report 7: Site Product Details - ENHANCED VERSION */}
+    {/* Report 7: Site Product Details - FIXED VERSION */}
 <div className="bg-white rounded-xl border border-gray-200 p-6">
   <div className="flex justify-between items-center mb-4">
     <h3 className="text-lg font-semibold">Site Product Details</h3>
@@ -2843,67 +2844,89 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
                   const productName = item.product_name || item.description || 'Unknown Product';
                   const quantity = parseFloat(item.quantity) || 0;
                   const customerPrice = parseFloat(item.customer_price) || 0;
-                        
-                        siteProductDetails.push({
-                          site: siteName,
-                          product: productName,
-                          quantity: quantity,
-                          date: job.jobDate,
-                          customer: job.customerName || 'Unknown',
-                          jobNumber: job.jobNumber,
-                          unit: job.unit || 'units'
-                        });
-                      });
-                    } else {
-                      // If no line items, use job type as product
-                      siteProductDetails.push({
-                        site: siteName,
-                        product: job.jobType || 'Unknown',
-                        quantity: parseFloat(job.quantity) || 0,
-                        date: job.jobDate,
-                        customer: job.customerName || 'Unknown',
-                        jobNumber: job.jobNumber,
-                        unit: job.unit || 'units'
-                      });
-                    }
-                  }
+                  const supplierPrice = parseFloat(item.supplier_price) || 0;
+                  const revenue = quantity * customerPrice;
+                  const cost = quantity * supplierPrice;
+                  const profit = revenue - cost;
+                  const marginPercent = revenue > 0 ? (profit / revenue) * 100 : 0;
+                  
+                  siteProductDetails.push({
+                    site: siteName,
+                    product: productName,
+                    quantity: quantity,
+                    date: job.jobDate,
+                    customer: job.customerName || 'Unknown',
+                    jobNumber: job.jobNumber,
+                    unit: job.unit || 'units',
+                    revenue: revenue,
+                    cost: cost,
+                    profit: profit,
+                    marginPercent: marginPercent
+                  });
                 });
-                
-                // Filter by search term and sort by site, then date
-                return siteProductDetails
-                  .filter(item => {
-                    if (searchTerms.siteDetails === '' || !searchTerms.siteDetails) return true;
-                    const searchLower = searchTerms.siteDetails.toLowerCase();
-                    return item.site.toLowerCase().includes(searchLower) || 
-                           item.product.toLowerCase().includes(searchLower) ||
-                           item.customer.toLowerCase().includes(searchLower);
-                  })
-                  .sort((a, b) => {
-                    // First sort by site
-                    if (a.site !== b.site) return a.site.localeCompare(b.site);
-                    // Then by date (newest first)
-                    return new Date(b.date) - new Date(a.date);
-                  })
-                  .slice(0, 50) // Show more entries for this detailed view
-                  .map((item, index) => (
-                    <tr key={index}>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.site}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700">{item.product}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {item.quantity} {item.unit}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {new Date(item.date).toLocaleDateString('en-GB')}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{item.customer}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.jobNumber}</td>
-                    </tr>
-                  ));
-              })()}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              } else {
+                // If no line items, use job type as product
+                const pricing = getJobPricing(job);
+                siteProductDetails.push({
+                  site: siteName,
+                  product: job.jobType || 'Unknown',
+                  quantity: parseFloat(job.quantity) || 0,
+                  date: job.jobDate,
+                  customer: job.customerName || 'Unknown',
+                  jobNumber: job.jobNumber,
+                  unit: job.unit || 'units',
+                  revenue: pricing.revenue,
+                  cost: pricing.cost,
+                  profit: pricing.profit,
+                  marginPercent: pricing.marginPercent
+                });
+              }
+            }
+          });
+          
+          // Apply both filters
+          return siteProductDetails
+            .filter(item => {
+              // Filter by site address
+              const siteMatch = !searchTerms.siteAddress || 
+                item.site.toLowerCase().includes(searchTerms.siteAddress.toLowerCase());
+              
+              // Filter by product
+              const productMatch = !searchTerms.siteProduct || 
+                item.product.toLowerCase().includes(searchTerms.siteProduct.toLowerCase());
+              
+              return siteMatch && productMatch;
+            })
+            .sort((a, b) => {
+              // First sort by site
+              if (a.site !== b.site) return a.site.localeCompare(b.site);
+              // Then by date (newest first)
+              return new Date(b.date) - new Date(a.date);
+            })
+            .slice(0, 50) // Show more entries for this detailed view
+            .map((item, index) => (
+              <tr key={index}>
+                <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.site}</td>
+                <td className="px-6 py-4 text-sm text-gray-700">{item.product}</td>
+                <td className="px-6 py-4 text-sm text-gray-500">
+                  {item.quantity} {item.unit}
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-500">
+                  {new Date(item.date).toLocaleDateString('en-GB')}
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-500">{item.customer}</td>
+                <td className="px-6 py-4 text-sm font-medium text-gray-900">£{item.revenue.toFixed(2)}</td>
+                <td className="px-6 py-4 text-sm text-gray-500">£{item.cost.toFixed(2)}</td>
+                <td className="px-6 py-4 text-sm font-medium text-green-600">£{item.profit.toFixed(2)}</td>
+                <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.marginPercent.toFixed(1)}%</td>
+                <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.jobNumber}</td>
+              </tr>
+            ));
+        })()}
+      </tbody>
+    </table>
+  </div>
+</div>
     </div>
   );
 };
