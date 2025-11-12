@@ -3469,7 +3469,27 @@ const uploadJobAttachment = async () => {
   {job.sitePostcode || job.postcode || 'No Postcode'}
 </div>
 <div className="truncate text-[10px] font-bold">
-  {job.description || job.sage_product_name || job.waste_type || job.job_type || ''}
+  {(() => {
+    // Try to parse sage_line_items if it exists
+    if (job.sage_line_items) {
+      try {
+        const items = typeof job.sage_line_items === 'string' 
+          ? JSON.parse(job.sage_line_items) 
+          : job.sage_line_items;
+        
+        if (items && items.length > 0) {
+          // Show first product name, add "+" if multiple
+          const firstItem = items[0].description || items[0].product_name || '';
+          return items.length > 1 ? `${firstItem} +${items.length - 1}` : firstItem;
+        }
+      } catch (e) {
+        // If parsing fails, fall back
+      }
+    }
+    
+    // Fallback to other fields
+    return job.description || job.sage_product_name || job.waste_type || job.job_type || '';
+  })()}
 </div>
                               </div>
                             );
