@@ -2251,6 +2251,8 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
   const [dateRange, setDateRange] = useState('all');
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
+  // Add this with your other state variables at the top of the Dashboard component
+const [groupByProduct, setGroupByProduct] = useState(false);
   
   // State for search bars
   const [searchTerms, setSearchTerms] = useState({
