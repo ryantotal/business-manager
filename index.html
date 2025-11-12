@@ -2792,43 +2792,57 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
         </div>
       </div>
 
-      {/* Report 7: Site Product Details - NEW REPORT */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold">Site Product Details</h3>
-          <input 
-            type="text"
-            placeholder="Search site or product..."
-            value={searchTerms.siteDetails || ''}
-            onChange={(e) => setSearchTerms({...searchTerms, siteDetails: e.target.value})}
-            className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site Address</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product Delivered</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job #</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {(() => {
-                const siteProductDetails = [];
-                
-                filteredJobs?.forEach(job => {
-                  const siteName = job.siteAddress1 || job.siteAddress2 || job.siteAddress || '';
-                  
-                  if (siteName && siteName !== '') {
-                    // Check each line item for specific products
-                    if (job.lineItems && Array.isArray(job.lineItems)) {
-                      job.lineItems.forEach(item => {
-                        const productName = item.product_name || item.description || 'Unknown Product';
-                        const quantity = parseFloat(item.quantity) || 0;
+     {/* Report 7: Site Product Details - ENHANCED VERSION */}
+<div className="bg-white rounded-xl border border-gray-200 p-6">
+  <div className="flex justify-between items-center mb-4">
+    <h3 className="text-lg font-semibold">Site Product Details</h3>
+    <div className="flex gap-2">
+      <input 
+        type="text"
+        placeholder="Search site address..."
+        value={searchTerms.siteAddress || ''}
+        onChange={(e) => setSearchTerms({...searchTerms, siteAddress: e.target.value})}
+        className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <input 
+        type="text"
+        placeholder="Filter products..."
+        value={searchTerms.siteProduct || ''}
+        onChange={(e) => setSearchTerms({...searchTerms, siteProduct: e.target.value})}
+        className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+  </div>
+  <div className="overflow-x-auto">
+    <table className="min-w-full divide-y divide-gray-200">
+      <thead className="bg-gray-50">
+        <tr>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site Address</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product Delivered</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Margin %</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job #</th>
+        </tr>
+      </thead>
+      <tbody className="bg-white divide-y divide-gray-200">
+        {(() => {
+          const siteProductDetails = [];
+          
+          filteredJobs?.forEach(job => {
+            const siteName = job.siteAddress1 || job.siteAddress2 || job.siteAddress || '';
+            
+            if (siteName && siteName !== '') {
+              // Check each line item for specific products
+              if (job.lineItems && Array.isArray(job.lineItems)) {
+                job.lineItems.forEach(item => {
+                  const productName = item.product_name || item.description || 'Unknown Product';
+                  const quantity = parseFloat(item.quantity) || 0;
+                  const customerPrice = parseFloat(item.customer_price) || 0;
                         
                         siteProductDetails.push({
                           site: siteName,
