@@ -1013,7 +1013,11 @@ if (window.refreshFullPageAttachments) {
     isCancelled: false,
     sageProductId: '',
     sageProductName: '',
-    sage_si_number: ''
+    sage_si_number: '',
+    isEvent: false,
+eventType: '',
+eventTitle: '',
+staffMember: '',
   };
   
   // If editing, merge job data but ensure lineItems is always an array
@@ -1027,6 +1031,7 @@ if (window.refreshFullPageAttachments) {
   
   return initialData;
 });
+const [isEvent, setIsEvent] = useState(false);
 
           const [activeTab, setActiveTab] = useState('details');
 
@@ -1182,6 +1187,35 @@ if (!newJobNumber) {
                     <X size={24} />
                   </button>
                 </div>
+                {/* ADD THIS EVENT TOGGLE SECTION */}
+<div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
+  <label className="flex items-center gap-3 cursor-pointer">
+    <input 
+      type="checkbox" 
+      checked={isEvent} 
+      onChange={(e) => {
+        const checked = e.target.checked;
+        setIsEvent(checked);
+        setFormData({
+          ...formData,
+          isEvent: checked,
+          // Clear job fields when switching to event
+          jobType: checked ? '' : 'Skip Hire',
+          customerName: checked ? '' : formData.customerName,
+          supplierName: checked ? '' : formData.supplierName,
+          // Set event fields
+          eventType: checked ? 'HOLIDAY' : '',
+          eventTitle: checked ? formData.eventTitle : '',
+          staffMember: checked ? formData.staffMember : ''
+        });
+      }}
+      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+    />
+    <span className="text-sm font-medium text-gray-700">
+      This is a calendar event (not a job)
+    </span>
+  </label>
+</div>
                 
                 {/* Tab Navigation */}
                 <div className="flex border-b border-gray-200">
