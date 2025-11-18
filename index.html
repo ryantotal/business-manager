@@ -1018,6 +1018,7 @@ if (window.refreshFullPageAttachments) {
 eventType: '',
 eventTitle: '',
 staffMember: '',
+eventEndDate: '', 
   };
   
   // If editing, merge job data but ensure lineItems is always an array
@@ -1075,20 +1076,28 @@ const [isEvent, setIsEvent] = useState(false);
   }));
 
   if (isEvent) {
-    // Handle event submission
+  // Handle event submission
+  const startDate = new Date(formData.jobDate);
+  const endDate = new Date(formData.eventEndDate || formData.jobDate);
+  
+  // Create an event for each day in the range
+  const events = [];
+  const currentDate = new Date(startDate);
+  
+  while (currentDate <= endDate) {
     const eventData = {
-      job_number: `EVENT-${Date.now()}`, // Unique identifier for events
-      customer_name: formData.eventTitle, // Store title in customer_name field
+      job_number: `EVENT-${Date.now()}-${currentDate.getDate()}`,
+      customer_name: formData.eventTitle,
       job_type: formData.eventType,
-      job_date: formData.jobDate,
+      job_date: currentDate.toISOString().split('T')[0],
       status: 'EVENT',
       is_event: true,
       event_type: formData.eventType,
       event_title: formData.eventTitle,
+      event_end_date: formData.eventEndDate,
       staff_member: formData.staffMember,
       site_address1: formData.siteAddress1,
       notes: formData.notes,
-      // Set required fields to defaults
       supplier_name: 'N/A',
       quantity: 1,
       customer_final_price: 0,
@@ -1096,12 +1105,18 @@ const [isEvent, setIsEvent] = useState(false);
       is_completed: false,
       is_cancelled: false
     };
-
-    onSave(eventData);
-    alert('Event added to calendar!');
-    onClose();
-    return; // Exit early for events
+    
+    events.push(eventData);
+    currentDate.setDate(currentDate.getDate() + 1);
   }
+  
+  // Save all event days
+  events.forEach(event => onSave(event));
+  
+  alert(`Event added to calendar for ${events.length} day(s)!`);
+  onClose();
+  return;
+}
 
   // Check if this is a skip/RoRo with quantity > 1
   if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
@@ -1242,118 +1257,132 @@ const [isEvent, setIsEvent] = useState(false);
   </label>
 </div>
                 
-                {/* Tab Navigation */}
-                <div className="flex border-b border-gray-200">
-                  <button
-                    onClick={() => setActiveTab('details')}
-                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
-                  >
-                    Job Details
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('site')}
-                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
-                  >
-                    Site Information
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('financial')}
-                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
-                  >
-                    Pricing & Status
-                  </button>
-                  <button
-                   onClick={() => setActiveTab('documents')}
-                   className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
->
-  Documents
-</button>
-</div>
+               {/* Tab Navigation - Only show for jobs, not events */}
+{!isEvent && (
+  <div className="flex border-b border-gray-200">
+    <button
+      onClick={() => setActiveTab('details')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+    >
+      Job Details
+    </button>
+    <button
+      onClick={() => setActiveTab('site')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+    >
+      Site Information
+    </button>
+    <button
+      onClick={() => setActiveTab('financial')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+    >
+      Pricing & Status
+    </button>
+    <button
+      onClick={() => setActiveTab('documents')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+    >
+      Documents
+    </button>
+  </div>
+)}
 
 <div className="p-6">
   {/* Job Details Tab */}
   {activeTab === 'details' && (
     <div className="space-y-4">
-      {isEvent ? (
-        // EVENT FIELDS
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Event Type *</label>
-            <select
-              value={formData.eventType}
-              onChange={(e) => setFormData({...formData, eventType: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              required
-            >
-              <option value="">Select Event Type</option>
-              <option value="HOLIDAY">Staff Holiday</option>
-              <option value="SITE_VISIT">Site Visit</option>
-              <option value="MEETING">Meeting</option>
-              <option value="TRAINING">Training</option>
-              <option value="MAINTENANCE">Office Maintenance</option>
-              <option value="DELIVERY">Delivery/Collection</option>
-              <option value="INSPECTION">Site Inspection</option>
-              <option value="OTHER">Other</option>
-            </select>
-          </div>
+     {isEvent ? (
+  // EVENT FIELDS
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Event Type *</label>
+      <select
+        value={formData.eventType}
+        onChange={(e) => setFormData({...formData, eventType: e.target.value})}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        required
+      >
+        <option value="">Select Event Type</option>
+        <option value="HOLIDAY">Staff Holiday</option>
+        <option value="SITE_VISIT">Site Visit</option>
+        <option value="MEETING">Meeting</option>
+        <option value="TRAINING">Training</option>
+        <option value="MAINTENANCE">Office Maintenance</option>
+        <option value="DELIVERY">Delivery/Collection</option>
+        <option value="INSPECTION">Site Inspection</option>
+        <option value="OTHER">Other</option>
+      </select>
+    </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Event Date *</label>
-            <input
-              type="date"
-              value={formData.jobDate}
-              onChange={(e) => setFormData({...formData, jobDate: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              required
-            />
-          </div>
+    <div className="sm:col-span-1">
+      <label className="block text-sm font-medium text-gray-700 mb-1">Event Title/Description *</label>
+      <input
+        type="text"
+        value={formData.eventTitle}
+        onChange={(e) => setFormData({...formData, eventTitle: e.target.value})}
+        placeholder="e.g., Annual Leave - John Smith, Client Meeting at ABC Corp"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        required
+      />
+    </div>
 
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Event Title/Description *</label>
-            <input
-              type="text"
-              value={formData.eventTitle}
-              onChange={(e) => setFormData({...formData, eventTitle: e.target.value})}
-              placeholder="e.g., Annual Leave - John Smith, Client Meeting at ABC Corp"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              required
-            />
-          </div>
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+      <input
+        type="date"
+        value={formData.jobDate}
+        onChange={(e) => setFormData({...formData, jobDate: e.target.value})}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        required
+      />
+    </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Staff Member</label>
-            <input
-              type="text"
-              value={formData.staffMember}
-              onChange={(e) => setFormData({...formData, staffMember: e.target.value})}
-              placeholder="Name of staff member (if applicable)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">End Date *</label>
+      <input
+        type="date"
+        value={formData.eventEndDate || formData.jobDate}
+        onChange={(e) => setFormData({...formData, eventEndDate: e.target.value})}
+        min={formData.jobDate}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        required
+      />
+    </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-            <input
-              type="text"
-              value={formData.siteAddress1}
-              onChange={(e) => setFormData({...formData, siteAddress1: e.target.value})}
-              placeholder="Location or address (if applicable)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Staff Member</label>
+      <input
+        type="text"
+        value={formData.staffMember}
+        onChange={(e) => setFormData({...formData, staffMember: e.target.value})}
+        placeholder="Name of staff member (if applicable)"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      />
+    </div>
 
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({...formData, notes: e.target.value})}
-              rows={3}
-              placeholder="Additional details about this event..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
-        </div>
-      ) : (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+      <input
+        type="text"
+        value={formData.siteAddress1}
+        onChange={(e) => setFormData({...formData, siteAddress1: e.target.value})}
+        placeholder="Location or address (if applicable)"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      />
+    </div>
+
+    <div className="sm:col-span-2">
+      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+      <textarea
+        value={formData.notes}
+        onChange={(e) => setFormData({...formData, notes: e.target.value})}
+        rows={3}
+        placeholder="Additional details about this event..."
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      />
+    </div>
+  </div>
+) : (
         // JOB FIELDS
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
