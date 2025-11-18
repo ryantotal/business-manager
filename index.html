@@ -1058,6 +1058,22 @@ const [isEvent, setIsEvent] = useState(false);
 
 
    const handleSubmit = async () => {
+  // Define sageProductData at the very beginning - it's used in multiple places
+  const sageProductData = (formData.lineItems || []).map(item => ({
+    sage_id: item.sage_id,
+    product_name: item.product_name,
+    description: item.description,
+    item_code: item.item_code,
+    type: item.type,
+    quantity: item.quantity || 1,
+    unit_price: item.customer_price || item.unit_price || 0,
+    cost_price: item.supplier_price || item.cost_price || 0,
+    sales_ledger_account: item.sales_ledger_account || '4010',
+    nominal_code: item.nominal_code || '4010',
+    tax_code: item.tax_code || 'T1',
+    vat_rate: formData.vatRate || 20
+  }));
+
   if (isEvent) {
     // Handle event submission
     const eventData = {
@@ -1090,34 +1106,26 @@ const [isEvent, setIsEvent] = useState(false);
   // Check if this is a skip/RoRo with quantity > 1
   if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
     const jobs = [];
-    // Get the job number from Supabase sequence
-const { data: firstJobNumber, error: jobNumError } = await supabase
-  .rpc('get_next_job_number');
-
-if (jobNumError) {
-  console.error('Error getting job number:', jobNumError);
-  return;
-}
+    
     for (let i = 0; i < formData.quantity; i++) {
-  // Get a unique job number for EACH job
-  const { data: jobNumber, error: jobNumError } = await supabase
-    .rpc('get_next_job_number');
-  
-  if (jobNumError) {
-    console.error('Error getting job number:', jobNumError);
-    alert('Error generating job number. Please try again.');
-    return;
-  }
-  
-  const jobId = jobNumber;  // Each job gets its own unique number
-  const newJob = {
-    ...formData,
-    id: jobId,
-    jobNumber: jobNumber,  // Use the unique number from Supabase
-    quantity: 1,
-    customerFinalPrice: formData.customerUnitPrice,
-    supplierFinalPrice: formData.supplierUnitPrice,
-    // ... rest of your properties stay the same
+      // Get a unique job number for EACH job
+      const { data: jobNumber, error: jobNumError } = await supabase
+        .rpc('get_next_job_number');
+      
+      if (jobNumError) {
+        console.error('Error getting job number:', jobNumError);
+        alert('Error generating job number. Please try again.');
+        return;
+      }
+      
+      const jobId = jobNumber;  // Each job gets its own unique number
+      const newJob = {
+        ...formData,
+        id: jobId,
+        jobNumber: jobNumber,  // Use the unique number from Supabase
+        quantity: 1,
+        customerFinalPrice: formData.customerUnitPrice,
+        supplierFinalPrice: formData.supplierUnitPrice,
         grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
         profitMargin: formData.customerUnitPrice > 0 ?
           ((formData.customerUnitPrice - formData.supplierUnitPrice) / formData.customerUnitPrice) * 100 : 0,
@@ -1135,20 +1143,21 @@ if (jobNumError) {
     jobs.forEach(job => onSave(job));
   } else {
     // For single job creation/editing
-let newJobNumber = job?.jobNumber;  // Keep existing number if editing
+    let newJobNumber = job?.jobNumber;  // Keep existing number if editing
 
-if (!newJobNumber) {
-  // Only get new number if creating a new job
-  const { data: jobNum, error: jobNumError } = await supabase
-    .rpc('get_next_job_number');
-  
-  if (jobNumError) {
-    console.error('Error getting job number:', jobNumError);
-    alert('Error generating job number. Please try again.');
-    return;
-  }
-  newJobNumber = jobNum;
-}
+    if (!newJobNumber) {
+      // Only get new number if creating a new job
+      const { data: jobNum, error: jobNumError } = await supabase
+        .rpc('get_next_job_number');
+      
+      if (jobNumError) {
+        console.error('Error getting job number:', jobNumError);
+        alert('Error generating job number. Please try again.');
+        return;
+      }
+      newJobNumber = jobNum;
+    }
+    
     const newJob = {
       ...formData,
       jobNumber: newJobNumber,
@@ -1161,6 +1170,7 @@ if (!newJobNumber) {
       sage_product_data: sageProductData,
       sage_line_items: formData.lineItems
     };
+    
     // Clean up empty date fields to prevent database errors
     if (!newJob.collectionDate || newJob.collectionDate === '') {
       delete newJob.collectionDate;
@@ -1171,11 +1181,13 @@ if (!newJobNumber) {
     if (!newJob.jobDate || newJob.jobDate === '') {
       newJob.jobDate = new Date().toISOString().split('T')[0];
     }
+    
     // Only include ID if we're updating an existing job (not creating new/duplicate)
     // Check if formData has an id - if not, it's a new job
     if (job?.id && formData.id) {
       newJob.id = job.id;
     }
+    
     onSave(newJob);
   }
 };
