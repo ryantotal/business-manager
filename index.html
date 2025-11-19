@@ -3386,8 +3386,11 @@ setTimeout(() => {
              return bNum - aNum;
             });
 
-         const filteredJobs = React.useMemo(() => {
+        const filteredJobs = React.useMemo(() => {
   let filtered = jobs.filter(job => {
+    // EXCLUDE EVENTS FROM LIST VIEW
+    if (job.isEvent || job.status === 'EVENT') return false;
+    
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
@@ -3395,19 +3398,17 @@ setTimeout(() => {
       const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
       const matchesPostcode = (job.sitePostcode || '').toLowerCase().includes(query);
       const matchesAddress = (job.siteAddress || '').toLowerCase().includes(query);
-      
       if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
         return false;
       }
     }
-    
     if (filters.jobType && job.jobType !== filters.jobType) return false;
     if (filters.status) {
       if (filters.status === 'COMPLETED' && !job.isCompleted) return false;
       if (filters.status === 'CANCELLED' && !job.isCancelled) return false;
       if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') return false;
       if (filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
-          job.status !== filters.status) return false;
+        job.status !== filters.status) return false;
     }
     return true;
   });
