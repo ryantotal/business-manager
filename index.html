@@ -1085,26 +1085,26 @@ const [isEvent, setIsEvent] = useState(false);
   const currentDate = new Date(startDate);
   
   while (currentDate <= endDate) {
-    const eventData = {
-      job_number: `EVENT-${Date.now()}-${currentDate.getDate()}`,
-      customer_name: formData.eventTitle,
-      job_type: formData.eventType,
-      job_date: currentDate.toISOString().split('T')[0],
-      status: 'EVENT',
-      is_event: true,
-      event_type: formData.eventType,
-      event_title: formData.eventTitle,
-      event_end_date: formData.eventEndDate,
-      staff_member: formData.staffMember,
-      site_address1: formData.siteAddress1,
-      notes: formData.notes,
-      supplier_name: 'N/A',
-      quantity: 1,
-      customer_final_price: 0,
-      supplier_final_price: 0,
-      is_completed: false,
-      is_cancelled: false
-    };
+   const eventData = {
+  jobNumber: `EVENT-${Date.now()}-${currentDate.getDate()}`, // Use jobNumber (camelCase)
+  customerName: formData.eventTitle,
+  jobType: formData.eventType,
+  jobDate: currentDate.toISOString().split('T')[0],
+  status: 'EVENT',
+  isEvent: true,  // Use camelCase
+  eventType: formData.eventType,
+  eventTitle: formData.eventTitle,
+  eventEndDate: formData.eventEndDate,
+  staffMember: formData.staffMember,
+  siteAddress1: formData.siteAddress1,
+  notes: formData.notes,
+  supplierName: 'N/A',
+  quantity: 1,
+  customerFinalPrice: 0,
+  supplierFinalPrice: 0,
+  isCompleted: false,
+  isCancelled: false
+};
     
     events.push(eventData);
     currentDate.setDate(currentDate.getDate() + 1);
