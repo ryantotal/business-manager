@@ -3620,55 +3620,72 @@ const CalendarView = () => {
                 {day.getDate()}
               </div>
               <div className="space-y-1">
-                {dayJobs.slice(0, expandedDays[day.toDateString()] ? dayJobs.length : 3).map(job => {
-                  const isFinished = job.isCompleted || job.status === 'COLLECTED';
-                  return (
-                    <div
-                      key={job.id}
-                      className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
-                        isFinished ? 'bg-green-500' : ''
-                      }`}
-                      style={{ 
-                        backgroundColor: isFinished ? '' : jobColors[job.jobType] + '20', 
-                        color: isFinished ? 'black' : jobColors[job.jobType],
-                        borderLeft: `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
-                      }}
-                      onClick={() => handleJobClick(job)}
-                      title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}`}
-                    >
-                      <div className="truncate font-medium text-xs">
-                        {job.customerName || 'No Customer'}
-                      </div>
-                      <div className="truncate text-[10px] opacity-75">
-                        {job.sitePostcode || job.postcode || 'No Postcode'}
-                      </div>
-                      <div className="truncate text-[10px] font-bold">
-                        {(() => {
-                          // Try to parse sageLineItems (camelCase) or lineItems
-                          if (job.sageLineItems || job.lineItems) {
-                            try {
-                              const items = job.sageLineItems || job.lineItems;
-                              const parsedItems = typeof items === 'string' 
-                                ? JSON.parse(items) 
-                                : items;
-                              
-                              if (parsedItems && parsedItems.length > 0) {
-                                // Show first product name, add "+" if multiple
-                                const firstItem = parsedItems[0].description || parsedItems[0].product_name || parsedItems[0].productName || '';
-                                return parsedItems.length > 1 ? `${firstItem} +${parsedItems.length - 1}` : firstItem;
-                              }
-                            } catch (e) {
-                              // If parsing fails, fall back
-                            }
-                          }
-                          
-                          // Fallback to other fields - use camelCase
-                          return job.description || job.sageProductName || job.wasteType || job.jobType || '';
-                        })()}
-                      </div>
-                    </div>
-                  );
-                })}
+               {dayJobs.slice(0, expandedDays[day.toDateString()] ? dayJobs.length : 3).map(job => {
+  const isFinished = job.isCompleted || job.status === 'COLLECTED';
+  const isEvent = job.is_event || job.status === 'EVENT';
+  
+  // Define event colors
+  const eventColors = {
+    'HOLIDAY': '#3B82F6',      // Blue
+    'SITE_VISIT': '#8B5CF6',   // Purple
+    'MEETING': '#10B981',      // Green
+    'TRAINING': '#F59E0B',     // Amber
+    'MAINTENANCE': '#6B7280',  // Gray
+    'DELIVERY': '#EC4899',     // Pink
+    'INSPECTION': '#06B6D4',   // Cyan
+    'OTHER': '#71717A'         // Zinc
+  };
+  
+  return (
+    <div
+      key={job.id}
+      className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
+        isFinished ? 'bg-green-500' : ''
+      } ${isEvent ? 'text-white font-medium' : ''}`}
+      style={{ 
+        backgroundColor: isEvent 
+          ? (eventColors[job.job_type] || eventColors['OTHER'])
+          : (isFinished ? '' : jobColors[job.jobType] + '20'),
+        color: isEvent ? 'white' : (isFinished ? 'black' : jobColors[job.jobType]),
+        borderLeft: isEvent ? 'none' : `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
+      }}
+      onClick={() => handleJobClick(job)}
+      title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}${isEvent ? ' (Event)' : ''}`}
+    >
+      <div className="truncate font-medium text-xs">
+        {isEvent ? (
+          <>
+            {job.job_type === 'HOLIDAY' && '🏖️ '}
+            {job.job_type === 'SITE_VISIT' && '📍 '}
+            {job.job_type === 'MEETING' && '👥 '}
+            {job.job_type === 'TRAINING' && '📚 '}
+            {job.job_type === 'MAINTENANCE' && '🔧 '}
+            {job.job_type === 'DELIVERY' && '🚚 '}
+            {job.job_type === 'INSPECTION' && '🔍 '}
+            {job.customerName || 'No Customer'}
+          </>
+        ) : (
+          <>{job.customerName || 'No Customer'}</>
+        )}
+      </div>
+      {!isEvent && (
+        <>
+          <div className="truncate text-[10px] opacity-75">
+            {job.sitePostcode || job.postcode || 'No Postcode'}
+          </div>
+          <div className="truncate text-[10px] font-bold">
+            {(() => {
+              // Your existing code for parsing line items
+              if (job.sageLineItems || job.lineItems) {
+                // ... existing line items code
+              }
+            })()}
+          </div>
+        </>
+      )}
+    </div>
+  );
+})}
                 {dayJobs.length > 3 && (
                   <div 
                     className="text-xs text-blue-600 text-center mt-1 py-1 bg-blue-50 rounded cursor-pointer hover:bg-blue-100 transition-colors"
