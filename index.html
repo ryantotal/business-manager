@@ -3561,7 +3561,7 @@ const CalendarView = () => {
 
   // Group jobs by date
   const jobsByDate = {};
-  filteredJobs.forEach(job => {
+  jobs.forEach(job => {
     const jobDate = new Date(job.jobDate);
     const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
     if (!jobsByDate[dateKey]) jobsByDate[dateKey] = [];
