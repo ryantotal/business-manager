@@ -3559,14 +3559,56 @@ const CalendarView = () => {
     days.push(new Date(year, month, d));
   }
 
-  // Group jobs by date
-  const jobsByDate = {};
-  jobs.forEach(job => {
+  // Group jobs by date - apply filters to regular jobs but always include events
+const jobsByDate = {};
+jobs.forEach(job => {
+  // Always include events, or include jobs that match the filters
+  const isEvent = job.isEvent || job.status === 'EVENT';
+  
+  if (isEvent) {
+    // Always include events in calendar
     const jobDate = new Date(job.jobDate);
     const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
     if (!jobsByDate[dateKey]) jobsByDate[dateKey] = [];
     jobsByDate[dateKey].push(job);
-  });
+  } else {
+    // Apply filters to regular jobs
+    let includeJob = true;
+    
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
+      const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
+      const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
+      const matchesPostcode = (job.sitePostcode || '').toLowerCase().includes(query);
+      const matchesAddress = (job.siteAddress || '').toLowerCase().includes(query);
+      if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
+        includeJob = false;
+      }
+    }
+    
+    // Apply type filter
+    if (filters.jobType && job.jobType !== filters.jobType) includeJob = false;
+    
+    // Apply status filter
+    if (filters.status) {
+      if (filters.status === 'COMPLETED' && !job.isCompleted) includeJob = false;
+      if (filters.status === 'CANCELLED' && !job.isCancelled) includeJob = false;
+      if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') includeJob = false;
+      if (filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
+        job.status !== filters.status) includeJob = false;
+    }
+    
+    // Add to calendar if it passes filters
+    if (includeJob) {
+      const jobDate = new Date(job.jobDate);
+      const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
+      if (!jobsByDate[dateKey]) jobsByDate[dateKey] = [];
+      jobsByDate[dateKey].push(job);
+    }
+  }
+});
 
   const navigateMonth = (direction) => {
     const newMonth = new Date(currentMonth);
