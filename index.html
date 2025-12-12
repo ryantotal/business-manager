@@ -7330,7 +7330,9 @@ const [syncingProducts, setSyncingProducts] = useState(false);
 const [products, setProducts] = useState([]);
 const [showProductsSyncDialog, setShowProductsSyncDialog] = useState(false);
 const [productsSyncResults, setProductsSyncResults] = useState(null);
-          
+const [forceSyncingCustomers, setForceSyncingCustomers] = useState(false);
+const [forceSyncingSuppliers, setForceSyncingSuppliers] = useState(false);
+const [forceSyncMessage, setForceSyncMessage] = useState('');       
           // Load saved settings when component loads
 useEffect(() => {
   const loadSettings = async () => {
@@ -7647,6 +7649,35 @@ const loadUsers = async () => {
   } catch (error) {
     console.error('Error saving settings:', error);
     alert('Error saving settings');
+  }
+};
+const handleForceCustomerSync = async () => {
+  setForceSyncingCustomers(true);
+  setForceSyncMessage('');
+  
+  try {
+    const results = await window.SageAPI.syncCustomersFromSage();
+    setForceSyncMessage(`✅ Synced ${results.updated?.length || 0} updated, ${results.new?.length || 0} new customers`);
+    setTimeout(() => setForceSyncMessage(''), 5000);
+  } catch (error) {
+    setForceSyncMessage(`❌ Error: ${error.message}`);
+  } finally {
+    setForceSyncingCustomers(false);
+  }
+};
+
+const handleForceSuppliersSync = async () => {
+  setForceSyncingSuppliers(true);
+  setForceSyncMessage('');
+  
+  try {
+    const results = await window.SageAPI.syncSuppliersFromSage();
+    setForceSyncMessage(`✅ Synced ${results.updated?.length || 0} updated, ${results.new?.length || 0} new suppliers`);
+    setTimeout(() => setForceSyncMessage(''), 5000);
+  } catch (error) {
+    setForceSyncMessage(`❌ Error: ${error.message}`);
+  } finally {
+    setForceSyncingSuppliers(false);
   }
 };
           const handleAddUser = async () => {
@@ -8248,7 +8279,59 @@ const loadUsers = async () => {
         </label>
       </div>
     </div>
-
+{/* FORCE SYNC SECTION */}
+<div className="border-t pt-6">
+  <h4 className="font-medium mb-4">Force Sync (Full Update)</h4>
+  <p className="text-sm text-gray-600 mb-4">Run a complete sync to update all customers and suppliers with latest Sage data</p>
+  
+  <div className="flex flex-wrap gap-3 mb-4">
+    <button
+      onClick={handleForceCustomerSync}
+      disabled={forceSyncingCustomers || forceSyncingSuppliers}
+      className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {forceSyncingCustomers ? (
+        <>
+          <Loader size={16} className="mr-2 animate-spin" />
+          Syncing Customers...
+        </>
+      ) : (
+        <>
+          <Repeat size={16} className="mr-2" />
+          Force Customer Sync
+        </>
+      )}
+    </button>
+    
+    <button
+      onClick={handleForceSuppliersSync}
+      disabled={forceSyncingCustomers || forceSyncingSuppliers}
+      className="flex items-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {forceSyncingSuppliers ? (
+        <>
+          <Loader size={16} className="mr-2 animate-spin" />
+          Syncing Suppliers...
+        </>
+      ) : (
+        <>
+          <Repeat size={16} className="mr-2" />
+          Force Suppliers Sync
+        </>
+      )}
+    </button>
+  </div>
+  
+  {forceSyncMessage && (
+    <div className={`p-3 rounded-lg text-sm ${
+      forceSyncMessage.includes('✅') 
+        ? 'bg-green-100 text-green-700' 
+        : 'bg-red-100 text-red-700'
+    }`}>
+      {forceSyncMessage}
+    </div>
+  )}
+</div>
     {/* Help Section */}
     <div className="bg-blue-50 p-4 rounded-lg">
       <h4 className="font-medium text-blue-900 mb-2">Setup Instructions</h4>
