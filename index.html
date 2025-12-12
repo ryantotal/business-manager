@@ -11124,7 +11124,33 @@ async createDraftInvoice(invoiceData) {
         for (const sageCustomer of pureCustomers) {  // <-- Changed from customerContacts
             // ... rest of your existing code
         }
-    
+    // Now save the results to Supabase
+if (syncResults.new && syncResults.new.length > 0) {
+  for (const customer of syncResults.new) {
+    try {
+      await window.supabase
+        .from('customers')
+        .insert(customer);
+    } catch (e) {
+      console.error('Failed to insert customer:', e);
+    }
+  }
+}
+
+if (syncResults.updated && syncResults.updated.length > 0) {
+  for (const customer of syncResults.updated) {
+    try {
+      await window.supabase
+        .from('customers')
+        .update(customer)
+        .eq('id', customer.id);
+    } catch (e) {
+      console.error('Failed to update customer:', e);
+    }
+  }
+}
+
+return syncResults;
  // Inside the for loop that processes sageCustomers
 for (const sageCustomer of pureCustomers) {
   // DEBUG: Log first 3 customers to see what Sage provides
