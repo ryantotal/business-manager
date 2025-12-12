@@ -11090,22 +11090,26 @@ async createDraftInvoice(invoiceData) {
     }
   });
 },
-    async syncCustomersFromSage() {
+   async syncCustomersFromSage() {
     try {
         const sageCustomers = await this.getCustomers();
+        // Don't filter - use all customers that Sage returns
         const customerContacts = sageCustomers.$items;
         
         console.log(`Fetched ${customerContacts.length} customers from Sage`);
 
-        // Filter out contacts that are BOTH customers AND suppliers
+        // ADDED: Filter out contacts that are BOTH customers AND suppliers
         const pureCustomers = customerContacts.filter(contact => {
             const hasCustomerType = contact.contact_types?.some(type => type.id === 'CUSTOMER');
             const hasSupplierType = contact.contact_types?.some(type => type.id === 'SUPPLIER');
+            
+            // Only include if it's a customer but NOT also a supplier
             return hasCustomerType && !hasSupplierType;
         });
         
         console.log(`After filtering out dual-type contacts: ${pureCustomers.length} pure customers`);
 
+        // Then continue with the rest of your code, but use pureCustomers instead of customerContacts
         const existingCustomers = await window.supabase
             .from('customers')
             .select('*');
@@ -11116,85 +11120,11 @@ async createDraftInvoice(invoiceData) {
             conflicts: []
         };
 
-        // Main loop that populates syncResults
-        for (const sageCustomer of pureCustomers) {
-            // DEBUG: Log first 3 customers
-            if (pureCustomers.indexOf(sageCustomer) < 3) {
-                console.log('=== SAGE CUSTOMER #' + pureCustomers.indexOf(sageCustomer) + ' ===');
-                console.log('Full object:', sageCustomer);
-                console.log('Field names:', Object.keys(sageCustomer));
-            }
-
-            const existing = existingCustomers.data?.find(
-                c => c.sage_id === sageCustomer.id
-            );
-
-            // Map Sage fields to your database fields
-            const mappedCustomer = {
-                sage_id: sageCustomer.id,
-                name: sageCustomer.displayed_as || '',
-                email: sageCustomer.email || '',
-                phone: '',
-                mobile: '',  
-                reference: sageCustomer.reference || '',
-                credit_limit: parseFloat(sageCustomer.credit_limit) || 0,
-                credit_days: parseInt(sageCustomer.credit_days) || 30,
-                account_status: sageCustomer.deletable === false ? 'Active' : 'Inactive',
-                main_contact_name: '',
-                delivery_address: sageCustomer.delivery_address?.displayed_as || null,
-                vat_number: sageCustomer.tax_number || '',
-                address: sageCustomer.main_address?.displayed_as || sageCustomer.main_address?.address_line_1 || '',
-                city: sageCustomer.main_address?.city || '',
-                postcode: sageCustomer.main_address?.postal_code || '',
-                county: sageCustomer.main_address?.region || '',
-            };
-
-            if (!existing) {
-                syncResults.new.push(mappedCustomer);
-            } else {
-                syncResults.updated.push({
-                    ...mappedCustomer,
-                    id: existing.id
-                });
-            }
+        // Change this line to use pureCustomers instead of customerContacts
+        for (const sageCustomer of pureCustomers) {  // <-- Changed from customerContacts
+            // ... rest of your existing code
         }
-
-        // NOW SAVE TO SUPABASE - after the loop completes
-        console.log(`Saving ${syncResults.new.length} new customers...`);
-        if (syncResults.new && syncResults.new.length > 0) {
-            for (const customer of syncResults.new) {
-                try {
-                    await window.supabase
-                        .from('customers')
-                        .insert(customer);
-                } catch (e) {
-                    console.error('Failed to insert customer:', e);
-                }
-            }
-        }
-
-        console.log(`Updating ${syncResults.updated.length} existing customers...`);
-        if (syncResults.updated && syncResults.updated.length > 0) {
-            for (const customer of syncResults.updated) {
-                try {
-                    await window.supabase
-                        .from('customers')
-                        .update(customer)
-                        .eq('id', customer.id);
-                } catch (e) {
-                    console.error('Failed to update customer:', e);
-                }
-            }
-        }
-
-        console.log('✅ Sync complete!');
-        return syncResults;
-        
-    } catch (error) {
-        console.error('Error syncing customers:', error);
-        throw error;
-    }
-}
+    
  // Inside the for loop that processes sageCustomers
 for (const sageCustomer of pureCustomers) {
   // DEBUG: Log first 3 customers to see what Sage provides
