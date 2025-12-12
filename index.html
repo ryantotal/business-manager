@@ -11306,7 +11306,7 @@ async createDraftInvoice(invoiceData) {
         }
     
  // Inside the for loop that processes sageCustomers
-for (const sageCustomer of customerContacts) {
+for (const sageCustomer of pureCustomers) {
   // DEBUG: Log first 3 customers to see what Sage provides
 if (customerContacts.indexOf(sageCustomer) < 3) {
     console.log('=== SAGE CUSTOMER #' + customerContacts.indexOf(sageCustomer) + ' ===');
@@ -11496,7 +11496,7 @@ async syncCustomersQuick() {
     const existingSageIds = new Set(existingCustomers?.map(c => c.sage_id) || []);
     const newCustomers = [];
     
-    for (const sageCustomer of customerContacts) {
+    for (const sageCustomer of pureCustomers) {
       if (!existingSageIds.has(sageCustomer.id)) {
         console.log(`✅ Found NEW customer: ${sageCustomer.displayed_as}`);
         
