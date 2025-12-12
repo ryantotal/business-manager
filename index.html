@@ -1013,7 +1013,12 @@ if (window.refreshFullPageAttachments) {
     isCancelled: false,
     sageProductId: '',
     sageProductName: '',
-    sage_si_number: ''
+    sage_si_number: '',
+    isEvent: false,
+eventType: '',
+eventTitle: '',
+staffMember: '',
+eventEndDate: '', 
   };
   
   // If editing, merge job data but ensure lineItems is always an array
@@ -1027,6 +1032,7 @@ if (window.refreshFullPageAttachments) {
   
   return initialData;
 });
+const [isEvent, setIsEvent] = useState(false);
 
           const [activeTab, setActiveTab] = useState('details');
 
@@ -1053,53 +1059,88 @@ if (window.refreshFullPageAttachments) {
 
 
    const handleSubmit = async () => {
-  // Capture complete Sage product details from lineItems
-  const sageProductData = formData.lineItems?.map(item => ({
+  // Define sageProductData at the very beginning - it's used in multiple places
+  const sageProductData = (formData.lineItems || []).map(item => ({
     sage_id: item.sage_id,
     product_name: item.product_name,
     description: item.description,
     item_code: item.item_code,
     type: item.type,
-    quantity: item.quantity,
-    unit_price: item?.customer_price || item?.customer_unit_price || 0,
-cost_price: item?.supplier_price || item?.supplier_unit_price || 0,
-    sales_ledger_account: item.sales_ledger_account || '4000',
-    nominal_code: item.nominal_code || '4000', 
+    quantity: item.quantity || 1,
+    unit_price: item.customer_price || item.unit_price || 0,
+    cost_price: item.supplier_price || item.cost_price || 0,
+    sales_ledger_account: item.sales_ledger_account || '4010',
+    nominal_code: item.nominal_code || '4010',
     tax_code: item.tax_code || 'T1',
-    vat_rate: formData.vatRate
-  })) || [];
+    vat_rate: formData.vatRate || 20
+  }));
+
+  if (isEvent) {
+  // Handle event submission
+  const startDate = new Date(formData.jobDate);
+  const endDate = new Date(formData.eventEndDate || formData.jobDate);
+  
+  // Create an event for each day in the range
+  const events = [];
+  const currentDate = new Date(startDate);
+  
+  while (currentDate <= endDate) {
+   const eventData = {
+  jobNumber: `EVENT-${Date.now()}-${currentDate.getDate()}`, // Use jobNumber (camelCase)
+  customerName: formData.eventTitle,
+  jobType: formData.eventType,
+  jobDate: currentDate.toISOString().split('T')[0],
+  status: 'EVENT',
+  isEvent: true,  // Use camelCase
+  eventType: formData.eventType,
+  eventTitle: formData.eventTitle,
+  eventEndDate: formData.eventEndDate,
+  staffMember: formData.staffMember,
+  siteAddress1: formData.siteAddress1,
+  notes: formData.notes,
+  supplierName: 'N/A',
+  quantity: 1,
+  customerFinalPrice: 0,
+  supplierFinalPrice: 0,
+  isCompleted: false,
+  isCancelled: false
+};
+    
+    events.push(eventData);
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  // Save all event days
+  events.forEach(event => onSave(event));
+  
+  alert(`Event added to calendar for ${events.length} day(s)!`);
+  onClose();
+  return;
+}
 
   // Check if this is a skip/RoRo with quantity > 1
   if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
     const jobs = [];
-    // Get the job number from Supabase sequence
-const { data: firstJobNumber, error: jobNumError } = await supabase
-  .rpc('get_next_job_number');
-
-if (jobNumError) {
-  console.error('Error getting job number:', jobNumError);
-  return;
-}
+    
     for (let i = 0; i < formData.quantity; i++) {
-  // Get a unique job number for EACH job
-  const { data: jobNumber, error: jobNumError } = await supabase
-    .rpc('get_next_job_number');
-  
-  if (jobNumError) {
-    console.error('Error getting job number:', jobNumError);
-    alert('Error generating job number. Please try again.');
-    return;
-  }
-  
-  const jobId = jobNumber;  // Each job gets its own unique number
-  const newJob = {
-    ...formData,
-    id: jobId,
-    jobNumber: jobNumber,  // Use the unique number from Supabase
-    quantity: 1,
-    customerFinalPrice: formData.customerUnitPrice,
-    supplierFinalPrice: formData.supplierUnitPrice,
-    // ... rest of your properties stay the same
+      // Get a unique job number for EACH job
+      const { data: jobNumber, error: jobNumError } = await supabase
+        .rpc('get_next_job_number');
+      
+      if (jobNumError) {
+        console.error('Error getting job number:', jobNumError);
+        alert('Error generating job number. Please try again.');
+        return;
+      }
+      
+      const jobId = jobNumber;  // Each job gets its own unique number
+      const newJob = {
+        ...formData,
+        id: jobId,
+        jobNumber: jobNumber,  // Use the unique number from Supabase
+        quantity: 1,
+        customerFinalPrice: formData.customerUnitPrice,
+        supplierFinalPrice: formData.supplierUnitPrice,
         grossProfit: formData.customerUnitPrice - formData.supplierUnitPrice,
         profitMargin: formData.customerUnitPrice > 0 ?
           ((formData.customerUnitPrice - formData.supplierUnitPrice) / formData.customerUnitPrice) * 100 : 0,
@@ -1117,20 +1158,21 @@ if (jobNumError) {
     jobs.forEach(job => onSave(job));
   } else {
     // For single job creation/editing
-let newJobNumber = job?.jobNumber;  // Keep existing number if editing
+    let newJobNumber = job?.jobNumber;  // Keep existing number if editing
 
-if (!newJobNumber) {
-  // Only get new number if creating a new job
-  const { data: jobNum, error: jobNumError } = await supabase
-    .rpc('get_next_job_number');
-  
-  if (jobNumError) {
-    console.error('Error getting job number:', jobNumError);
-    alert('Error generating job number. Please try again.');
-    return;
-  }
-  newJobNumber = jobNum;
-}
+    if (!newJobNumber) {
+      // Only get new number if creating a new job
+      const { data: jobNum, error: jobNumError } = await supabase
+        .rpc('get_next_job_number');
+      
+      if (jobNumError) {
+        console.error('Error getting job number:', jobNumError);
+        alert('Error generating job number. Please try again.');
+        return;
+      }
+      newJobNumber = jobNum;
+    }
+    
     const newJob = {
       ...formData,
       jobNumber: newJobNumber,
@@ -1143,6 +1185,7 @@ if (!newJobNumber) {
       sage_product_data: sageProductData,
       sage_line_items: formData.lineItems
     };
+    
     // Clean up empty date fields to prevent database errors
     if (!newJob.collectionDate || newJob.collectionDate === '') {
       delete newJob.collectionDate;
@@ -1153,11 +1196,13 @@ if (!newJobNumber) {
     if (!newJob.jobDate || newJob.jobDate === '') {
       newJob.jobDate = new Date().toISOString().split('T')[0];
     }
+    
     // Only include ID if we're updating an existing job (not creating new/duplicate)
     // Check if formData has an id - if not, it's a new job
     if (job?.id && formData.id) {
       newJob.id = job.id;
     }
+    
     onSave(newJob);
   }
 };
@@ -1182,589 +1227,718 @@ if (!newJobNumber) {
                     <X size={24} />
                   </button>
                 </div>
+                {/* ADD THIS EVENT TOGGLE SECTION */}
+<div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
+  <label className="flex items-center gap-3 cursor-pointer">
+    <input 
+      type="checkbox" 
+      checked={isEvent} 
+      onChange={(e) => {
+        const checked = e.target.checked;
+        setIsEvent(checked);
+        setFormData({
+          ...formData,
+          isEvent: checked,
+          // Clear job fields when switching to event
+          jobType: checked ? '' : 'Skip Hire',
+          customerName: checked ? '' : formData.customerName,
+          supplierName: checked ? '' : formData.supplierName,
+          // Set event fields
+          eventType: checked ? 'HOLIDAY' : '',
+          eventTitle: checked ? formData.eventTitle : '',
+          staffMember: checked ? formData.staffMember : ''
+        });
+      }}
+      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+    />
+    <span className="text-sm font-medium text-gray-700">
+      This is a calendar event (not a job)
+    </span>
+  </label>
+</div>
                 
-                {/* Tab Navigation */}
-                <div className="flex border-b border-gray-200">
-                  <button
-                    onClick={() => setActiveTab('details')}
-                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
-                  >
-                    Job Details
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('site')}
-                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
-                  >
-                    Site Information
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('financial')}
-                    className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
-                  >
-                    Pricing & Status
-                  </button>
-                  <button
-                   onClick={() => setActiveTab('documents')}
-                   className="px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}"
->
-  Documents
-</button>
+               {/* Tab Navigation - Only show for jobs, not events */}
+{!isEvent && (
+  <div className="flex border-b border-gray-200">
+    <button
+      onClick={() => setActiveTab('details')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+    >
+      Job Details
+    </button>
+    <button
+      onClick={() => setActiveTab('site')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+    >
+      Site Information
+    </button>
+    <button
+      onClick={() => setActiveTab('financial')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+    >
+      Pricing & Status
+    </button>
+    <button
+      onClick={() => setActiveTab('documents')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+    >
+      Documents
+    </button>
+  </div>
+)}
+
+<div className="p-6">
+  {/* Job Details Tab */}
+  {activeTab === 'details' && (
+    <div className="space-y-4">
+     {isEvent ? (
+  // EVENT FIELDS
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Event Type *</label>
+      <select
+        value={formData.eventType}
+        onChange={(e) => setFormData({...formData, eventType: e.target.value})}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        required
+      >
+        <option value="">Select Event Type</option>
+        <option value="HOLIDAY">Staff Holiday</option>
+        <option value="SITE_VISIT">Site Visit</option>
+        <option value="MEETING">Meeting</option>
+        <option value="TRAINING">Training</option>
+        <option value="MAINTENANCE">Office Maintenance</option>
+        <option value="DELIVERY">Delivery/Collection</option>
+        <option value="INSPECTION">Site Inspection</option>
+        <option value="OTHER">Other</option>
+      </select>
+    </div>
+
+    <div className="sm:col-span-1">
+      <label className="block text-sm font-medium text-gray-700 mb-1">Event Title/Description *</label>
+      <input
+        type="text"
+        value={formData.eventTitle}
+        onChange={(e) => setFormData({...formData, eventTitle: e.target.value})}
+        placeholder="e.g., Annual Leave - John Smith, Client Meeting at ABC Corp"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        required
+      />
+    </div>
+
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+      <input
+        type="date"
+        value={formData.jobDate}
+        onChange={(e) => setFormData({...formData, jobDate: e.target.value})}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        required
+      />
+    </div>
+
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">End Date *</label>
+      <input
+        type="date"
+        value={formData.eventEndDate || formData.jobDate}
+        onChange={(e) => setFormData({...formData, eventEndDate: e.target.value})}
+        min={formData.jobDate}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        required
+      />
+    </div>
+
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Staff Member</label>
+      <input
+        type="text"
+        value={formData.staffMember}
+        onChange={(e) => setFormData({...formData, staffMember: e.target.value})}
+        placeholder="Name of staff member (if applicable)"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      />
+    </div>
+
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+      <input
+        type="text"
+        value={formData.siteAddress1}
+        onChange={(e) => setFormData({...formData, siteAddress1: e.target.value})}
+        placeholder="Location or address (if applicable)"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      />
+    </div>
+
+    <div className="sm:col-span-2">
+      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+      <textarea
+        value={formData.notes}
+        onChange={(e) => setFormData({...formData, notes: e.target.value})}
+        rows={3}
+        placeholder="Additional details about this event..."
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      />
+    </div>
+  </div>
+) : (
+        // JOB FIELDS
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+              
+              <SearchableDropdown
+                options={customers.map(c => ({
+                  ...c,
+                  name: c.companyName || c.name
+                }))}
+                value={formData.customerName}
+                onChange={(value) => {
+                  const customer = customers.find(c => (c.companyName || c.name) === value);
+                  setFormData({
+                    ...formData, 
+                    customerName: value,
+                    // Add these new fields
+                    customerReference: customer?.reference || '',
+                    customerMobile: customer?.mobile || '',
+                    customerMainContact: customer?.main_contact_name || '',
+                    customerCreditLimit: customer?.credit_limit || 0,
+                    customerCreditDays: customer?.credit_days || 30,
+                    customerDeliveryAddress: customer?.delivery_address || null,
+                    customerAccountStatus: customer?.account_status || 'Active'
+                  });
+                }}
+                placeholder={`Select Customer (${customers.length} available)`}
+                displayField="name"
+                valueField="name"
+              />
+            </div>
+            {/* Customer Extended Details - Auto-populated */}
+            {formData.customerName && (() => {
+              const customer = customers.find(c => (c.companyName || c.name) === formData.customerName);
+              return customer ? (
+                <div className="col-span-2 bg-gray-50 rounded-lg p-4 mb-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Customer Information</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Reference:</span>
+                      <span className="ml-2 font-medium">{customer.reference || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Contact:</span>
+                      <span className="ml-2 font-medium">{customer.main_contact_name || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Mobile:</span>
+                      <span className="ml-2 font-medium">{customer.mobile || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Credit:</span>
+                      <span className="ml-2 font-medium">
+                        £{customer.credit_limit?.toLocaleString() || '0'} / {customer.credit_days || 30} days
+                      </span>
+                    </div>
+                    {customer.delivery_address && (
+                      <div className="col-span-2 pt-2 border-t">
+                        <span className="text-gray-600">Delivery Address:</span>
+                        <span className="ml-2 font-medium">
+                          {customer.delivery_address.address_line_1}
+                          {customer.delivery_address.address_line_2 && `, ${customer.delivery_address.address_line_2}`}
+                          {customer.delivery_address.city && `, ${customer.delivery_address.city}`}
+                          {customer.delivery_address.postal_code && ` ${customer.delivery_address.postal_code}`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-
-                <div className="p-6">
-                  {/* Job Details Tab */}
-                  {activeTab === 'details' && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-  <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
-  
-  <SearchableDropdown
-    options={customers.map(c => ({
-      ...c,
-      name: c.companyName || c.name
-    }))}
-    value={formData.customerName}
-   onChange={(value) => {
-  const customer = customers.find(c => (c.companyName || c.name) === value);
-  setFormData({
-    ...formData, 
-    customerName: value,
-    // Add these new fields
-    customerReference: customer?.reference || '',
-    customerMobile: customer?.mobile || '',
-    customerMainContact: customer?.main_contact_name || '',
-    customerCreditLimit: customer?.credit_limit || 0,
-    customerCreditDays: customer?.credit_days || 30,
-    customerDeliveryAddress: customer?.delivery_address || null,
-    customerAccountStatus: customer?.account_status || 'Active'
-  });
-}}
-    placeholder={`Select Customer (${customers.length} available)`}
-    displayField="name"
-    valueField="name"
-  />
-</div>
-{/* Customer Extended Details - Auto-populated */}
-{formData.customerName && (() => {
-  const customer = customers.find(c => (c.companyName || c.name) === formData.customerName);
-  return customer ? (
-    <div className="col-span-2 bg-gray-50 rounded-lg p-4 mb-4">
-      <h3 className="text-sm font-medium text-gray-700 mb-3">Customer Information</h3>
-      <div className="grid grid-cols-2 gap-4 text-sm">
-        <div>
-          <span className="text-gray-600">Reference:</span>
-          <span className="ml-2 font-medium">{customer.reference || '-'}</span>
-        </div>
-        <div>
-          <span className="text-gray-600">Contact:</span>
-          <span className="ml-2 font-medium">{customer.main_contact_name || '-'}</span>
-        </div>
-        <div>
-          <span className="text-gray-600">Mobile:</span>
-          <span className="ml-2 font-medium">{customer.mobile || '-'}</span>
-        </div>
-        <div>
-          <span className="text-gray-600">Credit:</span>
-          <span className="ml-2 font-medium">
-            £{customer.credit_limit?.toLocaleString() || '0'} / {customer.credit_days || 30} days
-          </span>
-        </div>
-        {customer.delivery_address && (
-          <div className="col-span-2 pt-2 border-t">
-            <span className="text-gray-600">Delivery Address:</span>
-            <span className="ml-2 font-medium">
-              {customer.delivery_address.address_line_1}
-              {customer.delivery_address.address_line_2 && `, ${customer.delivery_address.address_line_2}`}
-              {customer.delivery_address.city && `, ${customer.delivery_address.city}`}
-              {customer.delivery_address.postal_code && ` ${customer.delivery_address.postal_code}`}
-            </span>
+              ) : null;
+            })()}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Customer PO Number</label>
+              <input
+                type="text"
+                value={formData.customerPO}
+                onChange={(e) => setFormData({...formData, customerPO: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                placeholder="Customer purchase order"
+              />
+            </div>
           </div>
-        )}
-      </div>
-    </div>
-  ) : null;
-})()}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Customer PO Number</label>
-                          <input
-                            type="text"
-                            value={formData.customerPO}
-                            onChange={(e) => setFormData({...formData, customerPO: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Customer purchase order"
-                          />
-                        </div>
-                      </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-  <label className="block text-sm font-medium text-gray-700 mb-1">Supplier *</label>
-  <SearchableDropdown
-    options={suppliers.map(s => ({
-      ...s,
-      name: s.name || s.companyName
-    }))}
-    value={formData.supplierName}
-    onChange={(value) => setFormData({...formData, supplierName: value})}
-    placeholder={`Select Supplier (${suppliers.length} available)`}
-    displayField="name"
-    valueField="name"
-  />
-</div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Reference</label>
-                          <input
-                            type="text"
-                            value={formData.supplierRef}
-                            onChange={(e) => setFormData({...formData, supplierRef: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Supplier job reference"
-                          />
-                        </div>
-                      </div>
-
-                      {formData.jobType === 'Aggregates' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <div>
-  <label className="block text-sm font-medium text-gray-700 mb-1">Haulier</label>
-  <SearchableDropdown
-    options={suppliers.map(s => ({
-      ...s,
-      name: s.name || s.companyName
-    }))}
-    value={formData.haulierName}
-    onChange={(value) => setFormData({...formData, haulierName: value})}
-    placeholder={`Select Haulier (${suppliers.length} available)`}
-    displayField="name"
-    valueField="name"
-  />
-</div>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Job Type *</label>
-                          <select
-                            value={formData.jobType}
-                            onChange={(e) => setFormData({...formData, jobType: e.target.value, wasteType: '', skipSize: '', aggregateType: ''})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
-                            <option value="Skip Hire">Skip Hire</option>
-                            <option value="Aggregates">Aggregates</option>
-                            <option value="Other">Other</option>
-                            <option value="Grab Hire">Grab Hire</option>
-                            <option value="Muck Away">Muck Away</option>
-                            <option value="Roll-on Roll-off">Roll-on Roll-off</option>
-                          </select>
-                        </div>
-                        <div>
-                        </div>
-                      </div>
-
-                    {formData.jobType === 'Skip Hire' && (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-    <div>
-      <SageProductSelector 
-        jobType="Skip Hire"
-        selectedProduct={formData.sageProductName}
-       onSelect={(product) => {
-        console.log('Selected product full object:', product);
-console.log('Product sage_id:', product.sage_id);
-console.log('Product item_code:', product.item_code);
-         alert('Adding product: ' + product.name); 
-  setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
-  const newLineItem = {
-  id: Date.now(),
-  sage_id: product.sage_id,
-  product_name: product.name,
-  description: product.description || product.name,
-  item_code: product.item_code,
-  type: product.type,
-  quantity: 1,
-  supplier_price: product.supplier_price || product.supplierPrice || 0.00,
-customer_price: product.customer_price || product.customerPrice || 0.00,
-  unit_price: 0.00,
-  discount: 0.00,
-  vat_rate: 20,
-  total: 0.00,
-  sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
-};
-  const updatedLineItems = [...(formData.lineItems || []), newLineItem];
-  setFormData({...formData, lineItems: updatedLineItems});
-}}
-        products={sageProducts}
-      />
-    </div>
-  </div>
-)}
-{formData.jobType === 'Roll-on Roll-off' && (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-    <div>
-      <SageProductSelector 
-        jobType="Roll-on Roll-off"
-        selectedProduct={formData.sageProductName}
-        onSelect={(product) => {
-          setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
-          const newLineItem = {
-            id: Date.now(),
-            sage_id: product.sage_id,
-            product_name: product.name,
-            description: product.description || product.name,
-            item_code: product.item_code,
-            type: product.type,
-            quantity: 1,
-            supplier_price: product.supplier_price || product.supplierPrice || 0.00,
-customer_price: product.customer_price || product.customerPrice || 0.00,
-            unit_price: 0.00,
-            discount: 0.00,
-            vat_rate: 20,
-            total: 0.00,
-            sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1' 
-          };
-          const updatedLineItems = [...(formData.lineItems || []), newLineItem];
-          setFormData({...formData, lineItems: updatedLineItems});
-        }}
-        products={sageProducts}
-      />
-    </div>
-  </div>
-)}
-{formData.lineItems && formData.lineItems.length > 0 && (
-  <div className="mt-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
-    <h3 className="text-xl font-semibold mb-6">Selected Products & Services</h3>
-    <div className="overflow-x-auto">
-      <table className="w-full border border-gray-300 rounded-lg bg-white">
-        <thead className="bg-gray-100">
-          <tr>
-           <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
-<th className="px-4 py-3 text-left font-medium w-1/3">Description (Editable)</th>
-<th className="px-2 py-3 text-left font-medium w-16">Qty</th>
-<th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
-<th className="px-2 py-3 text-left font-medium w-20">RRP £</th>
-<th className="px-2 py-3 text-left font-medium w-20">Profit</th>
-<th className="px-4 py-3 text-left font-medium w-20">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-    {formData.lineItems && Array.isArray(formData.lineItems) && formData.lineItems.length > 0 ? formData.lineItems.map((item, index) => {
-    const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
-    return (
-      <tr key={item.id} className="border-t hover:bg-gray-50">
-        <td className="px-4 py-3">
-          <div>{item.product_name}</div>
-          <div className="text-xs text-gray-500">{item.item_code}</div>
-        </td>
-        <td className="px-4 py-3">
-          <input
-            type="text"
-            value={item.description}
-            onChange={(e) => {
-              const updatedItems = [...formData.lineItems];
-              updatedItems[index].description = e.target.value;
-              setFormData({...formData, lineItems: updatedItems});
-            }}
-            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-          />
-        </td>
-        <td className="px-2 py-3">
-         <input
-  type="number"
-  className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
-  step="0.01"
-  value={item.quantity || ''}
-  onChange={(e) => {
-    const updatedItems = [...formData.lineItems];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      quantity: parseFloat(e.target.value) || ''
-    };
-    setFormData({...formData, lineItems: updatedItems});
-  }}
-/>
-        </td>
-        <td className="px-2 py-3">
-          <input
-  type="text"
-  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-  value={item.supplier_price || ''}
-  onChange={(e) => {
-    const updatedItems = [...formData.lineItems];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      supplier_price: e.target.value
-    };
-    setFormData({...formData, lineItems: updatedItems});
-  }}
-/>
-        </td>
-        <td className="px-2 py-3">
-          <input
-  type="text"
-  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-  value={item.customer_price || ''}
-  onChange={(e) => {
-    const updatedItems = [...formData.lineItems];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      customer_price: e.target.value
-    };
-    setFormData({...formData, lineItems: updatedItems});
-  }}
-/>
-        </td>
-        <td className="px-2 py-3">
-          <div className={`text-sm font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            £{lineProfit.toFixed(2)}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Supplier *</label>
+              <SearchableDropdown
+                options={suppliers.map(s => ({
+                  ...s,
+                  name: s.name || s.companyName
+                }))}
+                value={formData.supplierName}
+                onChange={(value) => setFormData({...formData, supplierName: value})}
+                placeholder={`Select Supplier (${suppliers.length} available)`}
+                displayField="name"
+                valueField="name"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Reference</label>
+              <input
+                type="text"
+                value={formData.supplierRef}
+                onChange={(e) => setFormData({...formData, supplierRef: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                placeholder="Supplier job reference"
+              />
+            </div>
           </div>
-        </td>
-        <td className="px-4 py-3">
-          <button
-            onClick={() => {
-              const updatedItems = formData.lineItems.filter((_, i) => i !== index);
-              setFormData({...formData, lineItems: updatedItems});
-            }}
-            className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-          >
-            Remove
-          </button>
-        </td>
-      </tr>
-    );
-  })
- : null}
-</tbody>
-     </table>
-</div>
-<div className="mt-4 border-t pt-4">
-  <div className="grid grid-cols-5 gap-4 text-sm">
-    <div className="text-center">
-      <div className="text-gray-600">Total Items</div>
-      <div className="font-semibold">{formData.lineItems.length}</div>
-    </div>
-    <div className="text-center">
-      <div className="text-gray-600">Total Quantity</div>
-      <div className="font-semibold">
-        {((formData.lineItems || []).reduce((sum, item) => sum + (item.quantity || 1), 0))}
-      </div>
-    </div>
-    <div className="text-center">
-      <div className="text-gray-600">Total Cost</div>
-      <div className="font-semibold text-red-600">
-          £{(formData.lineItems || []).reduce((sum, item) =>
-          sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
-        ).toFixed(2)}
-      </div>
-    </div>
-    <div className="text-center">
-      <div className="text-gray-600">Total RRP</div>
-      <div className="font-semibold text-blue-600">
-          £{(formData.lineItems || []).reduce((sum, item) =>
-          sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
-        ).toFixed(2)}
-      </div>
-    </div>
-    <div className="text-center">
-      <div className="text-gray-600">Total Profit</div>
-      <div className="font-semibold text-green-600">
-            £{((formData.lineItems || []).reduce((sum, item) =>
-          sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
-        ) - (formData.lineItems || []).reduce((sum, item) =>
-          sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
-        )).toFixed(2)}
-      </div>
-    </div>
-  </div>
-</div>
-    </div>
-)}
 
-                  {formData.jobType === 'Aggregates' && (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-    <div>
-      <SageProductSelector 
-        jobType="Aggregates"
-        selectedProduct={formData.sageProductName}
-        onSelect={(product) => {
-  setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
-  const newLineItem = {
-    id: Date.now(),
-    sage_id: product.sage_id,
-    product_name: product.name,
-    description: product.description || product.name,
-    item_code: product.item_code,
-    type: product.type,
-    quantity: 1,
-    supplier_price: product.supplier_price || product.supplierPrice || 0.00,
-customer_price: product.customer_price || product.customerPrice || 0.00,
-    unit_price: 0.00,
-    discount: 0.00,
-    vat_rate: 20,
-    total: 0.00,
-    sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
-  };
-  const updatedLineItems = [...(formData.lineItems || []), newLineItem];
-  setFormData({...formData, lineItems: updatedLineItems});
-}}
-        products={sageProducts}
-      />
-    </div>
-  </div>
-)}
+          {formData.jobType === 'Aggregates' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Haulier</label>
+                  <SearchableDropdown
+                    options={suppliers.map(s => ({
+                      ...s,
+                      name: s.name || s.companyName
+                    }))}
+                    value={formData.haulierName}
+                    onChange={(value) => setFormData({...formData, haulierName: value})}
+                    placeholder={`Select Haulier (${suppliers.length} available)`}
+                    displayField="name"
+                    valueField="name"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
-                     {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-    <div>
-      <SageProductSelector 
-        jobType={formData.jobType}
-        selectedProduct={formData.sageProductName}
-        onSelect={(product) => {
-  setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
-  const newLineItem = {
-    id: Date.now(),
-    sage_id: product.sage_id,
-    product_name: product.name,
-    description: product.description || product.name,
-    item_code: product.item_code,
-    type: product.type,
-    quantity: 1,
-    supplier_price: product.supplier_price || product.supplierPrice || 0.00,
-customer_price: product.customer_price || product.customerPrice || 0.00,
-    unit_price: 0.00,
-    discount: 0.00,
-    vat_rate: 20,
-    total: 0.00,
-    sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
-nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
-tax_code: product.tax_rate_id || 'T1'
-  };
-  const updatedLineItems = [...(formData.lineItems || []), newLineItem];
-  setFormData({...formData, lineItems: updatedLineItems});
-}}
-        products={sageProducts}
-      />
-    </div>
-  </div>
-)}
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Quantity * 
-                            {(formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && 
-                             <span className="text-xs text-gray-500 ml-1">(creates multiple jobs if &gt; 1)</span>
-                            }
-                          </label>
-                          <input
-                            type="number"
-                            value={formData.quantity}
-                            onChange={(e) => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                          <select
-                            value={formData.unit}
-                            onChange={(e) => setFormData({...formData, unit: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            disabled={formData.jobType === 'Aggregates'}
-                          >
-                            <option value="skip">Skip</option>
-                            <option value="tonnes">Tonnes</option>
-                            <option value="loads">Loads</option>
-                            <option value="collections">Collections</option>
-                            <option value="days">Days</option>
-                          </select>
-                        </div>
-                        {formData.jobType !== 'Aggregates' && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Weight (tonnes)</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Job Type *</label>
+              <select
+                value={formData.jobType}
+                onChange={(e) => setFormData({...formData, jobType: e.target.value, wasteType: '', skipSize: '', aggregateType: ''})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="Skip Hire">Skip Hire</option>
+                <option value="Aggregates">Aggregates</option>
+                <option value="Other">Other</option>
+                <option value="Grab Hire">Grab Hire</option>
+                <option value="Muck Away">Muck Away</option>
+                <option value="Roll-on Roll-off">Roll-on Roll-off</option>
+              </select>
+            </div>
+            <div>
+            </div>
+          </div>
+
+          {/* ALL YOUR PRODUCT SELECTOR AND LINE ITEMS CODE - keeping it exactly as is */}
+          {formData.jobType === 'Skip Hire' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <SageProductSelector 
+                  jobType="Skip Hire"
+                  selectedProduct={formData.sageProductName}
+                  onSelect={(product) => {
+                    console.log('Selected product full object:', product);
+                    console.log('Product sage_id:', product.sage_id);
+                    console.log('Product item_code:', product.item_code);
+                    alert('Adding product: ' + product.name); 
+                    setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
+                    const newLineItem = {
+                      id: Date.now(),
+                      sage_id: product.sage_id,
+                      product_name: product.name,
+                      description: product.description || product.name,
+                      item_code: product.item_code,
+                      type: product.type,
+                      quantity: 1,
+                      supplier_price: product.supplier_price || product.supplierPrice || 0.00,
+                      customer_price: product.customer_price || product.customerPrice || 0.00,
+                      unit_price: 0.00,
+                      discount: 0.00,
+                      vat_rate: 20,
+                      total: 0.00,
+                      sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
+                      nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                      tax_code: product.tax_rate_id || 'T1'
+                    };
+                    const updatedLineItems = [...(formData.lineItems || []), newLineItem];
+                    setFormData({...formData, lineItems: updatedLineItems});
+                  }}
+                  products={sageProducts}
+                />
+              </div>
+            </div>
+          )}
+
+          {formData.jobType === 'Roll-on Roll-off' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <SageProductSelector 
+                  jobType="Roll-on Roll-off"
+                  selectedProduct={formData.sageProductName}
+                  onSelect={(product) => {
+                    setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
+                    const newLineItem = {
+                      id: Date.now(),
+                      sage_id: product.sage_id,
+                      product_name: product.name,
+                      description: product.description || product.name,
+                      item_code: product.item_code,
+                      type: product.type,
+                      quantity: 1,
+                      supplier_price: product.supplier_price || product.supplierPrice || 0.00,
+                      customer_price: product.customer_price || product.customerPrice || 0.00,
+                      unit_price: 0.00,
+                      discount: 0.00,
+                      vat_rate: 20,
+                      total: 0.00,
+                      sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
+                      nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                      tax_code: product.tax_rate_id || 'T1' 
+                    };
+                    const updatedLineItems = [...(formData.lineItems || []), newLineItem];
+                    setFormData({...formData, lineItems: updatedLineItems});
+                  }}
+                  products={sageProducts}
+                />
+              </div>
+            </div>
+          )}
+
+          {formData.lineItems && formData.lineItems.length > 0 && (
+            <div className="mt-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
+              <h3 className="text-xl font-semibold mb-6">Selected Products & Services</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full border border-gray-300 rounded-lg bg-white">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
+                      <th className="px-4 py-3 text-left font-medium w-1/3">Description (Editable)</th>
+                      <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
+                      <th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
+                      <th className="px-2 py-3 text-left font-medium w-20">RRP £</th>
+                      <th className="px-2 py-3 text-left font-medium w-20">Profit</th>
+                      <th className="px-4 py-3 text-left font-medium w-20">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {formData.lineItems && Array.isArray(formData.lineItems) && formData.lineItems.length > 0 ? formData.lineItems.map((item, index) => {
+                      const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
+                      return (
+                        <tr key={item.id} className="border-t hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <div>{item.product_name}</div>
+                            <div className="text-xs text-gray-500">{item.item_code}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="text"
+                              value={item.description}
+                              onChange={(e) => {
+                                const updatedItems = [...formData.lineItems];
+                                updatedItems[index].description = e.target.value;
+                                setFormData({...formData, lineItems: updatedItems});
+                              }}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-2 py-3">
                             <input
                               type="number"
-                              step="0.1"
-                              value={formData.weight}
-                              onChange={(e) => setFormData({...formData, weight: e.target.value})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                              placeholder="If known"
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                              step="0.01"
+                              value={item.quantity || ''}
+                              onChange={(e) => {
+                                const updatedItems = [...formData.lineItems];
+                                updatedItems[index] = {
+                                  ...updatedItems[index],
+                                  quantity: parseFloat(e.target.value) || ''
+                                };
+                                setFormData({...formData, lineItems: updatedItems});
+                              }}
                             />
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Date *</label>
-                          <input
-                            type="date"
-                            value={formData.jobDate}
-                            onChange={(e) => setFormData({...formData, jobDate: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          />
-                        </div>
-                        {formData.jobType === 'Aggregates' ? (
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">Time Slot</label>
-    <select
-      value={formData.timeSlot}
-      onChange={(e) => setFormData({...formData, timeSlot: e.target.value})}
-      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-    >
-      <option value="">Select time slot</option>
-      {timeSlots.map(slot => (
-        <option key={slot} value={slot}>{slot}</option>
-      ))}
-    </select>
-  </div>
-) : (formData.jobType !== 'Grab Hire' && formData.jobType !== 'Muck Away') ? (
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">Collection Date</label>
-    <input
-      type="date"
-      value={formData.collectionDate}
-      onChange={(e) => setFormData({...formData, collectionDate: e.target.value})}
-      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-    />
-  </div>
-) : null}
-                      </div>
-
-                      <div>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formData.hazardousWaste}
-                            onChange={(e) => setFormData({...formData, hazardousWaste: e.target.checked})}
-                            className="mr-2"
-                          />
-                          <span className="text-sm font-medium cursor-pointer">Contains Hazardous Waste</span>
-                        </div>
-                      </div>
-
-                      {formData.hazardousWaste && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Consignment Note Number</label>
-                          <input
-                            type="text"
-                            value={formData.consignmentNote}
-                            onChange={(e) => setFormData({...formData, consignmentNote: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Hazardous waste consignment note"
-                          />
-                        </div>
-                      )}
+                          </td>
+                          <td className="px-2 py-3">
+                            <input
+                              type="text"
+                              className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                              value={item.supplier_price || ''}
+                              onChange={(e) => {
+                                const updatedItems = [...formData.lineItems];
+                                updatedItems[index] = {
+                                  ...updatedItems[index],
+                                  supplier_price: e.target.value
+                                };
+                                setFormData({...formData, lineItems: updatedItems});
+                              }}
+                            />
+                          </td>
+                          <td className="px-2 py-3">
+                            <input
+                              type="text"
+                              className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                              value={item.customer_price || ''}
+                              onChange={(e) => {
+                                const updatedItems = [...formData.lineItems];
+                                updatedItems[index] = {
+                                  ...updatedItems[index],
+                                  customer_price: e.target.value
+                                };
+                                setFormData({...formData, lineItems: updatedItems});
+                              }}
+                            />
+                          </td>
+                          <td className="px-2 py-3">
+                            <div className={`text-sm font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              £{lineProfit.toFixed(2)}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => {
+                                const updatedItems = formData.lineItems.filter((_, i) => i !== index);
+                                setFormData({...formData, lineItems: updatedItems});
+                              }}
+                              className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                    : null}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4 border-t pt-4">
+                <div className="grid grid-cols-5 gap-4 text-sm">
+                  <div className="text-center">
+                    <div className="text-gray-600">Total Items</div>
+                    <div className="font-semibold">{formData.lineItems.length}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-gray-600">Total Quantity</div>
+                    <div className="font-semibold">
+                      {((formData.lineItems || []).reduce((sum, item) => sum + (item.quantity || 1), 0))}
                     </div>
-                  )}
+                  </div>
+                  <div className="text-center">
+                    <div className="text-gray-600">Total Cost</div>
+                    <div className="font-semibold text-red-600">
+                      £{(formData.lineItems || []).reduce((sum, item) =>
+                        sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
+                      ).toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-gray-600">Total RRP</div>
+                    <div className="font-semibold text-blue-600">
+                      £{(formData.lineItems || []).reduce((sum, item) =>
+                        sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
+                      ).toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-gray-600">Total Profit</div>
+                    <div className="font-semibold text-green-600">
+                      £{((formData.lineItems || []).reduce((sum, item) =>
+                        sum + ((item.customer_price || 0) * (item.quantity || 1)), 0
+                      ) - (formData.lineItems || []).reduce((sum, item) =>
+                        sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0
+                      )).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
+          {formData.jobType === 'Aggregates' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <SageProductSelector 
+                  jobType="Aggregates"
+                  selectedProduct={formData.sageProductName}
+                  onSelect={(product) => {
+                    setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
+                    const newLineItem = {
+                      id: Date.now(),
+                      sage_id: product.sage_id,
+                      product_name: product.name,
+                      description: product.description || product.name,
+                      item_code: product.item_code,
+                      type: product.type,
+                      quantity: 1,
+                      supplier_price: product.supplier_price || product.supplierPrice || 0.00,
+                      customer_price: product.customer_price || product.customerPrice || 0.00,
+                      unit_price: 0.00,
+                      discount: 0.00,
+                      vat_rate: 20,
+                      total: 0.00,
+                      sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
+                      nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                      tax_code: product.tax_rate_id || 'T1'
+                    };
+                    const updatedLineItems = [...(formData.lineItems || []), newLineItem];
+                    setFormData({...formData, lineItems: updatedLineItems});
+                  }}
+                  products={sageProducts}
+                />
+              </div>
+            </div>
+          )}
+
+          {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <SageProductSelector 
+                  jobType={formData.jobType}
+                  selectedProduct={formData.sageProductName}
+                  onSelect={(product) => {
+                    setFormData({...formData, sageProductName: product.name, sage_id: product.sage_id});
+                    const newLineItem = {
+                      id: Date.now(),
+                      sage_id: product.sage_id,
+                      product_name: product.name,
+                      description: product.description || product.name,
+                      item_code: product.item_code,
+                      type: product.type,
+                      quantity: 1,
+                      supplier_price: product.supplier_price || product.supplierPrice || 0.00,
+                      customer_price: product.customer_price || product.customerPrice || 0.00,
+                      unit_price: 0.00,
+                      discount: 0.00,
+                      vat_rate: 20,
+                      total: 0.00,
+                      sales_ledger_account: product.sales_ledger_account || 'dc4b88bb472b11e9aac702d5719f235e',
+                      nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
+                      tax_code: product.tax_rate_id || 'T1'
+                    };
+                    const updatedLineItems = [...(formData.lineItems || []), newLineItem];
+                    setFormData({...formData, lineItems: updatedLineItems});
+                  }}
+                  products={sageProducts}
+                />
+              </div>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Quantity * 
+                {(formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && 
+                  <span className="text-xs text-gray-500 ml-1">(creates multiple jobs if &gt; 1)</span>
+                }
+              </label>
+              <input
+                type="number"
+                value={formData.quantity}
+                onChange={(e) => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+              <select
+                value={formData.unit}
+                onChange={(e) => setFormData({...formData, unit: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                disabled={formData.jobType === 'Aggregates'}
+              >
+                <option value="skip">Skip</option>
+                <option value="tonnes">Tonnes</option>
+                <option value="loads">Loads</option>
+                <option value="collections">Collections</option>
+                <option value="days">Days</option>
+              </select>
+            </div>
+            {formData.jobType !== 'Aggregates' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Weight (tonnes)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.weight}
+                  onChange={(e) => setFormData({...formData, weight: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="If known"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Date *</label>
+              <input
+                type="date"
+                value={formData.jobDate}
+                onChange={(e) => setFormData({...formData, jobDate: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            {formData.jobType === 'Aggregates' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Time Slot</label>
+                <select
+                  value={formData.timeSlot}
+                  onChange={(e) => setFormData({...formData, timeSlot: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Select time slot</option>
+                  {timeSlots.map(slot => (
+                    <option key={slot} value={slot}>{slot}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (formData.jobType !== 'Grab Hire' && formData.jobType !== 'Muck Away') ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Collection Date</label>
+                <input
+                  type="date"
+                  value={formData.collectionDate}
+                  onChange={(e) => setFormData({...formData, collectionDate: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                checked={formData.hazardousWaste}
+                onChange={(e) => setFormData({...formData, hazardousWaste: e.target.checked})}
+                className="mr-2"
+              />
+              <span className="text-sm font-medium cursor-pointer">Contains Hazardous Waste</span>
+            </div>
+          </div>
+
+          {formData.hazardousWaste && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Consignment Note Number</label>
+              <input
+                type="text"
+                value={formData.consignmentNote}
+                onChange={(e) => setFormData({...formData, consignmentNote: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                placeholder="Hazardous waste consignment note"
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )}
               
 {/* Site Information Tab */}
 {activeTab === 'site' && (
@@ -3212,8 +3386,11 @@ setTimeout(() => {
              return bNum - aNum;
             });
 
-         const filteredJobs = React.useMemo(() => {
+        const filteredJobs = React.useMemo(() => {
   let filtered = jobs.filter(job => {
+    // EXCLUDE EVENTS FROM LIST VIEW
+    if (job.isEvent || job.status === 'EVENT') return false;
+    
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
@@ -3221,19 +3398,17 @@ setTimeout(() => {
       const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
       const matchesPostcode = (job.sitePostcode || '').toLowerCase().includes(query);
       const matchesAddress = (job.siteAddress || '').toLowerCase().includes(query);
-      
       if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
         return false;
       }
     }
-    
     if (filters.jobType && job.jobType !== filters.jobType) return false;
     if (filters.status) {
       if (filters.status === 'COMPLETED' && !job.isCompleted) return false;
       if (filters.status === 'CANCELLED' && !job.isCancelled) return false;
       if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') return false;
       if (filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
-          job.status !== filters.status) return false;
+        job.status !== filters.status) return false;
     }
     return true;
   });
@@ -3384,14 +3559,56 @@ const CalendarView = () => {
     days.push(new Date(year, month, d));
   }
 
-  // Group jobs by date
-  const jobsByDate = {};
-  filteredJobs.forEach(job => {
+  // Group jobs by date - apply filters to regular jobs but always include events
+const jobsByDate = {};
+jobs.forEach(job => {
+  // Always include events, or include jobs that match the filters
+  const isEvent = job.isEvent || job.status === 'EVENT';
+  
+  if (isEvent) {
+    // Always include events in calendar
     const jobDate = new Date(job.jobDate);
     const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
     if (!jobsByDate[dateKey]) jobsByDate[dateKey] = [];
     jobsByDate[dateKey].push(job);
-  });
+  } else {
+    // Apply filters to regular jobs
+    let includeJob = true;
+    
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
+      const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
+      const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
+      const matchesPostcode = (job.sitePostcode || '').toLowerCase().includes(query);
+      const matchesAddress = (job.siteAddress || '').toLowerCase().includes(query);
+      if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
+        includeJob = false;
+      }
+    }
+    
+    // Apply type filter
+    if (filters.jobType && job.jobType !== filters.jobType) includeJob = false;
+    
+    // Apply status filter
+    if (filters.status) {
+      if (filters.status === 'COMPLETED' && !job.isCompleted) includeJob = false;
+      if (filters.status === 'CANCELLED' && !job.isCancelled) includeJob = false;
+      if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') includeJob = false;
+      if (filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
+        job.status !== filters.status) includeJob = false;
+    }
+    
+    // Add to calendar if it passes filters
+    if (includeJob) {
+      const jobDate = new Date(job.jobDate);
+      const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
+      if (!jobsByDate[dateKey]) jobsByDate[dateKey] = [];
+      jobsByDate[dateKey].push(job);
+    }
+  }
+});
 
   const navigateMonth = (direction) => {
     const newMonth = new Date(currentMonth);
@@ -3446,100 +3663,141 @@ const CalendarView = () => {
                 {day.getDate()}
               </div>
               <div className="space-y-1">
-                {dayJobs.slice(0, expandedDays[day.toDateString()] ? dayJobs.length : 3).map(job => {
-                  const isFinished = job.isCompleted || job.status === 'COLLECTED';
-                  return (
-                    <div
-                      key={job.id}
-                      className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
-                        isFinished ? 'bg-green-500' : ''
-                      }`}
-                      style={{ 
-                        backgroundColor: isFinished ? '' : jobColors[job.jobType] + '20', 
-                        color: isFinished ? 'black' : jobColors[job.jobType],
-                        borderLeft: `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
-                      }}
-                      onClick={() => handleJobClick(job)}
-                      title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}`}
-                    >
-                      <div className="truncate font-medium text-xs">
-                        {job.customerName || 'No Customer'}
-                      </div>
-                      <div className="truncate text-[10px] opacity-75">
-                        {job.sitePostcode || job.postcode || 'No Postcode'}
-                      </div>
-                      <div className="truncate text-[10px] font-bold">
-                        {(() => {
-                          // Try to parse sageLineItems (camelCase) or lineItems
-                          if (job.sageLineItems || job.lineItems) {
-                            try {
-                              const items = job.sageLineItems || job.lineItems;
-                              const parsedItems = typeof items === 'string' 
-                                ? JSON.parse(items) 
-                                : items;
-                              
-                              if (parsedItems && parsedItems.length > 0) {
-                                // Show first product name, add "+" if multiple
-                                const firstItem = parsedItems[0].description || parsedItems[0].product_name || parsedItems[0].productName || '';
-                                return parsedItems.length > 1 ? `${firstItem} +${parsedItems.length - 1}` : firstItem;
-                              }
-                            } catch (e) {
-                              // If parsing fails, fall back
-                            }
-                          }
-                          
-                          // Fallback to other fields - use camelCase
-                          return job.description || job.sageProductName || job.wasteType || job.jobType || '';
-                        })()}
-                      </div>
-                    </div>
-                  );
-                })}
-                {dayJobs.length > 3 && (
-                  <div 
-                    className="text-xs text-blue-600 text-center mt-1 py-1 bg-blue-50 rounded cursor-pointer hover:bg-blue-100 transition-colors"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setExpandedDays(prev => ({
-                        ...prev,
-                        [day.toDateString()]: !prev[day.toDateString()]
-                      }));
-                    }}
-                  >
-                    {expandedDays[day.toDateString()] ? 'Show less' : `+${dayJobs.length - 3} more`}
-                  </div>
-                )}
-              </div>
-            </div>
+               {dayJobs.slice(0, expandedDays[day.toDateString()] ? dayJobs.length : 3).map(job => {
+  const isFinished = job.isCompleted || job.status === 'COLLECTED';
+  const isEvent = job.is_event || job.status === 'EVENT';
+  
+  // Define event colors
+  const eventColors = {
+    'HOLIDAY': '#3B82F6',      // Blue
+    'SITE_VISIT': '#8B5CF6',   // Purple
+    'MEETING': '#10B981',      // Green
+    'TRAINING': '#F59E0B',     // Amber
+    'MAINTENANCE': '#6B7280',  // Gray
+    'DELIVERY': '#EC4899',     // Pink
+    'INSPECTION': '#06B6D4',   // Cyan
+    'OTHER': '#71717A'         // Zinc
+  };
+  
+  return (
+    <div
+      key={job.id}
+      className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
+        isFinished ? 'bg-green-500' : ''
+      } ${isEvent ? 'text-white font-medium' : ''}`}
+      style={{ 
+        backgroundColor: isEvent 
+          ? (eventColors[job.job_type] || eventColors['OTHER'])
+          : (isFinished ? '' : jobColors[job.jobType] + '20'),
+        color: isEvent ? 'white' : (isFinished ? 'black' : jobColors[job.jobType]),
+        borderLeft: isEvent ? 'none' : `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
+      }}
+      onClick={() => handleJobClick(job)}
+      title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}${isEvent ? ' (Event)' : ''}`}
+    >
+      <div className="truncate font-medium text-xs">
+        {isEvent ? (
+          <>
+            {job.job_type === 'HOLIDAY' && '🏖️ '}
+            {job.job_type === 'SITE_VISIT' && '📍 '}
+            {job.job_type === 'MEETING' && '👥 '}
+            {job.job_type === 'TRAINING' && '📚 '}
+            {job.job_type === 'MAINTENANCE' && '🔧 '}
+            {job.job_type === 'DELIVERY' && '🚚 '}
+            {job.job_type === 'INSPECTION' && '🔍 '}
+            {job.customerName || 'No Customer'}
+          </>
+        ) : (
+          <>{job.customerName || 'No Customer'}</>
+        )}
+      </div>
+      {!isEvent && (
+  <>
+    <div className="truncate text-[10px] opacity-75">
+      {job.sitePostcode || job.postcode || 'No Postcode'}
+    </div>
+    <div className="truncate text-[10px] font-bold">
+      {(() => {
+        // Try to parse sageLineItems (camelCase) or lineItems
+        if (job.sageLineItems || job.lineItems) {
+          try {
+            const items = job.sageLineItems || job.lineItems;
+            const parsedItems = typeof items === 'string' 
+              ? JSON.parse(items)
+              : items;
+            
+            if (parsedItems && parsedItems.length > 0) {
+              const firstItem = parsedItems[0];
+              const itemName = firstItem.product_name || 
+                             firstItem.productName || 
+                             firstItem.description || 
+                             firstItem.sage_product_name || 
+                             firstItem.sageProductName || 
+                             'Unknown Item';
+              
+              if (parsedItems.length > 1) {
+                return `${itemName} +${parsedItems.length - 1}`;
+              }
+              return itemName;
+            }
+          } catch (e) {
+            console.log('Error parsing items:', e);
+          }
+        }
+        
+        // Fallback to other fields
+        return job.wasteType || job.jobType || '';
+      })()}
+    </div>
+  </>
+)}
+</div>
+  );
+})}
+{dayJobs.length > 3 && (
+  <div 
+    className="text-xs text-blue-600 text-center mt-1 py-1 bg-blue-50 rounded cursor-pointer hover:bg-blue-100 transition-colors"
+    onClick={(e) => {
+      e.stopPropagation();
+      setExpandedDays(prev => ({
+        ...prev,
+        [day.toDateString()]: !prev[day.toDateString()]
+      }));
+    }}
+  >
+    {expandedDays[day.toDateString()] ? 'Show less' : `+${dayJobs.length - 3} more`}
+  </div>
+)}
+</div>
+</div>
           );
         })}
-      </div>
-      <div className="mt-4 flex flex-wrap gap-4">
-        <div className="text-sm text-gray-600">Job Types:</div>
-        {Object.entries(jobColors).map(([type, color]) => (
-          <div key={type} className="flex items-center space-x-2 text-sm">
-            <div 
-              className="w-4 h-4 rounded" 
-              style={{ backgroundColor: color }}
-            />
-            <span>{type}</span>
-          </div>
-        ))}
-        {/* Add Completed status with "C" */}
-        <div className="flex items-center space-x-2 text-sm">
-          <div
-            className="w-4 h-4 rounded flex items-center justify-center text-xs font-bold"
-            style={{ backgroundColor: '#15803d', color: '#000' }}
-          >
-            C
-          </div>
-          <span>Completed</span>
-        </div>
-      </div>
+</div>
+<div className="mt-4 flex flex-wrap gap-4">
+  <div className="text-sm text-gray-600">Job Types:</div>
+  {Object.entries(jobColors).map(([type, color]) => (
+    <div key={type} className="flex items-center space-x-2 text-sm">
+      <div 
+        className="w-4 h-4 rounded" 
+        style={{ backgroundColor: color }}
+      />
+      <span>{type}</span>
     </div>
+  ))}
+  {/* Add Completed status with "C" */}
+  <div className="flex items-center space-x-2 text-sm">
+    <div
+      className="w-4 h-4 rounded flex items-center justify-center text-xs font-bold"
+      style={{ backgroundColor: '#15803d', color: '#000' }}
+    >
+      C
+    </div>
+    <span>Completed</span>
+  </div>
+</div>
+</div>
   );
 };
-
        return (
   <>
     {/* Delete Confirmation Modal */}
@@ -4161,7 +4419,10 @@ We are not responsible for delays due to circumstances beyond our control.
 
 6. WASTE TRANSFER
 All waste will be disposed of at licensed facilities.
-Waste transfer notes will be provided upon request.`;
+Waste transfer notes will be provided upon request.
+
+See website for Full Terms and Conditions - www.totalwasteservicesltd.com ;`
+;
   });
 
   const handleSave = () => {
@@ -5561,7 +5822,9 @@ We are not responsible for delays due to circumstances beyond our control.
 
 6. WASTE TRANSFER
 All waste will be disposed of at licensed facilities.
-Waste transfer notes will be provided upon request.`}
+Waste transfer notes will be provided upon request.
+
+See website for Full Terms and Conditions - www.totalwasteservicesltd.com ;`}
   </div>
 </div>
       </div>
@@ -7330,9 +7593,7 @@ const [syncingProducts, setSyncingProducts] = useState(false);
 const [products, setProducts] = useState([]);
 const [showProductsSyncDialog, setShowProductsSyncDialog] = useState(false);
 const [productsSyncResults, setProductsSyncResults] = useState(null);
-const [forceSyncingCustomers, setForceSyncingCustomers] = useState(false);
-const [forceSyncingSuppliers, setForceSyncingSuppliers] = useState(false);
-const [forceSyncMessage, setForceSyncMessage] = useState('');       
+          
           // Load saved settings when component loads
 useEffect(() => {
   const loadSettings = async () => {
@@ -7649,35 +7910,6 @@ const loadUsers = async () => {
   } catch (error) {
     console.error('Error saving settings:', error);
     alert('Error saving settings');
-  }
-};
-const handleForceCustomerSync = async () => {
-  setForceSyncingCustomers(true);
-  setForceSyncMessage('');
-  
-  try {
-    const results = await window.SageAPI.syncCustomersFromSage();
-    setForceSyncMessage(`✅ Synced ${results.updated?.length || 0} updated, ${results.new?.length || 0} new customers`);
-    setTimeout(() => setForceSyncMessage(''), 5000);
-  } catch (error) {
-    setForceSyncMessage(`❌ Error: ${error.message}`);
-  } finally {
-    setForceSyncingCustomers(false);
-  }
-};
-
-const handleForceSuppliersSync = async () => {
-  setForceSyncingSuppliers(true);
-  setForceSyncMessage('');
-  
-  try {
-    const results = await window.SageAPI.syncSuppliersFromSage();
-    setForceSyncMessage(`✅ Synced ${results.updated?.length || 0} updated, ${results.new?.length || 0} new suppliers`);
-    setTimeout(() => setForceSyncMessage(''), 5000);
-  } catch (error) {
-    setForceSyncMessage(`❌ Error: ${error.message}`);
-  } finally {
-    setForceSyncingSuppliers(false);
   }
 };
           const handleAddUser = async () => {
@@ -8279,59 +8511,7 @@ const handleForceSuppliersSync = async () => {
         </label>
       </div>
     </div>
-{/* FORCE SYNC SECTION */}
-<div className="border-t pt-6">
-  <h4 className="font-medium mb-4">Force Sync (Full Update)</h4>
-  <p className="text-sm text-gray-600 mb-4">Run a complete sync to update all customers and suppliers with latest Sage data</p>
-  
-  <div className="flex flex-wrap gap-3 mb-4">
-    <button
-      onClick={handleForceCustomerSync}
-      disabled={forceSyncingCustomers || forceSyncingSuppliers}
-      className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      {forceSyncingCustomers ? (
-        <>
-          <Loader size={16} className="mr-2 animate-spin" />
-          Syncing Customers...
-        </>
-      ) : (
-        <>
-          <Repeat size={16} className="mr-2" />
-          Force Customer Sync
-        </>
-      )}
-    </button>
-    
-    <button
-      onClick={handleForceSuppliersSync}
-      disabled={forceSyncingCustomers || forceSyncingSuppliers}
-      className="flex items-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      {forceSyncingSuppliers ? (
-        <>
-          <Loader size={16} className="mr-2 animate-spin" />
-          Syncing Suppliers...
-        </>
-      ) : (
-        <>
-          <Repeat size={16} className="mr-2" />
-          Force Suppliers Sync
-        </>
-      )}
-    </button>
-  </div>
-  
-  {forceSyncMessage && (
-    <div className={`p-3 rounded-lg text-sm ${
-      forceSyncMessage.includes('✅') 
-        ? 'bg-green-100 text-green-700' 
-        : 'bg-red-100 text-red-700'
-    }`}>
-      {forceSyncMessage}
-    </div>
-  )}
-</div>
+
     {/* Help Section */}
     <div className="bg-blue-50 p-4 rounded-lg">
       <h4 className="font-medium text-blue-900 mb-2">Setup Instructions</h4>
@@ -11126,7 +11306,7 @@ async createDraftInvoice(invoiceData) {
         }
     
  // Inside the for loop that processes sageCustomers
-for (const sageCustomer of pureCustomers) {
+for (const sageCustomer of customerContacts) {
   // DEBUG: Log first 3 customers to see what Sage provides
 if (customerContacts.indexOf(sageCustomer) < 3) {
     console.log('=== SAGE CUSTOMER #' + customerContacts.indexOf(sageCustomer) + ' ===');
@@ -12749,7 +12929,10 @@ We are not responsible for delays due to circumstances beyond our control.
 
 6. WASTE TRANSFER
 All waste will be disposed of at licensed facilities.
-Waste transfer notes will be provided upon request.`;
+Waste transfer notes will be provided upon request.
+
+See website for Full Terms and Conditions - www.totalwasteservicesltd.com ;`
+;
         setDefaultTerms(fallback);
         if (!quote?.terms_conditions) {
           setFormData(prev => ({...prev, terms_conditions: fallback}));
