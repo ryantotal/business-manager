@@ -5832,7 +5832,9 @@ job.status.replace('_', ' ')}
                       {selectedJob.parentJobId && (
                         <div className="mt-6 p-4 bg-orange-50 rounded-lg">
                           <h3 className="font-semibold mb-2 text-orange-900">Exchange Information</h3>
-                          <p className="text-orange-700">This is an exchange job from: <span className="font-semibold">{selectedJob.parentJobId}</span></p>
+                          <p className="text-orange-700">This is an exchange job from: <span className="font-semibold">
+                            {(() => { const parent = jobs.find(j => j.id === selectedJob.parentJobId); return parent?.jobNumber || parent?.job_number || selectedJob.parentJobId; })()}
+                          </span></p>
                         </div>
                       )}
 
@@ -5840,11 +5842,14 @@ job.status.replace('_', ' ')}
                         <div className="mt-6">
                           <h3 className="font-semibold mb-2">Linked Jobs</h3>
                           <div className="flex flex-wrap gap-2">
-                            {selectedJob.linkedJobs.map(jobId => (
-                              <span key={jobId} className="px-3 py-1 bg-gray-100 rounded-full text-sm">
-                                {jobId}
-                              </span>
-                            ))}
+                            {selectedJob.linkedJobs.map(jobId => {
+                              const linked = jobs.find(j => j.id === jobId);
+                              return (
+                                <span key={jobId} className="px-3 py-1 bg-gray-100 rounded-full text-sm">
+                                  {linked?.jobNumber || linked?.job_number || jobId}
+                                </span>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -6914,7 +6919,9 @@ console.log(JSON.stringify(invoiceData, null, 2));
                 {job.parentJobId && (
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                     <h3 className="font-semibold text-orange-900 mb-2">Exchange Information</h3>
-                    <p className="text-orange-700">This is an exchange job from: <span className="font-semibold">{job.parentJobId}</span></p>
+                    <p className="text-orange-700">This is an exchange job from: <span className="font-semibold">
+                      {(() => { const parent = jobs.find(j => j.id === job.parentJobId); return parent?.jobNumber || parent?.job_number || job.parentJobId; })()}
+                    </span></p>
                   </div>
                 )}
 
@@ -6922,11 +6929,14 @@ console.log(JSON.stringify(invoiceData, null, 2));
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <h3 className="font-semibold text-blue-900 mb-2">Linked Jobs</h3>
                     <div className="flex flex-wrap gap-2">
-                      {job.linkedJobs.map(jobId => (
-                        <span key={jobId} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                          {jobId}
-                        </span>
-                      ))}
+                      {job.linkedJobs.map(jobId => {
+                        const linked = jobs.find(j => j.id === jobId);
+                        return (
+                          <span key={jobId} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                            {linked?.jobNumber || linked?.job_number || jobId}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -11370,7 +11380,6 @@ const refreshJobs = async () => {
             }));
             
             setJobs(jobsWithCamelCase);
-            setFilteredJobs(jobsWithCamelCase);
             console.log('Refreshed', data.length, 'jobs from Supabase');
         }
     } catch (error) {
@@ -11427,15 +11436,11 @@ window.refreshJobs = refreshJobs;
         else if (freq === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
         const nextDateStr = nextDate.toISOString().split('T')[0];
 
-        // Generate new job number
-        const currentYear = new Date().getFullYear();
-        const { data: allJobs } = await window.supabase.from('jobs').select('job_number').like('job_number', `TWS-${currentYear}-%`);
-        const lastNum = allJobs && allJobs.length > 0
-          ? Math.max(...allJobs.map(j => parseInt((j.job_number || '').split('-')[2]) || 0))
-          : 0;
-        const newJobNumber = `TWS-${currentYear}-${String(lastNum + 1).padStart(4, '0')}`;
+        // Generate new job number using same RPC as main form
+        const { data: jobNumData, error: jobNumError } = await window.supabase.rpc('get_next_job_number');
+        const newJobNumber = jobNumError ? `TWS-${Date.now()}` : jobNumData;
 
-        // Create the new job as a copy
+        // Create the new job as a complete copy of the parent
         const newJob = {
           job_number: newJobNumber,
           customer_name: rj.customer_name,
@@ -11446,13 +11451,19 @@ window.refreshJobs = refreshJobs;
           job_type: rj.job_type,
           waste_type: rj.waste_type,
           skip_size: rj.skip_size,
+          aggregate_type: rj.aggregate_type,
           quantity: rj.quantity,
           unit: rj.unit,
+          weight: rj.weight,
           customer_unit_price: rj.customer_unit_price,
           customer_final_price: rj.customer_final_price,
           supplier_unit_price: rj.supplier_unit_price,
           supplier_final_price: rj.supplier_final_price,
           vat_rate: rj.vat_rate,
+          gross_profit: rj.gross_profit,
+          profit_margin: rj.profit_margin,
+          job_value: rj.job_value,
+          site_address: rj.site_address,
           site_address1: rj.site_address1,
           site_address2: rj.site_address2,
           site_city: rj.site_city,
@@ -11461,13 +11472,26 @@ window.refreshJobs = refreshJobs;
           site_phone: rj.site_phone,
           site_notes: rj.site_notes,
           delivery_instructions: rj.delivery_instructions,
+          access_restrictions: rj.access_restrictions,
+          time_slot: rj.time_slot,
+          delivery_date: null, // reset dates for new job
+          collection_date: null,
           notes: `Auto-created recurring job (${freq}) from ${rj.job_number}`,
           status: 'CONFIRMED',
           is_completed: false,
           is_cancelled: false,
-          is_recurring: false, // the copy itself is not recurring
+          hazardous_waste: rj.hazardous_waste,
+          is_recurring: false, // copy itself is not recurring
           job_date: rj.recurring_next_date,
+          line_items: rj.line_items, // copy line items
           sage_line_items: rj.sage_line_items,
+          sage_product_id: rj.sage_product_id,
+          sage_product_name: rj.sage_product_name,
+          sage_product_data: rj.sage_product_data,
+          invoice_status: 'Not Invoiced',
+          payment_status: 'Not Paid',
+          wtn_data: rj.wtn_data, // carry over WTN template data
+          wtn_recipient: rj.wtn_recipient,
           parent_job_id: rj.id,
         };
 
@@ -11477,12 +11501,14 @@ window.refreshJobs = refreshJobs;
         // Advance the next-due date on the template job
         await window.supabase.from('jobs').update({ recurring_next_date: nextDateStr }).eq('id', rj.id);
 
-        const msg = `🔁 Recurring job created: ${newJobNumber} for ${rj.customer_name} (${freq} — due ${new Date(rj.recurring_next_date).toLocaleDateString('en-GB')})`;
+        const msg = `🔁 Recurring job created: ${newJobNumber} for ${rj.customer_name} (${freq} — job date ${new Date(rj.recurring_next_date).toLocaleDateString('en-GB')}, next due ${new Date(nextDateStr).toLocaleDateString('en-GB')})`;
         setRecurringNotifications(prev => [...prev, msg]);
       }
 
-      // Reload jobs to show the new ones
+      // Small delay to ensure Supabase has committed all inserts, then reload fresh
+      await new Promise(resolve => setTimeout(resolve, 500));
       await loadJobsFromSupabase();
+
     } catch (err) {
       console.error('Recurring job checker error:', err);
     }
@@ -11535,9 +11561,9 @@ window.refreshJobs = refreshJobs;
   // Auto-refresh jobs every 30 seconds in the background
   const autoRefreshInterval = setInterval(async () => {
     try {
-      await refreshJobs();
+      await loadJobsFromSupabase();
     } catch(e) {
-      // Silent fail — don't disrupt the user
+      // Silent fail
     }
   }, 30000);
 
