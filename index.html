@@ -1,4 +1,4 @@
-          <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1461,7 +1461,7 @@ const [wtnFields, setWtnFields] = useState(() => {
   const supplierAddress = matchedSupplier
     ? [matchedSupplier.address, matchedSupplier.city, matchedSupplier.county, matchedSupplier.postcode].filter(Boolean).join(', ')
     : '';
-  const supplierCarrierReg = matchedSupplier?.wasteCarrierLicense || '';
+  const supplierCarrierReg = matchedSupplier?.wasteCarrierLicense || matchedSupplier?.waste_carrier_license || '';
 
   // Auto-fill customer email from customers list
   const matchedCustomer = customers?.find(c => (c.name || c.companyName) === job?.customerName);
@@ -1518,6 +1518,47 @@ const [wtnFields, setWtnFields] = useState(() => {
     recurringWtnNextDate: '',
   };
 });
+// Refresh broker details from Supabase on form open (fixes race condition with localStorage)
+useEffect(() => {
+  (async () => {
+    try {
+      const { data } = await window.supabase.from('company_settings').select('*');
+      if (!data) return;
+      const get = (name) => data.find(s => s.setting_name === name)?.setting_value || '';
+      const addr = get('company_address');
+      const cbdu = get('carrier_reg');
+      const name = get('company_name');
+      setWtnFields(prev => ({
+        ...prev,
+        brokerName: prev.brokerName || name || 'Total Waste Services Ltd',
+        brokerAddress: prev.brokerAddress || addr,
+        brokerCarrierReg: prev.brokerCarrierReg || cbdu,
+      }));
+      if (addr) localStorage.setItem('companyAddress', addr);
+      if (cbdu) localStorage.setItem('carrierReg', cbdu);
+      if (name) localStorage.setItem('companyName', name);
+    } catch(e) {}
+  })();
+  // Refresh supplier CBDU if blank
+  if (job?.supplierName) {
+    (async () => {
+      try {
+        const { data } = await window.supabase
+          .from('suppliers').select('*').eq('name', job.supplierName).single();
+        if (data) {
+          const cbdu = data.waste_carrier_license || data.wasteCarrierLicense || '';
+          const addr = [data.address, data.city, data.county, data.postcode].filter(Boolean).join(', ');
+          setWtnFields(prev => ({
+            ...prev,
+            transfereeCarrierReg: prev.transfereeCarrierReg || cbdu,
+            transfereeAddress: prev.transfereeAddress || addr,
+          }));
+        }
+      } catch(e) {}
+    })();
+  }
+}, []);
+
 const wtnTotalPct = wtnFields.recycledPct + wtnFields.recoveredPct + wtnFields.landfillPct;
 
 const buildWtnHtml = (f, j) => {
@@ -2099,14 +2140,12 @@ const [isEvent, setIsEvent] = useState(false);
     >
       🔁 Recurring
     </button>
-    {job && (
-      <button
-        onClick={() => setActiveTab('wtn')}
-        className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'wtn' ? 'border-b-2 border-green-500 text-green-600' : 'text-gray-500'}`}
-      >
-        📄 Send WTN
-      </button>
-    )}
+    <button
+      onClick={() => setActiveTab('wtn')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'wtn' ? 'border-b-2 border-green-500 text-green-600' : 'text-gray-500'}`}
+    >
+      📄 Send WTN
+    </button>
   </div>
 )}
 
@@ -3219,8 +3258,13 @@ const [isEvent, setIsEvent] = useState(false);
                 )}
 
                 {/* ── WTN TAB (only shown when editing an existing job) ── */}
-                {activeTab === 'wtn' && job && !isEvent && (
+                {activeTab === 'wtn' && !isEvent && (
                   <div className="space-y-5 p-6">
+                    {!job && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                        ⚠️ <strong>Save the job first</strong> — fill in the job details, click <strong>Create Job</strong>, then re-open it to send the WTN. The WTN will be pre-filled with the job data.
+                      </div>
+                    )}
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                       <h3 className="font-semibold text-green-800 mb-1">📄 Waste Transfer Note — Legal Document</h3>
                       <p className="text-sm text-green-700">Compliant with the Waste (England and Wales) Regulations 2011 &amp; Environmental Protection Act 1990 s.34. All mandatory fields must be completed. Both parties must retain a copy for a minimum of 2 years.</p>
@@ -10964,8 +11008,16 @@ useEffect(() => {
       if (error) throw error;
       
       if (data && data.length > 0) {
-        setSuppliers(data);
-        console.log('Loaded', data.length, 'suppliers from Supabase');
+        // Map snake_case DB fields to camelCase so lookups work everywhere
+        const mapped = data.map(s => ({
+          ...s,
+          companyName: s.companyName || s.name,
+          wasteCarrierLicense: s.wasteCarrierLicense || s.waste_carrier_license || '',
+          vatNumber: s.vatNumber || s.vat_number || '',
+          primaryContact: s.primaryContact || s.primary_contact || '',
+        }));
+        setSuppliers(mapped);
+        console.log('Loaded', mapped.length, 'suppliers from Supabase');
       }
     } catch (error) {
       console.error('Error loading suppliers:', error);
@@ -11329,6 +11381,23 @@ const refreshJobs = async () => {
 // Make it globally accessible
 window.refreshJobs = refreshJobs;
   loadJobsFromSupabase();
+
+  // Load company settings into localStorage on startup so WTN auto-fills everywhere
+  (async () => {
+    try {
+      const { data } = await window.supabase.from('company_settings').select('*');
+      if (data) {
+        data.forEach(s => {
+          if (s.setting_name === 'company_name' && s.setting_value) localStorage.setItem('companyName', s.setting_value);
+          if (s.setting_name === 'logo_url' && s.setting_value) localStorage.setItem('companyLogo', s.setting_value);
+          if (s.setting_name === 'company_address' && s.setting_value) localStorage.setItem('companyAddress', s.setting_value);
+          if (s.setting_name === 'carrier_reg' && s.setting_value) localStorage.setItem('carrierReg', s.setting_value);
+          if (s.setting_name === 'portal_url' && s.setting_value) localStorage.setItem('portalUrl', s.setting_value);
+          if (s.setting_name === 'primary_color' && s.setting_value) document.documentElement.style.setProperty('--primary-color', s.setting_value);
+        });
+      }
+    } catch(e) { console.error('Settings load error:', e); }
+  })();
 
   // ── Recurring job checker ──────────────────────────────────────────────
   // Runs once on app load. Finds recurring jobs whose next date is today or past,
