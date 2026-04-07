@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+          <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -9,6 +9,12 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script>
+      // Initialise EmailJS
+      (function() { emailjs.init({ publicKey: 'cuDDcDM5WamVtpebZ' }); })();
+    </script>
     <style>
     /* Custom CSS Variables for theming */
     :root {
@@ -765,7 +771,16 @@ return (
           const [email, setEmail] = useState('');
           const [password, setPassword] = useState('');
           const [error, setError] = useState('');
+          const [mode, setMode] = useState('staff'); // 'staff' | 'customer'
           const { login, isLoading } = useAuth();
+
+          // Customer portal state
+          const [portalPin, setPortalPin] = useState('');
+          const [portalPasscode, setPortalPasscode] = useState('');
+          const [portalError, setPortalError] = useState('');
+          const [portalUser, setPortalUser] = useState(null);
+          const [portalJobs, setPortalJobs] = useState([]);
+          const [loadingPortal, setLoadingPortal] = useState(false);
 
           const handleLogin = async () => {
             try {
@@ -776,76 +791,619 @@ return (
             }
           };
 
-          return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-              <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
-                <div className="text-center mb-8">
-                  <div className="w-16 h-16 mx-auto mb-4">
-  {localStorage.getItem('companyLogo') ? (
-    <img 
-      src={localStorage.getItem('companyLogo')} 
-      alt="Company Logo" 
-      className="w-full h-full object-contain"
-    />
-  ) : (
-    <div className="w-full h-full bg-blue-600 rounded-lg flex items-center justify-center">
-      <Recycle className="w-8 h-8 text-white" />
-    </div>
-  )}
+          const handlePortalLogin = async () => {
+            if (!portalPin || portalPin.length !== 4) { setPortalError('Please enter your 4-digit PIN.'); return; }
+            if (!portalPasscode || portalPasscode.length < 4) { setPortalError('Please enter your passcode.'); return; }
+            setLoadingPortal(true);
+            setPortalError('');
+            try {
+              // Look up customer by PIN only first
+              const { data: customers, error: custErr } = await window.supabase
+                .from('customers')
+                .select('*')
+                .eq('portal_pin', portalPin.trim())
+                .limit(1);
+
+              if (custErr || !customers || customers.length === 0) {
+                setPortalError('PIN not recognised. Please contact your account manager.');
+                setLoadingPortal(false);
+                return;
+              }
+
+              const customer = customers[0];
+
+              // Check passcode
+              if (!customer.portal_passcode || customer.portal_passcode !== portalPasscode.trim()) {
+                setPortalError('Incorrect passcode. Please contact your account manager.');
+                setLoadingPortal(false);
+                return;
+              }
+
+              // Load this customer's jobs
+              const { data: jobs } = await window.supabase
+                .from('jobs')
+                .select('*')
+                .eq('customer_name', customer.company_name || customer.name)
+                .order('created_at', { ascending: false });
+
+              setPortalJobs(jobs || []);
+              setPortalUser({ company: customer.company_name || customer.name, customer });
+            } catch (err) {
+              setPortalError('An error occurred. Please try again.');
+            } finally {
+              setLoadingPortal(false);
+            }
+          };
+
+          const [expandedJobId, setExpandedJobId] = React.useState(null);
+          const [portalFilter, setPortalFilter] = React.useState('all');
+          const [portalSearch, setPortalSearch] = React.useState('');
+          const [portalSort, setPortalSort] = React.useState({ field: 'date', dir: 'desc' });
+
+          // ── Customer Portal view (after successful login) ──
+          if (portalUser) {
+            // STRICT filter — only jobs for this exact customer, no cross-contamination
+            const myJobs = portalJobs.filter(j =>
+              (j.customer_name || '').trim().toLowerCase() === (portalUser.company || '').trim().toLowerCase()
+            );
+            const completed = myJobs.filter(j => j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED');
+            const inProgress = myJobs.filter(j => !j.is_completed && j.status !== 'COMPLETED' && j.status !== 'COLLECTED' && !j.is_cancelled);
+
+            const downloadWTN = (job) => {
+              // Only show WTN if wtn_data exists and was sent
+              const wtnData = job.wtn_data ? (typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : job.wtn_data) : null;
+              const w = window.open('', '_blank');
+              if (!w) return;
+              if (wtnData) {
+                // Build proper WTN from saved data - no cost info
+                w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>WTN-${job.job_number}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff;padding:16px;}
+.page{max-width:700px;margin:0 auto;background:#fff;border:2px solid #000;}
+.hdr{background:#fff;padding:14px 18px;border-bottom:3px solid #1a5c2a;}
+.sec-hdr{background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;border-top:2px solid #000;}
+.row{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #ccc;}
+.cell{padding:7px 12px;border-right:1px solid #ccc;}.cell:last-child{border-right:none;}
+.lbl{font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px;}
+.val{font-size:11px;font-weight:700;}
+.legal{background:#fff8c5;border-bottom:2px solid #000;padding:5px 18px;font-size:9px;font-weight:700;text-align:center;}
+.footer{background:#f3f4f6;border-top:2px solid #000;padding:7px 18px;font-size:9px;color:#555;}
+@media print{body{padding:0;}button{display:none;}}</style></head>
+<body><div class="page">
+<div class="hdr"><table style="width:100%;border-collapse:collapse;"><tr>
+  <td style="width:110px;vertical-align:middle;">${localStorage.getItem('companyLogo')?`<img src="${localStorage.getItem('companyLogo')}" style="height:48px;object-fit:contain;" alt="logo">`:`<strong style="color:#1a5c2a;">${localStorage.getItem('companyName')||'Total Waste Services Ltd'}</strong>`}</td>
+  <td style="text-align:center;vertical-align:middle;"><div style="font-size:16px;font-weight:700;color:#1a5c2a;">WASTE TRANSFER NOTE</div><div style="font-size:9px;color:#666;">Environmental Protection Act 1990 s.34</div></td>
+  <td style="width:110px;text-align:right;vertical-align:middle;"><div style="font-size:14px;font-weight:700;color:#1a5c2a;">WTN-${job.job_number}</div><div style="font-size:9px;color:#555;">${new Date().toLocaleDateString('en-GB')}</div></td>
+</tr></table></div>
+<div class="legal">⚠ LEGAL DOCUMENT — Retain for minimum 2 years. Produce on request to Environment Agency within 7 days.</div>
+<div class="sec-hdr">Section A — Description of Waste</div>
+<div class="row"><div class="cell"><div class="lbl">Waste Description</div><div class="val">${wtnData.wasteDescription||'—'}</div></div><div class="cell"><div class="lbl">Container / Skip</div><div class="val">${wtnData.skipSize||'—'}</div></div></div>
+<div class="row"><div class="cell"><div class="lbl">EWC Code</div><div class="val">${wtnData.listOfWasteCode||'—'}</div></div><div class="cell"><div class="lbl">Quantity</div><div class="val">${wtnData.quantity||'—'} ${wtnData.unit||''}</div></div></div>
+<div class="sec-hdr">Section B — Transferor (Waste Producer)</div>
+<div class="row"><div class="cell"><div class="lbl">Name / Company</div><div class="val">${wtnData.transferorName||job.customer_name||'—'}</div></div><div class="cell"><div class="lbl">Address</div><div class="val">${wtnData.transferorAddress||'—'}</div></div></div>
+<div class="row"><div class="cell"><div class="lbl">Signature</div><div style="border-bottom:1px solid #000;margin:12px 0 3px;width:80%;"></div><div class="val">${wtnData.transferorSignature||'___________'}</div></div><div class="cell"><div class="lbl">Date</div><div class="val" style="margin-top:16px;">${wtnData.transferDate ? new Date(wtnData.transferDate).toLocaleDateString('en-GB') : '—'}</div></div></div>
+<div class="sec-hdr">Section C — Carrier</div>
+<div class="row"><div class="cell"><div class="lbl">Carrier Name</div><div class="val">${wtnData.transfereeName||'—'}</div></div><div class="cell"><div class="lbl">EA Carrier Reg</div><div class="val">${wtnData.transfereeCarrierReg||'—'}</div></div></div>
+<div class="sec-hdr">Section D — Broker &amp; Transfer Details</div>
+<div class="row"><div class="cell"><div class="lbl">Broker</div><div class="val">${wtnData.brokerName||'—'}</div></div><div class="cell"><div class="lbl">Collection Address</div><div class="val">${wtnData.transferAddress||'—'}</div></div></div>
+<div class="sec-hdr">Waste Hierarchy (Reg. 12)</div>
+<div class="row"><div class="cell"><div class="lbl">Recycled/Reused</div><div class="val">${wtnData.recycledPct||0}%</div></div><div class="cell"><div class="lbl">Recovered</div><div class="val">${wtnData.recoveredPct||0}%</div></div></div>
+<div style="padding:7px 12px;border-bottom:1px solid #ccc;font-size:9px;">Disposal: ${wtnData.landfillPct||0}% &nbsp;|&nbsp; I confirm compliance with Regulation 12, Waste (England &amp; Wales) Regulations 2011.</div>
+<div class="footer" style="display:flex;justify-content:space-between;align-items:center;">
+  <span>${localStorage.getItem('companyName')||'Total Waste Services Ltd'} • Broker Reg: ${wtnData.brokerCarrierReg||'—'}</span>
+  <button onclick="window.print()" style="border:1px solid #aaa;background:#fff;color:#1d4ed8;cursor:pointer;padding:3px 10px;border-radius:3px;font-size:9px;">🖨 Print / Save PDF</button>
 </div>
-                  <h1 className="text-2xl font-bold text-gray-900">
-  {localStorage.getItem('companyName') || 'Total Waste Services'}
-</h1>
-                  <p className="text-gray-600">System Login</p>
+</div></body></html>`);
+              } else {
+                // Fallback if no wtn_data saved yet
+                w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:Arial;padding:32px;"><h2>WTN-${job.job_number}</h2><p>Waste Transfer Note details not yet available. Please contact Total Waste Services Ltd.</p></body></html>`);
+              }
+              w.document.close();
+            };
+
+            return (
+              <div className="min-h-screen bg-gray-50">
+                {/* Portal Header */}
+                <div className="bg-green-700 text-white px-6 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    {localStorage.getItem('companyLogo')
+                      ? <img src={localStorage.getItem('companyLogo')} className="h-12 object-contain" alt="logo" />
+                      : <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center"><Recycle className="w-6 h-6 text-green-700" /></div>}
+                    <div>
+                      <div className="font-bold text-lg">{localStorage.getItem('companyName') || 'Total Waste Services'} — Customer Portal</div>
+                      <div className="text-green-200 text-xs">{portalUser.company}</div>
+                    </div>
+                  </div>
+                  <button onClick={() => { setPortalUser(null); setPortalPin(''); setPortalPasscode(''); }}
+                    className="text-sm text-green-200 hover:text-white underline">Sign Out</button>
                 </div>
 
-                {error && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-                    {error}
-                  </div>
-                )}
+                <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
+                  {/* Summary cards — clickable filters */}
+                  {(()=>{
+                    // Apply status filter
+                    const statusFiltered = portalFilter === 'completed' ? myJobs.filter(j => j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED')
+                      : portalFilter === 'inprogress' ? myJobs.filter(j => !j.is_completed && j.status !== 'COMPLETED' && j.status !== 'COLLECTED' && !j.is_cancelled)
+                      : myJobs;
 
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder=""
-                    />
+                    // Apply search
+                    const searchFiltered = !portalSearch ? statusFiltered : statusFiltered.filter(j => {
+                      const q = portalSearch.toLowerCase();
+                      return (j.job_number||'').toLowerCase().includes(q)
+                        || (j.job_type||'').toLowerCase().includes(q)
+                        || (j.site_address1||'').toLowerCase().includes(q)
+                        || (j.site_city||'').toLowerCase().includes(q)
+                        || (j.site_postcode||'').toLowerCase().includes(q)
+                        || (j.waste_type||'').toLowerCase().includes(q)
+                        || (j.aggregate_type||'').toLowerCase().includes(q);
+                    });
+
+                    // Apply sort
+                    const filteredJobs = [...searchFiltered].sort((a, b) => {
+                      const dir = portalSort.dir === 'asc' ? 1 : -1;
+                      if (portalSort.field === 'date') {
+                        return ((a.job_date||'') > (b.job_date||'') ? 1 : -1) * dir;
+                      }
+                      if (portalSort.field === 'jobref') {
+                        return ((a.job_number||'') > (b.job_number||'') ? 1 : -1) * dir;
+                      }
+                      if (portalSort.field === 'type') {
+                        return ((a.job_type||'') > (b.job_type||'') ? 1 : -1) * dir;
+                      }
+                      if (portalSort.field === 'price') {
+                        const getP = j => {
+                          const li = (() => { try { return typeof j.sage_line_items === 'string' ? JSON.parse(j.sage_line_items) : (j.sage_line_items||[]); } catch(e){return[];} })();
+                          const liTotal = li.reduce((s,i) => s + parseFloat(i.customer_price||i.unit_price||0)*parseFloat(i.quantity||1),0);
+                          return parseFloat(j.customer_final_price)||liTotal||parseFloat(j.job_value)||0;
+                        };
+                        return (getP(a) - getP(b)) * dir;
+                      }
+                      if (portalSort.field === 'status') {
+                        return ((a.status||'') > (b.status||'') ? 1 : -1) * dir;
+                      }
+                      return 0;
+                    });
+
+                    const toggleSort = (field) => {
+                      setPortalSort(prev => prev.field === field ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'desc' });
+                    };
+                    const SortBtn = ({ field, label }) => (
+                      <button onClick={() => toggleSort(field)}
+                        className={`flex items-center gap-1 text-left ${portalSort.field === field ? 'text-green-700 font-semibold' : 'text-gray-500'}`}>
+                        {label}
+                        <span className="text-xs">{portalSort.field === field ? (portalSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                      </button>
+                    );
+
+                    const cards = [
+                      { label: 'Total Jobs', val: myJobs.length, color: 'green', filter: 'all' },
+                      { label: 'Completed', val: completed.length, color: 'green', filter: 'completed' },
+                      { label: 'In Progress', val: inProgress.length, color: 'orange', filter: 'inprogress' },
+                    ];
+                    return (<>
+                  <div className="grid grid-cols-3 gap-4">
+                    {cards.map(({ label, val, color, filter }) => (
+                      <button key={label} onClick={() => setPortalFilter(portalFilter === filter ? 'all' : filter)}
+                        className={`rounded-xl border p-4 text-center shadow-sm transition-all ${portalFilter === filter ? `bg-${color}-600 border-${color}-600 text-white` : 'bg-white border-gray-200 hover:border-green-400'}`}>
+                        <div className={`text-3xl font-bold ${portalFilter === filter ? 'text-white' : color === 'orange' ? 'text-orange-500' : 'text-green-600'}`}>{val}</div>
+                        <div className={`text-sm mt-1 ${portalFilter === filter ? 'text-white opacity-80' : 'text-gray-500'}`}>{label}</div>
+                        {portalFilter === filter && <div className="text-xs mt-1 opacity-70">Click to clear filter</div>}
+                      </button>
+                    ))}
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder=""
-                    />
+                  {/* Search & sort controls */}
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                    <div className="bg-gray-50 px-5 py-3 border-b flex items-center justify-between flex-wrap gap-3">
+                      <span className="font-semibold text-gray-800 text-sm">
+                        Your Jobs
+                        {(portalFilter !== 'all' || portalSearch) && <span className="text-green-600 font-normal ml-2 text-xs">({filteredJobs.length} of {myJobs.length})</span>}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <input type="text" value={portalSearch} onChange={e => setPortalSearch(e.target.value)}
+                          placeholder="🔍 Search jobs, address, service..."
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-56 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                        {(portalSearch || portalFilter !== 'all') && (
+                          <button onClick={() => { setPortalSearch(''); setPortalFilter('all'); }}
+                            className="text-xs text-gray-500 hover:text-red-600 border border-gray-200 px-2 py-1.5 rounded-lg">
+                            ✕ Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 text-xs uppercase border-b">
+                          <tr>
+                            <th className="px-5 py-3 text-left"><SortBtn field="jobref" label="Job Ref" /></th>
+                            <th className="px-5 py-3 text-left"><SortBtn field="date" label="Date" /></th>
+                            <th className="px-5 py-3 text-left"><SortBtn field="type" label="Service" /></th>
+                            <th className="px-5 py-3 text-left text-gray-500">Site Address</th>
+                            <th className="px-5 py-3 text-left"><SortBtn field="price" label="Price (ex VAT)" /></th>
+                            <th className="px-5 py-3 text-left"><SortBtn field="status" label="Status" /></th>
+                            <th className="px-5 py-3 text-left text-gray-500">Documents</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {filteredJobs.length === 0 ? (
+                            <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-400">No jobs found.</td></tr>
+                          ) : filteredJobs.map(job => {
+                            const done = job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED';
+                            const cancelled = job.is_cancelled || job.status === 'CANCELLED';
+                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.job_type);
+                            const isExpanded = expandedJobId === job.id;
+
+                            // Get price — try customer_final_price, then line items RRP total, then unit_price × qty, then job_value
+                            const lineItems = (() => { try { return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : (job.sage_line_items || []); } catch(e) { return []; } })();
+                            const lineItemsTotal = lineItems.reduce((sum, item) => {
+                              const rrp = parseFloat(item.customer_price || item.unit_price || 0);
+                              const qty = parseFloat(item.quantity || 1);
+                              return sum + (rrp * qty);
+                            }, 0);
+                            const finalPrice = parseFloat(job.customer_final_price) || 0;
+                            const unitPrice = parseFloat(job.customer_unit_price) || 0;
+                            const jobQty = parseFloat(job.quantity) || 1;
+                            const jobValue = parseFloat(job.job_value) || 0;
+                            const bestPrice = finalPrice > 0 ? finalPrice
+                              : lineItemsTotal > 0 ? lineItemsTotal
+                              : unitPrice > 0 ? unitPrice * jobQty
+                              : jobValue > 0 ? jobValue
+                              : null;
+                            const displayPrice = bestPrice != null ? `£${bestPrice.toFixed(2)}` : 'POA';
+                            const qtyDisplay = job.quantity ? `${job.quantity} ${job.unit || ''}`.trim() : null;
+                            const serviceDetail = job.waste_type || job.aggregate_type || null;
+                            return (
+                              <React.Fragment key={job.id}>
+                                <tr
+                                  className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-50' : 'hover:bg-gray-50'}`}
+                                  onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
+                                >
+                                  <td className="px-5 py-3 font-mono font-medium text-blue-700 text-xs flex items-center gap-1">
+                                    <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''} inline-block`}>▶</span>
+                                    {job.job_number}
+                                  </td>
+                                  <td className="px-5 py-3 text-gray-600 text-xs">{job.job_date ? new Date(job.job_date).toLocaleDateString('en-GB') : '—'}</td>
+                                  <td className="px-5 py-3 text-gray-800 text-xs">
+                                    <div className="font-medium">{job.job_type || '—'}</div>
+                                    {serviceDetail && <div className="text-gray-400">{serviceDetail}</div>}
+                                    {qtyDisplay && <div className="text-gray-400">Qty: {qtyDisplay}</div>}
+                                  </td>
+                                  <td className="px-5 py-3 text-gray-500 text-xs">{[job.site_address1, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</td>
+                                  <td className="px-5 py-3 font-medium text-gray-800 text-xs">{displayPrice}</td>
+                                  <td className="px-5 py-3">
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                      done ? 'bg-green-100 text-green-700' :
+                                      cancelled ? 'bg-red-100 text-red-700' :
+                                      'bg-blue-100 text-blue-700'
+                                    }`}>{done ? 'Completed' : cancelled ? 'Cancelled' : 'In Progress'}</span>
+                                  </td>
+                                  <td className="px-5 py-3">
+                                    {done && isWasteJob && job.wtn_sent ? (
+                                      <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
+                                        className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
+                                        📄 Waste Transfer Note
+                                      </button>
+                                    ) : done && isWasteJob && !job.wtn_sent ? (
+                                      <span className="text-gray-400 text-xs">WTN pending</span>
+                                    ) : (
+                                      <span className="text-gray-300 text-xs">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="bg-green-50">
+                                    <td colSpan={7} className="px-8 py-4 border-t border-green-100">
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
+                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Job Reference</div><div className="font-semibold">{job.job_number}</div></div>
+                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Service</div><div className="font-semibold">{job.job_type}</div></div>
+                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Status</div><div className="font-semibold">{done ? 'Completed' : cancelled ? 'Cancelled' : 'In Progress'}</div></div>
+                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Date</div><div className="font-semibold">{job.job_date ? new Date(job.job_date).toLocaleDateString('en-GB') : '—'}</div></div>
+                                        {job.delivery_date && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Delivery Date</div><div className="font-semibold">{new Date(job.delivery_date).toLocaleDateString('en-GB')}</div></div>}
+                                        {job.collection_date && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Collection Date</div><div className="font-semibold">{new Date(job.collection_date).toLocaleDateString('en-GB')}</div></div>}
+                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Site Address</div><div className="font-semibold">{[job.site_address1, job.site_address2, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</div></div>
+                                        {job.quantity && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Quantity</div><div className="font-semibold">{job.quantity} {job.unit || ''}</div></div>}
+                                        {job.waste_type && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Waste Type</div><div className="font-semibold">{job.waste_type}</div></div>}
+                                        {job.aggregate_type && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Material</div><div className="font-semibold">{job.aggregate_type}</div></div>}
+                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Price (ex VAT)</div><div className="font-semibold text-green-700">{displayPrice}</div></div>
+                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">VAT (20%)</div><div className="font-semibold">{bestPrice != null ? `£${(bestPrice * 0.2).toFixed(2)}` : '—'}</div></div>
+                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Total (inc VAT)</div><div className="font-bold text-gray-900">{bestPrice != null ? `£${(bestPrice * 1.2).toFixed(2)}` : '—'}</div></div>
+                                        {job.notes && <div className="col-span-2 sm:col-span-3"><div className="text-gray-400 uppercase tracking-wide mb-1">Notes</div><div className="font-semibold">{job.notes}</div></div>}
+                                        {lineItems.length > 0 && (
+                                          <div className="col-span-2 sm:col-span-3">
+                                            <div className="text-gray-400 uppercase tracking-wide mb-2">Products & Services</div>
+                                            <table className="w-full text-xs border border-gray-200 rounded">
+                                              <thead className="bg-gray-50">
+                                                <tr>
+                                                  <th className="px-3 py-2 text-left font-medium text-gray-500">Product / Service</th>
+                                                  <th className="px-3 py-2 text-right font-medium text-gray-500">Qty</th>
+                                                  <th className="px-3 py-2 text-right font-medium text-gray-500">Unit Price</th>
+                                                  <th className="px-3 py-2 text-right font-medium text-gray-500">Total</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-gray-100">
+                                                {lineItems.map((item, i) => {
+                                                  const rrp = parseFloat(item.customer_price || item.unit_price || 0);
+                                                  const qty = parseFloat(item.quantity || 1);
+                                                  return (
+                                                    <tr key={i}>
+                                                      <td className="px-3 py-2 font-medium">{item.product_name || item.description || '—'}</td>
+                                                      <td className="px-3 py-2 text-right text-gray-600">{qty}</td>
+                                                      <td className="px-3 py-2 text-right text-gray-600">£{rrp.toFixed(2)}</td>
+                                                      <td className="px-3 py-2 text-right font-semibold">£{(rrp * qty).toFixed(2)}</td>
+                                                    </tr>
+                                                  );
+                                                })}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        )}
+                                        {done && isWasteJob && job.wtn_sent && (
+                                          <div className="col-span-2 sm:col-span-3">
+                                            <button onClick={() => downloadWTN(job)}
+                                              className="mt-1 px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
+                                              📄 View Waste Transfer Note
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
-                  <button
-                    onClick={handleLogin}
-                    disabled={isLoading}
-                    className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center"
-                  >
-                    {isLoading ? <Loader className="animate-spin mr-2" size={20} /> : null}
-                    Sign In
+                  <div className="text-center text-xs text-gray-400 pb-4">
+                    {localStorage.getItem('companyName') || 'Total Waste Services Ltd'} &bull; info@totalwasteservicesltd.com &bull; All prices exclude VAT
+                  </div>
+                  </>);
+                  })()}
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+              <div className="max-w-md w-full">
+                {/* Toggle tabs */}
+                <div className="flex rounded-xl overflow-hidden border border-gray-200 mb-6 shadow-sm">
+                  <button onClick={() => { setMode('staff'); setError(''); setPortalError(''); }}
+                    className={`flex-1 py-3 text-sm font-medium transition-colors ${mode === 'staff' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                    Staff Login
+                  </button>
+                  <button onClick={() => { setMode('customer'); setError(''); setPortalError(''); }}
+                    className={`flex-1 py-3 text-sm font-medium transition-colors ${mode === 'customer' ? 'bg-green-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                    Customer Portal
                   </button>
                 </div>
 
-                
+                <div className="bg-white rounded-xl shadow-lg p-8">
+                  {/* Logo */}
+                  <div className="text-center mb-6">
+                    <div className="w-14 h-14 mx-auto mb-3">
+                      {localStorage.getItem('companyLogo') ? (
+                        <img src={localStorage.getItem('companyLogo')} alt="Logo" className="w-full h-full object-contain" />
+                      ) : (
+                        <div className={`w-full h-full ${mode === 'customer' ? 'bg-green-600' : 'bg-blue-600'} rounded-lg flex items-center justify-center`}>
+                          <Recycle className="w-7 h-7 text-white" />
+                        </div>
+                      )}
+                    </div>
+                    <h1 className="text-xl font-bold text-gray-900">{localStorage.getItem('companyName') || 'Total Waste Services'}</h1>
+                    <p className="text-gray-500 text-sm mt-1">{mode === 'customer' ? 'Customer Portal Login' : 'Staff System Login'}</p>
+                  </div>
+
+                  {/* Staff login */}
+                  {mode === 'staff' && (
+                    <div className="space-y-5">
+                      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                          onKeyPress={e => e.key === 'Enter' && handleLogin()}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+                      </div>
+                      <button onClick={handleLogin} disabled={isLoading}
+                        className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center font-medium">
+                        {isLoading ? <Loader className="animate-spin mr-2" size={18} /> : null}
+                        Sign In
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Customer portal login */}
+                  {mode === 'customer' && (
+                    <div className="space-y-5">
+                      {portalError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{portalError}</div>}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">4-Digit PIN</label>
+                        <input type="password" maxLength={4} value={portalPin}
+                          onChange={e => setPortalPin(e.target.value.replace(/\D/g, ''))}
+                          onKeyPress={e => e.key === 'Enter' && handlePortalLogin()}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-center tracking-widest text-xl"
+                          placeholder="• • • •" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Passcode</label>
+                        <input type="password" value={portalPasscode}
+                          onChange={e => setPortalPasscode(e.target.value)}
+                          onKeyPress={e => e.key === 'Enter' && handlePortalLogin()}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                          placeholder="Enter your passcode" />
+                        <p className="text-xs text-gray-400 mt-1">Your PIN and passcode are provided by Total Waste Services</p>
+                      </div>
+                      <button onClick={handlePortalLogin} disabled={loadingPortal}
+                        className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center font-medium">
+                        {loadingPortal ? <Loader className="animate-spin mr-2" size={18} /> : null}
+                        Access Portal
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           );
         };
 
         // Job Form Component
+// ── EWC Code Picker ───────────────────────────────────────────────────────
+const EWC_CODES = [
+  // Chapter 17 — Construction & demolition (most relevant for skip hire — shown first)
+  {code:'17 09 04',desc:'Mixed construction and demolition wastes',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'mixed waste skip hire construction demolition rubbish'},
+  {code:'17 01 07',desc:'Mixtures of concrete, bricks, tiles and ceramics',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'concrete bricks tiles ceramics rubble hardcore'},
+  {code:'17 01 01',desc:'Concrete',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'concrete rubble hardcore'},
+  {code:'17 01 02',desc:'Bricks',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'bricks masonry rubble'},
+  {code:'17 01 03',desc:'Tiles and ceramics',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'tiles ceramics porcelain'},
+  {code:'17 02 01',desc:'Wood',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'wood timber joinery'},
+  {code:'17 02 02',desc:'Glass',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'glass glazing windows'},
+  {code:'17 02 03',desc:'Plastic',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'plastic sheeting packaging'},
+  {code:'17 04 05',desc:'Iron and steel',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'iron steel metal scrap'},
+  {code:'17 04 07',desc:'Mixed metals',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'mixed metals scrap aluminium copper'},
+  {code:'17 05 04',desc:'Soil and stones (non-contaminated)',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'soil earth excavated ground topsoil stones'},
+  {code:'17 05 06',desc:'Dredging spoil (non-contaminated)',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'dredging spoil excavation'},
+  {code:'17 03 02',desc:'Bituminous mixtures (no coal tar)',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'tarmac asphalt bitumen road'},
+  {code:'17 06 04',desc:'Insulation materials (non-hazardous)',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'insulation foam rockwool fibreglass mineral wool'},
+  {code:'17 08 02',desc:'Gypsum-based construction materials',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'plasterboard gypsum drywall plaster'},
+  // Hazardous C&D
+  {code:'17 05 03',desc:'Soil and stones containing dangerous substances',hazardous:true,chapter:'17 — Construction & Demolition',keywords:'contaminated soil earth ground'},
+  {code:'17 06 01',desc:'Insulation materials containing asbestos',hazardous:true,chapter:'17 — Construction & Demolition',keywords:'asbestos insulation'},
+  {code:'17 06 05',desc:'Construction materials containing asbestos',hazardous:true,chapter:'17 — Construction & Demolition',keywords:'asbestos cement construction'},
+  {code:'17 09 03',desc:'C&D wastes containing dangerous substances',hazardous:true,chapter:'17 — Construction & Demolition',keywords:'contaminated construction demolition hazardous'},
+  // Chapter 20 — Municipal / General
+  {code:'20 03 01',desc:'Mixed municipal waste',hazardous:false,chapter:'20 — Municipal Waste',keywords:'general waste household rubbish municipal mixed'},
+  {code:'20 03 07',desc:'Bulky waste',hazardous:false,chapter:'20 — Municipal Waste',keywords:'bulky large items furniture'},
+  {code:'20 01 39',desc:'Plastics',hazardous:false,chapter:'20 — Municipal Waste',keywords:'plastic waste'},
+  {code:'20 01 40',desc:'Metals',hazardous:false,chapter:'20 — Municipal Waste',keywords:'metal scrap metals'},
+  {code:'20 01 38',desc:'Wood (non-hazardous)',hazardous:false,chapter:'20 — Municipal Waste',keywords:'wood timber garden'},
+  {code:'20 01 01',desc:'Paper and cardboard',hazardous:false,chapter:'20 — Municipal Waste',keywords:'paper cardboard packaging'},
+  {code:'20 02 01',desc:'Biodegradable garden waste',hazardous:false,chapter:'20 — Municipal Waste',keywords:'garden green waste grass soil biodegradable'},
+  {code:'20 02 02',desc:'Soil and stones (garden)',hazardous:false,chapter:'20 — Municipal Waste',keywords:'garden soil stones earth'},
+  // Chapter 15 — Packaging
+  {code:'15 01 06',desc:'Mixed packaging',hazardous:false,chapter:'15 — Packaging',keywords:'packaging mixed waste cardboard plastic'},
+  {code:'15 01 01',desc:'Paper and cardboard packaging',hazardous:false,chapter:'15 — Packaging',keywords:'cardboard paper packaging'},
+  {code:'15 01 02',desc:'Plastic packaging',hazardous:false,chapter:'15 — Packaging',keywords:'plastic packaging'},
+  {code:'15 01 03',desc:'Wooden packaging',hazardous:false,chapter:'15 — Packaging',keywords:'wooden pallets packaging timber'},
+  // Chapter 16 — General not otherwise specified
+  {code:'16 01 03',desc:'End-of-life tyres',hazardous:false,chapter:'16 — General',keywords:'tyres rubber waste'},
+  {code:'16 01 17',desc:'Ferrous metal',hazardous:false,chapter:'16 — General',keywords:'metal iron steel scrap'},
+  {code:'16 01 19',desc:'Plastic',hazardous:false,chapter:'16 — General',keywords:'plastic waste general'},
+  // Muck away / earthworks (Chapter 17)
+  {code:'17 05 04',desc:'Soil and stones — non-contaminated (muck away)',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'muck away excavation topsoil earth soil clay'},
+  // Hazardous general
+  {code:'16 05 06',desc:'Laboratory chemicals containing dangerous substances',hazardous:true,chapter:'16 — General',keywords:'chemicals laboratory hazardous'},
+  // Aggregates
+  {code:'01 04 08',desc:'Waste gravel and crushed rocks',hazardous:false,chapter:'01 — Mining & Quarrying',keywords:'aggregates gravel crushed rock stone quarry'},
+  {code:'01 04 09',desc:'Waste sand and clays',hazardous:false,chapter:'01 — Mining & Quarrying',keywords:'sand clay aggregates'},
+  // Oil / liquid
+  {code:'13 02 05',desc:'Mineral-based non-chlorinated engine oils',hazardous:true,chapter:'13 — Oil Wastes',keywords:'oil engine lubricant'},
+  {code:'13 05 06',desc:'Oil from oil/water separators',hazardous:true,chapter:'13 — Oil Wastes',keywords:'oil separator drainage'},
+];
+
+const EWCPicker = ({ value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState('common');
+  const btnRef = React.useRef(null);
+  const [pos, setPos] = React.useState({top:0,left:0,width:0});
+
+  const COMMON_CODES = ['17 09 04','17 01 07','17 05 04','17 08 02','20 03 01','17 02 01','17 04 05','17 06 04','20 03 07','17 03 02'];
+
+  const filtered = EWC_CODES.filter(e => {
+    if (!search) return tab === 'common' ? COMMON_CODES.includes(e.code) : true;
+    const q = search.toLowerCase();
+    return e.code.includes(q) || e.desc.toLowerCase().includes(q) || e.keywords.includes(q);
+  }).slice(0, 50);
+
+  const selected = EWC_CODES.find(e => e.code === value);
+
+  const openDropdown = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX, width: Math.max(rect.width, 380) });
+    }
+    setOpen(true);
+  };
+
+  return (
+    <div className="relative">
+      <div className="flex gap-2" ref={btnRef}>
+        <input
+          type="text"
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="e.g. 17 09 04"
+        />
+        <button type="button" onClick={openDropdown}
+          className="px-3 py-2 bg-green-700 text-white rounded-lg text-xs font-medium hover:bg-green-800 whitespace-nowrap">
+          Browse codes
+        </button>
+      </div>
+      {selected && (
+        <div className={`mt-1 text-xs px-2 py-1 rounded flex items-center gap-1 ${selected.hazardous ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+          {selected.hazardous ? '⚠️ HAZARDOUS — ' : '✅ Non-hazardous — '}{selected.desc}
+        </div>
+      )}
+      {open && <div className="fixed inset-0" style={{zIndex:9998}} onClick={() => { setOpen(false); setSearch(''); }} />}
+      {open && (
+        <div
+          style={{ position:'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}
+          className="bg-white border border-gray-200 rounded-xl shadow-2xl flex flex-col"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="p-3 border-b border-gray-100">
+            <input autoFocus type="text" placeholder="Search by keyword, waste type or code..." value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+            {!search && (
+              <div className="flex gap-2 mt-2">
+                <button type="button" onClick={() => setTab('common')}
+                  className={`px-3 py-1 rounded text-xs font-medium ${tab==='common'?'bg-green-700 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  ⭐ Common (skip hire / C&D)
+                </button>
+                <button type="button" onClick={() => setTab('all')}
+                  className={`px-3 py-1 rounded text-xs font-medium ${tab==='all'?'bg-green-700 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  All 800+ codes
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="overflow-y-auto" style={{maxHeight:'320px'}}>
+            {filtered.length === 0 && <div className="px-4 py-4 text-sm text-gray-400 text-center">No matching codes found — try different keywords</div>}
+            {filtered.map(e => (
+              <button key={e.code} type="button"
+                onClick={() => { onChange(e.code); setOpen(false); setSearch(''); }}
+                className={`w-full text-left px-4 py-2.5 hover:bg-green-50 border-b border-gray-50 last:border-0 transition-colors ${value===e.code?'bg-green-50':''}`}>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-sm text-green-800 shrink-0">{e.code}</span>
+                  {e.hazardous && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium shrink-0">HAZ ⚠️</span>}
+                  {value===e.code && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium shrink-0">Selected ✓</span>}
+                </div>
+                <div className="text-xs text-gray-700 mt-0.5 leading-tight font-medium">{e.desc}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{e.chapter}</div>
+              </button>
+            ))}
+          </div>
+          <div className="p-2 border-t border-gray-100 flex justify-between items-center bg-gray-50 rounded-b-xl">
+            <span className="text-xs text-gray-400">{filtered.length} result{filtered.length!==1?'s':''} {search ? `for "${search}"` : ''}</span>
+            <button type="button" onClick={() => { setOpen(false); setSearch(''); }} className="text-xs text-gray-500 hover:text-gray-700 font-medium">✕ Close</button>
+          </div>
+        </div>
+      )}
+      {open && <div className="fixed inset-0 z-[9998]" onClick={() => { setOpen(false); setSearch(''); }} />}
+    </div>
+  );
+};
+
 const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
  
           const [uploadFile, setUploadFile] = useState(null);
@@ -886,6 +1444,248 @@ const loadJobAttachments = async (jobId) => {
   }
 };
 const [attachmentType, setAttachmentType] = useState('Waste Transfer Note');
+const [wtnSending, setWtnSending] = useState(false);
+const [wtnSentOk, setWtnSentOk] = useState(false);
+const [wtnFields, setWtnFields] = useState(() => {
+  // If job has saved WTN data, restore it (survives reload)
+  const savedWtn = job?.wtnData || (job?.wtn_data ? JSON.parse(job.wtn_data) : null);
+  if (savedWtn) return { ...savedWtn, recipientEmailSource: savedWtn.recipientEmail ? 'customer-record' : 'manual' };
+
+  const firstProduct = job?.lineItems && job.lineItems.length > 0 ? job.lineItems[0].product_name : null;
+  const skipSize = job?.skipSize || null;
+  const productDesc = firstProduct || (skipSize ? `${skipSize} Skip` : null) || job?.sageProductName || null;
+  const wasteDesc = [productDesc, job?.wasteType].filter(Boolean).join(' — ') || job?.jobType || '';
+
+  // Supplier = the carrier collecting the waste (Section C)
+  const matchedSupplier = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
+  const supplierAddress = matchedSupplier
+    ? [matchedSupplier.address, matchedSupplier.city, matchedSupplier.county, matchedSupplier.postcode].filter(Boolean).join(', ')
+    : '';
+  const supplierCarrierReg = matchedSupplier?.wasteCarrierLicense || '';
+
+  // Auto-fill customer email from customers list
+  const matchedCustomer = customers?.find(c => (c.name || c.companyName) === job?.customerName);
+  const customerEmail = matchedCustomer?.email || '';
+
+  // Us = the broker who arranged it (Section D2)
+  const companyName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
+  const companyAddress = localStorage.getItem('companyAddress') || '';
+  const carrierReg = localStorage.getItem('carrierReg') || '';
+
+  return {
+    wtnNumber: 'WTN-' + (job?.jobNumber || job?.id || 'DRAFT'),
+    transferDate: job?.collectionDate || job?.jobDate || new Date().toISOString().split('T')[0],
+    transferTime: '',
+    // Section A — Waste description
+    wasteDescription: wasteDesc,
+    skipSize: firstProduct || skipSize || '',
+    listOfWasteCode: '',  // EWC code
+    wasteContainer: job?.jobType === 'Roll-on Roll-off' ? 'Roll-on roll-off container' : 'Skip',
+    quantity: job?.quantity || 1,
+    unit: job?.unit || 'tonnes',
+    isHazardous: job?.hazardousWaste || false,
+    // Section B — Transferor (waste producer / customer)
+    transferorName: job?.customerName || '',
+    transferorAddress: [job?.siteAddress1, job?.siteAddress2, job?.siteCity, job?.sitePostcode].filter(Boolean).join(', '),
+    transferorPostcode: job?.sitePostcode || '',
+    transferorSicCode: '',
+    transferorIsProducer: true,
+    transferorPermitNumber: '',
+    transferorSignature: '',
+    transferorRepresenting: job?.customerName || '',
+    // Section C — Transferee (carrier collecting the waste = supplier)
+    transfereeName: job?.supplierName || '',
+    transfereeAddress: supplierAddress,
+    transfereePostcode: matchedSupplier?.postcode || '',
+    transfereeCarrierReg: supplierCarrierReg,
+    transfereePermitNumber: '',
+    transfereeSignature: '',
+    transfereeRepresenting: job?.supplierName || '',
+    // Section D — Transfer details & broker
+    transferAddress: [job?.siteAddress1, job?.siteAddress2, job?.siteCity, job?.sitePostcode].filter(Boolean).join(', '),
+    brokerName: companyName,
+    brokerAddress: companyAddress,
+    brokerCarrierReg: carrierReg,
+    // Recycling breakdown (additional to legal requirement)
+    recycledPct: 50,
+    recoveredPct: 50,
+    landfillPct: 0,
+    notes: job?.notes || '',
+    recipientEmail: customerEmail,
+    recipientEmailSource: customerEmail ? 'customer-record' : 'manual',
+    recurringWtn: false,
+    recurringWtnFrequency: 'monthly',
+    recurringWtnNextDate: '',
+  };
+});
+const wtnTotalPct = wtnFields.recycledPct + wtnFields.recoveredPct + wtnFields.landfillPct;
+
+const buildWtnHtml = (f, j) => {
+  const qty = parseFloat(f.quantity)||0;
+  const toRad = d=>d*Math.PI/180;
+  const cx=80,cy=80,r=65;
+  const slices=[{pct:f.recycledPct,color:'#16a34a',label:'Recycled/Reused'},{pct:f.recoveredPct,color:'#2563eb',label:'Recovered'},{pct:f.landfillPct,color:'#ea580c',label:'Disposal'}].filter(s=>s.pct>0);
+  let ang=-90;
+  const paths=slices.map(s=>{const sw=s.pct/100*360;const en=ang+sw;const x1=cx+r*Math.cos(toRad(ang)),y1=cy+r*Math.sin(toRad(ang));const x2=cx+r*Math.cos(toRad(en)),y2=cy+r*Math.sin(toRad(en));const d=`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${sw>180?1:0} 1 ${x2},${y2} Z`;ang=en;return `<path d="${d}" fill="${s.color}" stroke="white" stroke-width="1.5"/>`;}).join('');
+  const logo = localStorage.getItem('companyLogo');
+  const coName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${f.wtnNumber}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;background:#fff;padding:16px;}
+.page{max-width:740px;margin:0 auto;background:#fff;border:2px solid #000;}
+.hdr{background:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #1a5c2a;}
+.hdr-logo{height:52px;object-fit:contain;}
+.hdr-title{text-align:center;flex:1;padding:0 12px;}
+.hdr-title h1{font-size:16px;font-weight:700;color:#1a5c2a;margin-bottom:2px;letter-spacing:.5px;}
+.hdr-title p{font-size:9px;color:#555;}
+.hdr-ref{text-align:right;font-size:10px;}
+.hdr-ref .wtn-no{font-size:18px;font-weight:700;color:#1a5c2a;}
+.legal{background:#fff8c5;border-bottom:2px solid #000;padding:5px 18px;font-size:9px;font-weight:700;text-align:center;color:#000;}
+.body{padding:0;}
+.sec{border-bottom:2px solid #000;}
+.sec-hdr{background:#d1fae5;padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;}
+.row{display:grid;border-bottom:1px solid #ccc;}
+.row2{grid-template-columns:1fr 1fr;}
+.row3{grid-template-columns:1fr 1fr 1fr;}
+.row1{grid-template-columns:1fr;}
+.cell{padding:5px 10px;border-right:1px solid #ccc;}
+.cell:last-child{border-right:none;}
+.lbl{font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px;}
+.val{font-size:11px;font-weight:700;min-height:14px;}
+.sig-row{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #ccc;}
+.sig-cell{padding:8px 10px;border-right:1px solid #ccc;}
+.sig-cell:last-child{border-right:none;}
+.sig-line{border-bottom:1.5px solid #000;margin:16px 0 3px;width:85%;}
+.check-row{display:flex;gap:16px;flex-wrap:wrap;padding:5px 10px;font-size:10px;border-bottom:1px solid #ccc;}
+.chk{display:flex;align-items:center;gap:4px;}
+.box{width:11px;height:11px;border:1.5px solid #000;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;flex-shrink:0;}
+.chart-row{display:flex;align-items:center;gap:16px;padding:10px;}
+.legend{flex:1;}
+.li{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:10px;}
+.dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;}
+.duty{background:#f0fdf4;border-top:1px solid #ccc;padding:8px 10px;font-size:9px;line-height:1.5;color:#166534;}
+.footer{background:#f3f4f6;border-top:2px solid #000;padding:7px 18px;display:flex;justify-content:space-between;align-items:center;font-size:9px;}
+@media print{body{padding:0;}.page{border:2px solid #000;}button{display:none;}}
+</style></head>
+<body><div class="page">
+
+<div class="hdr" style="padding:14px 18px;">
+  <table style="width:100%;border-collapse:collapse;">
+    <tr>
+      <td style="width:110px;vertical-align:middle;">
+        ${logo?`<img src="${logo}" class="hdr-logo" alt="logo">`:`<strong style="font-size:13px;color:#1a5c2a;">${coName}</strong>`}
+      </td>
+      <td style="text-align:center;vertical-align:middle;padding:0 12px;">
+        <div style="font-size:17px;font-weight:700;color:#1a5c2a;letter-spacing:.5px;margin-bottom:3px;">WASTE TRANSFER NOTE</div>
+        <div style="font-size:9px;color:#666;">Duty of Care — Environmental Protection Act 1990 s.34</div>
+        <div style="font-size:9px;color:#666;">Waste (England &amp; Wales) Regulations 2011</div>
+      </td>
+      <td style="width:110px;text-align:right;vertical-align:middle;">
+        <div style="font-size:15px;font-weight:700;color:#1a5c2a;">${f.wtnNumber}</div>
+        <div style="font-size:9px;margin-top:3px;color:#555;">Job: ${j.jobNumber||'—'}</div>
+        <div style="font-size:9px;color:#555;">${new Date(f.transferDate).toLocaleDateString('en-GB')}</div>
+      </td>
+    </tr>
+  </table>
+</div>
+<div class="legal">⚠ LEGAL DOCUMENT — Both parties must retain a signed copy for a minimum of 2 years and produce on request to the Environment Agency or Local Authority within 7 days of request.</div>
+
+<div class="sec">
+<div class="sec-hdr">Section A — Description of Waste</div>
+<div class="row row2">
+  <div class="cell"><div class="lbl">A1 Description of the waste being transferred</div><div class="val">${f.wasteDescription||'—'}</div></div>
+  <div class="cell"><div class="lbl">Container / Skip size (product/service)</div><div class="val">${f.skipSize||'—'}</div></div>
+</div>
+<div class="row row3">
+  <div class="cell"><div class="lbl">List of Waste Regulations Code (EWC) *</div><div class="val">${f.listOfWasteCode||'—'}</div></div>
+  <div class="cell"><div class="lbl">A3 How much waste? (quantity)</div><div class="val">${qty} ${f.unit}</div></div>
+  <div class="cell"><div class="lbl">Hazardous waste?</div><div class="val">${f.isHazardous?'YES — Consignment Note Required':'No'}</div></div>
+</div>
+<div class="check-row">
+  <strong style="font-size:9px;margin-right:4px;">A2 How is the waste contained?</strong>
+  ${['Loose','Sacks','Skip','Drum','Roll-on roll-off container','Other'].map(c=>`<div class="chk"><div class="box">${f.wasteContainer===c?'✓':''}</div> ${c}</div>`).join('')}
+</div>
+</div>
+
+<div class="sec">
+<div class="sec-hdr">Section B — Current Holder of the Waste (Transferor)</div>
+<div class="row row2">
+  <div class="cell"><div class="lbl">B1 Full name &amp; company name and address</div><div class="val">${f.transferorName||'—'}</div><div style="font-size:10px;margin-top:2px;">${f.transferorAddress||'—'}</div></div>
+  <div class="cell">
+    <div class="lbl">B2 SIC Code (2007)</div><div class="val" style="margin-bottom:6px;">${f.transferorSicCode||'—'}</div>
+    <div class="check-row" style="padding:0;border:none;">
+      <strong style="font-size:9px;">B3 Are you:</strong>
+      <div class="chk"><div class="box">${f.transferorIsProducer?'✓':''}</div> Producer of the waste</div>
+      <div class="chk"><div class="box">${f.transferorPermitNumber?'✓':''}</div> Holder of environmental permit</div>
+    </div>
+    <div style="font-size:9px;margin-top:4px;"><span style="color:#555">Permit / Carrier Reg / Exemption No:</span> <strong>${f.transferorPermitNumber||'—'}</strong></div>
+  </div>
+</div>
+<div class="sig-row">
+  <div class="sig-cell"><div class="lbl">Transferor's Signature</div><div class="sig-line"></div><div style="font-size:10px;font-weight:700;">${f.transferorSignature||'___________________________'}</div><div style="font-size:9px;color:#555;margin-top:2px;">Name: ${f.transferorSignature||''} &nbsp;&nbsp; Representing: ${f.transferorRepresenting||f.transferorName||'—'}</div></div>
+  <div class="sig-cell"><div class="lbl">Date of transfer</div><div style="font-size:13px;font-weight:700;margin-top:8px;">${new Date(f.transferDate).toLocaleDateString('en-GB')}</div>${f.transferTime?`<div style="font-size:10px;color:#555;">Time: ${f.transferTime}</div>`:''}</div>
+</div>
+</div>
+
+<div class="sec">
+<div class="sec-hdr">Section C — Person Collecting the Waste (Transferee / Carrier)</div>
+<div class="row row2">
+  <div class="cell"><div class="lbl">C1 Full name &amp; company name and address</div><div class="val">${f.transfereeName||'—'}</div><div style="font-size:10px;margin-top:2px;">${f.transfereeAddress||'—'}</div></div>
+  <div class="cell">
+    <div class="check-row" style="padding:0;border:none;margin-bottom:6px;">
+      <strong style="font-size:9px;">C3 Are you:</strong>
+      <div class="chk"><div class="box">${f.transfereeCarrierReg?'✓':''}</div> Registered waste carrier, broker or dealer</div>
+      <div class="chk"><div class="box">${f.transfereePermitNumber?'✓':''}</div> Holder of environmental permit</div>
+    </div>
+    <div style="font-size:9px;"><span style="color:#555">EA Carrier Registration No. (CBDU...):</span> <strong>${f.transfereeCarrierReg||'—'}</strong></div>
+    <div style="font-size:9px;margin-top:3px;"><span style="color:#555">Environmental Permit / Exemption No.:</span> <strong>${f.transfereePermitNumber||'—'}</strong></div>
+  </div>
+</div>
+<div class="sig-row">
+  <div class="sig-cell"><div class="lbl">Transferee's Signature</div><div class="sig-line"></div><div style="font-size:10px;font-weight:700;">${f.transfereeSignature||'___________________________'}</div><div style="font-size:9px;color:#555;margin-top:2px;">Name: ${f.transfereeSignature||''} &nbsp;&nbsp; Representing: ${f.transfereeRepresenting||f.transfereeName||'—'}</div></div>
+  <div class="sig-cell"><div class="lbl">Date of transfer</div><div style="font-size:13px;font-weight:700;margin-top:8px;">${new Date(f.transferDate).toLocaleDateString('en-GB')}</div></div>
+</div>
+</div>
+
+<div class="sec">
+<div class="sec-hdr">Section D — The Transfer</div>
+<div class="row row2">
+  <div class="cell"><div class="lbl">D1 Address of transfer / collection point</div><div class="val">${f.transferAddress||[j.siteAddress1,j.siteAddress2,j.siteCity,j.sitePostcode].filter(Boolean).join(', ')||'—'}</div></div>
+  <div class="cell"><div class="lbl">Date &amp; time of transfer</div><div class="val">${new Date(f.transferDate).toLocaleDateString('en-GB')}${f.transferTime?' at '+f.transferTime:''}</div></div>
+</div>
+<div class="row row1">
+  <div class="cell"><div class="lbl">D2 Broker or dealer who arranged this transfer (if applicable) — name, address &amp; registration number</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-top:4px;">
+    <div><div class="lbl">Name / Company</div><div class="val">${f.brokerName||'—'}</div></div>
+    <div><div class="lbl">Address</div><div style="font-size:10px;font-weight:600;">${f.brokerAddress||'—'}</div></div>
+    <div><div class="lbl">Registration No. (CBDU...)</div><div class="val">${f.brokerCarrierReg||'—'}</div></div>
+  </div></div>
+</div>
+</div>
+
+<div class="sec">
+<div class="sec-hdr">Waste Hierarchy Confirmation &amp; Recycling Breakdown (Reg. 12)</div>
+<div class="chart-row">
+  <svg viewBox="0 0 160 160" width="120" height="120">${paths}</svg>
+  <div class="legend">
+    ${slices.map(s=>`<div class="li"><div class="dot" style="background:${s.color}"></div><span style="font-weight:600">${s.pct}%</span>&nbsp;${s.label}&nbsp;<span style="color:#6b7280;font-size:9px;">(${(qty*s.pct/100).toFixed(2)} ${f.unit})</span></div>`).join('')}
+    <div style="font-size:9px;color:#166534;margin-top:6px;line-height:1.4;">By completing this WTN I confirm that I have fulfilled my duty to apply the waste hierarchy as required by Regulation 12 of the Waste (England &amp; Wales) Regulations 2011. ✓</div>
+  </div>
+</div>
+${f.notes?`<div style="padding:6px 10px;font-size:10px;border-top:1px solid #ccc;"><strong>Notes:</strong> ${f.notes}</div>`:''}
+<div class="duty">⚖️ <strong>Duty of Care:</strong> Both parties confirm they have fulfilled duty of care obligations under the Environmental Protection Act 1990 s.34. The carrier in Section C holds a valid EA waste carrier registration. Both parties must retain a signed copy for a minimum of 2 years (3 years for hazardous waste) and produce on request within 7 days. Failure to produce is a criminal offence.</div>
+</div>
+
+</div>
+<div class="footer">
+  <span>${coName} &bull; Broker Reg: ${f.brokerCarrierReg||'—'} &bull; www.totalwasteservicesltd.com</span>
+  <span>WMC2A — Issued ${new Date().toLocaleDateString('en-GB')}</span>
+  <button onclick="window.print()" style="border:1px solid #aaa;background:#fff;color:#1d4ed8;cursor:pointer;padding:3px 10px;border-radius:3px;font-size:9px;">🖨 Print / Save PDF</button>
+</div>
+</div></body></html>`;
+};
 const handleDeleteAttachment = async (attachmentId) => {
   if (!window.confirm('Are you sure you want to delete this attachment?')) {
     return;
@@ -1018,7 +1818,13 @@ if (window.refreshFullPageAttachments) {
 eventType: '',
 eventTitle: '',
 staffMember: '',
-eventEndDate: '', 
+eventEndDate: '',
+    // Recurring job fields
+    isRecurring: false,
+    recurringFrequency: 'weekly',
+    recurringStartDate: new Date().toISOString().split('T')[0],
+    recurringEndDate: '',
+    recurringNextDate: '',
   };
   
   // If editing, merge job data but ensure lineItems is always an array
@@ -1202,6 +2008,9 @@ const [isEvent, setIsEvent] = useState(false);
     if (job?.id && formData.id) {
       newJob.id = job.id;
     }
+
+    // Bundle WTN fields so they persist to Supabase
+    newJob.wtnData = wtnFields;
     
     onSave(newJob);
   }
@@ -1259,31 +2068,45 @@ const [isEvent, setIsEvent] = useState(false);
                 
                {/* Tab Navigation - Only show for jobs, not events */}
 {!isEvent && (
-  <div className="flex border-b border-gray-200">
+  <div className="flex border-b border-gray-200 overflow-x-auto">
     <button
       onClick={() => setActiveTab('details')}
-      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
     >
       Job Details
     </button>
     <button
       onClick={() => setActiveTab('site')}
-      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'site' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
     >
       Site Information
     </button>
     <button
       onClick={() => setActiveTab('financial')}
-      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
     >
       Pricing & Status
     </button>
     <button
       onClick={() => setActiveTab('documents')}
-      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
     >
       Documents
     </button>
+    <button
+      onClick={() => setActiveTab('recurring')}
+      className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'recurring' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
+    >
+      🔁 Recurring
+    </button>
+    {job && (
+      <button
+        onClick={() => setActiveTab('wtn')}
+        className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'wtn' ? 'border-b-2 border-green-500 text-green-600' : 'text-gray-500'}`}
+      >
+        📄 Send WTN
+      </button>
+    )}
   </div>
 )}
 
@@ -2288,6 +3111,625 @@ const [isEvent, setIsEvent] = useState(false);
     </div>
   </div>
 )}
+                {/* ── RECURRING JOB TAB ── */}
+                {activeTab === 'recurring' && !isEvent && (
+                  <div className="space-y-5 p-6">
+                    <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="isRecurring"
+                        checked={formData.isRecurring || false}
+                        onChange={e => setFormData({
+                          ...formData,
+                          isRecurring: e.target.checked,
+                          // When turning on, seed recurringNextDate from startDate
+                          recurringNextDate: e.target.checked ? (formData.recurringStartDate || formData.jobDate || new Date().toISOString().split('T')[0]) : ''
+                        })}
+                        className="w-5 h-5 text-blue-600 rounded"
+                      />
+                      <label htmlFor="isRecurring" className="text-sm font-semibold text-blue-800 cursor-pointer">
+                        Make this a recurring job
+                      </label>
+                    </div>
+
+                    {formData.isRecurring && (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Frequency</label>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {['daily','weekly','fortnightly','monthly'].map(freq => (
+                              <button
+                                key={freq}
+                                type="button"
+                                onClick={() => setFormData({...formData, recurringFrequency: freq})}
+                                className={`py-3 px-4 rounded-lg border-2 text-sm font-medium capitalize transition-all ${
+                                  formData.recurringFrequency === freq
+                                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                                }`}
+                              >
+                                {freq.charAt(0).toUpperCase() + freq.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">First Job Date *</label>
+                            <input
+                              type="date"
+                              value={formData.recurringStartDate || ''}
+                              onChange={e => setFormData({
+                                ...formData,
+                                recurringStartDate: e.target.value,
+                                recurringNextDate: e.target.value  // keep nextDate in sync with start
+                              })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">End Date (leave blank = indefinite)</label>
+                            <input
+                              type="date"
+                              value={formData.recurringEndDate || ''}
+                              onChange={e => setFormData({...formData, recurringEndDate: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            />
+                          </div>
+                        </div>
+
+                        {(() => {
+                          const getNextDate = (dateStr, freq) => {
+                            if (!dateStr) return null;
+                            const d = new Date(dateStr);
+                            if (freq === 'daily') d.setDate(d.getDate() + 1);
+                            else if (freq === 'weekly') d.setDate(d.getDate() + 7);
+                            else if (freq === 'fortnightly') d.setDate(d.getDate() + 14);
+                            else if (freq === 'monthly') d.setMonth(d.getMonth() + 1);
+                            return d;
+                          };
+                          const next = getNextDate(formData.recurringStartDate, formData.recurringFrequency || 'weekly');
+                          return (
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm space-y-1">
+                              <p className="font-semibold text-gray-700">📅 Schedule Preview</p>
+                              <p className="text-gray-600">Frequency: <span className="font-medium capitalize">{formData.recurringFrequency || 'weekly'}</span></p>
+                              <p className="text-gray-600">First job: <span className="font-medium">{formData.recurringStartDate ? new Date(formData.recurringStartDate).toLocaleDateString('en-GB') : '—'}</span></p>
+                              <p className="text-gray-600">Next job after that: <span className="font-medium text-blue-700">{next ? next.toLocaleDateString('en-GB') : '—'}</span></p>
+                              {formData.recurringEndDate && <p className="text-gray-600">Ends on: <span className="font-medium">{new Date(formData.recurringEndDate).toLocaleDateString('en-GB')}</span></p>}
+                            </div>
+                          );
+                        })()}
+
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                          <p className="font-semibold mb-1">⚠️ How it works</p>
+                          <p>Save the job to lock in the recurring schedule. Each time a job is due, the system will automatically create it as a copy of this one and show a notification on your dashboard. You can cancel the recurring schedule at any time by editing the job.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {!formData.isRecurring && (
+                      <div className="text-center py-10 text-gray-400">
+                        <div className="text-5xl mb-3">🔁</div>
+                        <p className="font-medium text-gray-500">Tick the box above to set up a recurring schedule</p>
+                        <p className="text-sm mt-1">Daily, weekly, fortnightly or monthly — the next job is created automatically</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── WTN TAB (only shown when editing an existing job) ── */}
+                {activeTab === 'wtn' && job && !isEvent && (
+                  <div className="space-y-5 p-6">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <h3 className="font-semibold text-green-800 mb-1">📄 Waste Transfer Note — Legal Document</h3>
+                      <p className="text-sm text-green-700">Compliant with the Waste (England and Wales) Regulations 2011 &amp; Environmental Protection Act 1990 s.34. All mandatory fields must be completed. Both parties must retain a copy for a minimum of 2 years.</p>
+                    </div>
+
+                    {/* Section A — Waste Description */}
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">Section A — Description of Waste</div>
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">WTN Reference *</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wtnNumber} onChange={e=>setWtnFields({...wtnFields,wtnNumber:e.target.value})} /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Transfer Date *</label>
+                          <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferDate} onChange={e=>setWtnFields({...wtnFields,transferDate:e.target.value})} /></div>
+                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Description of Waste * (be specific — e.g. "mixed construction waste including concrete, timber and plasterboard")</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteDescription} onChange={e=>setWtnFields({...wtnFields,wasteDescription:e.target.value})} placeholder="e.g. Mixed construction and demolition waste including concrete, brickwork, timber and plasterboard" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Skip / Container Size <span className="text-gray-400 font-normal">(from job)</span></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.skipSize} onChange={e=>setWtnFields({...wtnFields,skipSize:e.target.value})} placeholder="e.g. 8 yard skip" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Processes Waste Has Been Through</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteProcess} onChange={e=>setWtnFields({...wtnFields,wasteProcess:e.target.value})} placeholder="e.g. On-site segregation, crushing" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">How Waste is Contained *</label>
+                          <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteContainer} onChange={e=>setWtnFields({...wtnFields,wasteContainer:e.target.value})}>
+                            <option>Skip</option><option>Roll-on Roll-off Container</option><option>Loose</option><option>Bagged</option><option>Drums/Barrels</option><option>IBC</option><option>Other</option>
+                          </select></div>
+                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">EWC Code * <span className="text-gray-400 font-normal">(European Waste Catalogue — required by law)</span></label>
+                          <EWCPicker value={wtnFields.listOfWasteCode} onChange={v=>setWtnFields({...wtnFields,listOfWasteCode:v})} /></div>
+                        <div className="flex gap-2">
+                          <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Quantity *</label>
+                            <input type="number" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.quantity} onChange={e=>setWtnFields({...wtnFields,quantity:e.target.value})} /></div>
+                          <div className="w-28"><label className="block text-xs font-medium text-gray-600 mb-1">Unit *</label>
+                            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.unit} onChange={e=>setWtnFields({...wtnFields,unit:e.target.value})}>
+                              <option>tonnes</option><option>kg</option><option>m³</option><option>loads</option>
+                            </select></div>
+                        </div>
+                        <div className="flex items-center gap-2 pt-4">
+                          <input type="checkbox" id="hazWaste" checked={wtnFields.isHazardous} onChange={e=>setWtnFields({...wtnFields,isHazardous:e.target.checked})} className="w-4 h-4" />
+                          <label htmlFor="hazWaste" className="text-sm font-medium text-red-700">Hazardous Waste (requires Consignment Note instead)</label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section B — Transferor */}
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">Section B — Transferor (Waste Producer / Current Holder)</div>
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Name / Company *</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorName} onChange={e=>setWtnFields({...wtnFields,transferorName:e.target.value})} /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorAddress} onChange={e=>setWtnFields({...wtnFields,transferorAddress:e.target.value})} /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">SIC Code</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorSicCode} onChange={e=>setWtnFields({...wtnFields,transferorSicCode:e.target.value})} placeholder="e.g. 41100" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg / Permit / Exemption No.</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorPermitNumber} onChange={e=>setWtnFields({...wtnFields,transferorPermitNumber:e.target.value})} placeholder="e.g. CBDU123456 or permit number" /></div>
+                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Transferor Signature / Name (typed) *</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorSignature} onChange={e=>setWtnFields({...wtnFields,transferorSignature:e.target.value})} placeholder="Full name as signature" /></div>
+                      </div>
+                    </div>
+
+                    {/* Section C — Transferee (the carrier = supplier) */}
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600 flex justify-between">
+                        <span>Section C — Person Collecting the Waste (Carrier / Transferee)</span>
+                        <span className="text-gray-400 font-normal normal-case">= your supplier</span>
+                      </div>
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">C1 Full Name / Company *</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeName} onChange={e=>setWtnFields({...wtnFields,transfereeName:e.target.value})} /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeAddress} onChange={e=>setWtnFields({...wtnFields,transfereeAddress:e.target.value})} placeholder="Pulled from supplier record" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg No. (CBDU...) <span className="text-gray-400 font-normal">— supplier's, not yours</span></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeCarrierReg} onChange={e=>setWtnFields({...wtnFields,transfereeCarrierReg:e.target.value})} placeholder="Supplier's CBDU number" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Environmental Permit / Exemption No.</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transfereePermitNumber} onChange={e=>setWtnFields({...wtnFields,transfereePermitNumber:e.target.value})} placeholder="e.g. EPR/AB1234CD" /></div>
+                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Transferee Signature / Name (typed) *</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transfereeSignature} onChange={e=>setWtnFields({...wtnFields,transfereeSignature:e.target.value})} placeholder="Supplier representative name" /></div>
+                      </div>
+                    </div>
+
+                    {/* Section D — Transfer details + broker (us) */}
+                    <div className="border border-blue-200 rounded-lg overflow-hidden">
+                      <div className="bg-blue-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-blue-700 flex justify-between">
+                        <span>Section D — The Transfer &amp; Broker Details</span>
+                        <span className="text-blue-400 font-normal normal-case">= Total Waste Services as broker</span>
+                      </div>
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">D1 Address of Transfer / Collection Point</label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transferAddress} onChange={e=>setWtnFields({...wtnFields,transferAddress:e.target.value})} /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Time of Transfer</label>
+                          <input type="time" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferTime} onChange={e=>setWtnFields({...wtnFields,transferTime:e.target.value})} /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">D2 Broker Name <span className="text-gray-400 font-normal">(set in Admin → Settings)</span></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.brokerName} onChange={e=>setWtnFields({...wtnFields,brokerName:e.target.value})} /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Broker Address <span className="text-orange-500 font-normal">{!wtnFields.brokerAddress?'⚠ Set in Admin → Settings':''}</span></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.brokerAddress} onChange={e=>setWtnFields({...wtnFields,brokerAddress:e.target.value})} placeholder="Set in Admin → Settings" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Broker EA Carrier Reg No. <span className="text-orange-500 font-normal">{!wtnFields.brokerCarrierReg?'⚠ Set in Admin → Settings':''}</span></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.brokerCarrierReg} onChange={e=>setWtnFields({...wtnFields,brokerCarrierReg:e.target.value})} placeholder="Your CBDU number" /></div>
+                      </div>
+                    </div>
+
+                    {/* Section D — Recycling breakdown */}
+                    <div className="border border-green-200 rounded-lg overflow-hidden">
+                      <div className="bg-green-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-green-700">Waste Hierarchy &amp; Recycling Breakdown (Reg. 12)</div>
+                      <div className="p-4">
+                        <div className="flex justify-between items-center mb-3">
+                          <p className="text-xs text-gray-500">By completing this section I confirm I have applied the waste hierarchy as required by Regulation 12 of the Waste (England and Wales) Regulations 2011.</p>
+                          <span className={`text-xs font-bold px-2 py-1 rounded-full ml-3 flex-shrink-0 ${wtnTotalPct===100?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{wtnTotalPct}% {wtnTotalPct===100?'✓':'≠ 100'}</span>
+                        </div>
+                        {[{k:'recycledPct',l:'♻️ Recycled / Reused'},{k:'recoveredPct',l:'🔵 Recovered (Energy / Other)'},{k:'landfillPct',l:'🟠 Disposal (Landfill / Incineration)'}].map(({k,l})=>(
+                          <div key={k} className="mb-3">
+                            <div className="flex justify-between text-sm mb-1"><span>{l}</span><span className="font-bold">{wtnFields[k]}%</span></div>
+                            <input type="range" min="0" max="100" value={wtnFields[k]} className="w-full" onChange={e=>setWtnFields({...wtnFields,[k]:parseInt(e.target.value)})} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Notes & email */}
+                    <div><label className="block text-xs font-medium text-gray-600 mb-1">Additional Notes</label>
+                      <textarea rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.notes} onChange={e=>setWtnFields({...wtnFields,notes:e.target.value})} /></div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Customer Email (to send WTN) *</label>
+                      <input type="email" className={`w-full px-3 py-2 border rounded-lg text-sm ${wtnFields.recipientEmailSource==='customer-record' ? 'border-green-300 bg-green-50' : 'border-gray-300'}`}
+                        value={wtnFields.recipientEmail}
+                        onChange={e=>setWtnFields({...wtnFields, recipientEmail:e.target.value, recipientEmailSource:'manual'})}
+                        placeholder="customer@company.com" />
+                      {wtnFields.recipientEmailSource==='customer-record' && wtnFields.recipientEmail && (
+                        <p className="text-xs text-green-600 mt-1">✅ Auto-filled from customer record — edit if incorrect</p>
+                      )}
+                      {wtnFields.recipientEmailSource==='manual' && (
+                        <p className="text-xs text-amber-600 mt-1">✏️ Manually entered</p>
+                      )}
+                      {!wtnFields.recipientEmail && (
+                        <p className="text-xs text-red-500 mt-1">⚠ No email found on customer record — please enter manually</p>
+                      )}
+                    </div>
+
+                    {/* Recurring WTN toggle */}
+                    <div className="border border-blue-200 rounded-lg overflow-hidden">
+                      <div className="bg-blue-50 px-4 py-2 flex items-center gap-3">
+                        <input type="checkbox" id="recurringWtn" checked={wtnFields.recurringWtn||false}
+                          onChange={e=>setWtnFields({...wtnFields, recurringWtn: e.target.checked,
+                            recurringWtnNextDate: e.target.checked ? (() => {
+                              const d = new Date();
+                              if (wtnFields.recurringWtnFrequency === 'monthly') d.setMonth(d.getMonth()+1);
+                              else if (wtnFields.recurringWtnFrequency === 'annually') d.setFullYear(d.getFullYear()+1);
+                              return d.toISOString().split('T')[0];
+                            })() : ''
+                          })}
+                          className="w-4 h-4 text-blue-600 rounded" />
+                        <label htmlFor="recurringWtn" className="text-sm font-semibold text-blue-800 cursor-pointer">🔄 Set up recurring WTN emails</label>
+                      </div>
+                      {wtnFields.recurringWtn && (
+                        <div className="p-4 space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
+                              <div className="flex flex-col gap-1.5">
+                                {[
+                                  {key:'per-job', label:'📋 Every recurring job', desc:'Sends a WTN each time a recurring job is completed'},
+                                  {key:'monthly', label:'📅 Monthly', desc:'Sends on the same date each month'},
+                                  {key:'annually', label:'📆 Annually', desc:'Sends once a year'},
+                                ].map(f=>(
+                                  <button key={f.key} type="button"
+                                    onClick={()=>{
+                                      const d = new Date();
+                                      if (f.key==='monthly') d.setMonth(d.getMonth()+1);
+                                      else if (f.key==='annually') d.setFullYear(d.getFullYear()+1);
+                                      setWtnFields({...wtnFields, recurringWtnFrequency: f.key,
+                                        recurringWtnNextDate: f.key==='per-job' ? '' : d.toISOString().split('T')[0]});
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-xs font-medium border transition-colors ${wtnFields.recurringWtnFrequency===f.key?'bg-blue-600 text-white border-blue-600':'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'}`}>
+                                    <div>{f.label}</div>
+                                    <div className={`text-xs mt-0.5 ${wtnFields.recurringWtnFrequency===f.key?'text-blue-100':'text-gray-400'}`}>{f.desc}</div>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {wtnFields.recurringWtnFrequency !== 'per-job' && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">First send date</label>
+                                <input type="date" className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs"
+                                  value={wtnFields.recurringWtnNextDate||''}
+                                  onChange={e=>setWtnFields({...wtnFields,recurringWtnNextDate:e.target.value})} />
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-xs text-blue-700 bg-blue-50 rounded p-2">
+                            {wtnFields.recurringWtnFrequency==='per-job'
+                              ? `📋 A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} every time a recurring job from this schedule is marked as completed.`
+                              : `✉️ A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} ${wtnFields.recurringWtnFrequency==='monthly'?'every month':'every year'}${wtnFields.recurringWtnNextDate ? ', starting ' + new Date(wtnFields.recurringWtnNextDate).toLocaleDateString('en-GB') : ''}.`
+                            }
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    {(() => {
+                      const buildEmailBody = () => `Dear ${wtnFields.transferorName},
+
+Please find below your Waste Transfer Note ${wtnFields.wtnNumber} for job ${job.jobNumber}.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WASTE TRANSFER NOTE: ${wtnFields.wtnNumber}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Job Reference: ${job.jobNumber}
+Date of Transfer: ${new Date(wtnFields.transferDate).toLocaleDateString('en-GB')}
+Customer: ${wtnFields.transferorName}
+Site Address: ${wtnFields.transferorAddress}
+
+SECTION A — WASTE DESCRIPTION
+Waste: ${wtnFields.wasteDescription}
+Container/Skip: ${wtnFields.skipSize}
+EWC Code: ${wtnFields.listOfWasteCode||'—'}
+Quantity: ${wtnFields.quantity} ${wtnFields.unit}
+Hazardous: ${wtnFields.isHazardous?'YES — Consignment Note Required':'No'}
+
+SECTION B — TRANSFEROR (WASTE PRODUCER)
+${wtnFields.transferorName}
+${wtnFields.transferorAddress}
+
+SECTION C — CARRIER
+${wtnFields.transfereeName}
+${wtnFields.transfereeAddress}
+EA Carrier Reg: ${wtnFields.transfereeCarrierReg||'—'}
+
+SECTION D — BROKER
+${wtnFields.brokerName}
+EA Reg: ${wtnFields.brokerCarrierReg||'—'}
+
+RECYCLING BREAKDOWN
+Recycled/Reused: ${wtnFields.recycledPct}%
+Recovered: ${wtnFields.recoveredPct}%
+Disposal: ${wtnFields.landfillPct}%
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This Waste Transfer Note is issued under the Environmental Protection Act 1990 s.34 and the Waste (England & Wales) Regulations 2011. Please retain for a minimum of 2 years.
+
+Kind regards,
+Total Waste Services Ltd
+info@totalwasteservicesltd.com
+EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
+
+                      const handleSendEmail = async () => {
+                        if (!wtnFields.recipientEmail) { alert('Please enter a customer email address.'); return; }
+                        if (wtnTotalPct !== 100) { alert('Recycling percentages must total 100%.'); return; }
+                        setWtnSending(true);
+                        try {
+                          // Build the WTN as a self-contained HTML email body
+                          const qty = parseFloat(wtnFields.quantity) || 0;
+                          const toRad = d => d * Math.PI / 180;
+                          const cx=80, cy=80, r=65;
+                          const slices = [
+                            {pct:wtnFields.recycledPct, color:'#16a34a', label:'Recycled/Reused'},
+                            {pct:wtnFields.recoveredPct, color:'#2563eb', label:'Recovered'},
+                            {pct:wtnFields.landfillPct, color:'#ea580c', label:'Disposal'},
+                          ].filter(s=>s.pct>0);
+                          let ang = -90;
+                          const paths = slices.map(s => {
+                            const sw=s.pct/100*360, en=ang+sw;
+                            const x1=cx+r*Math.cos(toRad(ang)), y1=cy+r*Math.sin(toRad(ang));
+                            const x2=cx+r*Math.cos(toRad(en)), y2=cy+r*Math.sin(toRad(en));
+                            const d=`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${sw>180?1:0} 1 ${x2},${y2} Z`;
+                            ang=en;
+                            return `<path d="${d}" fill="${s.color}" stroke="white" stroke-width="2"/>`;
+                          }).join('');
+                          const logo = localStorage.getItem('companyLogo');
+                          const coName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
+
+                          const htmlBody = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>${wtnFields.wtnNumber}</title></head>
+<body style="margin:0;padding:20px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1f2937;background:#f5f5f5;">
+<div style="max-width:680px;margin:0 auto;background:#fff;border:2px solid #000;">
+
+  <!-- Header -->
+  <div style="background:#fff;padding:14px 20px;border-bottom:3px solid #1a5c2a;">
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>
+        <td style="width:120px;vertical-align:middle;">
+          ${logo ? `<img src="${logo}" style="height:52px;object-fit:contain;display:block;" alt="logo">` : `<strong style="font-size:13px;color:#1a5c2a;">${coName}</strong>`}
+        </td>
+        <td style="text-align:center;vertical-align:middle;padding:0 12px;">
+          <div style="font-size:17px;font-weight:700;color:#1a5c2a;letter-spacing:.5px;margin-bottom:3px;">WASTE TRANSFER NOTE</div>
+          <div style="font-size:9px;color:#666;">Duty of Care — Environmental Protection Act 1990 s.34</div>
+          <div style="font-size:9px;color:#666;">Waste (England &amp; Wales) Regulations 2011</div>
+        </td>
+        <td style="width:120px;text-align:right;vertical-align:middle;">
+          <div style="font-size:15px;font-weight:700;color:#1a5c2a;">${wtnFields.wtnNumber}</div>
+          <div style="font-size:9px;color:#666;margin-top:3px;">Job: ${job.jobNumber}</div>
+          <div style="font-size:9px;color:#666;">${new Date(wtnFields.transferDate).toLocaleDateString('en-GB')}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Legal banner -->
+  <div style="background:#fff8c5;border-bottom:2px solid #000;padding:6px 20px;font-size:9px;font-weight:700;text-align:center;">
+    ⚠ LEGAL DOCUMENT — Both parties must retain a signed copy for a minimum of 2 years and produce on request to the Environment Agency or Local Authority within 7 days.
+  </div>
+
+  <!-- Section A -->
+  <div style="border-bottom:2px solid #000;">
+    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section A — Description of Waste</div>
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>
+        <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">A1 Description of waste</div>
+          <div style="font-weight:700;">${wtnFields.wasteDescription||'—'}</div>
+        </td>
+        <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Container / Skip Size</div>
+          <div style="font-weight:700;">${wtnFields.skipSize||'—'}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">EWC Code (List of Waste Regulations)</div>
+          <div style="font-weight:700;">${wtnFields.listOfWasteCode||'—'}</div>
+        </td>
+        <td style="padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">A3 Quantity</div>
+          <div style="font-weight:700;">${qty} ${wtnFields.unit}</div>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2" style="padding:6px 12px;border-bottom:1px solid #ccc;font-size:10px;">
+          <strong>A2 How is the waste contained?</strong>&nbsp;&nbsp;
+          ${['Loose','Sacks','Skip','Drum','Roll-on roll-off container','Other'].map(c=>`<span style="margin-right:12px;">${wtnFields.wasteContainer===c?'☑':'☐'} ${c}</span>`).join('')}
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2" style="padding:7px 12px;font-size:10px;">
+          <strong>Hazardous waste?</strong> ${wtnFields.isHazardous ? '<span style="color:red;font-weight:700;">YES — Consignment Note Required</span>' : 'No'}
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Section B -->
+  <div style="border-bottom:2px solid #000;">
+    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section B — Current Holder of the Waste (Transferor)</div>
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>
+        <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">B1 Name &amp; Address</div>
+          <div style="font-weight:700;">${wtnFields.transferorName||'—'}</div>
+          <div style="font-size:11px;">${wtnFields.transferorAddress||'—'}</div>
+        </td>
+        <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">B2 SIC Code</div>
+          <div style="font-weight:700;margin-bottom:6px;">${wtnFields.transferorSicCode||'—'}</div>
+          <div style="font-size:9px;"><strong>B3 Are you:</strong> ☑ Producer of the waste</div>
+          <div style="font-size:9px;margin-top:3px;">Permit/Carrier Reg: ${wtnFields.transferorPermitNumber||'—'}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;border-right:1px solid #ccc;" colspan="1">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Transferor's Signature</div>
+          <div style="border-bottom:1.5px solid #000;margin:14px 0 3px;width:80%;"></div>
+          <div style="font-weight:700;font-size:11px;">${wtnFields.transferorSignature||'___________________________'}</div>
+        </td>
+        <td style="padding:8px 12px;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Date of Transfer</div>
+          <div style="font-size:14px;font-weight:700;margin-top:8px;">${new Date(wtnFields.transferDate).toLocaleDateString('en-GB')}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Section C -->
+  <div style="border-bottom:2px solid #000;">
+    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section C — Person Collecting the Waste (Carrier / Transferee)</div>
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>
+        <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">C1 Name &amp; Address</div>
+          <div style="font-weight:700;">${wtnFields.transfereeName||'—'}</div>
+          <div style="font-size:11px;">${wtnFields.transfereeAddress||'—'}</div>
+        </td>
+        <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
+          <div style="font-size:9px;margin-bottom:4px;">☑ Registered waste carrier</div>
+          <div style="font-size:9px;"><strong>EA Carrier Reg No.:</strong> ${wtnFields.transfereeCarrierReg||'—'}</div>
+          <div style="font-size:9px;margin-top:3px;"><strong>Permit/Exemption:</strong> ${wtnFields.transfereePermitNumber||'—'}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;border-right:1px solid #ccc;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Transferee's Signature</div>
+          <div style="border-bottom:1.5px solid #000;margin:14px 0 3px;width:80%;"></div>
+          <div style="font-weight:700;font-size:11px;">${wtnFields.transfereeSignature||'___________________________'}</div>
+        </td>
+        <td style="padding:8px 12px;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Date</div>
+          <div style="font-size:14px;font-weight:700;margin-top:8px;">${new Date(wtnFields.transferDate).toLocaleDateString('en-GB')}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Section D -->
+  <div style="border-bottom:2px solid #000;">
+    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section D — The Transfer &amp; Broker</div>
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>
+        <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;vertical-align:top;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">D1 Address of collection point</div>
+          <div style="font-weight:700;">${wtnFields.transferAddress||wtnFields.transferorAddress||'—'}</div>
+        </td>
+        <td style="width:50%;padding:7px 12px;vertical-align:top;">
+          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">D2 Broker who arranged this transfer</div>
+          <div style="font-weight:700;">${wtnFields.brokerName||'—'}</div>
+          <div style="font-size:10px;">${wtnFields.brokerAddress||'—'}</div>
+          <div style="font-size:10px;"><strong>Reg:</strong> ${wtnFields.brokerCarrierReg||'—'}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Recycling breakdown -->
+  <div style="border-bottom:2px solid #000;">
+    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Waste Hierarchy &amp; Recycling Breakdown (Regulation 12)</div>
+    <div style="display:flex;align-items:center;gap:20px;padding:12px;flex-wrap:wrap;">
+      <svg viewBox="0 0 160 160" width="120" height="120" xmlns="http://www.w3.org/2000/svg">${paths}</svg>
+      <div>
+        ${slices.map(s=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:11px;">
+          <div style="width:12px;height:12px;border-radius:50%;background:${s.color};flex-shrink:0;"></div>
+          <span><strong>${s.pct}%</strong> ${s.label} (${(qty*s.pct/100).toFixed(2)} ${wtnFields.unit})</span>
+        </div>`).join('')}
+        <div style="font-size:9px;color:#166534;margin-top:8px;max-width:280px;line-height:1.5;">
+          I confirm I have applied the waste hierarchy as required by Regulation 12 of the Waste (England &amp; Wales) Regulations 2011. ✓
+        </div>
+      </div>
+    </div>
+    ${wtnFields.notes ? `<div style="padding:6px 12px;font-size:11px;border-top:1px solid #ccc;"><strong>Notes:</strong> ${wtnFields.notes}</div>` : ''}
+    <div style="background:#f0fdf4;border-top:1px solid #ccc;padding:8px 12px;font-size:9px;line-height:1.5;color:#166534;">
+      ⚖️ <strong>Duty of Care:</strong> Both parties confirm they have fulfilled their duty of care obligations under the Environmental Protection Act 1990 s.34. The carrier holds a valid EA waste carrier registration. Both parties must retain a signed copy for a minimum of 2 years and produce on request within 7 days. Failure to produce is a criminal offence.
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="background:#f3f4f6;border-top:2px solid #000;padding:8px 20px;display:flex;justify-content:space-between;font-size:9px;color:#555;">
+    <span>${coName} &bull; Broker Reg: ${wtnFields.brokerCarrierReg||'—'}</span>
+    <span>WMC2A &bull; Issued ${new Date().toLocaleDateString('en-GB')}</span>
+  </div>
+
+</div>
+</body></html>`;
+
+                          // Send via EmailJS with HTML body
+                          await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
+                            wtn_number: wtnFields.wtnNumber,
+                            customer_name: wtnFields.transferorName || job.customerName,
+                            email: wtnFields.recipientEmail,
+                            name: wtnFields.transferorName || job.customerName,
+                            message: htmlBody,
+                          });
+
+                          // Save ALL WTN fields to Supabase so they survive reload
+                          const wtnSaveData = {
+                            wtn_sent: true,
+                            wtn_sent_at: new Date().toISOString(),
+                            wtn_recipient: wtnFields.recipientEmail,
+                            wtn_data: JSON.stringify(wtnFields),
+                          };
+                          if (wtnFields.recurringWtn && wtnFields.recurringWtnNextDate) {
+                            wtnSaveData.wtn_recurring = true;
+                            wtnSaveData.wtn_recurring_frequency = wtnFields.recurringWtnFrequency;
+                            wtnSaveData.wtn_recurring_next_date = wtnFields.recurringWtnNextDate;
+                          }
+                          await window.supabase.from('jobs').update(wtnSaveData).eq('id', job.id);
+
+                          setWtnSentOk(true);
+                          setTimeout(()=>setWtnSentOk(false), 4000);
+                          alert(`✅ WTN sent to ${wtnFields.recipientEmail}\n\nThe full WTN has been sent as an HTML email — it will display as a formatted document in their inbox.`);
+                        } catch(err) {
+                          console.error('WTN send error:', err);
+                          alert('Failed to send WTN.\n\nError: ' + (err.text || err.message || JSON.stringify(err)));
+                        } finally {
+                          setWtnSending(false);
+                        }
+                      };
+
+                      return (
+                        <div className="space-y-2 pt-2">
+                          <div className="flex gap-3">
+                            <button type="button" onClick={()=>{
+                              const w=window.open('','_blank');
+                              if(w){w.document.write(buildWtnHtml(wtnFields,job));w.document.close();}
+                            }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                              👁 Preview WTN
+                            </button>
+                            <button type="button"
+                              disabled={wtnSending || wtnTotalPct!==100}
+                              onClick={handleSendEmail}
+                              className={`flex-1 py-2 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-2 transition-colors ${
+                                wtnSentOk ? 'bg-green-500' :
+                                wtnSending ? 'bg-gray-400 cursor-not-allowed' :
+                                wtnTotalPct!==100 ? 'bg-gray-300 cursor-not-allowed' :
+                                'bg-green-600 hover:bg-green-700'
+                              }`}>
+                              {wtnSentOk ? '✅ Sent!' : wtnSending ? '⏳ Sending...' : '📧 Send WTN via Gmail'}
+                            </button>
+                          </div>
+                          <p className="text-xs text-gray-400 text-center">WTN details save automatically when you click <strong>Update Job</strong></p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 <div className="p-6 border-t border-gray-200 flex justify-end space-x-4">
                   <button
                     onClick={onClose}
@@ -3834,21 +5276,10 @@ jobs.forEach(job => {
                   <div>
   <div className="flex items-center gap-4">
     <h2 className="text-2xl font-bold text-gray-900">Job Management</h2>
-    <button
-      onClick={async () => {
-  try {
-    // Just call the refreshJobs function we created earlier
-    await refreshJobs();
-    alert(`Refreshed: ${jobs.length} jobs loaded`);
-  } catch (error) {
-    console.error('Error refreshing jobs:', error);
-    alert('Error refreshing jobs');
-  }
-}}
-      className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 flex items-center gap-2"
-    >
-      <span>↻</span> Refresh List
-    </button>
+    <span className="text-xs text-gray-400 flex items-center gap-1">
+      <span className="w-2 h-2 rounded-full bg-green-400 inline-block animate-pulse"></span>
+      Auto-refreshing every 30s
+    </span>
   </div>
                   <p className="text-gray-600">{filteredJobs.length} jobs found</p>
                 </div>
@@ -4246,6 +5677,52 @@ job.status.replace('_', ' ')}
          selectedJob.status}
       </span>
     </div>
+    {(selectedJob.isRecurring || selectedJob.is_recurring) && (
+      <div className="mt-3 pt-3 border-t border-gray-100">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-base">🔁</span>
+          <span className="text-sm font-semibold text-blue-700">Recurring Job</span>
+        </div>
+        <div className="bg-blue-50 rounded-lg p-3 space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Frequency:</span>
+            <span className="font-medium capitalize">{selectedJob.recurringFrequency || selectedJob.recurring_frequency || '—'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Started:</span>
+            <span className="font-medium">{selectedJob.recurringStartDate || selectedJob.recurring_start_date ? new Date(selectedJob.recurringStartDate || selectedJob.recurring_start_date).toLocaleDateString('en-GB') : '—'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Next job due:</span>
+            <span className="font-medium text-blue-700">
+              {(() => {
+                const start = selectedJob.recurringStartDate || selectedJob.recurring_start_date;
+                const freq = selectedJob.recurringFrequency || selectedJob.recurring_frequency || 'weekly';
+                if (!start) return '—';
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                let next = new Date(start);
+                next.setHours(0,0,0,0);
+                if (next >= today) return next.toLocaleDateString('en-GB');
+                while (next < today) {
+                  if (freq === 'daily') next.setDate(next.getDate() + 1);
+                  else if (freq === 'weekly') next.setDate(next.getDate() + 7);
+                  else if (freq === 'fortnightly') next.setDate(next.getDate() + 14);
+                  else if (freq === 'monthly') next.setMonth(next.getMonth() + 1);
+                }
+                return next.toLocaleDateString('en-GB');
+              })()}
+            </span>
+          </div>
+          {(selectedJob.recurringEndDate || selectedJob.recurring_end_date) && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Ends:</span>
+              <span className="font-medium">{new Date(selectedJob.recurringEndDate || selectedJob.recurring_end_date).toLocaleDateString('en-GB')}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
   </div>
 </div>
   </div>
@@ -5197,6 +6674,67 @@ console.log(JSON.stringify(invoiceData, null, 2));
         )}
       </div>
     </div>
+
+    {/* Recurring Job Info - shown only if this is a recurring job */}
+    {(job.isRecurring || job.is_recurring) && (
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-lg">🔁</span>
+          <h3 className="font-semibold text-blue-800">Recurring Job</h3>
+          <span className="ml-auto px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full capitalize">
+            {job.recurringFrequency || job.recurring_frequency || 'weekly'}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+          <div>
+            <span className="text-xs text-blue-600 block">Frequency</span>
+            <span className="font-semibold text-blue-900 capitalize">{job.recurringFrequency || job.recurring_frequency || '—'}</span>
+          </div>
+          <div>
+            <span className="text-xs text-blue-600 block">Started</span>
+            <span className="font-semibold text-blue-900">
+              {job.recurringStartDate || job.recurring_start_date
+                ? new Date(job.recurringStartDate || job.recurring_start_date).toLocaleDateString('en-GB')
+                : '—'}
+            </span>
+          </div>
+          <div>
+            <span className="text-xs text-blue-600 block">Next Due</span>
+            <span className="font-semibold text-blue-900">
+              {(() => {
+                const start = job.recurringStartDate || job.recurring_start_date;
+                const freq = job.recurringFrequency || job.recurring_frequency || 'weekly';
+                if (!start) return '—';
+                // Calculate the next occurrence after today
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                let next = new Date(start);
+                next.setHours(0,0,0,0);
+                // If start is in the future, that IS the next due
+                if (next >= today) return next.toLocaleDateString('en-GB');
+                // Otherwise advance until we're past today
+                while (next < today) {
+                  if (freq === 'daily') next.setDate(next.getDate() + 1);
+                  else if (freq === 'weekly') next.setDate(next.getDate() + 7);
+                  else if (freq === 'fortnightly') next.setDate(next.getDate() + 14);
+                  else if (freq === 'monthly') next.setMonth(next.getMonth() + 1);
+                }
+                return next.toLocaleDateString('en-GB');
+              })()}
+            </span>
+          </div>
+          {(job.recurringEndDate || job.recurring_end_date) && (
+            <div>
+              <span className="text-xs text-blue-600 block">Ends</span>
+              <span className="font-semibold text-blue-900">
+                {new Date(job.recurringEndDate || job.recurring_end_date).toLocaleDateString('en-GB')}
+              </span>
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-blue-600 mt-3">To edit the recurring schedule, open this job in the edit form and go to the 🔁 Recurring tab.</p>
+      </div>
+    )}
 
     {/* Products & Services - COMPACT & MOBILE FRIENDLY */}
     <div className="bg-white rounded-lg border border-gray-200 mt-4">
@@ -7574,6 +9112,9 @@ const handleApplySync = async () => {
           const [configSection, setConfigSection] = useState('general');
           const [companyName, setCompanyName] = useState('Total Waste Services');
           const [primaryColor, setPrimaryColor] = useState('#2563eb');
+          const [companyAddress, setCompanyAddress] = useState(localStorage.getItem('companyAddress') || '');
+          const [carrierReg, setCarrierReg] = useState(localStorage.getItem('carrierReg') || '');
+          const [portalUrlSetting, setPortalUrlSetting] = useState(localStorage.getItem('portalUrl') || 'https://portal.totalwasteservicesltd.com');
           const [editingJobType, setEditingJobType] = useState('');
           const [newType, setNewType] = useState('');
           const [logo, setLogo] = useState(localStorage.getItem('companyLogo') || '');
@@ -7611,6 +9152,15 @@ useEffect(() => {
             document.documentElement.style.setProperty('--primary-color', setting.setting_value);
           } else if (setting.setting_name === 'logo_url' && setting.setting_value) {
             setLogo(setting.setting_value);
+          } else if (setting.setting_name === 'company_address') {
+            setCompanyAddress(setting.setting_value);
+            localStorage.setItem('companyAddress', setting.setting_value);
+          } else if (setting.setting_name === 'carrier_reg') {
+            setCarrierReg(setting.setting_value);
+            localStorage.setItem('carrierReg', setting.setting_value);
+          } else if (setting.setting_name === 'portal_url') {
+            setPortalUrlSetting(setting.setting_value);
+            localStorage.setItem('portalUrl', setting.setting_value);
           }
              
 });
@@ -7888,25 +9438,26 @@ const loadUsers = async () => {
 
           const handleSaveSettings = async () => {
   try {
-    // Save all settings to Supabase
     const updates = [
   { setting_name: 'company_name', setting_value: companyName },
   { setting_name: 'primary_color', setting_value: primaryColor },
   { setting_name: 'logo_url', setting_value: logo },
+  { setting_name: 'company_address', setting_value: companyAddress },
+  { setting_name: 'carrier_reg', setting_value: carrierReg },
+  { setting_name: 'portal_url', setting_value: portalUrlSetting },
 ];
-    
     for (const update of updates) {
       await window.supabase
         .from('company_settings')
         .upsert(update, { onConflict: 'setting_name' });
     }
-    
-    // Also update localStorage for immediate effect
     localStorage.setItem('companyName', companyName);
     localStorage.setItem('primaryColor', primaryColor);
     localStorage.setItem('companyLogo', logo);
-    
-    alert('Settings saved successfully for all users!');
+    localStorage.setItem('companyAddress', companyAddress);
+    localStorage.setItem('carrierReg', carrierReg);
+    localStorage.setItem('portalUrl', portalUrlSetting);
+    alert('Settings saved successfully!');
   } catch (error) {
     console.error('Error saving settings:', error);
     alert('Error saving settings');
@@ -8044,6 +9595,34 @@ const loadUsers = async () => {
                               onChange={(e) => handleColorChange(e.target.value)}
                               className="w-full h-10 border border-gray-300 rounded-lg cursor-pointer"
                             />
+                          </div>
+                        </div>
+
+                        {/* WTN / Legal fields */}
+                        <div className="border border-green-200 bg-green-50 rounded-lg p-4 space-y-3">
+                          <h4 className="font-semibold text-green-800 text-sm">📄 Waste Transfer Note Settings</h4>
+                          <p className="text-xs text-green-700">These are pre-filled automatically on every WTN — set them once here.</p>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Company Address (for WTN Section C)</label>
+                            <input
+                              type="text"
+                              value={companyAddress}
+                              onChange={e => setCompanyAddress(e.target.value)}
+                              placeholder="e.g. Unit 1, Industrial Estate, Town, County, SN8 1AA"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">EA Waste Carrier Registration No. (CBDU...)</label>
+                            <input type="text" value={carrierReg} onChange={e => setCarrierReg(e.target.value)}
+                              placeholder="e.g. CBDU123456" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Customer Portal URL</label>
+                            <input type="url" value={portalUrlSetting} onChange={e => setPortalUrlSetting(e.target.value)}
+                              placeholder="https://portal.totalwasteservicesltd.com"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                            <p className="text-xs text-gray-400 mt-1">Used in credential emails sent to customers. Set to your live hosted URL.</p>
                           </div>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -8879,6 +10458,452 @@ const DocumentsView = ({ user }) => {
     </div>
   );
 };
+
+// ─── Customer Portal Admin View ────────────────────────────────────────────
+const CustomerPortalAdmin = ({ jobs, customers }) => {
+  const [credentials, setCredentials] = useState({}); // { customerName: { pin, passcode } }
+  const [portalPreviewCustomer, setPortalPreviewCustomer] = useState(null);
+  const [portalSearch, setPortalSearch] = useState('');
+  const [savedMsg, setSavedMsg] = useState('');
+  const [expandedPreviewId, setExpandedPreviewId] = useState(null);
+  const [emailOverrides, setEmailOverrides] = useState({}); // { customerName: emailString }
+
+  // Pre-fill with existing credentials from customer records
+  React.useEffect(() => {
+    const existing = {};
+    customers.forEach(c => {
+      const name = c.company_name || c.name;
+      if (c.portal_pin || c.portal_passcode) {
+        existing[name] = { pin: c.portal_pin || '', passcode: c.portal_passcode || '' };
+      }
+    });
+    setCredentials(existing);
+  }, [customers]);
+
+  const generateCredentials = (customerName) => {
+    const pin = String(Math.floor(1000 + Math.random() * 9000));
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    const passcode = Array.from({length: 8}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    setCredentials(prev => ({ ...prev, [customerName]: { pin, passcode } }));
+  };
+
+  const saveCredentials = async (customerName) => {
+    const creds = credentials[customerName];
+    if (!creds?.pin || !creds?.passcode) { alert('Generate credentials first.'); return; }
+    try {
+      const updateData = { portal_pin: creds.pin, portal_passcode: creds.passcode };
+      // Also save email override if set
+      const emailOverride = emailOverrides[customerName];
+      if (emailOverride) updateData.email = emailOverride;
+      const { error } = await window.supabase
+        .from('customers')
+        .update(updateData)
+        .eq('name', customerName);
+      if (error) throw error;
+      setSavedMsg(`✅ Credentials saved for ${customerName}`);
+      setTimeout(() => setSavedMsg(''), 3000);
+    } catch (err) {
+      alert('Error saving credentials: ' + err.message);
+    }
+  };
+
+  const saveEmailOnly = async (customerName, email) => {
+    try {
+      const { error } = await window.supabase
+        .from('customers')
+        .update({ email })
+        .eq('name', customerName);
+      if (error) throw error;
+      setSavedMsg(`✅ Email saved for ${customerName}`);
+      setTimeout(() => setSavedMsg(''), 2000);
+    } catch (err) {
+      console.error('Error saving email:', err);
+    }
+  };
+
+  const sendCredentialsByEmail = async (customerName, pin, passcode) => {
+    const cust = customers.find(c => (c.company_name || c.name || c.companyName) === customerName);
+    const email = cust?.email || '';
+    if (!email) { alert(`No email address for ${customerName}. Enter one in the Email field (click away to save) then try again.`); return; }
+    if (!pin || !passcode) { alert('Please generate and save credentials first.'); return; }
+    // Use configured portal URL from settings, or current location if hosted, or placeholder if local file
+    const isLocalFile = window.location.protocol === 'file:';
+    const configuredUrl = localStorage.getItem('portalUrl') || '';
+    const portalUrl = configuredUrl || (isLocalFile ? 'https://portal.totalwasteservicesltd.com' : window.location.origin + window.location.pathname);
+    const emailBody = `Dear ${customerName},
+
+Welcome to the Total Waste Services customer portal. You can now log in to view your jobs and download Waste Transfer Notes.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+YOUR PORTAL LOGIN CREDENTIALS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Portal URL:  ${portalUrl}
+PIN:         ${pin}
+Passcode:    ${passcode}
+
+To log in:
+1. Go to the portal URL above
+2. Click "Customer Portal"
+3. Enter your 4-digit PIN and passcode
+4. View your jobs and download Waste Transfer Notes
+
+Please keep these credentials safe. If you have any issues accessing the portal, please contact us at info@totalwasteservicesltd.com or call us directly.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Kind regards,
+Total Waste Services Ltd
+info@totalwasteservicesltd.com`;
+
+    try {
+      await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
+        wtn_number: 'Portal Access',
+        customer_name: customerName,
+        email: email,
+        name: customerName,
+        message: emailBody,
+      });
+      setSavedMsg(`✅ Credentials emailed to ${email}`);
+      setTimeout(() => setSavedMsg(''), 4000);
+    } catch(err) {
+      alert('Failed to send email: ' + (err.text || err.message || JSON.stringify(err)));
+    }
+  };
+
+  const copyToClipboard = (text) => { try { navigator.clipboard.writeText(text); } catch(e) {} };
+
+  // Portal preview for a specific customer
+  if (portalPreviewCustomer) {
+    const portalJobs = jobs.filter(j => j.customerName === portalPreviewCustomer);
+    const completed = portalJobs.filter(j => j.isCompleted || j.status === 'COLLECTED' || j.status === 'COMPLETED');
+    const inProgress = portalJobs.filter(j => !j.isCompleted && j.status !== 'COLLECTED' && !j.isCancelled);
+
+    const downloadWTN = (job) => {
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>WTN-${job.jobNumber}</title>
+<style>body{font-family:Arial,sans-serif;padding:32px;color:#1f2937;max-width:640px;margin:0 auto;}
+h1{color:#166534;}div.badge{display:inline-block;background:#dcfce7;color:#166534;padding:3px 12px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:16px;}
+.grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:16px;}
+.cell{padding:10px 14px;border-bottom:1px solid #f3f4f6;}.cell:nth-child(odd){border-right:1px solid #f3f4f6;}
+.lbl{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}.val{font-weight:600;font-size:13px;}
+.note{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;font-size:12px;color:#166534;}
+.ft{margin-top:16px;font-size:11px;color:#9ca3af;text-align:center;}
+@media print{body{padding:0;}}</style></head><body>
+<h1>🌿 Total Waste Services Ltd</h1>
+<div class="badge">WTN-${job.jobNumber}</div>
+<div class="grid">
+<div class="cell"><div class="lbl">Job Reference</div><div class="val">${job.jobNumber||'—'}</div></div>
+<div class="cell"><div class="lbl">Date</div><div class="val">${job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</div></div>
+<div class="cell"><div class="lbl">Customer</div><div class="val">${job.customerName||'—'}</div></div>
+<div class="cell"><div class="lbl">Status</div><div class="val">${job.status||'—'}</div></div>
+<div class="cell"><div class="lbl">Job Type</div><div class="val">${job.jobType||'—'}</div></div>
+<div class="cell"><div class="lbl">Waste Type</div><div class="val">${job.wasteType||'—'}</div></div>
+<div class="cell"><div class="lbl">Site Address</div><div class="val">${[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ')||'—'}</div></div>
+<div class="cell"><div class="lbl">Supplier</div><div class="val">${job.supplierName||'—'}</div></div>
+</div>
+<div class="note">✅ <strong>Legal Compliance:</strong> This Waste Transfer Note is issued under the Waste (England and Wales) Regulations 2011. Please retain for a minimum of 2 years.</div>
+<div class="ft">Total Waste Services Ltd • www.totalwasteservicesltd.com • ${new Date().toLocaleDateString('en-GB')} • <button onclick="window.print()" style="border:none;background:none;color:#2563eb;cursor:pointer;">🖨 Print / Save PDF</button></div>
+</body></html>`;
+      const w = window.open('', '_blank');
+      if (w) { w.document.write(html); w.document.close(); }
+    };
+
+    return (
+      <div>
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={() => setPortalPreviewCustomer(null)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+            ← Back to Portal Management
+          </button>
+          <h2 className="font-bold text-gray-800">Previewing portal for: <span className="text-blue-700">{portalPreviewCustomer}</span></h2>
+        </div>
+
+        <div className="bg-green-700 text-white px-6 py-4 rounded-xl mb-4 flex items-center gap-4">
+          {localStorage.getItem('companyLogo')
+            ? <img src={localStorage.getItem('companyLogo')} className="h-12 object-contain" alt="logo" />
+            : <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center"><LucideIcon icon="Recycle" size={18} className="text-green-700" /></div>}
+          <div>
+            <div className="font-bold">{localStorage.getItem('companyName') || 'Total Waste Services'} — Customer Portal</div>
+            <div className="text-green-200 text-xs">{portalPreviewCustomer}</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          {[
+            { label: 'Total Jobs', val: portalJobs.length, color: 'blue' },
+            { label: 'Completed', val: completed.length, color: 'green' },
+            { label: 'In Progress', val: inProgress.length, color: 'orange' },
+          ].map(({ label, val, color }) => (
+            <div key={label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+              <div className={`text-3xl font-bold text-${color}-600`}>{val}</div>
+              <div className="text-sm text-gray-500 mt-1">{label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-gray-50 px-4 py-3 border-b font-semibold text-gray-800 text-sm">Jobs (as customer sees it)</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <tr>
+                  <th className="px-4 py-3 text-left">Job #</th>
+                  <th className="px-4 py-3 text-left">Date</th>
+                  <th className="px-4 py-3 text-left">Service</th>
+                  <th className="px-4 py-3 text-left">Site</th>
+                  <th className="px-4 py-3 text-left">Price (ex VAT)</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left">Documents</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {portalJobs.length === 0 ? (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No jobs for this customer.</td></tr>
+                ) : portalJobs.map(job => {
+                  const done = job.isCompleted || job.status === 'COLLECTED' || job.status === 'COMPLETED';
+                  const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
+                  const isExpanded = expandedPreviewId === job.id;
+                  // Read price from line items first (where Sage prices live)
+                  const lineItems = (() => { try { return Array.isArray(job.lineItems) ? job.lineItems : (typeof job.lineItems === 'string' ? JSON.parse(job.lineItems) : []); } catch(e) { return []; } })();
+                  const lineItemsTotal = lineItems.reduce((sum, item) => {
+                    const rrp = parseFloat(item.customer_price || item.unit_price || 0);
+                    const qty = parseFloat(item.quantity || 1);
+                    return sum + (rrp * qty);
+                  }, 0);
+                  const finalPrice = parseFloat(job.customerFinalPrice) || 0;
+                  const unitPrice = parseFloat(job.customerUnitPrice) || 0;
+                  const jobQty = parseFloat(job.quantity) || 1;
+                  const jobValue = parseFloat(job.jobValue) || 0;
+                  const bestPrice = finalPrice > 0 ? finalPrice
+                    : lineItemsTotal > 0 ? lineItemsTotal
+                    : unitPrice > 0 ? unitPrice * jobQty
+                    : jobValue > 0 ? jobValue
+                    : null;
+                  const displayPrice = bestPrice != null ? `£${bestPrice.toFixed(2)}` : 'POA';
+                  const serviceDetail = job.wasteType || job.aggregateType || null;
+                  const qty = job.quantity ? `${job.quantity} ${job.unit || ''}`.trim() : null;
+                  return (
+                    <React.Fragment key={job.id}>
+                    <tr className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-50' : 'hover:bg-gray-50'}`}
+                      onClick={() => setExpandedPreviewId(isExpanded ? null : job.id)}>
+                      <td className="px-4 py-3 font-mono font-medium text-blue-700 text-xs">
+                        <span className={`text-gray-400 mr-1 inline-block transition-transform ${isExpanded?'rotate-90':''}`}>▶</span>{job.jobNumber}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</td>
+                      <td className="px-4 py-3 text-xs">
+                        <div className="font-medium">{job.jobType}</div>
+                        {serviceDetail && <div className="text-gray-400">{serviceDetail}</div>}
+                        {qty && <div className="text-gray-400">Qty: {qty}</div>}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ') || '—'}</td>
+                      <td className="px-4 py-3 font-medium text-xs">{displayPrice}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${done ? 'bg-green-100 text-green-700' : job.isCancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {done ? 'Completed' : job.isCancelled ? 'Cancelled' : 'In Progress'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        {done && isWasteJob && job.wtnSent
+                          ? <span className="text-green-700 font-medium">📄 Waste Transfer Note</span>
+                          : done && isWasteJob
+                          ? <span className="text-gray-400">WTN pending</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="bg-green-50">
+                        <td colSpan={7} className="px-8 py-4 border-t border-green-100">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
+                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Job Reference</div><div className="font-semibold">{job.jobNumber}</div></div>
+                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Service</div><div className="font-semibold">{job.jobType}</div></div>
+                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Status</div><div className="font-semibold">{done?'Completed':job.isCancelled?'Cancelled':'In Progress'}</div></div>
+                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Date</div><div className="font-semibold">{job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</div></div>
+                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Site</div><div className="font-semibold">{[job.siteAddress1, job.siteCity, job.sitePostcode].filter(Boolean).join(', ') || '—'}</div></div>
+                            {qty && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Quantity</div><div className="font-semibold">{qty}</div></div>}
+                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Price (ex VAT)</div><div className="font-semibold text-green-700">{displayPrice}</div></div>
+                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">VAT (20%)</div><div className="font-semibold">{bestPrice ? `£${(bestPrice*0.2).toFixed(2)}` : '—'}</div></div>
+                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Total (inc VAT)</div><div className="font-bold">{bestPrice ? `£${(bestPrice*1.2).toFixed(2)}` : '—'}</div></div>
+                            {lineItems.length > 0 && (
+                              <div className="col-span-2 sm:col-span-3">
+                                <div className="text-gray-400 uppercase tracking-wide mb-2">Products & Services</div>
+                                <table className="w-full text-xs border border-gray-200 rounded">
+                                  <thead className="bg-gray-50"><tr>
+                                    <th className="px-3 py-2 text-left text-gray-500">Product / Service</th>
+                                    <th className="px-3 py-2 text-right text-gray-500">Qty</th>
+                                    <th className="px-3 py-2 text-right text-gray-500">Unit Price</th>
+                                    <th className="px-3 py-2 text-right text-gray-500">Total</th>
+                                  </tr></thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {lineItems.map((item, i) => {
+                                      const rrp = parseFloat(item.customer_price || item.unit_price || 0);
+                                      const q = parseFloat(item.quantity || 1);
+                                      return <tr key={i}>
+                                        <td className="px-3 py-2 font-medium">{item.product_name || item.description || '—'}</td>
+                                        <td className="px-3 py-2 text-right text-gray-600">{q}</td>
+                                        <td className="px-3 py-2 text-right text-gray-600">£{rrp.toFixed(2)}</td>
+                                        <td className="px-3 py-2 text-right font-semibold">£{(rrp*q).toFixed(2)}</td>
+                                      </tr>;
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main admin management view ──
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Customer Portal Access</h2>
+            <p className="text-gray-500 text-sm mt-1">Generate a PIN and passcode for each customer. Share both with them to log in — no company name needed.</p>
+          </div>
+          {savedMsg && <div className="text-green-700 bg-green-50 border border-green-200 px-3 py-2 rounded-lg text-sm font-medium">{savedMsg}</div>}
+        </div>
+
+        <div className="mb-4">
+          <input type="text" placeholder="🔍 Search customers..." value={portalSearch}
+            onChange={e => setPortalSearch(e.target.value)}
+            className="w-full sm:w-80 px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+              <tr>
+                <th className="px-4 py-3 text-left">Customer</th>
+                <th className="px-4 py-3 text-left">Jobs</th>
+                <th className="px-4 py-3 text-left">Portal Email</th>
+                <th className="px-4 py-3 text-left">4-Digit PIN</th>
+                <th className="px-4 py-3 text-left">Passcode</th>
+                <th className="px-4 py-3 text-left">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {customers.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No customers found.</td></tr>
+              ) : customers.filter(c => {
+                const name = (c.companyName || c.name || c.company_name || '').toLowerCase();
+                return !portalSearch || name.includes(portalSearch.toLowerCase());
+              }).map(customer => {
+                const cName = customer.companyName || customer.name || customer.company_name;
+                const cJobs = jobs.filter(j => j.customerName === cName);
+                const creds = credentials[cName];
+                const hasExisting = customer.portal_pin && customer.portal_passcode;
+                return (
+                  <tr key={customer.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{cName}</td>
+                    <td className="px-4 py-3 text-gray-500">{cJobs.length}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="email"
+                          defaultValue={customer.email || ''}
+                          onBlur={async (e) => {
+                            const newEmail = e.target.value.trim();
+                            if (newEmail && newEmail !== customer.email) {
+                              try {
+                                await window.supabase.from('customers').update({ email: newEmail }).eq('name', cName);
+                                customer.email = newEmail; // update local ref
+                                setSavedMsg(`✅ Email saved for ${cName}`);
+                                setTimeout(() => setSavedMsg(''), 2000);
+                              } catch(err) { console.error('Email save error:', err); }
+                            }
+                          }}
+                          placeholder="customer@email.com"
+                          className="w-48 px-2 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {creds?.pin
+                        ? <span className="font-mono font-bold text-green-700 bg-green-50 px-3 py-1 rounded-lg border border-green-200 tracking-widest">{creds.pin}</span>
+                        : hasExisting
+                          ? <span className="font-mono text-gray-500 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200 tracking-widest">{customer.portal_pin}</span>
+                          : <span className="text-gray-400 text-xs italic">Not set</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {creds?.passcode
+                        ? <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-green-700 bg-green-50 px-3 py-1 rounded-lg border border-green-200">{creds.passcode}</span>
+                            <button onClick={() => copyToClipboard(creds.passcode)} className="text-gray-400 hover:text-gray-600 text-xs" title="Copy">📋</button>
+                          </div>
+                        : hasExisting
+                          ? <span className="font-mono text-gray-400 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200">••••••••</span>
+                          : <span className="text-gray-400 text-xs italic">Not set</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2 flex-wrap">
+                        <button onClick={() => generateCredentials(cName)}
+                          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
+                          {hasExisting || creds ? '🔄 Regenerate' : '✨ Generate'}
+                        </button>
+                        {creds && (
+                          <button onClick={() => saveCredentials(cName)}
+                            className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
+                            💾 Save
+                          </button>
+                        )}
+                        <button onClick={() => setPortalPreviewCustomer(cName)}
+                          className="px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-200">
+                          👁 Preview
+                        </button>
+                        {(creds || hasExisting) && (
+                          <button onClick={() => {
+                            const pin = creds?.pin || customer.portal_pin;
+                            const pass = creds?.passcode || '(see saved passcode)';
+                            copyToClipboard(`Your Total Waste Services portal credentials:\nPIN: ${pin}\nPasscode: ${pass}\nPortal: portal.totalwasteservicesltd.com`);
+                            setSavedMsg('✅ Credentials copied to clipboard');
+                            setTimeout(() => setSavedMsg(''), 3000);
+                          }} className="px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-200">
+                            📋 Copy
+                          </button>
+                        )}
+                        {(creds?.pin || customer.portal_pin) && (creds?.passcode || customer.portal_passcode) && (
+                          <button onClick={() => {
+                            const pin = creds?.pin || customer.portal_pin;
+                            const pass = creds?.passcode || customer.portal_passcode;
+                            sendCredentialsByEmail(cName, pin, pass);
+                          }} className="px-3 py-1.5 bg-green-50 text-green-700 border border-green-300 rounded-lg text-xs font-medium hover:bg-green-100">
+                            📧 Email Login
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-sm text-green-800 space-y-2">
+        <p className="font-semibold">ℹ️ How it works</p>
+        <p>1. Click <strong>Generate</strong> next to a customer to create a unique PIN and passcode.</p>
+        <p>2. Click <strong>Save</strong> to store them in Supabase.</p>
+        <p>3. Click <strong>📧 Email Login</strong> to send the credentials directly to the customer's email address via Gmail.</p>
+        <p>4. The customer goes to your portal, clicks <strong>Customer Portal</strong>, and enters their PIN and passcode — no company name needed.</p>
+        <p>5. They can view their jobs (customer price only, no cost prices) and download their Waste Transfer Notes.</p>
+      </div>
+    </div>
+  );
+};
+
         // Main Application
         const App = () => {
           // Load company settings on app start
@@ -8910,6 +10935,7 @@ useEffect(() => {
           const { user, logout } = useAuth();
           const [activeTab, setActiveTab] = useState('jobs');
           const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+          const [recurringNotifications, setRecurringNotifications] = useState([]);
           
           // State for data management
          const [jobs, setJobs] = useState([]);
@@ -9144,6 +11170,18 @@ collectionDate: job.collection_date,
   sageProductId: job.sage_product_id,
   sageProductName: job.sage_product_name,
   sageId: job.sage_id,
+  isRecurring: job.is_recurring || false,
+  recurringFrequency: job.recurring_frequency || null,
+  recurringStartDate: job.recurring_start_date || null,
+  recurringEndDate: job.recurring_end_date || null,
+  recurringNextDate: job.recurring_next_date || null,
+  wtnData: job.wtn_data ? (() => { try { return JSON.parse(job.wtn_data); } catch(e) { return null; } })() : null,
+  wtnSent: job.wtn_sent || false,
+  wtnSentAt: job.wtn_sent_at || null,
+  wtnRecipient: job.wtn_recipient || null,
+  wtnRecurring: job.wtn_recurring || false,
+  wtnRecurringFrequency: job.wtn_recurring_frequency || null,
+  wtnRecurringNextDate: job.wtn_recurring_next_date || null,
   //sageLineItems: job.sage_line_items || [],
   lineItems: (() => {
   try {
@@ -9241,6 +11279,11 @@ const refreshJobs = async () => {
                 description: job.description,
                 product_service: job.sage_product_name || job.description || '',
                 sageLineItems: job.sage_line_items || [],
+                isRecurring: job.is_recurring || false,
+                recurringFrequency: job.recurring_frequency || null,
+                recurringStartDate: job.recurring_start_date || null,
+                recurringEndDate: job.recurring_end_date || null,
+                recurringNextDate: job.recurring_next_date || null,
                 lineItems: (() => {
     try {
         if (job.sage_line_items) {
@@ -9286,6 +11329,150 @@ const refreshJobs = async () => {
 // Make it globally accessible
 window.refreshJobs = refreshJobs;
   loadJobsFromSupabase();
+
+  // ── Recurring job checker ──────────────────────────────────────────────
+  // Runs once on app load. Finds recurring jobs whose next date is today or past,
+  // creates the new job copy, advances the next-due date, and shows a notification.
+  const checkRecurringJobs = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data: recurringJobs, error } = await window.supabase
+        .from('jobs')
+        .select('*')
+        .eq('is_recurring', true)
+        .lte('recurring_next_date', today)
+        .eq('is_cancelled', false);
+
+      if (error || !recurringJobs || recurringJobs.length === 0) return;
+
+      for (const rj of recurringJobs) {
+        // Check end date
+        if (rj.recurring_end_date && rj.recurring_next_date > rj.recurring_end_date) continue;
+
+        // Calculate the NEXT occurrence after creating this one
+        const nextDate = new Date(rj.recurring_next_date);
+        const freq = rj.recurring_frequency || 'weekly';
+        if (freq === 'daily') nextDate.setDate(nextDate.getDate() + 1);
+        else if (freq === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+        else if (freq === 'fortnightly') nextDate.setDate(nextDate.getDate() + 14);
+        else if (freq === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+        const nextDateStr = nextDate.toISOString().split('T')[0];
+
+        // Generate new job number
+        const currentYear = new Date().getFullYear();
+        const { data: allJobs } = await window.supabase.from('jobs').select('job_number').like('job_number', `TWS-${currentYear}-%`);
+        const lastNum = allJobs && allJobs.length > 0
+          ? Math.max(...allJobs.map(j => parseInt((j.job_number || '').split('-')[2]) || 0))
+          : 0;
+        const newJobNumber = `TWS-${currentYear}-${String(lastNum + 1).padStart(4, '0')}`;
+
+        // Create the new job as a copy
+        const newJob = {
+          job_number: newJobNumber,
+          customer_name: rj.customer_name,
+          customer_po: rj.customer_po,
+          supplier_name: rj.supplier_name,
+          supplier_ref: rj.supplier_ref,
+          haulier_name: rj.haulier_name,
+          job_type: rj.job_type,
+          waste_type: rj.waste_type,
+          skip_size: rj.skip_size,
+          quantity: rj.quantity,
+          unit: rj.unit,
+          customer_unit_price: rj.customer_unit_price,
+          customer_final_price: rj.customer_final_price,
+          supplier_unit_price: rj.supplier_unit_price,
+          supplier_final_price: rj.supplier_final_price,
+          vat_rate: rj.vat_rate,
+          site_address1: rj.site_address1,
+          site_address2: rj.site_address2,
+          site_city: rj.site_city,
+          site_postcode: rj.site_postcode,
+          site_contact: rj.site_contact,
+          site_phone: rj.site_phone,
+          site_notes: rj.site_notes,
+          delivery_instructions: rj.delivery_instructions,
+          notes: `Auto-created recurring job (${freq}) from ${rj.job_number}`,
+          status: 'CONFIRMED',
+          is_completed: false,
+          is_cancelled: false,
+          is_recurring: false, // the copy itself is not recurring
+          job_date: rj.recurring_next_date,
+          sage_line_items: rj.sage_line_items,
+          parent_job_id: rj.id,
+        };
+
+        const { error: insertError } = await window.supabase.from('jobs').insert([newJob]);
+        if (insertError) { console.error('Error creating recurring job:', insertError); continue; }
+
+        // Advance the next-due date on the template job
+        await window.supabase.from('jobs').update({ recurring_next_date: nextDateStr }).eq('id', rj.id);
+
+        const msg = `🔁 Recurring job created: ${newJobNumber} for ${rj.customer_name} (${freq} — due ${new Date(rj.recurring_next_date).toLocaleDateString('en-GB')})`;
+        setRecurringNotifications(prev => [...prev, msg]);
+      }
+
+      // Reload jobs to show the new ones
+      await loadJobsFromSupabase();
+    } catch (err) {
+      console.error('Recurring job checker error:', err);
+    }
+  };
+
+  checkRecurringJobs();
+
+  // Recurring WTN checker — inline so it's in scope
+  const checkRecurringWtnsInline = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data: dueJobs, error } = await window.supabase
+        .from('jobs')
+        .select('*')
+        .eq('wtn_recurring', true)
+        .lte('wtn_recurring_next_date', today);
+
+      if (error || !dueJobs || dueJobs.length === 0) return;
+
+      for (const rj of dueJobs) {
+        if (!rj.wtn_recipient) continue;
+        const body = `Dear Customer,\n\nYour scheduled Waste Transfer Note for job ${rj.job_number} is due.\n\nJob Reference: ${rj.job_number}\nCustomer: ${rj.customer_name}\nJob Type: ${rj.job_type}\nSite: ${[rj.site_address1, rj.site_postcode].filter(Boolean).join(', ')}\n\nThis WTN is issued under the Environmental Protection Act 1990 s.34 and the Waste (England & Wales) Regulations 2011. Please retain for a minimum of 2 years.\n\nKind regards,\nTotal Waste Services Ltd\ninfo@totalwasteservicesltd.com`;
+
+        try {
+          await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
+            wtn_number: `WTN-${rj.job_number}-RECURRING`,
+            customer_name: rj.customer_name,
+            email: rj.wtn_recipient,
+            name: rj.customer_name,
+            message: body,
+          });
+          const nextDate = new Date(rj.wtn_recurring_next_date);
+          if (rj.wtn_recurring_frequency === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+          else nextDate.setFullYear(nextDate.getFullYear() + 1);
+          await window.supabase.from('jobs').update({
+            wtn_recurring_next_date: nextDate.toISOString().split('T')[0],
+            wtn_sent_at: new Date().toISOString(),
+          }).eq('id', rj.id);
+          setRecurringNotifications(prev => [...prev, `📄 Recurring WTN sent to ${rj.customer_name} (${rj.job_number}) — next due ${nextDate.toLocaleDateString('en-GB')}`]);
+        } catch(emailErr) {
+          console.error('Recurring WTN send failed:', rj.job_number, emailErr);
+        }
+      }
+    } catch (err) {
+      console.error('Recurring WTN checker error:', err);
+    }
+  };
+  checkRecurringWtnsInline();
+
+  // Auto-refresh jobs every 30 seconds in the background
+  const autoRefreshInterval = setInterval(async () => {
+    try {
+      await refreshJobs();
+    } catch(e) {
+      // Silent fail — don't disrupt the user
+    }
+  }, 30000);
+
+  return () => clearInterval(autoRefreshInterval);
 }, []);
           const [quotes, setQuotes] = useState([]);
           // Load quotes from Supabase when app starts
@@ -9377,6 +11564,7 @@ notes: quote.notes,
             { id: 'quotes', name: 'Quotes', icon: 'FileText' },
             { id: 'dashboard', name: 'Dashboard', icon: 'BarChart3' },
             { id: 'documents', name: 'Documents', icon: 'FileText' },
+            { id: 'portal', name: 'Customer Portal', icon: 'Users' },
             ...(user.role === 'ADMIN' ? [{ id: 'admin', name: 'Admin', icon: 'Settings' }] : [])
           ];
 
@@ -9443,7 +11631,14 @@ notes: quote.notes,
       linked_jobs: JSON.stringify(newJob.linkedJobs || []),
       notes: newJob.notes || null,
       sage_product_data: newJob.sage_product_data || null,
-      sage_line_items: newJob.sage_line_items || null
+      // Recurring job fields
+      is_recurring: newJob.isRecurring || false,
+      recurring_frequency: newJob.recurringFrequency || null,
+      recurring_start_date: newJob.recurringStartDate || null,
+      recurring_end_date: newJob.recurringEndDate || null,
+      recurring_next_date: newJob.isRecurring ? (newJob.recurringStartDate || null) : null,
+      sage_line_items: newJob.sage_line_items || null,
+      wtn_data: newJob.wtnData ? JSON.stringify(newJob.wtnData) : null,
     };
 
     // Remove id field if invalid
@@ -9525,7 +11720,19 @@ collection_date: updatedJob.collectionDate || null,
       collection_date: updatedJob.collectionDate || null,
       sage_si_number: updatedJob.sage_si_number,  // ADD THIS LINE
       sage_line_items: updatedJob.lineItems ? JSON.stringify(updatedJob.lineItems) : null,
-  sage_invoice_id: updatedJob.sage_invoice_id
+      sage_invoice_id: updatedJob.sage_invoice_id,
+      is_recurring: updatedJob.isRecurring || false,
+      recurring_frequency: updatedJob.recurringFrequency || null,
+      recurring_start_date: updatedJob.recurringStartDate || null,
+      recurring_end_date: updatedJob.recurringEndDate || null,
+      recurring_next_date: updatedJob.isRecurring ? (updatedJob.recurringNextDate || updatedJob.recurringStartDate || null) : null,
+      // WTN fields — persist so they survive reload
+      wtn_sent: updatedJob.wtnSent || false,
+      wtn_sent_at: updatedJob.wtnSentAt || null,
+      wtn_recipient: updatedJob.wtnRecipient || null,
+      wtn_recurring: updatedJob.wtnRecurring || false,
+      wtn_recurring_frequency: updatedJob.wtnRecurringFrequency || null,
+      wtn_recurring_next_date: updatedJob.wtnRecurringNextDate || null,
     };
 
     const { error } = await window.supabase
@@ -9535,11 +11742,59 @@ collection_date: updatedJob.collectionDate || null,
 
     if (error) throw error;
 
-    setJobs(jobs.map(job => job.id === updatedJob.id ? updatedJob : job));
-    setEditingJob(updatedJob);  // Update with new data
-setShowJobForm(false);
-setShowFullPageJob(updatedJob);
-alert('Job updated successfully!');
+    // Re-fetch the updated job from Supabase so local state matches DB exactly
+    const { data: freshJob, error: fetchError } = await window.supabase
+      .from('jobs')
+      .select('*')
+      .eq('id', updatedJob.id)
+      .single();
+
+    if (!fetchError && freshJob) {
+      // Map snake_case back to camelCase (same mapping as loadJobsFromSupabase)
+      const mappedJob = {
+        ...updatedJob,
+        id: freshJob.id,
+        jobNumber: freshJob.job_number,
+        customerName: freshJob.customer_name,
+        supplierName: freshJob.supplier_name,
+        jobType: freshJob.job_type,
+        status: freshJob.status,
+        isCompleted: freshJob.is_completed,
+        isCancelled: freshJob.is_cancelled,
+        isRecurring: freshJob.is_recurring,
+        recurringFrequency: freshJob.recurring_frequency,
+        recurringStartDate: freshJob.recurring_start_date,
+        recurringEndDate: freshJob.recurring_end_date,
+        recurringNextDate: freshJob.recurring_next_date,
+        wtnSent: freshJob.wtn_sent,
+        wtnSentAt: freshJob.wtn_sent_at,
+        wtnRecipient: freshJob.wtn_recipient,
+        wtnRecurring: freshJob.wtn_recurring,
+        wtnRecurringFrequency: freshJob.wtn_recurring_frequency,
+        wtnRecurringNextDate: freshJob.wtn_recurring_next_date,
+        siteAddress1: freshJob.site_address1,
+        siteAddress2: freshJob.site_address2,
+        siteCity: freshJob.site_city,
+        sitePostcode: freshJob.site_postcode,
+        siteContact: freshJob.site_contact,
+        sitePhone: freshJob.site_phone,
+        deliveryDate: freshJob.delivery_date,
+        collectionDate: freshJob.collection_date,
+        jobDate: freshJob.job_date,
+        notes: freshJob.notes,
+        lineItems: freshJob.line_items ? (typeof freshJob.line_items === 'string' ? JSON.parse(freshJob.line_items) : freshJob.line_items) : [],
+      };
+      setJobs(jobs.map(job => job.id === updatedJob.id ? mappedJob : job));
+      setEditingJob(mappedJob);
+      setShowJobForm(false);
+      setShowFullPageJob(mappedJob);
+    } else {
+      setJobs(jobs.map(job => job.id === updatedJob.id ? updatedJob : job));
+      setEditingJob(updatedJob);
+      setShowJobForm(false);
+      setShowFullPageJob(updatedJob);
+    }
+    alert('Job updated successfully!');
   } catch (error) {
     console.error('Error updating job:', error);
     alert('Error updating job: ' + error.message);
@@ -9547,10 +11802,9 @@ alert('Job updated successfully!');
 };
 const handleCompleteJob = async (job) => {
   try {
-    // Always set status to COMPLETED for all job types
     const updateData = {
       is_completed: true,
-      status: 'COMPLETED'  // Changed this - no longer setting Skip Hire to COLLECTED
+      status: 'COMPLETED'
     };
     
     const { error } = await window.supabase
@@ -9560,28 +11814,62 @@ const handleCompleteJob = async (job) => {
     
     if (error) throw error;
     
-    // Update local state with camelCase
     const updatedJob = {
       ...job,
       isCompleted: true,
       is_completed: true,
-      status: 'COMPLETED'  // Always COMPLETED
+      status: 'COMPLETED'
     };
     
     setJobs(jobs.map(j => j.id === job.id ? updatedJob : j));
-    
-    // Force update the full page view
-    if (setShowFullPageJob) {
-      setShowFullPageJob(updatedJob);
+    if (setShowFullPageJob) setShowFullPageJob(updatedJob);
+
+    // Check if parent job has per-job recurring WTN enabled
+    if (job.parentJobId || job.parent_job_id) {
+      const parentId = job.parentJobId || job.parent_job_id;
+      const { data: parentJob } = await window.supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', parentId)
+        .single();
+
+      if (parentJob?.wtn_recurring && parentJob?.wtn_recurring_frequency === 'per-job' && parentJob?.wtn_recipient) {
+        const body = `Dear ${job.customerName || parentJob.customer_name},\n\nYour recurring job ${job.jobNumber} has been completed. Please find your Waste Transfer Note details below.\n\nJob Reference: ${job.jobNumber}\nCustomer: ${job.customerName || parentJob.customer_name}\nJob Type: ${job.jobType || parentJob.job_type}\nSite: ${[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ')}\nCompleted: ${new Date().toLocaleDateString('en-GB')}\n\nPlease retain this for a minimum of 2 years under the Environmental Protection Act 1990 s.34 and the Waste (England & Wales) Regulations 2011.\n\nKind regards,\nTotal Waste Services Ltd\ninfo@totalwasteservicesltd.com`;
+        try {
+          await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
+            wtn_number: `WTN-${job.jobNumber}`,
+            customer_name: job.customerName || parentJob.customer_name,
+            email: parentJob.wtn_recipient,
+            name: job.customerName || parentJob.customer_name,
+            message: body,
+          });
+          setRecurringNotifications(prev => [...prev, `📄 WTN auto-sent to ${job.customerName} on completion of ${job.jobNumber}`]);
+        } catch(e) { console.error('Per-job completion WTN failed:', e); }
+      }
+    }
+
+    // For waste jobs, prompt to send WTN
+    const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
+    if (isWasteJob) {
+      const sendNow = window.confirm(
+        `✅ Job ${job.jobNumber} marked as completed!\n\n📄 Would you like to send a Waste Transfer Note to ${job.customerName} now?\n\nClick OK to open the WTN tab, or Cancel to skip.`
+      );
+      if (sendNow) {
+        setEditingJob(updatedJob);
+        setShowJobForm(true);
+        setTimeout(() => {
+          const wtnTabBtn = document.querySelector('[data-tab="wtn"]');
+          if (wtnTabBtn) wtnTabBtn.click();
+        }, 400);
+      }
+    } else {
+      alert('Job marked as completed!');
     }
     
-    alert('Job marked as completed!');
-    
-    // Reload the page data to ensure sync
- } catch (error) {
-console.error('Error completing job:', error);
-alert('Error completing job: ' + error.message);
- }
+  } catch (error) {
+    console.error('Error completing job:', error);
+    alert('Error completing job: ' + error.message);
+  }
 };
 const handleDeleteAttachment = async (attachment) => {
   if (!confirm(`Are you sure you want to delete ${attachment.file_name}?`)) return;
@@ -10187,28 +12475,56 @@ siteNotes: job.site_notes || job.siteNotes || '',
 };
 
 const saveSupplierToDatabase = async (supplier) => {
- // Map to correct database field names
-const supplierData = {
-  name: supplier.companyName || 'Unknown Supplier',
-  sage_id: supplier.sage_id || supplier.id,
-  email: supplier.email || '',
-  phone: supplier.phone || '',
-  vat_number: supplier.vatNumber || '',
-  address: supplier.address || ''
-};
+  const supplierData = {
+    name: supplier.companyName || supplier.name || 'Unknown Supplier',
+    sage_id: supplier.sage_id || supplier.id,
+    email: supplier.email || '',
+    phone: supplier.phone || '',
+    vat_number: supplier.vatNumber || '',
+    address: supplier.address || '',
+    city: supplier.city || '',
+    postcode: supplier.postcode || '',
+    county: supplier.county || '',
+    waste_carrier_license: supplier.wasteCarrierLicense || '',
+    primary_contact: supplier.primaryContact || '',
+    notes: supplier.notes || '',
+  };
 
-const { error } = await window.supabase
-  .from('suppliers')
-  .insert([supplierData]);
-  
+  const { error } = await window.supabase
+    .from('suppliers')
+    .insert([supplierData]);
+    
   if (error) {
     console.error('Error saving supplier:', error);
     throw error;
   }
 };
 
-          const handleUpdateSupplier = (updatedSupplier) => {
-            setSuppliers(suppliers.map(supplier => supplier.id === updatedSupplier.id ? updatedSupplier : supplier));
+          const handleUpdateSupplier = async (updatedSupplier) => {
+            try {
+              const supplierData = {
+                name: updatedSupplier.companyName || updatedSupplier.name || 'Unknown Supplier',
+                email: updatedSupplier.email || '',
+                phone: updatedSupplier.phone || '',
+                vat_number: updatedSupplier.vatNumber || '',
+                address: updatedSupplier.address || '',
+                city: updatedSupplier.city || '',
+                postcode: updatedSupplier.postcode || '',
+                county: updatedSupplier.county || '',
+                waste_carrier_license: updatedSupplier.wasteCarrierLicense || '',
+                primary_contact: updatedSupplier.primaryContact || '',
+                notes: updatedSupplier.notes || '',
+              };
+              const { error } = await window.supabase
+                .from('suppliers')
+                .update(supplierData)
+                .eq('id', updatedSupplier.id);
+              if (error) throw error;
+              setSuppliers(suppliers.map(s => s.id === updatedSupplier.id ? {...s, ...updatedSupplier} : s));
+            } catch(err) {
+              console.error('Error updating supplier:', err);
+              alert('Error saving supplier: ' + err.message);
+            }
           };
 
           const handleDeleteSupplier = (supplierId) => {
@@ -10834,6 +13150,18 @@ onClick={() => {
     </div>
   )}
 </div>
+{/* Recurring job notifications */}
+{recurringNotifications.length > 0 && (
+  <div className="mx-4 mt-4 space-y-2">
+    {recurringNotifications.map((msg, i) => (
+      <div key={i} className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
+        <span>{msg}</span>
+        <button onClick={() => setRecurringNotifications(prev => prev.filter((_, j) => j !== i))} className="ml-4 text-blue-400 hover:text-blue-600 font-bold text-lg leading-none">×</button>
+      </div>
+    ))}
+  </div>
+)}
+
 {/* Full Page Job View - Add this BEFORE the tab content */}
 {showFullPageJob && (
   <FullPageJobView 
@@ -10997,6 +13325,7 @@ await handleAddJob(exchangeJob);
   />
 )}
                 {activeTab === 'admin' && <AdminPanel user={user} />}
+                {activeTab === 'portal' && <CustomerPortalAdmin jobs={jobs} customers={customers} />}
               </div>
 
               {/* Forms */}
