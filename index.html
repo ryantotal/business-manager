@@ -12159,6 +12159,7 @@ const handleCompleteJob = async (job) => {
     if (setShowFullPageJob) setShowFullPageJob(updatedJob);
 
     // Check if parent job has per-job recurring WTN enabled
+    let parentJobData = null;
     if (job.parentJobId || job.parent_job_id) {
       const parentId = job.parentJobId || job.parent_job_id;
       const { data: parentJob } = await window.supabase
@@ -12166,29 +12167,63 @@ const handleCompleteJob = async (job) => {
         .select('*')
         .eq('id', parentId)
         .single();
+      parentJobData = parentJob;
 
       // Only trigger per-job WTN from the PARENT job's settings, never the child's own fields
       // This prevents duplicates and ensures the schedule is managed in one place
-      if (parentJob?.wtn_recurring && parentJob?.wtn_recurring_frequency === 'per-job' && parentJob?.wtn_recipient) {
-        const customerName = job.customerName || parentJob.customer_name;
-        const recipient = parentJob.wtn_recipient;
-        const body = `Dear ${customerName},\n\nYour job ${job.jobNumber} has been completed. Please find your Waste Transfer Note details below.\n\nJob Reference: ${job.jobNumber}\nCustomer: ${customerName}\nJob Type: ${job.jobType || parentJob.job_type}\nSite: ${[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ')}\nCompleted: ${new Date().toLocaleDateString('en-GB')}\n\nPlease retain this for a minimum of 2 years under the Environmental Protection Act 1990 s.34 and the Waste (England & Wales) Regulations 2011.\n\nKind regards,\nTotal Waste Services Ltd\ninfo@totalwasteservicesltd.com`;
+      if (parentJobData?.wtn_recurring && parentJobData?.wtn_recurring_frequency === 'per-job' && parentJobData?.wtn_recipient) {
+        const customerName = job.customerName || parentJobData.customer_name;
+        const recipient = parentJobData.wtn_recipient;
         try {
+          const parentWtnData = parentJobData.wtn_data
+            ? (typeof parentJobData.wtn_data === 'string' ? JSON.parse(parentJobData.wtn_data) : parentJobData.wtn_data)
+            : {};
+          const wtnFields = {
+            ...parentWtnData,
+            // Update job-specific fields for this completion
+            wtnNumber: `WTN-${job.jobNumber || job.job_number}`,
+            transferDate: new Date().toISOString().split('T')[0],
+            transferTime: new Date().toTimeString().slice(0,5),
+            transferorName: customerName,
+            transferorAddress: [job.siteAddress1 || job.site_address1, job.siteAddress2 || job.site_address2, job.siteCity || job.site_city, job.sitePostcode || job.site_postcode].filter(Boolean).join(', '),
+            transferAddress: [job.siteAddress1 || job.site_address1, job.siteCity || job.site_city, job.sitePostcode || job.site_postcode].filter(Boolean).join(', '),
+            recipientEmail: recipient,
+            // Keep all other fields (EWC, CBDU, recycling %, carrier details) from parent template
+          };
+
+          const htmlBody = buildWtnHtml(wtnFields, {
+            jobNumber: job.jobNumber || job.job_number,
+            customerName,
+            jobType: job.jobType || job.job_type,
+            siteAddress1: job.siteAddress1 || job.site_address1,
+            sitePostcode: job.sitePostcode || job.site_postcode,
+          });
+
           await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
-            wtn_number: `WTN-${job.jobNumber}`,
+            wtn_number: wtnFields.wtnNumber,
             customer_name: customerName,
             email: recipient,
             name: customerName,
-            message: body,
+            message: htmlBody,
           });
-          setRecurringNotifications(prev => [...prev, `📄 WTN auto-sent to ${customerName} on completion of ${job.jobNumber}`]);
+
+          // Mark this job as WTN sent in Supabase
+          await window.supabase.from('jobs').update({
+            wtn_sent: true,
+            wtn_sent_at: new Date().toISOString(),
+            wtn_recipient: recipient,
+            wtn_data: JSON.stringify(wtnFields),
+          }).eq('id', job.id);
+
+          setRecurringNotifications(prev => [...prev, `📄 Full WTN auto-sent to ${recipient} on completion of ${job.jobNumber}`]);
         } catch(e) { console.error('Per-job completion WTN failed:', e); }
       }
     }
 
-    // For waste jobs, prompt to send WTN
+    // For waste jobs, prompt to send WTN — but only if auto-send didn't already handle it
     const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
-    if (isWasteJob) {
+    const autoWtnFired = (job.parentJobId || job.parent_job_id) && parentJobData?.wtn_recurring && parentJobData?.wtn_recurring_frequency === 'per-job';
+    if (isWasteJob && !autoWtnFired) {
       const sendNow = window.confirm(
         `✅ Job ${job.jobNumber} marked as completed!\n\n📄 Would you like to send a Waste Transfer Note to ${job.customerName} now?\n\nClick OK to open the WTN tab, or Cancel to skip.`
       );
