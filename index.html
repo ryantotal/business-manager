@@ -6275,7 +6275,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
-const FullPageJobView = ({ job, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user, onUpdateDisplay,setDeleteConfirmation }) => {
+const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user, onUpdateDisplay,setDeleteConfirmation }) => {
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
@@ -6920,7 +6920,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                     <h3 className="font-semibold text-orange-900 mb-2">Exchange Information</h3>
                     <p className="text-orange-700">This is an exchange job from: <span className="font-semibold">
-                      {(() => { const parent = jobs.find(j => j.id === job.parentJobId); return parent?.jobNumber || parent?.job_number || job.parentJobId; })()}
+                      {(() => { const parent = (jobs||[]).find(j => j.id === job.parentJobId); return parent?.jobNumber || parent?.job_number || job.parentJobId; })()}
                     </span></p>
                   </div>
                 )}
@@ -6930,7 +6930,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                     <h3 className="font-semibold text-blue-900 mb-2">Linked Jobs</h3>
                     <div className="flex flex-wrap gap-2">
                       {job.linkedJobs.map(jobId => {
-                        const linked = jobs.find(j => j.id === jobId);
+                        const linked = (jobs||[]).find(j => j.id === jobId);
                         return (
                           <span key={jobId} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                             {linked?.jobNumber || linked?.job_number || jobId}
@@ -11436,9 +11436,24 @@ window.refreshJobs = refreshJobs;
         else if (freq === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
         const nextDateStr = nextDate.toISOString().split('T')[0];
 
-        // Generate new job number using same RPC as main form
-        const { data: jobNumData, error: jobNumError } = await window.supabase.rpc('get_next_job_number');
-        const newJobNumber = jobNumError ? `TWS-${Date.now()}` : jobNumData;
+        // Generate new job number - try RPC first, fall back to query
+        let newJobNumber;
+        try {
+          const { data: jobNumData, error: jobNumError } = await window.supabase.rpc('get_next_job_number');
+          if (!jobNumError && jobNumData) {
+            newJobNumber = jobNumData;
+          } else {
+            throw new Error('RPC failed');
+          }
+        } catch(e) {
+          // Fallback: find highest TWS number and increment
+          const { data: allJobs } = await window.supabase.from('jobs').select('job_number');
+          const maxNum = allJobs ? Math.max(...allJobs.map(j => {
+            const parts = (j.job_number || '').split('-');
+            return parseInt(parts[parts.length - 1]) || 0;
+          })) : 1000;
+          newJobNumber = `TWS-${maxNum + 1}`;
+        }
 
         // Create the new job as a complete copy of the parent
         const newJob = {
@@ -11813,8 +11828,9 @@ collection_date: updatedJob.collectionDate || null,
       invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
       payment_status: updatedJob.paymentStatus || 'Not Paid',
       collection_date: updatedJob.collectionDate || null,
-      sage_si_number: updatedJob.sage_si_number,  // ADD THIS LINE
+      sage_si_number: updatedJob.sage_si_number,
       sage_line_items: updatedJob.lineItems ? JSON.stringify(updatedJob.lineItems) : null,
+      line_items: updatedJob.lineItems ? JSON.stringify(updatedJob.lineItems) : null,
       sage_invoice_id: updatedJob.sage_invoice_id,
       is_recurring: updatedJob.isRecurring || false,
       recurring_frequency: updatedJob.recurringFrequency || null,
@@ -11877,17 +11893,42 @@ collection_date: updatedJob.collectionDate || null,
         collectionDate: freshJob.collection_date,
         jobDate: freshJob.job_date,
         notes: freshJob.notes,
-        lineItems: freshJob.line_items ? (typeof freshJob.line_items === 'string' ? JSON.parse(freshJob.line_items) : freshJob.line_items) : [],
+        quantity: freshJob.quantity,
+        unit: freshJob.unit,
+        skipSize: freshJob.skip_size,
+        wasteType: freshJob.waste_type,
+        aggregateType: freshJob.aggregate_type,
+        customerFinalPrice: freshJob.customer_final_price,
+        customerUnitPrice: freshJob.customer_unit_price,
+        supplierFinalPrice: freshJob.supplier_final_price,
+        supplierUnitPrice: freshJob.supplier_unit_price,
+        grossProfit: freshJob.gross_profit,
+        jobValue: freshJob.job_value,
+        sage_line_items: freshJob.sage_line_items,
+        lineItems: (() => {
+          try {
+            const raw = freshJob.sage_line_items || freshJob.line_items;
+            if (!raw) return updatedJob.lineItems || [];
+            const items = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            return items.map(item => ({
+              ...item,
+              product_name: item.product_name || item.description || ''
+            }));
+          } catch(e) { return updatedJob.lineItems || []; }
+        })(),
       };
       setJobs(jobs.map(job => job.id === updatedJob.id ? mappedJob : job));
       setEditingJob(mappedJob);
       setShowJobForm(false);
       setShowFullPageJob(mappedJob);
+      // Also reload all jobs to ensure everything is fresh
+      setTimeout(() => loadJobsFromSupabase(), 300);
     } else {
       setJobs(jobs.map(job => job.id === updatedJob.id ? updatedJob : job));
       setEditingJob(updatedJob);
       setShowJobForm(false);
       setShowFullPageJob(updatedJob);
+      setTimeout(() => loadJobsFromSupabase(), 300);
     }
     alert('Job updated successfully!');
   } catch (error) {
@@ -13261,6 +13302,7 @@ onClick={() => {
 {showFullPageJob && (
   <FullPageJobView 
     job={showFullPageJob}
+    jobs={jobs}
     onClose={() => setShowFullPageJob(null)}
     onUpdateDisplay={setShowFullPageJob}
     onEdit={handleEditJob}
