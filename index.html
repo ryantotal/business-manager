@@ -1404,7 +1404,7 @@ const EWCPicker = ({ value, onChange }) => {
   );
 };
 
-const JobForm = ({ job, onClose, onSave, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
+const JobForm = ({ job, onClose, onSave, setJobs, onUpdateDisplay, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
  
           const [uploadFile, setUploadFile] = useState(null);
           const [jobAttachments, setJobAttachments] = useState([]);
@@ -1448,8 +1448,31 @@ const [wtnSending, setWtnSending] = useState(false);
 const [wtnSentOk, setWtnSentOk] = useState(false);
 const [wtnFields, setWtnFields] = useState(() => {
   // If job has saved WTN data, restore it (survives reload)
-  const savedWtn = job?.wtnData || (job?.wtn_data ? JSON.parse(job.wtn_data) : null);
-  if (savedWtn) return { ...savedWtn, recipientEmailSource: savedWtn.recipientEmail ? 'customer-record' : 'manual' };
+  const savedWtn = job?.wtnData || (job?.wtn_data ? (typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : job.wtn_data) : null);
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const timeStr = now.toTimeString().slice(0,5);
+  const autoWtnNumber = 'WTN-' + (job?.jobNumber || job?.id || 'DRAFT');
+  const autoDate = job?.collectionDate || job?.jobDate || todayStr;
+
+  if (savedWtn) {
+    // Always re-derive recipient email from customer record (never use stale saved email)
+    const matchedCustomerForEmail = customers?.find(c => (c.name || c.companyName) === job?.customerName);
+    const freshEmail = matchedCustomerForEmail?.email || savedWtn.recipientEmail || '';
+    return {
+      ...savedWtn,
+      // Always use current job's identifiers
+      wtnNumber: savedWtn.wtnNumber || autoWtnNumber,
+      transferDate: savedWtn.transferDate || autoDate,
+      transferTime: savedWtn.transferTime || timeStr,
+      // Always use fresh customer email, not stale test email
+      recipientEmail: freshEmail,
+      recipientEmailSource: freshEmail ? 'customer-record' : 'manual',
+      // Preserve signatures from saved data
+      transferorSignature: savedWtn.transferorSignature || '',
+      transfereeSignature: savedWtn.transfereeSignature || '',
+    };
+  }
 
   const firstProduct = job?.lineItems && job.lineItems.length > 0 ? job.lineItems[0].product_name : null;
   const skipSize = job?.skipSize || null;
@@ -1473,9 +1496,9 @@ const [wtnFields, setWtnFields] = useState(() => {
   const carrierReg = localStorage.getItem('carrierReg') || '';
 
   return {
-    wtnNumber: 'WTN-' + (job?.jobNumber || job?.id || 'DRAFT'),
-    transferDate: job?.collectionDate || job?.jobDate || new Date().toISOString().split('T')[0],
-    transferTime: '',
+    wtnNumber: autoWtnNumber,
+    transferDate: autoDate,
+    transferTime: timeStr,
     // Section A — Waste description
     wasteDescription: wasteDesc,
     skipSize: firstProduct || skipSize || '',
@@ -1520,6 +1543,25 @@ const [wtnFields, setWtnFields] = useState(() => {
 });
 // Refresh broker details from Supabase on form open (fixes race condition with localStorage)
 useEffect(() => {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const timeStr = now.toTimeString().slice(0,5);
+  const autoWtnNumber = 'WTN-' + (job?.jobNumber || '');
+  const autoDate = job?.collectionDate || job?.jobDate || todayStr;
+
+  // Always update WTN number to match current job, and refresh date/time if blank
+  // Also always re-derive recipient email from customer record (never use stale saved email)
+  const matchedCust = customers?.find(c => (c.name || c.companyName) === job?.customerName);
+  const freshRecipientEmail = matchedCust?.email || '';
+  setWtnFields(prev => ({
+    ...prev,
+    wtnNumber: autoWtnNumber,
+    transferDate: prev.transferDate || autoDate,
+    transferTime: prev.transferTime || timeStr,
+    recipientEmail: freshRecipientEmail || prev.recipientEmail || '',
+    recipientEmailSource: (freshRecipientEmail || prev.recipientEmail) ? 'customer-record' : 'manual',
+  }));
+
   (async () => {
     try {
       const { data } = await window.supabase.from('company_settings').select('*');
@@ -3265,6 +3307,14 @@ const [isEvent, setIsEvent] = useState(false);
                         ⚠️ <strong>Save the job first</strong> — fill in the job details, click <strong>Create Job</strong>, then re-open it to send the WTN. The WTN will be pre-filled with the job data.
                       </div>
                     )}
+                    {/* Warning for child jobs with auto-WTN on parent */}
+                    {job && job.parentJobId && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                        <div className="font-semibold mb-1">🔁 Auto-WTN is managed by the parent job</div>
+                        <p>When this job is marked as completed, a WTN will be <strong>automatically emailed</strong> based on the recurring schedule set on the parent job. You don't need to send it manually.</p>
+                        <p className="mt-2 text-blue-600">You can still send a manual WTN below if needed — for example if you need to resend or send to a different address.</p>
+                      </div>
+                    )}
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                       <h3 className="font-semibold text-green-800 mb-1">📄 Waste Transfer Note — Legal Document</h3>
                       <p className="text-sm text-green-700">Compliant with the Waste (England and Wales) Regulations 2011 &amp; Environmental Protection Act 1990 s.34. All mandatory fields must be completed. Both parties must retain a copy for a minimum of 2 years.</p>
@@ -3399,65 +3449,74 @@ const [isEvent, setIsEvent] = useState(false);
                       )}
                     </div>
 
-                    {/* Recurring WTN toggle */}
-                    <div className="border border-blue-200 rounded-lg overflow-hidden">
-                      <div className="bg-blue-50 px-4 py-2 flex items-center gap-3">
-                        <input type="checkbox" id="recurringWtn" checked={wtnFields.recurringWtn||false}
-                          onChange={e=>setWtnFields({...wtnFields, recurringWtn: e.target.checked,
-                            recurringWtnNextDate: e.target.checked ? (() => {
-                              const d = new Date();
-                              if (wtnFields.recurringWtnFrequency === 'monthly') d.setMonth(d.getMonth()+1);
-                              else if (wtnFields.recurringWtnFrequency === 'annually') d.setFullYear(d.getFullYear()+1);
-                              return d.toISOString().split('T')[0];
-                            })() : ''
-                          })}
-                          className="w-4 h-4 text-blue-600 rounded" />
-                        <label htmlFor="recurringWtn" className="text-sm font-semibold text-blue-800 cursor-pointer">🔄 Set up recurring WTN emails</label>
-                      </div>
-                      {wtnFields.recurringWtn && (
-                        <div className="p-4 space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
-                              <div className="flex flex-col gap-1.5">
-                                {[
-                                  {key:'per-job', label:'📋 Every completed job', desc:'Auto-sends a WTN each time this job or any duplicate is marked as completed'},
-                                  {key:'monthly', label:'📅 Monthly', desc:'Sends on the same date each month'},
-                                  {key:'annually', label:'📆 Annually', desc:'Sends once a year'},
-                                ].map(f=>(
-                                  <button key={f.key} type="button"
-                                    onClick={()=>{
-                                      const d = new Date();
-                                      if (f.key==='monthly') d.setMonth(d.getMonth()+1);
-                                      else if (f.key==='annually') d.setFullYear(d.getFullYear()+1);
-                                      setWtnFields({...wtnFields, recurringWtnFrequency: f.key,
-                                        recurringWtnNextDate: f.key==='per-job' ? '' : d.toISOString().split('T')[0]});
-                                    }}
-                                    className={`w-full text-left px-3 py-2 rounded text-xs font-medium border transition-colors ${wtnFields.recurringWtnFrequency===f.key?'bg-blue-600 text-white border-blue-600':'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'}`}>
-                                    <div>{f.label}</div>
-                                    <div className={`text-xs mt-0.5 ${wtnFields.recurringWtnFrequency===f.key?'text-blue-100':'text-gray-400'}`}>{f.desc}</div>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            {wtnFields.recurringWtnFrequency !== 'per-job' && (
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">First send date</label>
-                                <input type="date" className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs"
-                                  value={wtnFields.recurringWtnNextDate||''}
-                                  onChange={e=>setWtnFields({...wtnFields,recurringWtnNextDate:e.target.value})} />
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-xs text-blue-700 bg-blue-50 rounded p-2">
-                            {wtnFields.recurringWtnFrequency==='per-job'
-                              ? `📋 A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} every time this job, or any duplicate of it, is marked as completed.`
-                              : `✉️ A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} ${wtnFields.recurringWtnFrequency==='monthly'?'every month':'every year'}${wtnFields.recurringWtnNextDate ? ', starting ' + new Date(wtnFields.recurringWtnNextDate).toLocaleDateString('en-GB') : ''}.`
-                            }
-                          </div>
+                    {/* Recurring WTN toggle — hidden on child jobs, managed by parent */}
+                    {job?.parentJobId ? (
+                      <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 opacity-60">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-400">🔄</span>
+                          <span className="text-sm text-gray-400">Recurring WTN schedule — managed on parent job only</span>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="border border-blue-200 rounded-lg overflow-hidden">
+                        <div className="bg-blue-50 px-4 py-2 flex items-center gap-3">
+                          <input type="checkbox" id="recurringWtn" checked={wtnFields.recurringWtn||false}
+                            onChange={e=>setWtnFields({...wtnFields, recurringWtn: e.target.checked,
+                              recurringWtnNextDate: e.target.checked ? (() => {
+                                const d = new Date();
+                                if (wtnFields.recurringWtnFrequency === 'monthly') d.setMonth(d.getMonth()+1);
+                                else if (wtnFields.recurringWtnFrequency === 'annually') d.setFullYear(d.getFullYear()+1);
+                                return d.toISOString().split('T')[0];
+                              })() : ''
+                            })}
+                            className="w-4 h-4 text-blue-600 rounded" />
+                          <label htmlFor="recurringWtn" className="text-sm font-semibold text-blue-800 cursor-pointer">🔄 Set up recurring WTN emails</label>
+                        </div>
+                        {wtnFields.recurringWtn && (
+                          <div className="p-4 space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
+                                <div className="flex flex-col gap-1.5">
+                                  {[
+                                    {key:'per-job', label:'📋 Every completed job', desc:'Auto-sends a WTN each time this job or any duplicate is marked as completed'},
+                                    {key:'monthly', label:'📅 Monthly', desc:'Sends on the same date each month'},
+                                    {key:'annually', label:'📆 Annually', desc:'Sends once a year'},
+                                  ].map(f=>(
+                                    <button key={f.key} type="button"
+                                      onClick={()=>{
+                                        const d = new Date();
+                                        if (f.key==='monthly') d.setMonth(d.getMonth()+1);
+                                        else if (f.key==='annually') d.setFullYear(d.getFullYear()+1);
+                                        setWtnFields({...wtnFields, recurringWtnFrequency: f.key,
+                                          recurringWtnNextDate: f.key==='per-job' ? '' : d.toISOString().split('T')[0]});
+                                      }}
+                                      className={`w-full text-left px-3 py-2 rounded text-xs font-medium border transition-colors ${wtnFields.recurringWtnFrequency===f.key?'bg-blue-600 text-white border-blue-600':'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'}`}>
+                                      <div>{f.label}</div>
+                                      <div className={`text-xs mt-0.5 ${wtnFields.recurringWtnFrequency===f.key?'text-blue-100':'text-gray-400'}`}>{f.desc}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              {wtnFields.recurringWtnFrequency !== 'per-job' && (
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">First send date</label>
+                                  <input type="date" className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs"
+                                    value={wtnFields.recurringWtnNextDate||''}
+                                    onChange={e=>setWtnFields({...wtnFields,recurringWtnNextDate:e.target.value})} />
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-xs text-blue-700 bg-blue-50 rounded p-2">
+                              {wtnFields.recurringWtnFrequency==='per-job'
+                                ? `📋 A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} every time this job, or any duplicate of it, is marked as completed.`
+                                : `✉️ A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} ${wtnFields.recurringWtnFrequency==='monthly'?'every month':'every year'}${wtnFields.recurringWtnNextDate ? ', starting ' + new Date(wtnFields.recurringWtnNextDate).toLocaleDateString('en-GB') : ''}.`
+                              }
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Action buttons */}
                     {(() => {
@@ -3734,6 +3793,29 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             wtnSaveData.wtn_recurring_next_date = wtnFields.recurringWtnNextDate;
                           }
                           await window.supabase.from('jobs').update(wtnSaveData).eq('id', job.id);
+
+                          // Update local state immediately so WTN sent badge shows without reload
+                          if (typeof setJobs === 'function') {
+                            setJobs(prev => prev.map(j => j.id === job.id ? {
+                              ...j,
+                              wtnSent: true,
+                              wtn_sent: true,
+                              wtnSentAt: wtnSaveData.wtn_sent_at,
+                              wtn_sent_at: wtnSaveData.wtn_sent_at,
+                              wtnRecipient: wtnFields.recipientEmail,
+                              wtn_recipient: wtnFields.recipientEmail,
+                            } : j));
+                          }
+                          // Also update the currently displayed job in full page view
+                          if (typeof onUpdateDisplay === 'function') {
+                            onUpdateDisplay(prev => prev ? {
+                              ...prev,
+                              wtnSent: true,
+                              wtn_sent: true,
+                              wtnSentAt: wtnSaveData.wtn_sent_at,
+                              wtnRecipient: wtnFields.recipientEmail,
+                            } : prev);
+                          }
 
                           setWtnSentOk(true);
                           setTimeout(()=>setWtnSentOk(false), 4000);
@@ -5564,9 +5646,14 @@ job.status.replace('_', ' ')}
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
   <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
                     <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-                      <div>
-                        <h2 className="text-xl font-bold">{selectedJob.jobNumber}</h2>
-                        <p className="text-gray-600">{selectedJob.jobType}</p>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div>
+                          <h2 className="text-xl font-bold">{selectedJob.jobNumber}</h2>
+                          <p className="text-gray-600">{selectedJob.jobType}</p>
+                        </div>
+                        {(selectedJob.wtnSent || selectedJob.wtn_sent || selectedJob.wtnData?.wtnNumber || selectedJob.wtn_data) && (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ WTN Sent</span>
+                        )}
                       </div>
                       <div className="flex items-center space-x-2">
                         <button
@@ -6518,6 +6605,11 @@ console.log(JSON.stringify(invoiceData, null, 2));
          job.isCancelled ? 'Cancelled' :
          job.status}
       </span>
+      {(job.wtnSent || job.wtn_sent || (job.wtnData && job.wtnData.wtnNumber)) && (
+        <span className="px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 flex items-center gap-1">
+          ✅ WTN Sent
+        </span>
+      )}
     </div>
     <div className="flex items-center space-x-2">
      <button
@@ -6917,18 +7009,25 @@ console.log(JSON.stringify(invoiceData, null, 2));
             <div className="space-y-4 mt-4">
 
               {/* WTN Sent Badge */}
-              {(job.wtnSent || job.wtn_sent) && (
+              {(job.wtnSent || job.wtn_sent || (job.wtnData && job.wtnData.wtnNumber)) && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-2">
                     <span className="text-green-600 text-lg">✅</span>
                     <h3 className="font-semibold text-green-800">Waste Transfer Note Sent</h3>
+                    {job.wtnData?.wtnNumber && <span className="text-xs text-green-600 ml-auto font-mono">{job.wtnData.wtnNumber}</span>}
                   </div>
                   <div className="text-sm text-green-700 space-y-1">
                     {(job.wtnSentAt || job.wtn_sent_at) && (
                       <p>Sent: <span className="font-medium">{new Date(job.wtnSentAt || job.wtn_sent_at).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></p>
                     )}
-                    {(job.wtnRecipient || job.wtn_recipient) && (
-                      <p>Recipient: <span className="font-medium">{job.wtnRecipient || job.wtn_recipient}</span></p>
+                    {(() => {
+                      // wtn_data.recipientEmail is the exact address EmailJS sent to — use as source of truth
+                      const recipient = job.wtnData?.recipientEmail || job.wtnRecipient || job.wtn_recipient || '';
+                      if (!recipient) return null;
+                      return <p>Sent to: <span className="font-medium">{recipient}</span></p>;
+                    })()}
+                    {job.wtnData?.transferDate && (
+                      <p>Transfer date: <span className="font-medium">{new Date(job.wtnData.transferDate).toLocaleDateString('en-GB')}</span></p>
                     )}
                   </div>
                 </div>
@@ -11591,15 +11690,20 @@ window.refreshJobs = refreshJobs;
           payment_status: 'Not Paid',
           wtn_data: rj.wtn_data ? JSON.stringify({
             ...JSON.parse(typeof rj.wtn_data === 'string' ? rj.wtn_data : JSON.stringify(rj.wtn_data)),
-            // Clear job-specific fields that must be re-entered for each new job
-            transferorSignature: '',
-            transfereeSignature: '',
+            // Only clear job-specific one-time fields — keep names/signatures for convenience
             transferDate: '',
             transferTime: '',
             wtnNumber: '', // will be regenerated
             recipientEmail: rj.wtn_recipient || '',
+            // Clear recurring WTN settings — these live on parent only
+            recurringWtn: false,
+            recurringWtnFrequency: 'monthly',
+            recurringWtnNextDate: '',
           }) : null,
           wtn_recipient: rj.wtn_recipient,
+          wtn_recurring: false,        // child never triggers its own WTN schedule
+          wtn_recurring_frequency: null,
+          wtn_recurring_next_date: null,
           parent_job_id: rj.id,
         };
 
@@ -11937,6 +12041,7 @@ collection_date: updatedJob.collectionDate || null,
       wtn_recurring: updatedJob.wtnRecurring || false,
       wtn_recurring_frequency: updatedJob.wtnRecurringFrequency || null,
       wtn_recurring_next_date: updatedJob.wtnRecurringNextDate || null,
+      wtn_data: updatedJob.wtnData ? JSON.stringify(updatedJob.wtnData) : null,
     };
 
     const { error } = await window.supabase
@@ -12062,13 +12167,12 @@ const handleCompleteJob = async (job) => {
         .eq('id', parentId)
         .single();
 
-      // Check the job itself first, then fall back to parent
-      const wtnSource = (job.wtnRecurring || job.wtn_recurring) ? job : parentJob;
-
-      if (wtnSource?.wtn_recurring && wtnSource?.wtn_recurring_frequency === 'per-job' && wtnSource?.wtn_recipient) {
-        const customerName = job.customerName || wtnSource.customer_name;
-        const recipient = wtnSource.wtn_recipient;
-        const body = `Dear ${customerName},\n\nYour job ${job.jobNumber} has been completed. Please find your Waste Transfer Note details below.\n\nJob Reference: ${job.jobNumber}\nCustomer: ${customerName}\nJob Type: ${job.jobType || wtnSource.job_type}\nSite: ${[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ')}\nCompleted: ${new Date().toLocaleDateString('en-GB')}\n\nPlease retain this for a minimum of 2 years under the Environmental Protection Act 1990 s.34 and the Waste (England & Wales) Regulations 2011.\n\nKind regards,\nTotal Waste Services Ltd\ninfo@totalwasteservicesltd.com`;
+      // Only trigger per-job WTN from the PARENT job's settings, never the child's own fields
+      // This prevents duplicates and ensures the schedule is managed in one place
+      if (parentJob?.wtn_recurring && parentJob?.wtn_recurring_frequency === 'per-job' && parentJob?.wtn_recipient) {
+        const customerName = job.customerName || parentJob.customer_name;
+        const recipient = parentJob.wtn_recipient;
+        const body = `Dear ${customerName},\n\nYour job ${job.jobNumber} has been completed. Please find your Waste Transfer Note details below.\n\nJob Reference: ${job.jobNumber}\nCustomer: ${customerName}\nJob Type: ${job.jobType || parentJob.job_type}\nSite: ${[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ')}\nCompleted: ${new Date().toLocaleDateString('en-GB')}\n\nPlease retain this for a minimum of 2 years under the Environmental Protection Act 1990 s.34 and the Waste (England & Wales) Regulations 2011.\n\nKind regards,\nTotal Waste Services Ltd\ninfo@totalwasteservicesltd.com`;
         try {
           await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
             wtn_number: `WTN-${job.jobNumber}`,
@@ -12359,19 +12463,22 @@ site_notes: fullJob?.site_notes || '',
                 const d = typeof src === 'string' ? JSON.parse(src) : src;
                 return JSON.stringify({
                   ...d,
-                  // Clear fields that must be re-entered for each new job
-                  transferorSignature: '',
-                  transfereeSignature: '',
+                  // Only clear one-time fields — keep names/CBDU/addresses for convenience
                   transferDate: '',
                   transferTime: '',
                   wtnNumber: '',
+                  // Clear recurring WTN settings — these live on parent only
+                  recurringWtn: false,
+                  recurringWtnFrequency: 'monthly',
+                  recurringWtnNextDate: '',
                 });
               } catch(e) { return null; }
             })(),
-            // Carry WTN recurring settings so duplicated jobs auto-send WTN on completion
-            wtn_recurring: fullJob?.wtn_recurring || false,
-            wtn_recurring_frequency: fullJob?.wtn_recurring_frequency || null,
-            wtn_recipient: fullJob?.wtn_recipient || null,
+            // Do NOT copy wtn_recurring to child — schedule stays on parent job only
+            wtn_recurring: false,
+            wtn_recurring_frequency: null,
+            wtn_recurring_next_date: null,
+            wtn_recipient: fullJob?.wtn_recipient || null, // keep recipient for reference
             parent_job_id: jobTemplate.id || fullJob?.id || null,
         };
 
@@ -13597,6 +13704,8 @@ await handleAddJob(exchangeJob);
                 handleAddJob(jobData);
             }
         }}
+        setJobs={setJobs}
+        onUpdateDisplay={setShowFullPageJob}
         customers={customers}
         suppliers={suppliers}
         sageProducts={sageProducts}
