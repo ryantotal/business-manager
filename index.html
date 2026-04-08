@@ -3421,7 +3421,7 @@ const [isEvent, setIsEvent] = useState(false);
                               <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
                               <div className="flex flex-col gap-1.5">
                                 {[
-                                  {key:'per-job', label:'📋 Every recurring job', desc:'Sends a WTN each time a recurring job is completed'},
+                                  {key:'per-job', label:'📋 Every completed job', desc:'Auto-sends a WTN each time this job or any duplicate is marked as completed'},
                                   {key:'monthly', label:'📅 Monthly', desc:'Sends on the same date each month'},
                                   {key:'annually', label:'📆 Annually', desc:'Sends once a year'},
                                 ].map(f=>(
@@ -3451,7 +3451,7 @@ const [isEvent, setIsEvent] = useState(false);
                           </div>
                           <div className="text-xs text-blue-700 bg-blue-50 rounded p-2">
                             {wtnFields.recurringWtnFrequency==='per-job'
-                              ? `📋 A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} every time a recurring job from this schedule is marked as completed.`
+                              ? `📋 A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} every time this job, or any duplicate of it, is marked as completed.`
                               : `✉️ A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} ${wtnFields.recurringWtnFrequency==='monthly'?'every month':'every year'}${wtnFields.recurringWtnNextDate ? ', starting ' + new Date(wtnFields.recurringWtnNextDate).toLocaleDateString('en-GB') : ''}.`
                             }
                           </div>
@@ -11505,7 +11505,16 @@ window.refreshJobs = refreshJobs;
           sage_product_data: rj.sage_product_data,
           invoice_status: 'Not Invoiced',
           payment_status: 'Not Paid',
-          wtn_data: rj.wtn_data, // carry over WTN template data
+          wtn_data: rj.wtn_data ? JSON.stringify({
+            ...JSON.parse(typeof rj.wtn_data === 'string' ? rj.wtn_data : JSON.stringify(rj.wtn_data)),
+            // Clear job-specific fields that must be re-entered for each new job
+            transferorSignature: '',
+            transfereeSignature: '',
+            transferDate: '',
+            transferTime: '',
+            wtnNumber: '', // will be regenerated
+            recipientEmail: rj.wtn_recipient || '',
+          }) : null,
           wtn_recipient: rj.wtn_recipient,
           parent_job_id: rj.id,
         };
@@ -11969,17 +11978,22 @@ const handleCompleteJob = async (job) => {
         .eq('id', parentId)
         .single();
 
-      if (parentJob?.wtn_recurring && parentJob?.wtn_recurring_frequency === 'per-job' && parentJob?.wtn_recipient) {
-        const body = `Dear ${job.customerName || parentJob.customer_name},\n\nYour recurring job ${job.jobNumber} has been completed. Please find your Waste Transfer Note details below.\n\nJob Reference: ${job.jobNumber}\nCustomer: ${job.customerName || parentJob.customer_name}\nJob Type: ${job.jobType || parentJob.job_type}\nSite: ${[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ')}\nCompleted: ${new Date().toLocaleDateString('en-GB')}\n\nPlease retain this for a minimum of 2 years under the Environmental Protection Act 1990 s.34 and the Waste (England & Wales) Regulations 2011.\n\nKind regards,\nTotal Waste Services Ltd\ninfo@totalwasteservicesltd.com`;
+      // Check the job itself first, then fall back to parent
+      const wtnSource = (job.wtnRecurring || job.wtn_recurring) ? job : parentJob;
+
+      if (wtnSource?.wtn_recurring && wtnSource?.wtn_recurring_frequency === 'per-job' && wtnSource?.wtn_recipient) {
+        const customerName = job.customerName || wtnSource.customer_name;
+        const recipient = wtnSource.wtn_recipient;
+        const body = `Dear ${customerName},\n\nYour job ${job.jobNumber} has been completed. Please find your Waste Transfer Note details below.\n\nJob Reference: ${job.jobNumber}\nCustomer: ${customerName}\nJob Type: ${job.jobType || wtnSource.job_type}\nSite: ${[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ')}\nCompleted: ${new Date().toLocaleDateString('en-GB')}\n\nPlease retain this for a minimum of 2 years under the Environmental Protection Act 1990 s.34 and the Waste (England & Wales) Regulations 2011.\n\nKind regards,\nTotal Waste Services Ltd\ninfo@totalwasteservicesltd.com`;
         try {
           await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
             wtn_number: `WTN-${job.jobNumber}`,
-            customer_name: job.customerName || parentJob.customer_name,
-            email: parentJob.wtn_recipient,
-            name: job.customerName || parentJob.customer_name,
+            customer_name: customerName,
+            email: recipient,
+            name: customerName,
             message: body,
           });
-          setRecurringNotifications(prev => [...prev, `📄 WTN auto-sent to ${job.customerName} on completion of ${job.jobNumber}`]);
+          setRecurringNotifications(prev => [...prev, `📄 WTN auto-sent to ${customerName} on completion of ${job.jobNumber}`]);
         } catch(e) { console.error('Per-job completion WTN failed:', e); }
       }
     }
@@ -12250,12 +12264,31 @@ site_postcode: fullJob?.site_postcode || '',
 site_contact: fullJob?.site_contact || '',
 site_phone: fullJob?.site_phone || '',
 site_notes: fullJob?.site_notes || '',
-    sage_line_items: fullJob?.sage_line_items || null,
-    sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
-    sage_si_number: null,
-
-// Also clear collection-related fields for a fresh start
-collection_date: null,
+            sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
+            sage_si_number: null,
+            collection_date: null,
+            // Carry over WTN template but strip job-specific fields
+            wtn_data: (() => {
+              const src = fullJob?.wtn_data || jobTemplate.wtnData;
+              if (!src) return null;
+              try {
+                const d = typeof src === 'string' ? JSON.parse(src) : src;
+                return JSON.stringify({
+                  ...d,
+                  // Clear fields that must be re-entered for each new job
+                  transferorSignature: '',
+                  transfereeSignature: '',
+                  transferDate: '',
+                  transferTime: '',
+                  wtnNumber: '',
+                });
+              } catch(e) { return null; }
+            })(),
+            // Carry WTN recurring settings so duplicated jobs auto-send WTN on completion
+            wtn_recurring: fullJob?.wtn_recurring || false,
+            wtn_recurring_frequency: fullJob?.wtn_recurring_frequency || null,
+            wtn_recipient: fullJob?.wtn_recipient || null,
+            parent_job_id: jobTemplate.id || fullJob?.id || null,
         };
 
         
