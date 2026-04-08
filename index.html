@@ -839,6 +839,7 @@ return (
           const [portalFilter, setPortalFilter] = React.useState('all');
           const [portalSearch, setPortalSearch] = React.useState('');
           const [portalSort, setPortalSort] = React.useState({ field: 'date', dir: 'desc' });
+          const [wtnModalJob, setWtnModalJob] = React.useState(null);
 
           // ── Customer Portal view (after successful login) ──
           if (portalUser) {
@@ -850,57 +851,11 @@ return (
             const inProgress = myJobs.filter(j => !j.is_completed && j.status !== 'COMPLETED' && j.status !== 'COLLECTED' && !j.is_cancelled);
 
             const downloadWTN = (job) => {
-              // Only show WTN if wtn_data exists and was sent
-              const wtnData = job.wtn_data ? (typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : job.wtn_data) : null;
-              const w = window.open('', '_blank');
-              if (!w) return;
-              if (wtnData) {
-                // Build proper WTN from saved data - no cost info
-                w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>WTN-${job.job_number}</title>
-<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff;padding:16px;}
-.page{max-width:700px;margin:0 auto;background:#fff;border:2px solid #000;}
-.hdr{background:#fff;padding:14px 18px;border-bottom:3px solid #1a5c2a;}
-.sec-hdr{background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;border-top:2px solid #000;}
-.row{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #ccc;}
-.cell{padding:7px 12px;border-right:1px solid #ccc;}.cell:last-child{border-right:none;}
-.lbl{font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px;}
-.val{font-size:11px;font-weight:700;}
-.legal{background:#fff8c5;border-bottom:2px solid #000;padding:5px 18px;font-size:9px;font-weight:700;text-align:center;}
-.footer{background:#f3f4f6;border-top:2px solid #000;padding:7px 18px;font-size:9px;color:#555;}
-@media print{body{padding:0;}button{display:none;}}</style></head>
-<body><div class="page">
-<div class="hdr"><table style="width:100%;border-collapse:collapse;"><tr>
-  <td style="width:110px;vertical-align:middle;">${localStorage.getItem('companyLogo')?`<img src="${localStorage.getItem('companyLogo')}" style="height:48px;object-fit:contain;" alt="logo">`:`<strong style="color:#1a5c2a;">${localStorage.getItem('companyName')||'Total Waste Services Ltd'}</strong>`}</td>
-  <td style="text-align:center;vertical-align:middle;"><div style="font-size:16px;font-weight:700;color:#1a5c2a;">WASTE TRANSFER NOTE</div><div style="font-size:9px;color:#666;">Environmental Protection Act 1990 s.34</div></td>
-  <td style="width:110px;text-align:right;vertical-align:middle;"><div style="font-size:14px;font-weight:700;color:#1a5c2a;">WTN-${job.job_number}</div><div style="font-size:9px;color:#555;">${new Date().toLocaleDateString('en-GB')}</div></td>
-</tr></table></div>
-<div class="legal">⚠ LEGAL DOCUMENT — Retain for minimum 2 years. Produce on request to Environment Agency within 7 days.</div>
-<div class="sec-hdr">Section A — Description of Waste</div>
-<div class="row"><div class="cell"><div class="lbl">Waste Description</div><div class="val">${wtnData.wasteDescription||'—'}</div></div><div class="cell"><div class="lbl">Container / Skip</div><div class="val">${wtnData.skipSize||'—'}</div></div></div>
-<div class="row"><div class="cell"><div class="lbl">EWC Code</div><div class="val">${wtnData.listOfWasteCode||'—'}</div></div><div class="cell"><div class="lbl">Quantity</div><div class="val">${wtnData.quantity||'—'} ${wtnData.unit||''}</div></div></div>
-<div class="sec-hdr">Section B — Transferor (Waste Producer)</div>
-<div class="row"><div class="cell"><div class="lbl">Name / Company</div><div class="val">${wtnData.transferorName||job.customer_name||'—'}</div></div><div class="cell"><div class="lbl">Address</div><div class="val">${wtnData.transferorAddress||'—'}</div></div></div>
-<div class="row"><div class="cell"><div class="lbl">Signature</div><div style="border-bottom:1px solid #000;margin:12px 0 3px;width:80%;"></div><div class="val">${wtnData.transferorSignature||'___________'}</div></div><div class="cell"><div class="lbl">Date</div><div class="val" style="margin-top:16px;">${wtnData.transferDate ? new Date(wtnData.transferDate).toLocaleDateString('en-GB') : '—'}</div></div></div>
-<div class="sec-hdr">Section C — Carrier</div>
-<div class="row"><div class="cell"><div class="lbl">Carrier Name</div><div class="val">${wtnData.transfereeName||'—'}</div></div><div class="cell"><div class="lbl">EA Carrier Reg</div><div class="val">${wtnData.transfereeCarrierReg||'—'}</div></div></div>
-<div class="sec-hdr">Section D — Broker &amp; Transfer Details</div>
-<div class="row"><div class="cell"><div class="lbl">Broker</div><div class="val">${wtnData.brokerName||'—'}</div></div><div class="cell"><div class="lbl">Collection Address</div><div class="val">${wtnData.transferAddress||'—'}</div></div></div>
-<div class="sec-hdr">Waste Hierarchy (Reg. 12)</div>
-<div class="row"><div class="cell"><div class="lbl">Recycled/Reused</div><div class="val">${wtnData.recycledPct||0}%</div></div><div class="cell"><div class="lbl">Recovered</div><div class="val">${wtnData.recoveredPct||0}%</div></div></div>
-<div style="padding:7px 12px;border-bottom:1px solid #ccc;font-size:9px;">Disposal: ${wtnData.landfillPct||0}% &nbsp;|&nbsp; I confirm compliance with Regulation 12, Waste (England &amp; Wales) Regulations 2011.</div>
-<div class="footer" style="display:flex;justify-content:space-between;align-items:center;">
-  <span>${localStorage.getItem('companyName')||'Total Waste Services Ltd'} • Broker Reg: ${wtnData.brokerCarrierReg||'—'}</span>
-  <button onclick="window.print()" style="border:1px solid #aaa;background:#fff;color:#1d4ed8;cursor:pointer;padding:3px 10px;border-radius:3px;font-size:9px;">🖨 Print / Save PDF</button>
-</div>
-</div></body></html>`);
-              } else {
-                // Fallback if no wtn_data saved yet
-                w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:Arial;padding:32px;"><h2>WTN-${job.job_number}</h2><p>Waste Transfer Note details not yet available. Please contact Total Waste Services Ltd.</p></body></html>`);
-              }
-              w.document.close();
+              setWtnModalJob(job);
             };
 
             return (
+              <React.Fragment>
               <div className="min-h-screen bg-gray-50">
                 {/* Portal Header */}
                 <div className="bg-green-700 text-white px-6 py-4 flex items-center justify-between">
@@ -1077,12 +1032,12 @@ return (
                                     }`}>{done ? 'Completed' : cancelled ? 'Cancelled' : 'In Progress'}</span>
                                   </td>
                                   <td className="px-5 py-3">
-                                    {done && isWasteJob && job.wtn_sent ? (
+                                    {done && isWasteJob && (job.wtn_sent || (job.wtn_data && job.wtn_data !== 'null')) ? (
                                       <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
                                         className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
                                         📄 Waste Transfer Note
                                       </button>
-                                    ) : done && isWasteJob && !job.wtn_sent ? (
+                                    ) : done && isWasteJob ? (
                                       <span className="text-gray-400 text-xs">WTN pending</span>
                                     ) : (
                                       <span className="text-gray-300 text-xs">—</span>
@@ -1136,7 +1091,7 @@ return (
                                             </table>
                                           </div>
                                         )}
-                                        {done && isWasteJob && job.wtn_sent && (
+                                        {done && isWasteJob && (job.wtn_sent || (job.wtn_data && job.wtn_data !== 'null')) && (
                                           <div className="col-span-2 sm:col-span-3">
                                             <button onClick={() => downloadWTN(job)}
                                               className="mt-1 px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
@@ -1163,6 +1118,15 @@ return (
                   })()}
                 </div>
               </div>
+
+              {/* WTN Inline Modal */}
+              {wtnModalJob && (
+                <WtnPortalModal
+                  job={wtnModalJob}
+                  onClose={() => setWtnModalJob(null)}
+                />
+              )}
+            </React.Fragment>
             );
           }
 
@@ -1256,6 +1220,71 @@ return (
 
         // Job Form Component
 // ── EWC Code Picker ───────────────────────────────────────────────────────
+const WtnPortalModal = ({ job, onClose }) => {
+  const rawWtn = job.wtn_data || (job.wtnData ? JSON.stringify(job.wtnData) : null);
+  const wtnData = rawWtn ? (typeof rawWtn === 'string' ? JSON.parse(rawWtn) : rawWtn) : null;
+  const coName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
+  const logoSrc = localStorage.getItem('companyLogo');
+  const Row = ({label, val}) => (
+    <div style={{padding:'6px 12px'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>{label}</div><div style={{fontWeight:700,fontSize:11}}>{val||'—'}</div></div>
+  );
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 overflow-y-auto" onClick={onClose}>
+      <div className="min-h-screen flex items-start justify-center p-4">
+        <div className="bg-white rounded-xl max-w-2xl w-full my-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h2 className="font-bold text-gray-900">Waste Transfer Note — {job.job_number || job.jobNumber}</h2>
+            <div className="flex gap-2">
+              <button onClick={() => window.print()} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">🖨 Print / Save PDF</button>
+              <button onClick={onClose} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">✕ Close</button>
+            </div>
+          </div>
+          {wtnData ? (
+            <div className="p-4" style={{fontFamily:'Arial,sans-serif',fontSize:11}}>
+              <div style={{border:'2px solid #000'}}>
+                <div style={{background:'#fff',padding:'12px 16px',borderBottom:'3px solid #1a5c2a',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <div>{logoSrc ? <img src={logoSrc} style={{height:40,objectFit:'contain'}} alt="logo"/> : <strong style={{color:'#1a5c2a'}}>{coName}</strong>}</div>
+                  <div style={{textAlign:'center'}}><div style={{fontSize:15,fontWeight:700,color:'#1a5c2a'}}>WASTE TRANSFER NOTE</div><div style={{fontSize:8,color:'#666'}}>Environmental Protection Act 1990 s.34</div></div>
+                  <div style={{textAlign:'right'}}><div style={{fontSize:13,fontWeight:700,color:'#1a5c2a'}}>WTN-{job.job_number||job.jobNumber}</div><div style={{fontSize:8,color:'#555'}}>{wtnData.transferDate ? new Date(wtnData.transferDate).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')}</div></div>
+                </div>
+                <div style={{background:'#fff8c5',padding:'4px 16px',fontSize:8,fontWeight:700,textAlign:'center',borderBottom:'2px solid #000'}}>⚠ LEGAL DOCUMENT — Retain for minimum 2 years. Produce on request to Environment Agency within 7 days.</div>
+                {[
+                  {title:'Section A — Description of Waste', rows:[[{label:'Waste Description',val:wtnData.wasteDescription},{label:'EWC Code',val:wtnData.listOfWasteCode}],[{label:'Container / Skip',val:wtnData.skipSize},{label:'Quantity',val:`${wtnData.quantity||'—'} ${wtnData.unit||''}`}]]},
+                  {title:'Section B — Transferor (Waste Producer)', rows:[[{label:'Name / Company',val:wtnData.transferorName||job.customer_name||job.customerName},{label:'Address',val:wtnData.transferorAddress}],[{label:'Signature',val:wtnData.transferorSignature||'___________'},{label:'Date',val:wtnData.transferDate?new Date(wtnData.transferDate).toLocaleDateString('en-GB'):'—'}]]},
+                  {title:'Section C — Carrier', rows:[[{label:'Carrier Name',val:wtnData.transfereeName},{label:'EA Carrier Reg',val:wtnData.transfereeCarrierReg}]]},
+                  {title:'Section D — Broker & Transfer Details', rows:[[{label:'Broker',val:wtnData.brokerName||coName},{label:'Collection Address',val:wtnData.transferAddress}]]},
+                ].map(sec => (
+                  <div key={sec.title}>
+                    <div style={{background:'#d1fae5',padding:'4px 12px',fontSize:9,fontWeight:700,textTransform:'uppercase',borderBottom:'1px solid #000',borderTop:'2px solid #000'}}>{sec.title}</div>
+                    {sec.rows.map((row,i) => (
+                      <div key={i} style={{display:'grid',gridTemplateColumns:`repeat(${row.length},1fr)`,borderBottom:'1px solid #ccc'}}>
+                        {row.map((cell,j) => <div key={j} style={{padding:'6px 12px',borderRight:j<row.length-1?'1px solid #ccc':'none'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>{cell.label}</div><div style={{fontWeight:700}}>{cell.val||'—'}</div></div>)}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                <div style={{background:'#d1fae5',padding:'4px 12px',fontSize:9,fontWeight:700,textTransform:'uppercase',borderBottom:'1px solid #000',borderTop:'2px solid #000'}}>Waste Hierarchy (Reg. 12)</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',borderBottom:'1px solid #ccc'}}>
+                  {[{l:'Recycled/Reused',v:`${wtnData.recycledPct||0}%`},{l:'Recovered',v:`${wtnData.recoveredPct||0}%`},{l:'Disposal',v:`${wtnData.landfillPct||0}%`}].map((x,i,a) => (
+                    <div key={i} style={{padding:'6px 12px',borderRight:i<a.length-1?'1px solid #ccc':'none'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase'}}>{x.l}</div><div style={{fontWeight:700}}>{x.v}</div></div>
+                  ))}
+                </div>
+                <div style={{padding:'6px 12px',fontSize:8,color:'#555',borderBottom:'1px solid #ccc'}}>I confirm compliance with Regulation 12, Waste (England & Wales) Regulations 2011.</div>
+                <div style={{background:'#f3f4f6',borderTop:'2px solid #000',padding:'6px 16px',display:'flex',justifyContent:'space-between',fontSize:8,color:'#555'}}>
+                  <span>{coName} • Broker Reg: {wtnData.brokerCarrierReg||'—'}</span>
+                  <span>WMC2A • Retain for 2 years minimum</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-8 text-center text-gray-500 text-sm">WTN details not yet available. Please contact {coName}.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const EWC_CODES = [
   // Chapter 17 — Construction & demolition (most relevant for skip hire — shown first)
   {code:'17 09 04',desc:'Mixed construction and demolition wastes',hazardous:false,chapter:'17 — Construction & Demolition',keywords:'mixed waste skip hire construction demolition rubbish'},
@@ -6846,14 +6875,11 @@ console.log(JSON.stringify(invoiceData, null, 2));
                 const start = job.recurringStartDate || job.recurring_start_date;
                 const freq = job.recurringFrequency || job.recurring_frequency || 'weekly';
                 if (!start) return '—';
-                // Calculate the next occurrence after today
                 const today = new Date();
                 today.setHours(0,0,0,0);
                 let next = new Date(start);
                 next.setHours(0,0,0,0);
-                // If start is in the future, that IS the next due
                 if (next >= today) return next.toLocaleDateString('en-GB');
-                // Otherwise advance until we're past today
                 while (next < today) {
                   if (freq === 'daily') next.setDate(next.getDate() + 1);
                   else if (freq === 'weekly') next.setDate(next.getDate() + 7);
@@ -6873,7 +6899,64 @@ console.log(JSON.stringify(invoiceData, null, 2));
             </div>
           )}
         </div>
-        <p className="text-xs text-blue-600 mt-3">To edit the recurring schedule, open this job in the edit form and go to the 🔁 Recurring tab.</p>
+        <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
+          <p className="text-xs text-blue-600">To edit the recurring schedule, open this job in the edit form and go to the 🔁 Recurring tab.</p>
+          <button
+            onClick={async () => {
+              const dateStr = prompt('Create a missed job for which date? (DD/MM/YYYY)', new Date(Date.now() - 86400000).toLocaleDateString('en-GB'));
+              if (!dateStr) return;
+              const parts = dateStr.split('/');
+              if (parts.length !== 3) { alert('Invalid date format. Use DD/MM/YYYY'); return; }
+              const jobDate = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+              try {
+                // Get full job from Supabase
+                const { data: fullJob } = await window.supabase.from('jobs').select('*').eq('id', job.id || job.jobId).single();
+                const src = fullJob || job;
+                // Get next job number
+                let newJobNumber;
+                try {
+                  const { data: n } = await window.supabase.rpc('get_next_job_number');
+                  newJobNumber = n;
+                } catch(e) {
+                  const { data: all } = await window.supabase.from('jobs').select('job_number');
+                  const max = all ? Math.max(...all.map(j => parseInt((j.job_number||'').split('-').pop())||0)) : 1000;
+                  newJobNumber = `TWS-${max+1}`;
+                }
+                const wtnDataSrc = src.wtn_data ? (typeof src.wtn_data === 'string' ? JSON.parse(src.wtn_data) : src.wtn_data) : null;
+                const newJob = {
+                  job_number: newJobNumber,
+                  customer_name: src.customer_name, supplier_name: src.supplier_name,
+                  job_type: src.job_type, waste_type: src.waste_type, skip_size: src.skip_size,
+                  aggregate_type: src.aggregate_type, quantity: src.quantity, unit: src.unit,
+                  customer_unit_price: src.customer_unit_price, customer_final_price: src.customer_final_price,
+                  supplier_unit_price: src.supplier_unit_price, supplier_final_price: src.supplier_final_price,
+                  gross_profit: src.gross_profit, job_value: src.job_value,
+                  site_address1: src.site_address1, site_address2: src.site_address2,
+                  site_city: src.site_city, site_postcode: src.site_postcode,
+                  site_contact: src.site_contact, site_phone: src.site_phone,
+                  sage_line_items: src.sage_line_items, line_items: src.line_items,
+                  job_date: jobDate, status: 'CONFIRMED', is_completed: false, is_cancelled: false,
+                  is_recurring: false,
+                  notes: `Manually created missed recurring job from ${src.job_number} for ${dateStr}`,
+                  wtn_data: wtnDataSrc ? JSON.stringify({...wtnDataSrc, transferorSignature:'', transfereeSignature:'', transferDate:'', transferTime:'', wtnNumber:'', recurringWtn:false}) : null,
+                  wtn_recipient: src.wtn_recipient,
+                  wtn_recurring: false,
+                  parent_job_id: src.id,
+                };
+                const { error } = await window.supabase.from('jobs').insert([newJob]);
+                if (error) throw error;
+                await new Promise(r => setTimeout(r, 500));
+                await loadJobsFromSupabase();
+                alert(`✅ Job ${newJobNumber} created for ${dateStr}`);
+              } catch(err) {
+                alert('Error creating job: ' + err.message);
+              }
+            }}
+            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1"
+          >
+            ➕ Create Missed Job
+          </button>
+        </div>
       </div>
     )}
 
@@ -10703,6 +10786,7 @@ const CustomerPortalAdmin = ({ jobs, customers }) => {
   const [portalSearch, setPortalSearch] = useState('');
   const [savedMsg, setSavedMsg] = useState('');
   const [expandedPreviewId, setExpandedPreviewId] = useState(null);
+  const [wtnPreviewModal, setWtnPreviewModal] = useState(null);
   const [emailOverrides, setEmailOverrides] = useState({}); // { customerName: emailString }
 
   // Pre-fill with existing credentials from customer records
@@ -10817,35 +10901,18 @@ info@totalwasteservicesltd.com`;
     const inProgress = portalJobs.filter(j => !j.isCompleted && j.status !== 'COLLECTED' && !j.isCancelled);
 
     const downloadWTN = (job) => {
-      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>WTN-${job.jobNumber}</title>
-<style>body{font-family:Arial,sans-serif;padding:32px;color:#1f2937;max-width:640px;margin:0 auto;}
-h1{color:#166534;}div.badge{display:inline-block;background:#dcfce7;color:#166534;padding:3px 12px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:16px;}
-.grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:16px;}
-.cell{padding:10px 14px;border-bottom:1px solid #f3f4f6;}.cell:nth-child(odd){border-right:1px solid #f3f4f6;}
-.lbl{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}.val{font-weight:600;font-size:13px;}
-.note{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;font-size:12px;color:#166534;}
-.ft{margin-top:16px;font-size:11px;color:#9ca3af;text-align:center;}
-@media print{body{padding:0;}}</style></head><body>
-<h1>🌿 Total Waste Services Ltd</h1>
-<div class="badge">WTN-${job.jobNumber}</div>
-<div class="grid">
-<div class="cell"><div class="lbl">Job Reference</div><div class="val">${job.jobNumber||'—'}</div></div>
-<div class="cell"><div class="lbl">Date</div><div class="val">${job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</div></div>
-<div class="cell"><div class="lbl">Customer</div><div class="val">${job.customerName||'—'}</div></div>
-<div class="cell"><div class="lbl">Status</div><div class="val">${job.status||'—'}</div></div>
-<div class="cell"><div class="lbl">Job Type</div><div class="val">${job.jobType||'—'}</div></div>
-<div class="cell"><div class="lbl">Waste Type</div><div class="val">${job.wasteType||'—'}</div></div>
-<div class="cell"><div class="lbl">Site Address</div><div class="val">${[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ')||'—'}</div></div>
-<div class="cell"><div class="lbl">Supplier</div><div class="val">${job.supplierName||'—'}</div></div>
-</div>
-<div class="note">✅ <strong>Legal Compliance:</strong> This Waste Transfer Note is issued under the Waste (England and Wales) Regulations 2011. Please retain for a minimum of 2 years.</div>
-<div class="ft">Total Waste Services Ltd • www.totalwasteservicesltd.com • ${new Date().toLocaleDateString('en-GB')} • <button onclick="window.print()" style="border:none;background:none;color:#2563eb;cursor:pointer;">🖨 Print / Save PDF</button></div>
-</body></html>`;
-      const w = window.open('', '_blank');
-      if (w) { w.document.write(html); w.document.close(); }
+      // Convert camelCase job to snake_case format WtnPortalModal expects
+      const normalized = {
+        ...job,
+        job_number: job.jobNumber || job.job_number,
+        customer_name: job.customerName || job.customer_name,
+        wtn_data: job.wtnData ? JSON.stringify(job.wtnData) : job.wtn_data,
+      };
+      setWtnPreviewModal(normalized);
     };
 
     return (
+      <React.Fragment>
       <div>
         <div className="flex items-center gap-3 mb-6">
           <button onClick={() => setPortalPreviewCustomer(null)}
@@ -10940,8 +11007,8 @@ h1{color:#166534;}div.badge{display:inline-block;background:#dcfce7;color:#16653
                         </span>
                       </td>
                       <td className="px-4 py-3 text-xs">
-                        {done && isWasteJob && job.wtnSent
-                          ? <span className="text-green-700 font-medium">📄 Waste Transfer Note</span>
+                        {done && isWasteJob && (job.wtnSent || job.wtn_sent || job.wtnData?.wtnNumber)
+                          ? <button onClick={() => downloadWTN(job)} className="text-green-700 hover:text-green-900 font-medium">📄 Waste Transfer Note</button>
                           : done && isWasteJob
                           ? <span className="text-gray-400">WTN pending</span>
                           : <span className="text-gray-300">—</span>}
@@ -10997,6 +11064,8 @@ h1{color:#166534;}div.badge{display:inline-block;background:#dcfce7;color:#16653
           </div>
         </div>
       </div>
+      {wtnPreviewModal && <WtnPortalModal job={wtnPreviewModal} onClose={() => setWtnPreviewModal(null)} />}
+    </React.Fragment>
     );
   }
 
