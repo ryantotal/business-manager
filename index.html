@@ -988,6 +988,7 @@ return (
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
+                            const hasWtn = job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null' && job.wtn_data !== '{}');
 
                             // Get price — try customer_final_price, then line items RRP total, then unit_price × qty, then job_value
                             const lineItems = (() => { try { return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : (job.sage_line_items || []); } catch(e) { return []; } })();
@@ -1034,7 +1035,7 @@ return (
                                     }`}>{done ? 'Completed' : cancelled ? 'Cancelled' : 'Scheduled'}</span>
                                   </td>
                                   <td className="px-5 py-3">
-                                    {done && isWasteJob && (job.wtn_sent || job.wtn_sent_at) ? (
+                                    {done && isWasteJob && hasWtn ? (
                                       <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
                                         className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
                                         📄 Waste Transfer Note
@@ -1093,7 +1094,7 @@ return (
                                             </table>
                                           </div>
                                         )}
-                                        {done && isWasteJob && job.wtn_sent && (
+                                        {done && isWasteJob && (job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null')) && (
                                           <div className="col-span-2 sm:col-span-3">
                                             <button onClick={() => downloadWTN(job)}
                                               className="mt-1 px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
@@ -1224,9 +1225,30 @@ return (
 // ── EWC Code Picker ───────────────────────────────────────────────────────
 const WtnPortalModal = ({ job, onClose }) => {
   const rawWtn = job.wtn_data || (job.wtnData ? JSON.stringify(job.wtnData) : null);
-  const wtnData = rawWtn ? (typeof rawWtn === 'string' ? JSON.parse(rawWtn) : rawWtn) : null;
+  const savedWtn = rawWtn ? (typeof rawWtn === 'string' ? JSON.parse(rawWtn) : rawWtn) : null;
   const coName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
   const logoSrc = localStorage.getItem('companyLogo');
+
+  // If no saved wtn_data, build a basic WTN from the job record itself
+  const wtnData = savedWtn || {
+    wtnNumber: `WTN-${job.job_number || job.jobNumber}`,
+    transferDate: job.job_date || job.jobDate || job.collection_date || '',
+    wasteDescription: job.waste_type || job.wasteType || job.job_type || job.jobType || '—',
+    listOfWasteCode: '—',
+    skipSize: job.skip_size || job.skipSize || '—',
+    quantity: job.quantity || 1,
+    unit: job.unit || 'skip',
+    transferorName: job.customer_name || job.customerName || '—',
+    transferorAddress: [job.site_address1||job.siteAddress1, job.site_address2||job.siteAddress2, job.site_city||job.siteCity, job.site_postcode||job.sitePostcode].filter(Boolean).join(', '),
+    transferorSignature: '(signed)',
+    transfereeName: job.supplier_name || job.supplierName || '—',
+    transfereeCarrierReg: '—',
+    brokerName: coName,
+    transferAddress: [job.site_address1||job.siteAddress1, job.site_postcode||job.sitePostcode].filter(Boolean).join(', '),
+    recycledPct: 0, recoveredPct: 0, landfillPct: 100,
+    brokerCarrierReg: localStorage.getItem('carrierReg') || '—',
+  };
+  const isReconstructed = !savedWtn;
   const Row = ({label, val}) => (
     <div style={{padding:'6px 12px'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>{label}</div><div style={{fontWeight:700,fontSize:11}}>{val||'—'}</div></div>
   );
@@ -1241,8 +1263,12 @@ const WtnPortalModal = ({ job, onClose }) => {
               <button onClick={onClose} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">✕ Close</button>
             </div>
           </div>
-          {wtnData ? (
-            <div className="p-4" style={{fontFamily:'Arial,sans-serif',fontSize:11}}>
+          <div className="p-4" style={{fontFamily:'Arial,sans-serif',fontSize:11}}>
+              {isReconstructed && (
+                <div style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:6,padding:'6px 12px',marginBottom:8,fontSize:10,color:'#92400e'}}>
+                  ⚠ This WTN has been reconstructed from job records. Some fields may be incomplete. Please contact {coName} for the original document.
+                </div>
+              )}
               <div style={{border:'2px solid #000'}}>
                 <div style={{background:'#fff',padding:'12px 16px',borderBottom:'3px solid #1a5c2a',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                   <div>{logoSrc ? <img src={logoSrc} style={{height:40,objectFit:'contain'}} alt="logo"/> : <strong style={{color:'#1a5c2a'}}>{coName}</strong>}</div>
@@ -1278,9 +1304,6 @@ const WtnPortalModal = ({ job, onClose }) => {
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="p-8 text-center text-gray-500 text-sm">WTN details not yet available. Please contact {coName}.</div>
-          )}
         </div>
       </div>
     </div>
@@ -3899,6 +3922,15 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             }
                           }
 
+                          // Update formData so any subsequent save doesn't overwrite wtn_sent back to false
+                          setFormData(prev => ({
+                            ...prev,
+                            wtnSent: true,
+                            wtn_sent: true,
+                            wtnSentAt: wtnSaveData.wtn_sent_at,
+                            wtn_sent_at: wtnSaveData.wtn_sent_at,
+                            wtnRecipient: wtnFields.recipientEmail,
+                          }));
                           // Update local state immediately so WTN sent badge shows without reload
                           if (typeof setJobs === 'function') {
                             setJobs(prev => prev.map(j => j.id === wtnJobId ? {
@@ -7301,6 +7333,34 @@ console.log(JSON.stringify(invoiceData, null, 2));
                       <p>Transfer date: <span className="font-medium">{new Date(job.wtnData.transferDate).toLocaleDateString('en-GB')}</span></p>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Mark WTN as Sent — for historical jobs sent before this was tracked */}
+              {(job.isCompleted || job.is_completed) && ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.jobType || job.job_type) && !(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at) && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center justify-between gap-3">
+                  <p className="text-xs text-gray-500">WTN not recorded — if this was already sent, mark it here.</p>
+                  <button
+                    onClick={async () => {
+                      const sentDate = prompt('Date WTN was sent (DD/MM/YYYY), or leave blank for today:');
+                      let sentAt = new Date().toISOString();
+                      if (sentDate) {
+                        const parts = sentDate.split('/');
+                        if (parts.length === 3) sentAt = new Date(`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`).toISOString();
+                      }
+                      const jobId = job.id;
+                      const { error } = await window.supabase.from('jobs').update({ wtn_sent: true, wtn_sent_at: sentAt }).eq('id', jobId);
+                      if (error) { alert('Error: ' + error.message); return; }
+                      // Update current view immediately without requiring navigation away
+                      if (typeof onUpdateDisplay === 'function') {
+                        onUpdateDisplay(prev => prev ? { ...prev, wtnSent: true, wtn_sent: true, wtnSentAt: sentAt, wtn_sent_at: sentAt } : prev);
+                      }
+                      if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
+                    }}
+                    className="px-3 py-1.5 bg-gray-700 text-white rounded-lg text-xs font-medium hover:bg-gray-800 whitespace-nowrap"
+                  >
+                    Mark as Sent
+                  </button>
                 </div>
               )}
 
@@ -12388,16 +12448,15 @@ collection_date: updatedJob.collectionDate || null,
       recurring_end_date: updatedJob.recurringEndDate || null,
       recurring_next_date: updatedJob.isRecurring ? (updatedJob.recurringNextDate || updatedJob.recurringStartDate || null) : null,
       recurring_line_item_ids: updatedJob.recurringLineItemIds ? JSON.stringify(updatedJob.recurringLineItemIds) : null,
-      // WTN fields — never overwrite wtn_sent/wtn_sent_at/wtn_data if already sent in DB
-      // These are fetched fresh below and merged, so we only write them if formData has them set
-      ...(updatedJob.wtnSent ? {
+      // WTN fields — use formData value; formData is now updated when WTN is sent
+      // so wtnSent:true will be preserved through to the save
+      ...(updatedJob.wtnSent || updatedJob.wtn_sent ? {
         wtn_sent: true,
-        wtn_sent_at: updatedJob.wtnSentAt || null,
-        wtn_recipient: updatedJob.wtnRecipient || null,
+        wtn_sent_at: updatedJob.wtnSentAt || updatedJob.wtn_sent_at || null,
+        wtn_recipient: updatedJob.wtnRecipient || updatedJob.wtn_recipient || null,
         wtn_data: updatedJob.wtnData ? JSON.stringify(updatedJob.wtnData) : null,
       } : {
-        // Not sent yet — still save draft wtn_data so fields persist, but don't mark as sent
-        wtn_recipient: updatedJob.wtnRecipient || null,
+        wtn_recipient: updatedJob.wtnRecipient || updatedJob.wtn_recipient || null,
         wtn_data: updatedJob.wtnData ? JSON.stringify(updatedJob.wtnData) : null,
       }),
       wtn_recurring: updatedJob.wtnRecurring || false,
