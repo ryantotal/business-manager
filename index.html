@@ -3885,11 +3885,13 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             wtnSaveData.wtn_recurring_frequency = wtnFields.recurringWtnFrequency;
                             wtnSaveData.wtn_recurring_next_date = wtnFields.recurringWtnNextDate;
                           }
-                          await window.supabase.from('jobs').update(wtnSaveData).eq('id', job.id);
+                          const wtnJobId = job.id || formData.id;
+                          if (!wtnJobId) { console.error('WTN save: no job ID available'); }
+                          else { await window.supabase.from('jobs').update(wtnSaveData).eq('id', wtnJobId); }
 
                           // Update local state immediately so WTN sent badge shows without reload
                           if (typeof setJobs === 'function') {
-                            setJobs(prev => prev.map(j => j.id === job.id ? {
+                            setJobs(prev => prev.map(j => j.id === wtnJobId ? {
                               ...j,
                               wtnSent: true,
                               wtn_sent: true,
@@ -3910,6 +3912,8 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             } : prev);
                           }
 
+                          // Refresh jobs list so WTN sent badge shows immediately
+                          if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
                           setWtnSentOk(true);
                           setTimeout(()=>setWtnSentOk(false), 4000);
                           alert(`✅ WTN sent to ${wtnFields.recipientEmail}\n\nThe full WTN has been sent as an HTML email — it will display as a formatted document in their inbox.`);
@@ -5744,7 +5748,7 @@ job.status.replace('_', ' ')}
                           <h2 className="text-xl font-bold">{selectedJob.jobNumber}</h2>
                           <p className="text-gray-600">{selectedJob.jobType}</p>
                         </div>
-                        {(selectedJob.wtnSent || selectedJob.wtn_sent || selectedJob.wtnSentAt || selectedJob.wtn_sent_at) && (
+                        {(selectedJob.wtnSent || selectedJob.wtn_sent || selectedJob.wtnSentAt || selectedJob.wtn_sent_at || (selectedJob.wtnData?.wtnNumber && selectedJob.wtnData?.recipientEmail)) && (
                           <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ WTN Sent</span>
                         )}
                       </div>
@@ -6732,7 +6736,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
          job.isCancelled ? 'Cancelled' :
          job.status}
       </span>
-      {(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at) && (
+      {(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at || (job.wtnData?.wtnNumber && job.wtnData?.recipientEmail)) && (
         <span className="px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 flex items-center gap-1">
           ✅ WTN Sent
         </span>
@@ -6943,7 +6947,146 @@ console.log(JSON.stringify(invoiceData, null, 2));
       </div>
     </div>
 
-    {/* Recurring Job Info - shown only if this is a recurring job */}
+
+    {/* Products & Services - COMPACT & MOBILE FRIENDLY */}
+    <div className="bg-white rounded-lg border border-gray-200 mt-4">
+      <div className="bg-gray-50 border-b border-gray-200 px-3 md:px-4 py-2">
+        <h2 className="text-sm md:text-base font-semibold text-gray-800">Products & Services</h2>
+      </div>
+      <div className="p-3 md:p-4">
+        {job.lineItems && job.lineItems.length > 0 ? (
+          <>
+            {/* Desktop Table - Compact */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs">
+                    <th className="text-left py-2 px-2 font-medium text-gray-700">Product/Service</th>
+                    <th className="text-left py-2 px-2 font-medium text-gray-700">Description</th>
+                    <th className="text-center py-2 px-2 font-medium text-gray-700">Qty</th>
+                    <th className="text-right py-2 px-2 font-medium text-gray-700">Cost</th>
+                    <th className="text-right py-2 px-2 font-medium text-gray-700">RRP</th>
+                    <th className="text-right py-2 px-2 font-medium text-gray-700">Line Profit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {job.lineItems.map((item, index) => {
+                    const lineCost = (item.supplier_price || 0) * (item.quantity || 1);
+                    const lineRRP = (item.customer_price || 0) * (item.quantity || 1);
+                    const lineProfit = lineRRP - lineCost;
+                    
+                    return (
+                      <tr key={item.id || index} className={`border-b border-gray-100 ${item.one_off || item.type === 'one_off' ? 'bg-amber-50' : ''}`}>
+                        <td className="py-2 px-2">
+                          <div className="flex items-center gap-1.5 font-medium text-xs">
+                            {item.product_name || item.name}
+                            {(item.one_off || item.type === 'one_off') && <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300 font-medium whitespace-nowrap">One-Off</span>}
+                          </div>
+                          <div className="text-xs text-gray-500">Code: {item.item_code || 'N/A'}{(item.one_off || item.type === 'one_off') ? ' · This job only' : ''}</div>
+                        </td>
+                        <td className="py-2 px-2 text-gray-600 text-xs">
+                          {item.description || '-'}
+                        </td>
+                        <td className="py-2 px-2 text-center text-xs">
+                          {item.quantity || 1}
+                        </td>
+                        <td className="py-2 px-2 text-right text-xs text-red-600 font-medium">
+                          £{lineCost.toFixed(2)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-xs text-blue-600 font-medium">
+                          £{lineRRP.toFixed(2)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-xs">
+                          <span className={`font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            £{lineProfit.toFixed(2)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Mobile Cards - Compact */}
+            <div className="md:hidden space-y-2">
+              {job.lineItems.map((item, index) => {
+                const lineCost = (item.supplier_price || 0) * (item.quantity || 1);
+                const lineRRP = (item.customer_price || 0) * (item.quantity || 1);
+                const lineProfit = lineRRP - lineCost;
+                
+                return (
+                  <div key={item.id || index} className={`border rounded p-2 text-xs ${item.one_off || item.type === 'one_off' ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`}>
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {item.product_name || item.name}
+                      {(item.one_off || item.type === 'one_off') && <span className="px-1 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">One-Off</span>}
+                    </div>
+                    <div className="text-gray-500">Code: {item.item_code || 'N/A'}{(item.one_off || item.type === 'one_off') ? ' · This job only' : ''}</div>
+                    <div className="grid grid-cols-2 gap-1 mt-1">
+                      <div>Qty: <span className="font-medium">{item.quantity || 1}</span></div>
+                      <div>Cost: <span className="text-red-600 font-medium">£{lineCost.toFixed(2)}</span></div>
+                      <div>RRP: <span className="text-blue-600 font-medium">£{lineRRP.toFixed(2)}</span></div>
+                      <div>Profit: <span className={`font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>£{lineProfit.toFixed(2)}</span></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Summary Cards - Compact */}
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-3 pt-3 border-t">
+              <div className="bg-gray-50 rounded p-2 text-center">
+                <div className="text-xs text-gray-600">Items</div>
+                <div className="text-base font-bold">{job.lineItems.length}</div>
+              </div>
+              <div className="bg-gray-50 rounded p-2 text-center">
+                <div className="text-xs text-gray-600">Qty</div>
+                <div className="text-base font-bold">{(job.lineItems || []).reduce((sum, item) => sum + (item.quantity || 1), 0)}</div>
+              </div>
+              <div className="bg-blue-50 rounded p-2 text-center">
+                <div className="text-xs text-blue-600">Value</div>
+                <div className="text-base font-bold text-blue-700">
+                 £{(job.lineItems || []).reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
+                </div>
+              </div>
+              <div className="bg-red-50 rounded p-2 text-center">
+                <div className="text-xs text-red-600">Cost</div>
+                <div className="text-base font-bold text-red-700">
+                  £{(job.lineItems || []).reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
+                </div>
+              </div>
+              <div className="bg-green-50 rounded p-2 text-center">
+                <div className="text-xs text-green-600">Profit</div>
+                <div className="text-base font-bold text-green-700">
+                 £{((job.lineItems || []).reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0) -
+  (job.lineItems || []).reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0)).toFixed(0)}
+                </div>
+              </div>
+              <div className="bg-purple-50 rounded p-2 text-center">
+                <div className="text-xs text-purple-600">Margin</div>
+                <div className="text-base font-bold text-purple-700">
+                  {(() => {
+                    const totalRRP = (job.lineItems || []).reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0);
+                    const totalCost = (job.lineItems || []).reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0);
+                    return totalRRP > 0 ? ((totalRRP - totalCost) / totalRRP * 100).toFixed(1) : 0;
+                  })()}%
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-4 text-gray-500 text-sm">
+            <p>No products or services added</p>
+          </div>
+        )}
+      </div>
+    </div>
+
+            {/* Special Information */}
+            <div className="space-y-4 mt-4">
+
+              {/* Recurring Job Info */}
+              {/* Recurring Job Info - shown only if this is a recurring job */}
     {(job.isRecurring || job.is_recurring) && (
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -7126,145 +7269,9 @@ console.log(JSON.stringify(invoiceData, null, 2));
       </div>
     )}
 
-    {/* Products & Services - COMPACT & MOBILE FRIENDLY */}
-    <div className="bg-white rounded-lg border border-gray-200 mt-4">
-      <div className="bg-gray-50 border-b border-gray-200 px-3 md:px-4 py-2">
-        <h2 className="text-sm md:text-base font-semibold text-gray-800">Products & Services</h2>
-      </div>
-      <div className="p-3 md:p-4">
-        {job.lineItems && job.lineItems.length > 0 ? (
-          <>
-            {/* Desktop Table - Compact */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 text-xs">
-                    <th className="text-left py-2 px-2 font-medium text-gray-700">Product/Service</th>
-                    <th className="text-left py-2 px-2 font-medium text-gray-700">Description</th>
-                    <th className="text-center py-2 px-2 font-medium text-gray-700">Qty</th>
-                    <th className="text-right py-2 px-2 font-medium text-gray-700">Cost</th>
-                    <th className="text-right py-2 px-2 font-medium text-gray-700">RRP</th>
-                    <th className="text-right py-2 px-2 font-medium text-gray-700">Line Profit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {job.lineItems.map((item, index) => {
-                    const lineCost = (item.supplier_price || 0) * (item.quantity || 1);
-                    const lineRRP = (item.customer_price || 0) * (item.quantity || 1);
-                    const lineProfit = lineRRP - lineCost;
-                    
-                    return (
-                      <tr key={item.id || index} className={`border-b border-gray-100 ${item.one_off || item.type === 'one_off' ? 'bg-amber-50' : ''}`}>
-                        <td className="py-2 px-2">
-                          <div className="flex items-center gap-1.5 font-medium text-xs">
-                            {item.product_name || item.name}
-                            {(item.one_off || item.type === 'one_off') && <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300 font-medium whitespace-nowrap">One-Off</span>}
-                          </div>
-                          <div className="text-xs text-gray-500">Code: {item.item_code || 'N/A'}{(item.one_off || item.type === 'one_off') ? ' · This job only' : ''}</div>
-                        </td>
-                        <td className="py-2 px-2 text-gray-600 text-xs">
-                          {item.description || '-'}
-                        </td>
-                        <td className="py-2 px-2 text-center text-xs">
-                          {item.quantity || 1}
-                        </td>
-                        <td className="py-2 px-2 text-right text-xs text-red-600 font-medium">
-                          £{lineCost.toFixed(2)}
-                        </td>
-                        <td className="py-2 px-2 text-right text-xs text-blue-600 font-medium">
-                          £{lineRRP.toFixed(2)}
-                        </td>
-                        <td className="py-2 px-2 text-right text-xs">
-                          <span className={`font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            £{lineProfit.toFixed(2)}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            
-            {/* Mobile Cards - Compact */}
-            <div className="md:hidden space-y-2">
-              {job.lineItems.map((item, index) => {
-                const lineCost = (item.supplier_price || 0) * (item.quantity || 1);
-                const lineRRP = (item.customer_price || 0) * (item.quantity || 1);
-                const lineProfit = lineRRP - lineCost;
-                
-                return (
-                  <div key={item.id || index} className={`border rounded p-2 text-xs ${item.one_off || item.type === 'one_off' ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`}>
-                    <div className="flex items-center gap-1.5 font-medium">
-                      {item.product_name || item.name}
-                      {(item.one_off || item.type === 'one_off') && <span className="px-1 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">One-Off</span>}
-                    </div>
-                    <div className="text-gray-500">Code: {item.item_code || 'N/A'}{(item.one_off || item.type === 'one_off') ? ' · This job only' : ''}</div>
-                    <div className="grid grid-cols-2 gap-1 mt-1">
-                      <div>Qty: <span className="font-medium">{item.quantity || 1}</span></div>
-                      <div>Cost: <span className="text-red-600 font-medium">£{lineCost.toFixed(2)}</span></div>
-                      <div>RRP: <span className="text-blue-600 font-medium">£{lineRRP.toFixed(2)}</span></div>
-                      <div>Profit: <span className={`font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>£{lineProfit.toFixed(2)}</span></div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            
-            {/* Summary Cards - Compact */}
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-3 pt-3 border-t">
-              <div className="bg-gray-50 rounded p-2 text-center">
-                <div className="text-xs text-gray-600">Items</div>
-                <div className="text-base font-bold">{job.lineItems.length}</div>
-              </div>
-              <div className="bg-gray-50 rounded p-2 text-center">
-                <div className="text-xs text-gray-600">Qty</div>
-                <div className="text-base font-bold">{(job.lineItems || []).reduce((sum, item) => sum + (item.quantity || 1), 0)}</div>
-              </div>
-              <div className="bg-blue-50 rounded p-2 text-center">
-                <div className="text-xs text-blue-600">Value</div>
-                <div className="text-base font-bold text-blue-700">
-                 £{(job.lineItems || []).reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
-                </div>
-              </div>
-              <div className="bg-red-50 rounded p-2 text-center">
-                <div className="text-xs text-red-600">Cost</div>
-                <div className="text-base font-bold text-red-700">
-                  £{(job.lineItems || []).reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0).toFixed(0)}
-                </div>
-              </div>
-              <div className="bg-green-50 rounded p-2 text-center">
-                <div className="text-xs text-green-600">Profit</div>
-                <div className="text-base font-bold text-green-700">
-                 £{((job.lineItems || []).reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0) -
-  (job.lineItems || []).reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0)).toFixed(0)}
-                </div>
-              </div>
-              <div className="bg-purple-50 rounded p-2 text-center">
-                <div className="text-xs text-purple-600">Margin</div>
-                <div className="text-base font-bold text-purple-700">
-                  {(() => {
-                    const totalRRP = (job.lineItems || []).reduce((sum, item) => sum + ((item.customer_price || 0) * (item.quantity || 1)), 0);
-                    const totalCost = (job.lineItems || []).reduce((sum, item) => sum + ((item.supplier_price || 0) * (item.quantity || 1)), 0);
-                    return totalRRP > 0 ? ((totalRRP - totalCost) / totalRRP * 100).toFixed(1) : 0;
-                  })()}%
-                </div>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="text-center py-4 text-gray-500 text-sm">
-            <p>No products or services added</p>
-          </div>
-        )}
-      </div>
-    </div>
-
-            {/* Special Information */}
-            <div className="space-y-4 mt-4">
 
               {/* WTN Sent Badge */}
-              {(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at) && (
+              {(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at || (job.wtnData?.wtnNumber && job.wtnData?.recipientEmail)) && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-green-600 text-lg">✅</span>
@@ -7276,7 +7283,6 @@ console.log(JSON.stringify(invoiceData, null, 2));
                       <p>Sent: <span className="font-medium">{new Date(job.wtnSentAt || job.wtn_sent_at).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></p>
                     )}
                     {(() => {
-                      // wtn_data.recipientEmail is the exact address EmailJS sent to — use as source of truth
                       const recipient = job.wtnData?.recipientEmail || job.wtnRecipient || job.wtn_recipient || '';
                       if (!recipient) return null;
                       return <p>Sent to: <span className="font-medium">{recipient}</span></p>;
@@ -12372,9 +12378,9 @@ collection_date: updatedJob.collectionDate || null,
       recurring_end_date: updatedJob.recurringEndDate || null,
       recurring_next_date: updatedJob.isRecurring ? (updatedJob.recurringNextDate || updatedJob.recurringStartDate || null) : null,
       recurring_line_item_ids: updatedJob.recurringLineItemIds ? JSON.stringify(updatedJob.recurringLineItemIds) : null,
-      // WTN fields — persist so they survive reload
-      wtn_sent: updatedJob.wtnSent || false,
-      wtn_sent_at: updatedJob.wtnSentAt || null,
+      // WTN fields — only overwrite wtn_sent/wtn_sent_at if they are truthy,
+      // so saving the job form never clears a WTN that was already sent
+      ...(updatedJob.wtnSent ? { wtn_sent: true, wtn_sent_at: updatedJob.wtnSentAt || null } : {}),
       wtn_recipient: updatedJob.wtnRecipient || null,
       wtn_recurring: updatedJob.wtnRecurring || false,
       wtn_recurring_frequency: updatedJob.wtnRecurringFrequency || null,
