@@ -886,10 +886,12 @@ return (
                       return (j.job_number||'').toLowerCase().includes(q)
                         || (j.job_type||'').toLowerCase().includes(q)
                         || (j.site_address1||'').toLowerCase().includes(q)
+                        || (j.site_address2||'').toLowerCase().includes(q)
                         || (j.site_city||'').toLowerCase().includes(q)
                         || (j.site_postcode||'').toLowerCase().includes(q)
                         || (j.waste_type||'').toLowerCase().includes(q)
-                        || (j.aggregate_type||'').toLowerCase().includes(q);
+                        || (j.aggregate_type||'').toLowerCase().includes(q)
+                        || (j.customer_po||'').toLowerCase().includes(q);
                     });
 
                     // Apply sort
@@ -955,7 +957,7 @@ return (
                       </span>
                       <div className="flex items-center gap-2">
                         <input type="text" value={portalSearch} onChange={e => setPortalSearch(e.target.value)}
-                          placeholder="🔍 Search jobs, address, service..."
+                          placeholder="🔍 Search by job ref, address, postcode, service..."
                           className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-56 focus:outline-none focus:ring-2 focus:ring-green-500" />
                         {(portalSearch || portalFilter !== 'all') && (
                           <button onClick={() => { setPortalSearch(''); setPortalFilter('all'); }}
@@ -1032,7 +1034,7 @@ return (
                                     }`}>{done ? 'Completed' : cancelled ? 'Cancelled' : 'In Progress'}</span>
                                   </td>
                                   <td className="px-5 py-3">
-                                    {done && isWasteJob && (job.wtn_sent || (job.wtn_data && job.wtn_data !== 'null')) ? (
+                                    {done && isWasteJob && job.wtn_sent ? (
                                       <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
                                         className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
                                         📄 Waste Transfer Note
@@ -1091,7 +1093,7 @@ return (
                                             </table>
                                           </div>
                                         )}
-                                        {done && isWasteJob && (job.wtn_sent || (job.wtn_data && job.wtn_data !== 'null')) && (
+                                        {done && isWasteJob && job.wtn_sent && (
                                           <div className="col-span-2 sm:col-span-3">
                                             <button onClick={() => downloadWTN(job)}
                                               className="mt-1 px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
@@ -1937,6 +1939,7 @@ eventEndDate: '',
     recurringStartDate: new Date().toISOString().split('T')[0],
     recurringEndDate: '',
     recurringNextDate: '',
+    recurringLineItemIds: null, // null = all items, array of indices = selected only
   };
   
   // If editing, merge job data but ensure lineItems is always an array
@@ -2563,9 +2566,12 @@ const [isEvent, setIsEvent] = useState(false);
                     {formData.lineItems && Array.isArray(formData.lineItems) && formData.lineItems.length > 0 ? formData.lineItems.map((item, index) => {
                       const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
                       return (
-                        <tr key={item.id} className="border-t hover:bg-gray-50">
+                        <tr key={item.id} className={`border-t hover:bg-gray-50 ${item.one_off ? 'bg-amber-50' : ''}`}>
                           <td className="px-4 py-3">
-                            <div>{item.product_name}</div>
+                            <div className="flex items-center gap-2">
+                              <span>{item.product_name}</span>
+                              {item.one_off && <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300" title="This item is marked as one-off and will not be copied to recurring child jobs">One-Off</span>}
+                            </div>
                             <div className="text-xs text-gray-500">{item.item_code}</div>
                           </td>
                           <td className="px-4 py-3">
@@ -2632,15 +2638,30 @@ const [isEvent, setIsEvent] = useState(false);
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <button
-                              onClick={() => {
-                                const updatedItems = formData.lineItems.filter((_, i) => i !== index);
-                                setFormData({...formData, lineItems: updatedItems});
-                              }}
-                              className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-                            >
-                              Remove
-                            </button>
+                            <div className="flex flex-col gap-1.5">
+                              <button
+                                type="button"
+                                title={item.one_off ? "Click to make this item recurring" : "Click to mark as one-off (won't copy to recurring jobs)"}
+                                onClick={() => {
+                                  const updatedItems = [...formData.lineItems];
+                                  updatedItems[index] = {...updatedItems[index], one_off: !updatedItems[index].one_off};
+                                  setFormData({...formData, lineItems: updatedItems});
+                                }}
+                                className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${item.one_off ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}`}
+                              >
+                                {item.one_off ? 'One-Off' : 'Recurring'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedItems = formData.lineItems.filter((_, i) => i !== index);
+                                  setFormData({...formData, lineItems: updatedItems});
+                                }}
+                                className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                              >
+                                Remove
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2689,6 +2710,7 @@ const [isEvent, setIsEvent] = useState(false);
                   </div>
                 </div>
               </div>
+
             </div>
           )}
 
@@ -3315,6 +3337,48 @@ const [isEvent, setIsEvent] = useState(false);
                           <p className="font-semibold mb-1">⚠️ How it works</p>
                           <p>Save the job to lock in the recurring schedule. Each time a job is due, the system will automatically create it as a copy of this one and show a notification on your dashboard. You can cancel the recurring schedule at any time by editing the job.</p>
                         </div>
+
+                        {/* Line item selector */}
+                        {formData.lineItems && formData.lineItems.length > 0 && (
+                          <div className="border border-gray-200 rounded-lg overflow-hidden">
+                            <div className="bg-gray-50 px-4 py-2 border-b flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-medium text-gray-700">Products to include in each recurring job</p>
+                                <p className="text-xs text-gray-400 mt-0.5">Untick any one-off items you don't want copied each time</p>
+                              </div>
+                              <button type="button" onClick={() => setFormData({...formData, recurringLineItemIds: null})}
+                                className="text-xs text-blue-600 hover:underline">Select all</button>
+                            </div>
+                            <div className="divide-y divide-gray-100">
+                              {formData.lineItems.map((item, idx) => {
+                                const selectedIds = formData.recurringLineItemIds;
+                                const isSelected = selectedIds === null || selectedIds.includes(idx);
+                                return (
+                                  <label key={idx} className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 ${isSelected ? '' : 'opacity-50'}`}>
+                                    <input type="checkbox" checked={isSelected}
+                                      onChange={e => {
+                                        const current = formData.recurringLineItemIds === null
+                                          ? formData.lineItems.map((_, i) => i)
+                                          : [...formData.recurringLineItemIds];
+                                        const next = e.target.checked
+                                          ? [...current, idx]
+                                          : current.filter(i => i !== idx);
+                                        setFormData({...formData, recurringLineItemIds: next.length === formData.lineItems.length ? null : next});
+                                      }}
+                                      className="w-4 h-4 text-blue-600 rounded" />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium text-gray-800 truncate">{item.product_name || item.description || 'Product'}</div>
+                                      <div className="text-xs text-gray-400">£{parseFloat(item.customer_price || item.unit_price || 0).toFixed(2)} × {item.quantity || 1}</div>
+                                    </div>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${isSelected ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                                      {isSelected ? 'Included' : 'Excluded'}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -3337,7 +3401,7 @@ const [isEvent, setIsEvent] = useState(false);
                       </div>
                     )}
                     {/* Warning for child jobs with auto-WTN on parent */}
-                    {job && job.parentJobId && (
+                    {job && job.parentJobId && !(job.notes||'').startsWith('Duplicated from') && (
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
                         <div className="font-semibold mb-1">🔁 Auto-WTN is managed by the parent job</div>
                         <p>When this job is marked as completed, a WTN will be <strong>automatically emailed</strong> based on the recurring schedule set on the parent job. You don't need to send it manually.</p>
@@ -4908,7 +4972,7 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
         })
         .eq('id', job.id);
       
-      // ⚡ CRITICAL FIX: Fetch the updated job from database ⚡
+      //  CRITICAL FIX: Fetch the updated job from database 
       const { data: updatedJob, error } = await window.supabase
         .from('jobs')
         .select('*')
@@ -5680,7 +5744,7 @@ job.status.replace('_', ' ')}
                           <h2 className="text-xl font-bold">{selectedJob.jobNumber}</h2>
                           <p className="text-gray-600">{selectedJob.jobType}</p>
                         </div>
-                        {(selectedJob.wtnSent || selectedJob.wtn_sent || selectedJob.wtnData?.wtnNumber || selectedJob.wtn_data) && (
+                        {(selectedJob.wtnSent || selectedJob.wtn_sent || selectedJob.wtnSentAt || selectedJob.wtn_sent_at) && (
                           <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ WTN Sent</span>
                         )}
                       </div>
@@ -5945,12 +6009,46 @@ job.status.replace('_', ' ')}
 </div>
 </div>
     
-                      {selectedJob.parentJobId && (
+                      {selectedJob.parentJobId && !(selectedJob.notes||'').startsWith('Duplicated from') && !(selectedJob.notes||'').startsWith('Auto-created recurring') && !(selectedJob.notes||'').startsWith('Manually created missed recurring') && (
                         <div className="mt-6 p-4 bg-orange-50 rounded-lg">
                           <h3 className="font-semibold mb-2 text-orange-900">Exchange Information</h3>
                           <p className="text-orange-700">This is an exchange job from: <span className="font-semibold">
                             {(() => { const parent = jobs.find(j => j.id === selectedJob.parentJobId); return parent?.jobNumber || parent?.job_number || selectedJob.parentJobId; })()}
                           </span></p>
+                        </div>
+                      )}
+                      {(selectedJob.notes||'').startsWith('Duplicated from') && (
+                        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                          <h3 className="font-semibold mb-2 text-gray-700">Duplicated Job</h3>
+                          <p className="text-gray-600 text-sm">{selectedJob.notes}</p>
+                        </div>
+                      )}
+                      {(selectedJob.notes||'').startsWith('Manually created missed recurring') && (
+                        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span>🔁</span>
+                              <h3 className="font-semibold text-blue-800">Part of Recurring Schedule</h3>
+                            </div>
+                            {(() => { const p = jobs.find(j => j.id === selectedJob.parentJobId); const f = p?.recurringFrequency || p?.recurring_frequency; return f ? <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full capitalize">{f}</span> : null; })()}
+                          </div>
+                          <div className="mb-2 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">⚠️ Manually created for a missed occurrence</div>
+                          {(() => {
+                            const parent = jobs.find(j => j.id === selectedJob.parentJobId);
+                            if (!parent) return <p className="text-sm text-blue-700">Linked to a recurring schedule.</p>;
+                            const freq = parent.recurringFrequency || parent.recurring_frequency;
+                            const nextDate = parent.recurringNextDate || parent.recurring_next_date;
+                            const startDate = parent.recurringStartDate || parent.recurring_start_date;
+                            return (
+                              <div className="text-sm space-y-1 mt-1">
+                                <p className="text-blue-700">Template: <span className="font-semibold">{parent.jobNumber || parent.job_number}</span></p>
+                                {freq && <p className="text-blue-700">Frequency: <span className="font-semibold capitalize">{freq}</span></p>}
+                                {startDate && <p className="text-blue-700">Started: <span className="font-semibold">{new Date(startDate).toLocaleDateString('en-GB')}</span></p>}
+                                {nextDate && <p className="text-blue-700">Next due: <span className="font-semibold">{new Date(nextDate).toLocaleDateString('en-GB')}</span></p>}
+                                <p className="text-xs text-blue-500 mt-1">Open {parent.jobNumber || parent.job_number} → 🔁 Recurring tab to edit the schedule.</p>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
 
@@ -6391,7 +6489,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
-const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user, onUpdateDisplay,setDeleteConfirmation }) => {
+const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh }) => {
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
@@ -6634,7 +6732,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
          job.isCancelled ? 'Cancelled' :
          job.status}
       </span>
-      {(job.wtnSent || job.wtn_sent || (job.wtnData && job.wtnData.wtnNumber)) && (
+      {(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at) && (
         <span className="px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 flex items-center gap-1">
           ✅ WTN Sent
         </span>
@@ -6923,30 +7021,98 @@ console.log(JSON.stringify(invoiceData, null, 2));
                   newJobNumber = `TWS-${max+1}`;
                 }
                 const wtnDataSrc = src.wtn_data ? (typeof src.wtn_data === 'string' ? JSON.parse(src.wtn_data) : src.wtn_data) : null;
+                // Apply line item filter
+                const lineItemIds = src.recurring_line_item_ids ? (typeof src.recurring_line_item_ids === 'string' ? JSON.parse(src.recurring_line_item_ids) : src.recurring_line_item_ids) : null;
+                const filterItems = (raw) => {
+                  try {
+                    const arr = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);
+                    // Always strip one-off charges — they are for that job only
+                    const withoutOneOff = arr.filter(item => !item.one_off && item.type !== 'one_off');
+                    // Then apply recurring_line_item_ids selection if set
+                    if (!lineItemIds) return JSON.stringify(withoutOneOff);
+                    return JSON.stringify(withoutOneOff.filter((_, i) => lineItemIds.includes(i)));
+                  } catch(e) { return raw; }
+                };
                 const newJob = {
                   job_number: newJobNumber,
-                  customer_name: src.customer_name, supplier_name: src.supplier_name,
-                  job_type: src.job_type, waste_type: src.waste_type, skip_size: src.skip_size,
-                  aggregate_type: src.aggregate_type, quantity: src.quantity, unit: src.unit,
-                  customer_unit_price: src.customer_unit_price, customer_final_price: src.customer_final_price,
-                  supplier_unit_price: src.supplier_unit_price, supplier_final_price: src.supplier_final_price,
-                  gross_profit: src.gross_profit, job_value: src.job_value,
-                  site_address1: src.site_address1, site_address2: src.site_address2,
-                  site_city: src.site_city, site_postcode: src.site_postcode,
-                  site_contact: src.site_contact, site_phone: src.site_phone,
-                  sage_line_items: src.sage_line_items, line_items: src.line_items,
-                  job_date: jobDate, status: 'CONFIRMED', is_completed: false, is_cancelled: false,
+                  // Core — full copy of parent
+                  customer_name: src.customer_name,
+                  customer_po: src.customer_po,
+                  supplier_name: src.supplier_name,
+                  supplier_ref: src.supplier_ref,
+                  haulier_name: src.haulier_name,
+                  job_type: src.job_type,
+                  waste_type: src.waste_type,
+                  skip_size: src.skip_size,
+                  aggregate_type: src.aggregate_type,
+                  quantity: src.quantity,
+                  unit: src.unit,
+                  weight: src.weight,
+                  customer_unit_price: src.customer_unit_price,
+                  customer_final_price: src.customer_final_price,
+                  supplier_unit_price: src.supplier_unit_price,
+                  supplier_final_price: src.supplier_final_price,
+                  vat_rate: src.vat_rate,
+                  gross_profit: src.gross_profit,
+                  profit_margin: src.profit_margin,
+                  job_value: src.job_value,
+                  // Site
+                  site_address: src.site_address,
+                  site_address1: src.site_address1,
+                  site_address2: src.site_address2,
+                  site_city: src.site_city,
+                  site_postcode: src.site_postcode,
+                  site_contact: src.site_contact,
+                  site_phone: src.site_phone,
+                  site_notes: src.site_notes,
+                  delivery_instructions: src.delivery_instructions,
+                  access_restrictions: src.access_restrictions,
+                  time_slot: src.time_slot,
+                  delivery_date: null,
+                  collection_date: null,
+                  // Products
+                  sage_line_items: filterItems(src.sage_line_items),
+                  line_items: filterItems(src.line_items),
+                  sage_product_id: src.sage_product_id,
+                  sage_product_name: src.sage_product_name,
+                  sage_product_data: src.sage_product_data,
+                  description: src.description,
+                  // Billing
+                  hazardous_waste: src.hazardous_waste,
+                  invoice_status: 'Not Invoiced',
+                  payment_status: 'Not Paid',
+                  // Status
+                  job_date: jobDate,
+                  status: 'CONFIRMED',
+                  is_completed: false,
+                  is_cancelled: false,
                   is_recurring: false,
                   notes: `Manually created missed recurring job from ${src.job_number} for ${dateStr}`,
-                  wtn_data: wtnDataSrc ? JSON.stringify({...wtnDataSrc, transferorSignature:'', transfereeSignature:'', transferDate:'', transferTime:'', wtnNumber:'', recurringWtn:false}) : null,
+                  // WTN — keep template, clear one-time fields
+                  wtn_data: wtnDataSrc ? JSON.stringify({
+                    ...wtnDataSrc,
+                    transferDate: '',
+                    transferTime: '',
+                    wtnNumber: '',
+                    recipientEmail: src.wtn_recipient || '',
+                    recurringWtn: false,
+                    recurringWtnFrequency: 'monthly',
+                    recurringWtnNextDate: '',
+                  }) : null,
                   wtn_recipient: src.wtn_recipient,
+                  wtn_sent: false,             // always false on new child
+                  wtn_sent_at: null,
                   wtn_recurring: false,
+                  wtn_recurring_frequency: null,
+                  wtn_recurring_next_date: null,
+                  // Chain — ties child back to recurring parent
                   parent_job_id: src.id,
                 };
                 const { error } = await window.supabase.from('jobs').insert([newJob]);
                 if (error) throw error;
                 await new Promise(r => setTimeout(r, 500));
-                await loadJobsFromSupabase();
+                if (onRefresh) await onRefresh();
+                else if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
                 alert(`✅ Job ${newJobNumber} created for ${dateStr}`);
               } catch(err) {
                 alert('Error creating job: ' + err.message);
@@ -6988,10 +7154,13 @@ console.log(JSON.stringify(invoiceData, null, 2));
                     const lineProfit = lineRRP - lineCost;
                     
                     return (
-                      <tr key={item.id || index} className="border-b border-gray-100">
+                      <tr key={item.id || index} className={`border-b border-gray-100 ${item.one_off || item.type === 'one_off' ? 'bg-amber-50' : ''}`}>
                         <td className="py-2 px-2">
-                          <div className="font-medium text-xs">{item.product_name || item.name}</div>
-                          <div className="text-xs text-gray-500">Code: {item.item_code || 'N/A'}</div>
+                          <div className="flex items-center gap-1.5 font-medium text-xs">
+                            {item.product_name || item.name}
+                            {(item.one_off || item.type === 'one_off') && <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300 font-medium whitespace-nowrap">One-Off</span>}
+                          </div>
+                          <div className="text-xs text-gray-500">Code: {item.item_code || 'N/A'}{(item.one_off || item.type === 'one_off') ? ' · This job only' : ''}</div>
                         </td>
                         <td className="py-2 px-2 text-gray-600 text-xs">
                           {item.description || '-'}
@@ -7025,9 +7194,12 @@ console.log(JSON.stringify(invoiceData, null, 2));
                 const lineProfit = lineRRP - lineCost;
                 
                 return (
-                  <div key={item.id || index} className="border border-gray-200 rounded p-2 text-xs">
-                    <div className="font-medium">{item.product_name || item.name}</div>
-                    <div className="text-gray-500">Code: {item.item_code || 'N/A'}</div>
+                  <div key={item.id || index} className={`border rounded p-2 text-xs ${item.one_off || item.type === 'one_off' ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`}>
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {item.product_name || item.name}
+                      {(item.one_off || item.type === 'one_off') && <span className="px-1 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">One-Off</span>}
+                    </div>
+                    <div className="text-gray-500">Code: {item.item_code || 'N/A'}{(item.one_off || item.type === 'one_off') ? ' · This job only' : ''}</div>
                     <div className="grid grid-cols-2 gap-1 mt-1">
                       <div>Qty: <span className="font-medium">{item.quantity || 1}</span></div>
                       <div>Cost: <span className="text-red-600 font-medium">£{lineCost.toFixed(2)}</span></div>
@@ -7092,7 +7264,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
             <div className="space-y-4 mt-4">
 
               {/* WTN Sent Badge */}
-              {(job.wtnSent || job.wtn_sent || (job.wtnData && job.wtnData.wtnNumber)) && (
+              {(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at) && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-green-600 text-lg">✅</span>
@@ -7180,13 +7352,88 @@ console.log(JSON.stringify(invoiceData, null, 2));
                 </div>
               )}
 
-              {/* Exchange / duplicate from another job */}
-              {job.parentJobId && (job.isRecurring || job.is_recurring || !(job.notes||'').includes('Auto-created')) && !(job.notes||'').includes('Auto-created') && (
+              {/* Exchange info panel */}
+              {job.parentJobId && !(job.isRecurring || job.is_recurring || (job.notes||'').includes('Auto-created')) && !(job.notes||'').startsWith('Duplicated from') && !(job.notes||'').startsWith('Manually created missed recurring') && (
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                   <h3 className="font-semibold text-orange-900 mb-1">Exchange Information</h3>
                   <p className="text-orange-700 text-sm">This is an exchange job from: <span className="font-semibold">
                     {(() => { const parent = (jobs||[]).find(j => j.id === job.parentJobId); return parent?.jobNumber || parent?.job_number || job.parentJobId; })()}
                   </span></p>
+                </div>
+              )}
+
+              {/* Duplicated job info panel */}
+              {(job.notes||'').startsWith('Duplicated from') && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-gray-700 mb-1">Duplicated Job</h3>
+                  <p className="text-gray-600 text-sm">{job.notes}</p>
+                </div>
+              )}
+
+              {/* Manually created missed recurring job info panel */}
+              {(job.notes||'').startsWith('Manually created missed recurring') && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">🔁</span>
+                      <h3 className="font-semibold text-blue-800">Part of Recurring Schedule</h3>
+                    </div>
+                    {(() => {
+                      const parent = (jobs||[]).find(j => j.id === job.parentJobId);
+                      const freq = parent?.recurringFrequency || parent?.recurring_frequency;
+                      return freq ? <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full capitalize">{freq}</span> : null;
+                    })()}
+                  </div>
+                  <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 font-medium">
+                    ⚠️ Manually created for a missed occurrence — linked to recurring chain
+                  </div>
+                  {(() => {
+                    const parent = (jobs||[]).find(j => j.id === job.parentJobId);
+                    if (!parent) return (
+                      <p className="text-sm text-blue-700">Manually created from a recurring schedule. Open the parent job to view or edit the schedule.</p>
+                    );
+                    const freq = parent.recurringFrequency || parent.recurring_frequency;
+                    const nextDate = parent.recurringNextDate || parent.recurring_next_date;
+                    const endDate = parent.recurringEndDate || parent.recurring_end_date;
+                    const startDate = parent.recurringStartDate || parent.recurring_start_date;
+                    return (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                          <div>
+                            <span className="text-xs text-blue-500 block mb-0.5">Template Job</span>
+                            <span className="font-semibold text-blue-900">{parent.jobNumber || parent.job_number}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-blue-500 block mb-0.5">Frequency</span>
+                            <span className="font-semibold text-blue-900 capitalize">{freq || '—'}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs text-blue-500 block mb-0.5">Next Job Due</span>
+                            <span className="font-semibold text-blue-900">
+                              {nextDate ? new Date(nextDate).toLocaleDateString('en-GB') : '—'}
+                            </span>
+                          </div>
+                          {startDate && (
+                            <div>
+                              <span className="text-xs text-blue-500 block mb-0.5">Schedule Started</span>
+                              <span className="font-semibold text-blue-900">{new Date(startDate).toLocaleDateString('en-GB')}</span>
+                            </div>
+                          )}
+                          {endDate && (
+                            <div>
+                              <span className="text-xs text-blue-500 block mb-0.5">Schedule Ends</span>
+                              <span className="font-semibold text-blue-900">{new Date(endDate).toLocaleDateString('en-GB')}</span>
+                            </div>
+                          )}
+                          <div>
+                            <span className="text-xs text-blue-500 block mb-0.5">Status</span>
+                            <span className="font-semibold text-green-700">✅ Active — will recur</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-blue-500">To edit or stop the recurring schedule, open <span className="font-semibold">{parent.jobNumber || parent.job_number}</span> and go to the 🔁 Recurring tab.</p>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -11007,7 +11254,7 @@ info@totalwasteservicesltd.com`;
                         </span>
                       </td>
                       <td className="px-4 py-3 text-xs">
-                        {done && isWasteJob && (job.wtnSent || job.wtn_sent || job.wtnData?.wtnNumber)
+                        {done && isWasteJob && (job.wtnSent || job.wtn_sent)
                           ? <button onClick={() => downloadWTN(job)} className="text-green-700 hover:text-green-900 font-medium">📄 Waste Transfer Note</button>
                           : done && isWasteJob
                           ? <span className="text-gray-400">WTN pending</span>
@@ -11424,8 +11671,7 @@ useEffect(() => {
 }, [user]);
 
 // Load jobs from Supabase when app starts <- This is line 6850
-useEffect(() => {
-  const loadJobsFromSupabase = async () => {
+const loadJobsFromSupabase = async () => {
     try {
       const { data, error } = await window.supabase
         .from('jobs')
@@ -11639,10 +11885,15 @@ const refreshJobs = async () => {
     }
 };
 
-// Make it globally accessible
-window.refreshJobs = refreshJobs;
+useEffect(() => {
   loadJobsFromSupabase();
+}, []);
 
+// Make globally accessible
+window.refreshJobs = refreshJobs;
+window.loadJobsFromSupabase = loadJobsFromSupabase;
+
+useEffect(() => {
   // Load company settings into localStorage on startup so WTN auto-fills everywhere
   (async () => {
     try {
@@ -11750,8 +12001,19 @@ window.refreshJobs = refreshJobs;
           hazardous_waste: rj.hazardous_waste,
           is_recurring: false, // copy itself is not recurring
           job_date: rj.recurring_next_date,
-          line_items: rj.line_items, // copy line items
-          sage_line_items: rj.sage_line_items,
+          // Apply line item filter — only include items selected for recurring
+          line_items: (() => {
+            const allItems = rj.line_items ? (typeof rj.line_items === 'string' ? JSON.parse(rj.line_items) : rj.line_items) : [];
+            const noOneOff = allItems.filter(item => !item.one_off && item.type !== 'one_off');
+            const ids = rj.recurring_line_item_ids ? (typeof rj.recurring_line_item_ids === 'string' ? JSON.parse(rj.recurring_line_item_ids) : rj.recurring_line_item_ids) : null;
+            return ids ? JSON.stringify(noOneOff.filter((_, i) => ids.includes(i))) : JSON.stringify(noOneOff);
+          })(),
+          sage_line_items: (() => {
+            const allItems = rj.sage_line_items ? (typeof rj.sage_line_items === 'string' ? JSON.parse(rj.sage_line_items) : rj.sage_line_items) : [];
+            const noOneOff = allItems.filter(item => !item.one_off && item.type !== 'one_off');
+            const ids = rj.recurring_line_item_ids ? (typeof rj.recurring_line_item_ids === 'string' ? JSON.parse(rj.recurring_line_item_ids) : rj.recurring_line_item_ids) : null;
+            return ids ? JSON.stringify(noOneOff.filter((_, i) => ids.includes(i))) : JSON.stringify(noOneOff);
+          })(),
           sage_product_id: rj.sage_product_id,
           sage_product_name: rj.sage_product_name,
           sage_product_data: rj.sage_product_data,
@@ -11770,6 +12032,8 @@ window.refreshJobs = refreshJobs;
             recurringWtnNextDate: '',
           }) : null,
           wtn_recipient: rj.wtn_recipient,
+          wtn_sent: false,             // always false on new child — parent's sent status must not bleed through
+          wtn_sent_at: null,
           wtn_recurring: false,        // child never triggers its own WTN schedule
           wtn_recurring_frequency: null,
           wtn_recurring_next_date: null,
@@ -11788,7 +12052,7 @@ window.refreshJobs = refreshJobs;
 
       // Small delay to ensure Supabase has committed all inserts, then reload fresh
       await new Promise(resolve => setTimeout(resolve, 500));
-      await loadJobsFromSupabase();
+      await window.loadJobsFromSupabase();
 
     } catch (err) {
       console.error('Recurring job checker error:', err);
@@ -11842,16 +12106,19 @@ window.refreshJobs = refreshJobs;
   // Auto-refresh jobs every 30 seconds in the background
   const autoRefreshInterval = setInterval(async () => {
     try {
-      await loadJobsFromSupabase();
+      await window.loadJobsFromSupabase();
     } catch(e) {
       // Silent fail
     }
   }, 30000);
 
-  return () => clearInterval(autoRefreshInterval);
-}, []);
-          const [quotes, setQuotes] = useState([]);
-          // Load quotes from Supabase when app starts
+  const autoRefreshCleanup = () => clearInterval(autoRefreshInterval);
+  return autoRefreshCleanup;
+}, []); // end startup useEffect
+
+void 0; // separator
+const [quotes, setQuotes] = useState([]);
+
 // Load quotes from Supabase when app starts
 useEffect(() => {
   const loadQuotesFromSupabase = async () => {
@@ -11918,7 +12185,8 @@ notes: quote.notes,
   
   loadQuotesFromSupabase();
 }, []);
-          const [showFullPageQuote, setShowFullPageQuote] = useState(null);
+
+const [showFullPageQuote, setShowFullPageQuote] = useState(null);
           
           // Form states
           const [showJobForm, setShowJobForm] = useState(false);
@@ -12103,6 +12371,7 @@ collection_date: updatedJob.collectionDate || null,
       recurring_start_date: updatedJob.recurringStartDate || null,
       recurring_end_date: updatedJob.recurringEndDate || null,
       recurring_next_date: updatedJob.isRecurring ? (updatedJob.recurringNextDate || updatedJob.recurringStartDate || null) : null,
+      recurring_line_item_ids: updatedJob.recurringLineItemIds ? JSON.stringify(updatedJob.recurringLineItemIds) : null,
       // WTN fields — persist so they survive reload
       wtn_sent: updatedJob.wtnSent || false,
       wtn_sent_at: updatedJob.wtnSentAt || null,
@@ -12189,13 +12458,13 @@ collection_date: updatedJob.collectionDate || null,
       setShowJobForm(false);
       setShowFullPageJob(mappedJob);
       // Also reload all jobs to ensure everything is fresh
-      setTimeout(() => loadJobsFromSupabase(), 300);
+      setTimeout(() => window.loadJobsFromSupabase(), 300);
     } else {
       setJobs(jobs.map(job => job.id === updatedJob.id ? updatedJob : job));
       setEditingJob(updatedJob);
       setShowJobForm(false);
       setShowFullPageJob(updatedJob);
-      setTimeout(() => loadJobsFromSupabase(), 300);
+      setTimeout(() => window.loadJobsFromSupabase(), 300);
     }
     alert('Job updated successfully!');
   } catch (error) {
@@ -12583,7 +12852,7 @@ site_notes: fullJob?.site_notes || '',
             wtn_recurring_frequency: null,
             wtn_recurring_next_date: null,
             wtn_recipient: fullJob?.wtn_recipient || null, // keep recipient for reference
-            parent_job_id: jobTemplate.id || fullJob?.id || null,
+            parent_job_id: null, // duplicates are standalone — parent_job_id is only for exchange/recurring jobs
         };
 
         
@@ -12674,103 +12943,6 @@ const formattedJobs = updatedJobs.map(job => ({
         alert('Error duplicating job: ' + error.message);
     }
 };
-// Add refresh function for duplicating jobs
-const refreshJobs = async () => {
-    try {
-        const { data, error } = await window.supabase
-            .from('jobs')
-            .select('*')
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-            // Use EXACT same conversion as loadJobsFromSupabase
-            const jobsWithCamelCase = data.map(job => ({
-                id: job.id,
-                jobNumber: job.job_number,
-                jobDate: job.job_date,
-                createdDate: job.created_at,
-                customerName: job.customer_name,
-                customerPO: job.customer_po,
-                supplierName: job.supplier_name,
-                supplierRef: job.supplier_ref,
-                haulierName: job.haulier_name,
-                jobType: job.job_type,
-                wasteType: job.waste_type,
-                skipSize: job.skip_size,
-                collectionDate: job.collection_date,
-                quantity: job.quantity || 1,
-                unit: job.unit || 'skip',
-                weight: job.weight,
-                customerUnitPrice: job.customer_unit_price || 0,
-                customerFinalPrice: job.customer_final_price || 0,
-                supplierUnitPrice: job.supplier_unit_price || 0,
-                supplierFinalPrice: job.supplier_final_price || 0,
-                vatRate: job.vat_rate || 20,
-                grossProfit: job.gross_profit || 0,
-                profitMargin: job.profit_margin || 0,
-                jobValue: job.job_value || 0,
-                siteAddress: job.site_address,
-                siteAddress1: job.site_address1,
-                siteAddress2: job.site_address2,
-                siteCity: job.site_city,
-                sitePostcode: job.site_postcode,
-                siteContact: job.site_contact,
-                sitePhone: job.site_phone,
-                siteNotes: job.site_notes,
-                deliveryInstructions: job.delivery_instructions,
-                timeSlot: job.time_slot,
-                status: job.status || 'CONFIRMED',
-                isCompleted: job.is_completed || false,
-                isCancelled: job.is_cancelled || false,
-                wasteTransferNote: job.waste_transfer_note,
-                hazardousWaste: job.hazardous_waste || false,
-                consignmentNote: job.consignment_note,
-                invoiceNumber: job.invoice_number,
-                invoiceStatus: job.invoice_status || 'Not Invoiced',
-                paymentStatus: job.payment_status || 'Not Paid',
-                sageProductId: job.sage_product_id,
-                sageProductName: job.sage_product_name,
-                sageId: job.sage_id,
-                sageLineItems: job.sage_line_items || [],
-                // Handle sage_line_items for lineItems
-                lineItems: (() => {
-                    try {
-                        if (job.sage_line_items) {
-                            return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : job.sage_line_items;
-                        }
-                        return [];
-                    } catch (e) {
-                        console.warn('Error parsing line_items for job', job.id);
-                        return [];
-                    }
-                })(),
-                parentJobId: job.parent_job_id,
-                linkedJobs: (() => {
-                    try {
-                        if (job.linked_jobs) {
-                            return typeof job.linked_jobs === 'string' ? JSON.parse(job.linked_jobs) : job.linked_jobs;
-                        }
-                        return [];
-                    } catch (e) {
-                        console.warn('Error parsing linked_jobs for job', job.id);
-                        return [];
-                    }
-                })(),
-                notes: job.notes
-            }));
-            
-            setJobs(jobsWithCamelCase);
-            console.log('Refreshed', data.length, 'jobs from Supabase');
-        }
-    } catch (error) {
-        console.error('Error refreshing jobs:', error);
-    }
-};
-
-// Make it globally accessible
-window.refreshJobs = refreshJobs;
 const handleAddressSearch = async (searchText) => {
 
     
@@ -13633,6 +13805,7 @@ onClick={() => {
     jobs={jobs}
     onClose={() => setShowFullPageJob(null)}
     onUpdateDisplay={setShowFullPageJob}
+    onRefresh={loadJobsFromSupabase || window.loadJobsFromSupabase}
     onEdit={handleEditJob}
     onDuplicate={() => handleDuplicateJob(showFullPageJob)}
     onDelete={handleDeleteJob}
@@ -16214,9 +16387,12 @@ See website for Full Terms and Conditions - www.totalwasteservicesltd.com ;`
                         {formData.lineItems.map((item, index) => {
                           const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
                           return (
-                            <tr key={item.id} className="border-t hover:bg-gray-50">
+                            <tr key={item.id} className={`border-t hover:bg-gray-50 ${item.one_off ? 'bg-amber-50' : ''}`}>
                               <td className="px-4 py-3">
-                                <div>{item.product_name}</div>
+                                <div className="flex items-center gap-2">
+                                  {item.product_name}
+                                  {item.one_off && <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">One-Off</span>}
+                                </div>
                                 <div className="text-xs text-gray-500">{item.item_code}</div>
                               </td>
                               <td className="px-4 py-3">
@@ -16284,15 +16460,29 @@ See website for Full Terms and Conditions - www.totalwasteservicesltd.com ;`
                                 </div>
                               </td>
                               <td className="px-4 py-3">
-                                <button
-                                  onClick={() => {
-                                    const updatedItems = formData.lineItems.filter((_, i) => i !== index);
-                                    setFormData({...formData, lineItems: updatedItems});
-                                  }}
-                                  className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-                                >
-                                  Remove
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    title={item.one_off ? "Marked as one-off — click to make recurring" : "Mark as one-off (won't copy to recurring jobs)"}
+                                    onClick={() => {
+                                      const updatedItems = [...formData.lineItems];
+                                      updatedItems[index] = {...updatedItems[index], one_off: !updatedItems[index].one_off};
+                                      setFormData({...formData, lineItems: updatedItems});
+                                    }}
+                                    className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${item.one_off ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300'}`}
+                                  >
+                                    {item.one_off ? 'One-Off ✓' : 'One-Off'}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const updatedItems = formData.lineItems.filter((_, i) => i !== index);
+                                      setFormData({...formData, lineItems: updatedItems});
+                                    }}
+                                    className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
