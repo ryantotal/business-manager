@@ -12070,13 +12070,13 @@ useEffect(() => {
           time_slot: rj.time_slot,
           delivery_date: null, // reset dates for new job
           collection_date: null,
-          notes: `Auto-created recurring job (${freq}) from ${rj.job_number}`,
+          notes: `Auto-created recurring job (${freq}) from ${rj.job_number} — scheduled ${new Date(rj.recurring_next_date).toLocaleDateString('en-GB')}`,
           status: 'CONFIRMED',
           is_completed: false,
           is_cancelled: false,
           hazardous_waste: rj.hazardous_waste,
           is_recurring: false, // copy itself is not recurring
-          job_date: rj.recurring_next_date,
+          job_date: today, // date job was actually created; scheduled date noted above
           // Apply line item filter — only include items selected for recurring
           line_items: (() => {
             const allItems = rj.line_items ? (typeof rj.line_items === 'string' ? JSON.parse(rj.line_items) : rj.line_items) : [];
@@ -12136,6 +12136,7 @@ useEffect(() => {
   };
 
   checkRecurringJobs();
+  window.checkRecurringJobs = checkRecurringJobs;
 
   // Recurring WTN checker — inline so it's in scope
   const checkRecurringWtnsInline = async () => {
@@ -12188,7 +12189,35 @@ useEffect(() => {
     }
   }, 30000);
 
-  const autoRefreshCleanup = () => clearInterval(autoRefreshInterval);
+  // Re-run recurring job checker every 5 minutes so new recurring jobs
+  // created mid-session fire without needing a logout/login
+  const recurringCheckInterval = setInterval(async () => {
+    try {
+      await checkRecurringJobs();
+      await checkRecurringWtnsInline();
+    } catch(e) {
+      // Silent fail
+    }
+  }, 5 * 60 * 1000);
+
+  // Also run checker when the tab becomes visible again (e.g. opening laptop,
+  // switching back to the tab after overnight) — intervals pause when suspended
+  const handleVisibilityChange = async () => {
+    if (document.visibilityState === 'visible') {
+      try {
+        await checkRecurringJobs();
+        await checkRecurringWtnsInline();
+        await window.loadJobsFromSupabase();
+      } catch(e) { /* silent */ }
+    }
+  };
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
+  const autoRefreshCleanup = () => {
+    clearInterval(autoRefreshInterval);
+    clearInterval(recurringCheckInterval);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  };
   return autoRefreshCleanup;
 }, []); // end startup useEffect
 
@@ -12384,6 +12413,11 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
     setJobs(prevJobs => [savedJob, ...prevJobs]);
     setShowJobForm(false);
     setEditingJob(null);
+    // If this is a recurring job, run the checker immediately so child jobs
+    // due today are created right away without needing a logout/login
+    if (newJob.isRecurring && window.checkRecurringJobs) {
+      setTimeout(() => window.checkRecurringJobs(), 500);
+    }
   } catch (error) {
     console.error('Error adding job:', error);
   } finally {
@@ -12547,6 +12581,10 @@ collection_date: updatedJob.collectionDate || null,
       setShowJobForm(false);
       setShowFullPageJob(updatedJob);
       setTimeout(() => window.loadJobsFromSupabase(), 300);
+    }
+    // If recurring was set/updated, run checker immediately
+    if (updatedJob.isRecurring && window.checkRecurringJobs) {
+      setTimeout(() => window.checkRecurringJobs(), 500);
     }
     alert('Job updated successfully!');
   } catch (error) {
@@ -13879,6 +13917,7 @@ onClick={() => {
     ))}
   </div>
 )}
+
 
 {/* Full Page Job View - Add this BEFORE the tab content */}
 {showFullPageJob && (
