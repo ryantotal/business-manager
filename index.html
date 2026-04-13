@@ -4915,6 +4915,7 @@ const shortenCompanyName = (name) => {
           const [selectedJob, setSelectedJob] = useState(null);
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
           const [currentMonth, setCurrentMonth] = useState(new Date());
+          const [expandedDays, setExpandedDays] = useState({});
           const [searchQuery, setSearchQuery] = useState('');
           const [sortBy, setSortBy] = React.useState('createdAt');
 const [sortOrder, setSortOrder] = React.useState('desc');
@@ -5253,8 +5254,7 @@ const uploadJobAttachment = async () => {
 };
 
          // Calendar View Component
-const CalendarView = () => {
-  const [expandedDays, setExpandedDays] = useState({});
+const CalendarView = ({ expandedDays, setExpandedDays }) => {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
   const firstDay = new Date(year, month, 1);
@@ -5651,7 +5651,7 @@ jobs.forEach(job => {
               <div className="bg-white rounded-lg border border-gray-200">
                 <div className="p-6">
                   {viewMode === 'calendar' ? (
-                    <CalendarView />
+                    <CalendarView expandedDays={expandedDays} setExpandedDays={setExpandedDays} />
                   ) : viewMode === 'grid' ? (
                     <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 sm:grid-cols-3 gap-6">
                       {filteredJobs.map(job => (
