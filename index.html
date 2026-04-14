@@ -126,7 +126,10 @@ html, body {
                 Repeat: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>,
                 Maximize2: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>,
                 Package: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>,
-                FileText: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                FileText: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
+                ChevronLeft: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="15 18 9 12 15 6"></polyline></svg>,
+                ChevronRight: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="9 18 15 12 9 6"></polyline></svg>,
+                List: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             };
             
             return icons[icon] || null;
@@ -4913,6 +4916,7 @@ const shortenCompanyName = (name) => {
         const JobsView = ({ jobs, onAddJob, onUpdateJob, onDeleteJob, onDuplicateJob, onEditJob, customers, suppliers, user, setJobs, setShowFullPageJob, deleteConfirmation, setDeleteConfirmation }) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
+          const [showJobSidebar, setShowJobSidebar] = useState(false);
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
           const [currentMonth, setCurrentMonth] = useState(new Date());
           const [expandedDays, setExpandedDays] = useState({});
@@ -5781,13 +5785,88 @@ job.status.replace('_', ' ')}
                 </div>
               </div>
 
-              {selectedJob && (
+              {selectedJob && (() => {
+                const currentIndex = filteredJobs.findIndex(j => j.id === selectedJob.id);
+                const hasPrev = currentIndex > 0;
+                const hasNext = currentIndex < filteredJobs.length - 1;
+                const goToPrev = () => hasPrev && setSelectedJob(filteredJobs[currentIndex - 1]);
+                const goToNext = () => hasNext && setSelectedJob(filteredJobs[currentIndex + 1]);
+                return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-  <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
+                  {/* Prev Arrow */}
+                  <button
+                    onClick={goToPrev}
+                    disabled={!hasPrev}
+                    className={`hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg border border-gray-200 ${hasPrev ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'}`}
+                    title="Previous job"
+                  >
+                    <LucideIcon icon="ChevronLeft" size={22} />
+                  </button>
+                  {/* Next Arrow */}
+                  <button
+                    onClick={goToNext}
+                    disabled={!hasNext}
+                    className={`hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg border border-gray-200 ${hasNext ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'}`}
+                    title="Next job"
+                  >
+                    <LucideIcon icon="ChevronRight" size={22} />
+                  </button>
+
+                  <div className="flex bg-white rounded-xl w-full max-w-5xl max-h-[90vh] overflow-hidden mx-auto" style={{maxWidth: showJobSidebar ? '72rem' : '56rem'}}>
+                    {/* Sidebar */}
+                    {showJobSidebar && (
+                      <div className="w-72 flex-shrink-0 border-r border-gray-200 flex flex-col overflow-hidden">
+                        <div className="p-3 border-b border-gray-100 bg-gray-50">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Job List ({filteredJobs.length})</p>
+                        </div>
+                        <div className="overflow-y-auto flex-1">
+                          {filteredJobs.map((j) => {
+                            const isActive = j.id === selectedJob.id;
+                            const statusLabel = j.status === 'COLLECTED' ? 'Collected' : j.isCompleted ? 'Completed' : j.isCancelled ? 'Cancelled' : j.status;
+                            const statusColor = j.status === 'COLLECTED' ? 'bg-purple-100 text-purple-700' : j.isCompleted ? 'bg-emerald-100 text-emerald-700' : j.isCancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
+                            const product = j.lineItems && j.lineItems.length > 0 ? (j.lineItems[0].product_name || j.lineItems[0].description) : (j.sageProductName || null);
+                            return (
+                              <div
+                                key={j.id}
+                                onClick={() => setSelectedJob(j)}
+                                className={`px-3 py-3 cursor-pointer border-b border-gray-100 hover:bg-blue-50 transition-colors ${isActive ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'}`}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className={`text-sm font-bold ${isActive ? 'text-blue-700' : 'text-gray-900'}`}>{j.jobNumber}</span>
+                                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusColor}`}>{statusLabel}</span>
+                                </div>
+                                <p className="text-xs font-medium text-gray-700 truncate">{j.customerName || '—'}</p>
+                                {j.supplierName && <p className="text-xs text-gray-500 truncate">{j.supplierName}</p>}
+                                <div className="flex items-center justify-between mt-1">
+                                  <span className="text-xs text-gray-400">{j.jobType}</span>
+                                  {j.jobDate && <span className="text-xs text-gray-400">{new Date(j.jobDate).toLocaleDateString('en-GB')}</span>}
+                                </div>
+                                {product && <p className="text-xs text-gray-500 truncate mt-0.5">{product}</p>}
+                                {(j.sitePostcode || j.siteAddress1) && (
+                                  <p className="text-xs text-gray-400 truncate mt-0.5">{[j.siteAddress1, j.sitePostcode].filter(Boolean).join(', ')}</p>
+                                )}
+                                {j.invoiceNumber && <p className="text-xs text-blue-600 mt-0.5">Inv: {j.invoiceNumber}</p>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Main content */}
+                    <div className="flex-1 overflow-y-auto min-w-0">
                     <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-wrap">
+                        {/* Mobile prev/next arrows */}
+                        <div className="flex sm:hidden items-center gap-1">
+                          <button onClick={goToPrev} disabled={!hasPrev} className={`p-1 rounded ${hasPrev ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'}`}><LucideIcon icon="ChevronLeft" size={18} /></button>
+                          <button onClick={goToNext} disabled={!hasNext} className={`p-1 rounded ${hasNext ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'}`}><LucideIcon icon="ChevronRight" size={18} /></button>
+                        </div>
                         <div>
-                          <h2 className="text-xl font-bold">{selectedJob.jobNumber}</h2>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-xl font-bold">{selectedJob.jobNumber}</h2>
+                            <span className="text-xs text-gray-400">{currentIndex + 1} / {filteredJobs.length}</span>
+                          </div>
                           <p className="text-gray-600">{selectedJob.jobType}</p>
                         </div>
                         {(selectedJob.wtnSent || selectedJob.wtn_sent || selectedJob.wtnSentAt || selectedJob.wtn_sent_at) && (
@@ -5853,7 +5932,14 @@ job.status.replace('_', ' ')}
                             <Trash2 size={20} />
                           </button>
                         )}
-                        <button onClick={() => setSelectedJob(null)}>
+                        <button
+                          onClick={() => setShowJobSidebar(s => !s)}
+                          className={`p-2 rounded-lg ${showJobSidebar ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                          title="Toggle job list sidebar"
+                        >
+                          <LucideIcon icon="List" size={20} />
+                        </button>
+                        <button onClick={() => { setSelectedJob(null); setShowJobSidebar(false); }}>
                           <X size={24} />
                         </button>
                       </div>
@@ -6173,8 +6259,10 @@ job.status.replace('_', ' ')}
     </div>
                     </div>
                   </div>
-                </div>
-              )}
+              </div>
+            </div>
+                );
+              })()}
             </div>
             </>
           );
@@ -6540,6 +6628,16 @@ const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, on
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
   const [currentJob, setCurrentJob] = useState(job);
+  const [showSidebar, setShowSidebar] = useState(false);
+
+  // Navigation - filter events same as JobsView
+  const navJobs = React.useMemo(() => (jobs || []).filter(j => !j.isEvent && j.status !== 'EVENT'), [jobs]);
+  const currentIndex = navJobs.findIndex(j => j.id === job.id);
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex < navJobs.length - 1;
+  const goToPrev = () => hasPrev && onUpdateDisplay(navJobs[currentIndex - 1]);
+  const goToNext = () => hasNext && onUpdateDisplay(navJobs[currentIndex + 1]);
+
 const handleCreateInvoice = async (jobToInvoice) => {
   setCreatingInvoice(true)
   try {
@@ -6752,17 +6850,88 @@ console.log(JSON.stringify(invoiceData, null, 2));
   if (!job) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar */}
+      {showSidebar && (
+        <div className="w-72 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0 overflow-hidden z-10">
+          <div className="p-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Jobs ({navJobs.length})</p>
+            <button onClick={() => setShowSidebar(false)} className="text-gray-400 hover:text-gray-600"><X size={14}/></button>
+          </div>
+          <div className="overflow-y-auto flex-1">
+            {navJobs.map((j) => {
+              const isActive = j.id === job.id;
+              const statusLabel = j.status === 'COLLECTED' ? 'Collected' : j.isCompleted ? 'Completed' : j.isCancelled ? 'Cancelled' : j.status;
+              const statusColor = j.status === 'COLLECTED' ? 'bg-purple-100 text-purple-700' : j.isCompleted ? 'bg-emerald-100 text-emerald-700' : j.isCancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
+              const product = j.lineItems && j.lineItems.length > 0 ? (j.lineItems[0].product_name || j.lineItems[0].description) : (j.sageProductName || null);
+              return (
+                <div
+                  key={j.id}
+                  onClick={() => onUpdateDisplay(j)}
+                  className={`px-3 py-3 cursor-pointer border-b border-gray-100 hover:bg-blue-50 transition-colors ${isActive ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'}`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-sm font-bold ${isActive ? 'text-blue-700' : 'text-gray-900'}`}>{j.jobNumber}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusColor}`}>{statusLabel}</span>
+                  </div>
+                  <p className="text-xs font-medium text-gray-700 truncate">{j.customerName || '—'}</p>
+                  {j.supplierName && <p className="text-xs text-gray-500 truncate">{j.supplierName}</p>}
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-gray-400">{j.jobType}</span>
+                    {j.jobDate && <span className="text-xs text-gray-400">{new Date(j.jobDate).toLocaleDateString('en-GB')}</span>}
+                  </div>
+                  {product && <p className="text-xs text-gray-500 truncate mt-0.5">{product}</p>}
+                  {(j.sitePostcode || j.siteAddress1) && (
+                    <p className="text-xs text-gray-400 truncate mt-0.5">{[j.siteAddress1, j.sitePostcode].filter(Boolean).join(', ')}</p>
+                  )}
+                  {j.invoiceNumber && <p className="text-xs text-blue-600 mt-0.5">Inv: {j.invoiceNumber}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Main content */}
+      <div className="flex-1 min-w-0">
       {/* Header Section */}
 <div className="bg-white border-b border-gray-200 px-6 py-4">
   <div className="flex justify-between items-center">
-    <div className="flex items-center space-x-4">
+    <div className="flex items-center space-x-3">
       <button
         onClick={onClose}
         className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+        title="Back to list"
       >
-        <LucideIcon icon="ChevronUp" size={24} className="rotate-90" />
+        <LucideIcon icon="ChevronLeft" size={22} />
       </button>
+      {/* Prev / Next arrows + sidebar toggle */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={goToPrev}
+          disabled={!hasPrev}
+          className={`p-1.5 rounded-lg border ${hasPrev ? 'text-gray-600 border-gray-200 hover:bg-gray-100' : 'text-gray-300 border-gray-100 cursor-not-allowed'}`}
+          title="Previous job"
+        >
+          <LucideIcon icon="ChevronLeft" size={18} />
+        </button>
+        <span className="text-xs text-gray-400 w-14 text-center">{currentIndex + 1} / {navJobs.length}</span>
+        <button
+          onClick={goToNext}
+          disabled={!hasNext}
+          className={`p-1.5 rounded-lg border ${hasNext ? 'text-gray-600 border-gray-200 hover:bg-gray-100' : 'text-gray-300 border-gray-100 cursor-not-allowed'}`}
+          title="Next job"
+        >
+          <LucideIcon icon="ChevronRight" size={18} />
+        </button>
+        <button
+          onClick={() => setShowSidebar(s => !s)}
+          className={`p-1.5 rounded-lg border ${showSidebar ? 'bg-blue-100 text-blue-600 border-blue-200' : 'text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+          title="Toggle job list"
+        >
+          <LucideIcon icon="List" size={18} />
+        </button>
+      </div>
       <div>
         <h1 className="text-2xl font-bold text-gray-900">{job.jobNumber}</h1>
         <p className="text-gray-600">{job.jobType}</p>
@@ -7720,7 +7889,8 @@ console.log(JSON.stringify(invoiceData, null, 2));
 </div>
 )}
 </div>
-</div>
+      </div>
+    </div>
 );
 };
 // Full Page Quote View Component - UPDATED TO MATCH JOB LAYOUT
