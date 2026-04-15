@@ -12901,99 +12901,85 @@ const handleDeleteAttachment = async (attachment) => {
 };
 const handleExchange = async (job) => {
     try {
-        console.log('Creating exchange for job:', job.jobNumber);
-        
-        const { data: newJob, error } = await window.supabase
-            .from('jobs')
-            .insert([{
-                // Essential customer fields
-                customer_name: job.customerName,
-                customer_po: job.customerPO,
-                
-                // Supplier fields  
-                supplier_name: job.supplierName,
-                supplier_ref: job.supplierRef,
-                
-                // Haulier
-                haulier_name: job.haulierName,
-                
-                // Job details
-                job_type: job.jobType,
-                waste_type: job.wasteType,
-                skip_size: job.skipSize,
-                quantity: job.quantity || 1,
-                unit: job.unit || 'skip',
-                weight: job.weight,
-                
-                // Pricing
-                customer_unit_price: job.customerUnitPrice || 0,
-                customer_final_price: job.customerFinalPrice || 0,
-                supplier_unit_price: job.supplierUnitPrice || 0,
-                supplier_final_price: job.supplierFinalPrice || 0,
-                vat_rate: job.vatRate || 20,
-                gross_profit: job.grossProfit || 0,
-                profit_margin: job.profitMargin || 0,
-                job_value: job.jobValue || 0,
-                
-                // Full site address
-                site_address: job.siteAddress,
-                site_address1: job.siteAddress1,
-                site_address2: job.siteAddress2,
-                site_city: job.siteCity,
-                site_postcode: job.sitePostcode,
-                site_contact: job.siteContact,
-                site_phone: job.sitePhone,
-                site_notes: job.siteNotes,
-                
-                // Delivery
-                delivery_instructions: job.deliveryInstructions,
-                time_slot: job.timeSlot,
-                
-                // Status fields
-                status: 'CONFIRMED',
-                is_completed: false,
-                is_cancelled: false,
-                
-                // Dates
-                job_date: new Date().toISOString().split('T')[0],
-                collection_date: null,
-                
-                // Parent relationship
-                parent_job_id: job.id,
-                
-                // Clear invoice fields
-                invoice_number: null,
-                invoice_status: 'Not Invoiced',
-                payment_status: 'Not Paid',
-                
-                // Clear sage fields
-                sage_product_id: null,
-                sage_product_name: null,
-                sage_id: null,
-                sage_si_number: null, 
-                sage_line_items: [],
-                
-                // Notes
-                notes: `Exchange for job ${job.jobNumber}`
-            }])
-            .select('*')
-            .single();
-        
-        if (error) throw error;
-        
+        // Get next job number
+        const { data: jobNumber, error: seqError } = await window.supabase.rpc('get_next_job_number');
+        if (seqError) { alert('Error getting job number. Please try again.'); return; }
+
+        // Fetch full job data (same as duplicate flow)
+        const { data: fullJob } = await window.supabase.from('jobs').select('*').eq('id', job.id).single();
+
+        const jobForDatabase = {
+            job_number: jobNumber,
+            customer_name: job.customerName || fullJob?.customer_name,
+            customer_po: job.customerPO || fullJob?.customer_po,
+            supplier_name: job.supplierName || fullJob?.supplier_name,
+            supplier_ref: job.supplierRef || fullJob?.supplier_ref,
+            haulier_name: job.haulierName || fullJob?.haulier_name,
+            job_type: job.jobType || fullJob?.job_type,
+            waste_type: job.wasteType || fullJob?.waste_type,
+            skip_size: job.skipSize || fullJob?.skip_size,
+            quantity: job.quantity || fullJob?.quantity || 1,
+            unit: job.unit || fullJob?.unit || 'skip',
+            weight: fullJob?.weight,
+            customer_unit_price: job.customerUnitPrice || fullJob?.customer_unit_price || 0,
+            customer_final_price: job.customerFinalPrice || fullJob?.customer_final_price || 0,
+            supplier_unit_price: job.supplierUnitPrice || fullJob?.supplier_unit_price || 0,
+            supplier_final_price: job.supplierFinalPrice || fullJob?.supplier_final_price || 0,
+            vat_rate: job.vatRate || fullJob?.vat_rate || 20,
+            gross_profit: job.grossProfit || fullJob?.gross_profit || 0,
+            profit_margin: job.profitMargin || fullJob?.profit_margin || 0,
+            job_value: job.jobValue || fullJob?.job_value || 0,
+            site_address: fullJob?.site_address,
+            site_address1: fullJob?.site_address1 || '',
+            site_address2: fullJob?.site_address2 || '',
+            site_city: fullJob?.site_city || '',
+            site_postcode: fullJob?.site_postcode || '',
+            site_contact: fullJob?.site_contact || '',
+            site_phone: fullJob?.site_phone || '',
+            site_notes: fullJob?.site_notes || '',
+            delivery_instructions: fullJob?.delivery_instructions,
+            time_slot: fullJob?.time_slot,
+            description: fullJob?.description || null,
+            sage_product_name: fullJob?.sage_product_name || null,
+            sage_line_items: fullJob?.sage_line_items || null,
+            status: 'CONFIRMED',
+            is_completed: false,
+            is_cancelled: false,
+            job_date: new Date().toISOString().split('T')[0],
+            collection_date: null,
+            parent_job_id: job.id,
+            invoice_number: null,
+            invoice_status: 'Not Invoiced',
+            payment_status: 'Not Paid',
+            sage_product_id: null,
+            sage_id: null,
+            sage_si_number: null,
+            sage_invoice_id: null,
+            notes: `Exchange for job ${job.jobNumber}`,
+        };
+
+        // Save to database
+        const { error: insertError } = await window.supabase.from('jobs').insert([jobForDatabase]).select();
+        if (insertError) throw insertError;
+
         // Mark original as collected
-        await window.supabase
-            .from('jobs')
-            .update({ 
-                status: 'COLLECTED', 
-                is_completed: true,
-                collection_date: new Date().toISOString().split('T')[0]
-            })
-            .eq('id', job.id);
-        
-        await refreshJobs();
-        alert(`Exchange created: Job #${newJob.job_number}`);
-        
+        await window.supabase.from('jobs').update({
+            status: 'COLLECTED',
+            is_completed: true,
+            collection_date: new Date().toISOString().split('T')[0]
+        }).eq('id', job.id);
+
+        // Open the new exchange job in the edit form (same as duplicate flow)
+        setTimeout(async () => {
+            const { data: newJob, error: fetchError } = await window.supabase
+                .from('jobs').select('*').eq('job_number', jobNumber).single();
+            if (newJob && !fetchError) {
+                await handleEditJob(newJob);
+            }
+            await refreshJobs();
+            alert('Exchange job created! Please review and set the delivery date.');
+        }, 500);
+
     } catch (error) {
         console.error('Exchange error:', error);
         alert('Error creating exchange: ' + error.message);
@@ -14103,64 +14089,8 @@ onClick={() => {
     setDeleteConfirmation={setDeleteConfirmation}
     onExchange={async (job) => {
     try {
-        // Create exchange job
-   const exchangeJob = {
-    ...job,
-    id: null,
-    jobNumber: null,
-    isCompleted: false,
-    is_completed: false,
-    isCancelled: false,
-    status: 'CONFIRMED',
-    notes: `Exchange for job ${job.jobNumber}. ${job.notes || ''}`.trim(),
-    jobDate: job?.jobDate || new Date().toISOString().split('T')[0],
-    linkedJobs: [],
-    sage_si_number: null,
-    sageSiNumber: null,      // ADD THIS - camelCase version!
-    sage_id: null,
-    sageId: null,             // ADD THIS TOO
-    sage_invoice_id: null,
-    sageInvoiceId: null,      // AND THIS
-    invoice_number: null,
-    invoiceNumber: null,       // AND THIS
-    // Copy products/services from parent job if they exist
-// This ensures they persist after refresh
-lineItems: job.lineItems || [],  // Copy for React state
-sage_line_items: job.lineItems ? JSON.stringify(job.lineItems) : null,  // Save to database
-products: job.products || [],  // In case you use 'products' field too
-};
-        
-        // Generate new job number
-        // Get the next job number from Supabase sequence
-const { data: jobNumber, error: seqError } = await window.supabase
-    .rpc('get_next_job_number');
-
-if (seqError) {
-    console.error('Error getting job number:', seqError);
-    alert('Error getting job number. Please try again.');
-    return;
-}
-
-exchangeJob.id = jobNumber;
-        exchangeJob.jobNumber = jobNumber;
-        
-        // Mark original job as collected
-        await window.supabase
-            .from('jobs')
-            .update({ status: 'COLLECTED', is_completed: true })
-            .eq('id', job.id);
-        
-      // Right before line 9806, add:
-console.log('Exchange job being sent to handleAddJob:', {
-    sage_si_number: exchangeJob.sage_si_number,
-    sageSiNumber: exchangeJob.sageSiNumber,
-    sage_invoice_id: exchangeJob.sage_invoice_id,
-    invoice_number: exchangeJob.invoice_number
-});
-await handleAddJob(exchangeJob);
-        
-        alert('Exchange job created!');
-        setShowFullPageJob(null);  // Close the full page view
+        await handleExchange(job);
+        setShowFullPageJob(null);
     } catch (error) {
         console.error('Error:', error);
         alert('Error creating exchange: ' + error.message);
