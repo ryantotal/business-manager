@@ -3140,7 +3140,12 @@ const [isEvent, setIsEvent] = useState(false);
                           <input
                             type="checkbox"
                             checked={formData.isCompleted}
-                            onChange={(e) => setFormData({...formData, isCompleted: e.target.checked})}
+                            onChange={(e) => setFormData({
+                              ...formData, 
+                              isCompleted: e.target.checked,
+                              // If unticking completed, revert status to CONFIRMED
+                              status: e.target.checked ? (formData.status === 'CONFIRMED' ? 'COMPLETED' : formData.status) : 'CONFIRMED'
+                            })}
                             className="mr-2"
                           />
                           <span className="text-sm font-medium">Job Completed</span>
@@ -5053,7 +5058,12 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
     supplierFinalPrice: updatedJob.supplier_final_price ?? job.supplierFinalPrice,
     siteAddress1: updatedJob.site_address1 || job.siteAddress1,
     sitePostcode: updatedJob.site_postcode || job.sitePostcode,
-    lineItems: updatedJob.sage_line_items || job.lineItems,
+    lineItems: (() => {
+      const raw = updatedJob.sage_line_items || job.lineItems;
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw;
+      try { return JSON.parse(raw); } catch(e) { return []; }
+    })(),
   };
   // Update jobs list and full page view with properly mapped object
   onUpdateJob(mappedJob);
@@ -6791,7 +6801,12 @@ console.log(JSON.stringify(invoiceData, null, 2));
           invoiceStatus: updatedJob.invoice_status,
           sageInvoiceId: updatedJob.sage_invoice_id,
           sageSiNumber: updatedJob.sage_si_number,
-          lineItems: updatedJob.sage_line_items || jobToInvoice.lineItems,
+          lineItems: (() => {
+            const raw = updatedJob.sage_line_items || jobToInvoice.lineItems;
+            if (!raw) return [];
+            if (Array.isArray(raw)) return raw;
+            try { return JSON.parse(raw); } catch(e) { return []; }
+          })(),
         };
         // Update the full-page view immediately
         onUpdateDisplay(mappedJob);
@@ -12678,9 +12693,12 @@ job_value: parseFloat(updatedJob.jobValue) || 0,
       job_date: updatedJob.jobDate || null,
 collection_date: updatedJob.collectionDate || null,
       time_slot: updatedJob.timeSlot,
-      status: updatedJob.status || 'CONFIRMED',
+      // If isCompleted is explicitly unticked, revert status to CONFIRMED
       is_completed: updatedJob.isCompleted || false,
       is_cancelled: updatedJob.isCancelled || false,
+      status: updatedJob.isCancelled ? 'CANCELLED' :
+              (updatedJob.isCompleted ? (updatedJob.status || 'COMPLETED') :
+              (updatedJob.status === 'COMPLETED' ? 'CONFIRMED' : (updatedJob.status || 'CONFIRMED'))),
       waste_transfer_note: updatedJob.wasteTransferNote,
       hazardous_waste: updatedJob.hazardousWaste || false,
       consignment_note: updatedJob.consignmentNote,
@@ -12843,7 +12861,12 @@ const handleCompleteJob = async (job) => {
       profitMargin: (freshJob || job).profit_margin ?? job.profitMargin,
       customerFinalPrice: (freshJob || job).customer_final_price ?? job.customerFinalPrice,
       supplierFinalPrice: (freshJob || job).supplier_final_price ?? job.supplierFinalPrice,
-      lineItems: freshJob?.sage_line_items || job.lineItems,
+      lineItems: (() => {
+        const raw = freshJob?.sage_line_items || job.lineItems;
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw;
+        try { return JSON.parse(raw); } catch(e) { return []; }
+      })(),
       isCompleted: true,
       is_completed: true,
       status: 'COMPLETED'
@@ -12915,7 +12938,8 @@ const handleCompleteJob = async (job) => {
     }
 
     // For waste jobs, prompt to send WTN — but only if auto-send didn't already handle it
-    const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
+    const jobTypeForCheck = job.jobType || job.job_type || updatedJob.jobType || updatedJob.job_type || '';
+    const isWasteJob = ['Skip Hire','Roll-on Roll-off'].includes(jobTypeForCheck);
     const autoWtnFired = (job.parentJobId || job.parent_job_id) && parentJobData?.wtn_recurring && parentJobData?.wtn_recurring_frequency === 'per-job';
     if (isWasteJob && !autoWtnFired) {
       const sendNow = window.confirm(
