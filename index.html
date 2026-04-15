@@ -5031,35 +5031,33 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
         .single();
       
       if (updatedJob && !error) {
-  // Update the job object directly
-  job.sage_si_number = updatedJob.sage_si_number;
-  job.invoice_number = updatedJob.invoice_number;
-  job.invoice_status = updatedJob.invoice_status;
-  
-  onUpdateJob(updatedJob);
-  onUpdateDisplay(updatedJob);
-  // Also update the main jobs list to reflect the SI number
-const updatedJobWithAllFields = {
-  ...job,
-  sage_si_number: updatedJob.sage_si_number,
-  invoice_number: updatedJob.invoice_number,
-  invoice_status: updatedJob.invoice_status,
-  sage_invoice_id: invoice.id,
-  // Make sure we have the SI number in both formats
-  siNumber: siNumber,
-  invoiceNumber: invoice.invoice_number || invoice.id
-};
-
-// This will update the job in the parent's jobs array
-onUpdateJob(updatedJobWithAllFields);
-
-// Close and reopen the job view to force refresh
-setShowFullPageJob(null);
-setTimeout(() => {
-  setShowFullPageJob(updatedJobWithAllFields);
-}, 100);
-  // Force a re-render
-  setActiveTab(activeTab);
+  // Map snake_case DB fields to camelCase for immediate UI update
+  const mappedJob = {
+    ...job,
+    ...updatedJob,
+    jobNumber: updatedJob.job_number || job.jobNumber,
+    jobDate: updatedJob.job_date || job.jobDate,
+    customerName: updatedJob.customer_name || job.customerName,
+    supplierName: updatedJob.supplier_name || job.supplierName,
+    haulierName: updatedJob.haulier_name || job.haulierName,
+    jobType: updatedJob.job_type || job.jobType,
+    invoiceNumber: updatedJob.invoice_number,
+    invoiceStatus: updatedJob.invoice_status,
+    sageSiNumber: updatedJob.sage_si_number,
+    sageInvoiceId: updatedJob.sage_invoice_id,
+    isCompleted: updatedJob.is_completed || false,
+    isCancelled: updatedJob.is_cancelled || false,
+    grossProfit: updatedJob.gross_profit ?? job.grossProfit,
+    profitMargin: updatedJob.profit_margin ?? job.profitMargin,
+    customerFinalPrice: updatedJob.customer_final_price ?? job.customerFinalPrice,
+    supplierFinalPrice: updatedJob.supplier_final_price ?? job.supplierFinalPrice,
+    siteAddress1: updatedJob.site_address1 || job.siteAddress1,
+    sitePostcode: updatedJob.site_postcode || job.sitePostcode,
+    lineItems: updatedJob.sage_line_items || job.lineItems,
+  };
+  // Update jobs list and full page view with properly mapped object
+  onUpdateJob(mappedJob);
+  setShowFullPageJob(mappedJob);
 }
        else {
         // Fallback to manual update if fetch fails
@@ -6642,7 +6640,6 @@ const handleCreateInvoice = async (jobToInvoice) => {
   setCreatingInvoice(true)
   try {
     const isDemoMode = false;
-    
     if (isDemoMode) {
       // ... demo code ...
     } else {
@@ -6764,9 +6761,42 @@ console.log(JSON.stringify(invoiceData, null, 2));
       if (fetchError) {
         console.error('Fetch error:', fetchError);
       } else {
-        console.log('Updated job from database:', updatedJob);
-         onUpdateDisplay(updatedJob);
-        
+        // Map snake_case DB fields to camelCase so UI updates immediately
+        const mappedJob = {
+          ...updatedJob,
+          jobNumber: updatedJob.job_number,
+          jobDate: updatedJob.job_date,
+          customerName: updatedJob.customer_name,
+          customerPO: updatedJob.customer_po,
+          supplierName: updatedJob.supplier_name,
+          haulierName: updatedJob.haulier_name,
+          jobType: updatedJob.job_type,
+          wasteType: updatedJob.waste_type,
+          skipSize: updatedJob.skip_size,
+          customerUnitPrice: updatedJob.customer_unit_price || 0,
+          customerFinalPrice: updatedJob.customer_final_price || 0,
+          supplierUnitPrice: updatedJob.supplier_unit_price || 0,
+          supplierFinalPrice: updatedJob.supplier_final_price || 0,
+          grossProfit: updatedJob.gross_profit || 0,
+          profitMargin: updatedJob.profit_margin || 0,
+          siteAddress1: updatedJob.site_address1,
+          siteAddress2: updatedJob.site_address2,
+          siteCity: updatedJob.site_city,
+          sitePostcode: updatedJob.site_postcode,
+          siteContact: updatedJob.site_contact,
+          sitePhone: updatedJob.site_phone,
+          isCompleted: updatedJob.is_completed || false,
+          isCancelled: updatedJob.is_cancelled || false,
+          invoiceNumber: updatedJob.invoice_number,
+          invoiceStatus: updatedJob.invoice_status,
+          sageInvoiceId: updatedJob.sage_invoice_id,
+          sageSiNumber: updatedJob.sage_si_number,
+          lineItems: updatedJob.sage_line_items || jobToInvoice.lineItems,
+        };
+        // Update the full-page view immediately
+        onUpdateDisplay(mappedJob);
+        // Refresh the background jobs list so the list view also updates
+        if (typeof onRefresh === 'function') onRefresh();
       }
       
       alert(`Invoice created! SI: ${siNumber}`);
@@ -7707,41 +7737,46 @@ console.log(JSON.stringify(invoiceData, null, 2));
         {/* Financial & Billing Tab */}
         {activeTab === 'financial' && (
           <div className="space-y-8">
-            
-           
-              {/* Add Create Invoice Button */}
-{activeTab === 'financial' && (
-  <div className="mt-6">
-    {job.isCompleted && !job.sageInvoiceId && user.role === 'ADMIN' && (
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Sage Integration</h3>
-        <button
-  onClick={() => handleCreateInvoice(job)}
-  disabled={job.sageInvoiceId || creatingInvoice}
-  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
->
-  {creatingInvoice ? (
-    <>
-      <FileText className="inline mr-2 animate-spin" size={20} />
-      Creating Invoice...
-    </>
-  ) : (
-    <>
-      <FileText className="inline mr-2" size={20} />
-      Create Invoice in Sage
-    </>
-  )}
-</button>
-        {job.sageInvoiceId && (
-          <p className="mt-2 text-sm text-gray-600">
-            Sage Invoice ID: {job.sage_invoice_id}
-          </p>
-        )}
-      </div>
-    )}
-  </div>
-)}
-           {/* Invoice Information */}
+
+            {/* Sage Integration - Send Invoice */}
+            {user?.role === 'ADMIN' && (
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Sage Integration</h3>
+                {(job.invoiceNumber || job.invoice_number || job.sageInvoiceId || job.sage_invoice_id) ? (
+                  <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <LucideIcon icon="CheckCircle" size={20} className="text-green-600" />
+                    <div>
+                      <p className="text-sm font-medium text-green-800">Invoice sent to Sage</p>
+                      {(job.invoiceNumber || job.invoice_number) && (
+                        <p className="text-sm text-green-700">Invoice: <span className="font-bold">{job.invoiceNumber || job.invoice_number}</span></p>
+                      )}
+                      {(job.sageSiNumber || job.sage_si_number) && (
+                        <p className="text-sm text-green-700">SI: <span className="font-bold">{job.sageSiNumber || job.sage_si_number}</span></p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {!(job.isCompleted || job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED') && (
+                      <p className="text-sm text-amber-600 mb-3">⚠️ Job must be completed before sending to Sage.</p>
+                    )}
+                    <button
+                      onClick={() => handleCreateInvoice(job)}
+                      disabled={creatingInvoice || !(job.isCompleted || job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED')}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {creatingInvoice ? (
+                        <><LucideIcon icon="Loader" size={18} /> Creating Invoice...</>
+                      ) : (
+                        <><FileText size={18} /> Send Invoice to Sage</>
+                      )}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Invoice Information */}
 <div className="bg-white rounded-lg border border-gray-200">
   <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
     <h2 className="text-lg font-semibold text-gray-800">Invoice & Payment Status</h2>
@@ -7751,27 +7786,33 @@ console.log(JSON.stringify(invoiceData, null, 2));
       <div className="space-y-4">
         <div className="flex justify-between">
           <span className="text-gray-600 font-medium">Invoice Number:</span>
-          <span className="text-gray-900">{job.invoiceNumber || 'Not invoiced'}</span>
+          <span className="text-gray-900">{job.invoiceNumber || job.invoice_number || 'Not invoiced'}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-gray-600 font-medium">Invoice Status:</span>
           <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-            job.invoiceStatus === 'Invoiced' ? 'bg-green-100 text-green-700' : 
+            (job.invoiceStatus || job.invoice_status) === 'Invoiced' ? 'bg-green-100 text-green-700' : 
             'bg-gray-100 text-gray-700'
           }`}>
-            {job.invoiceStatus || 'Not Invoiced'}
+            {job.invoiceStatus || job.invoice_status || 'Not Invoiced'}
           </span>
         </div>
+        {(job.sageSiNumber || job.sage_si_number) && (
+          <div className="flex justify-between">
+            <span className="text-gray-600 font-medium">SI Number:</span>
+            <span className="text-blue-600 font-bold">{job.sageSiNumber || job.sage_si_number}</span>
+          </div>
+        )}
+        {(job.sageInvoiceId || job.sage_invoice_id) && (
+          <div className="flex justify-between">
+            <span className="text-gray-600 font-medium">Sage Invoice ID:</span>
+            <span className="text-gray-900 text-sm">{job.sageInvoiceId || job.sage_invoice_id}</span>
+          </div>
+        )}
         {job.wasteTransferNote && (
           <div className="flex justify-between">
             <span className="text-gray-600 font-medium">Waste Transfer Note:</span>
-            <span className="text-gray-900">{currentjob.wasteTransferNote}</span>
-          </div>
-        )}
-        {job.sage_si_number && (
-          <div>
-            <span className="font-medium">SI Number:</span>
-            <span className="text-blue-600 font-bold">{currentJob.sage_si_number}</span>
+            <span className="text-gray-900">{job.wasteTransferNote}</span>
           </div>
         )}
       </div>
@@ -10073,6 +10114,11 @@ useEffect(() => {
           else if (key === 'api_region') settings.apiRegion = item.setting_value;
           else if (key === 'last_sync') settings.lastSync = item.setting_value;
         });
+        // If a valid access token exists in DB, mark as connected in localStorage
+        // This fixes the issue where localStorage is cleared but DB still has tokens
+        if (settings.accessToken) {
+          localStorage.setItem('sage_connected', 'true');
+        }
         setSageSettings(prev => ({ ...prev, ...settings }));
       }
     } catch (error) {
@@ -10747,7 +10793,7 @@ const loadUsers = async () => {
         <div>
           <h4 className="font-medium">Connection Status</h4>
           <p className="text-sm text-gray-600">
-            {localStorage.getItem('sage_connected') === 'true' ? 'Connected to Sage' : 'Not Connected'}
+            {(sageSettings.accessToken || localStorage.getItem('sage_connected') === 'true') ? 'Connected to Sage' : 'Not Connected'}
           </p>
           {sageSettings.lastSync && (
             <p className="text-xs text-gray-500 mt-1">
@@ -10756,7 +10802,7 @@ const loadUsers = async () => {
           )}
         </div>
         <div className={`w-3 h-3 rounded-full ${
-          localStorage.getItem('sage_connected') === 'true' ? 'bg-green-500' : 'bg-gray-400'
+          (sageSettings.accessToken || localStorage.getItem('sage_connected') === 'true') ? 'bg-green-500' : 'bg-gray-400'
         }`} />
       </div>
     </div>
@@ -10822,7 +10868,7 @@ const loadUsers = async () => {
         Save Settings
       </button>
       
-      {localStorage.getItem('sage_connected') !== 'true' ? (
+      {!(sageSettings.accessToken || localStorage.getItem('sage_connected') === 'true') ? (
         <button
   onClick={() => {
     if (sageSettings.clientId && sageSettings.clientSecret) {
@@ -12776,8 +12822,28 @@ const handleCompleteJob = async (job) => {
     
     if (error) throw error;
     
+    // Re-fetch from DB to get the definitive updated record
+    const { data: freshJob } = await window.supabase
+      .from('jobs').select('*').eq('id', job.id).single();
+
     const updatedJob = {
-      ...job,
+      ...(freshJob || job),
+      // Ensure camelCase fields are set
+      jobNumber: (freshJob || job).job_number || job.jobNumber,
+      jobDate: (freshJob || job).job_date || job.jobDate,
+      customerName: (freshJob || job).customer_name || job.customerName,
+      supplierName: (freshJob || job).supplier_name || job.supplierName,
+      haulierName: (freshJob || job).haulier_name || job.haulierName,
+      jobType: (freshJob || job).job_type || job.jobType,
+      invoiceNumber: (freshJob || job).invoice_number || job.invoiceNumber,
+      invoiceStatus: (freshJob || job).invoice_status || job.invoiceStatus,
+      siteAddress1: (freshJob || job).site_address1 || job.siteAddress1,
+      sitePostcode: (freshJob || job).site_postcode || job.sitePostcode,
+      grossProfit: (freshJob || job).gross_profit ?? job.grossProfit,
+      profitMargin: (freshJob || job).profit_margin ?? job.profitMargin,
+      customerFinalPrice: (freshJob || job).customer_final_price ?? job.customerFinalPrice,
+      supplierFinalPrice: (freshJob || job).supplier_final_price ?? job.supplierFinalPrice,
+      lineItems: freshJob?.sage_line_items || job.lineItems,
       isCompleted: true,
       is_completed: true,
       status: 'COMPLETED'
