@@ -9014,7 +9014,7 @@ Total Waste Services Ltd`);
   );
 };
         // Customers View Component
-          const CustomersView = ({ customers, onAddCustomer, onUpdateCustomer, onDeleteCustomer, user }) => {
+          const CustomersView = ({ customers, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onRefreshCustomers, user }) => {
           const { hasPermission } = useAuth();
           const [selectedCustomer, setSelectedCustomer] = useState(null);
           const [editingCustomer, setEditingCustomer] = useState(null);
@@ -9109,7 +9109,7 @@ const displayCustomers = filteredCustomers.map(customer => ({
 
     // Step 3: Run the sync
     const results = await window.SageAPI.syncCustomersQuick();
-    await loadCustomersFromSupabase();
+    if (onRefreshCustomers) await onRefreshCustomers();
     alert(`✅ Sage sync complete!\n\n${results.new.length} new customers added\n${results.updated.length} existing customers updated (emails refreshed)`);
   } catch (error) {
     console.error('Sync error:', error);
@@ -9122,7 +9122,7 @@ const handleQuickSync = async () => {
   setSyncing(true);
   try {
     const results = await window.SageAPI.syncCustomersQuick();
-    await loadCustomersFromSupabase();
+    if (onRefreshCustomers) await onRefreshCustomers();
     alert(`✅ Sage sync complete!\n\n${results.new.length} new customers added\n${results.updated.length} existing customers updated (emails refreshed)`);
   } catch (error) {
     console.error('Quick sync error:', error);
@@ -14704,6 +14704,7 @@ onClick={() => {
                     onAddCustomer={() => setShowCustomerForm(true)}
                     onUpdateCustomer={handleUpdateCustomer}
                     onDeleteCustomer={handleDeleteCustomer}
+                    onRefreshCustomers={loadCustomersFromSupabase}
                     user={user}  
                   />
                 )}
@@ -15351,9 +15352,10 @@ async syncCustomersQuick() {
         }
 
         // Only write to DB if something actually changed
-        const changed = (
+        // Note: always write if we just fetched emails (missingEmails was true)
+        const changed = missingEmails || (
           fromSage.name !== existing.name ||
-          fromSage.email !== existing.email ||
+          fromSage.email !== (existing.email || '') ||
           fromSage.additional_emails !== (existing.additional_emails || '') ||
           fromSage.phone !== (existing.phone || '') ||
           fromSage.reference !== (existing.reference || '') ||
