@@ -12284,7 +12284,6 @@ useEffect(() => {
   loadSuppliersFromSupabase();
 }, []);
           // Load customers from Supabase when app starts
-useEffect(() => {
   const loadCustomersFromSupabase = async () => {
     try {
       const { data, error } = await window.supabase
@@ -12301,7 +12300,8 @@ useEffect(() => {
       console.error('Error loading customers:', error);
     }
   };
-  
+
+useEffect(() => {
   const loadSageProducts = async () => {
   try {
     const { data, error } = await window.supabase
