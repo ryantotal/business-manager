@@ -9079,11 +9079,41 @@ const displayCustomers = filteredCustomers.map(customer => ({
           const handleSyncFromSage = async () => {
   setSyncing(true);
   try {
+    console.log('🔄 Sync button pressed — checking Sage connection...');
+
+    // Step 1: Check token exists
+    const { data: tokenData } = await window.supabase
+      .from('company_settings')
+      .select('setting_name, setting_value')
+      .in('setting_name', ['sage_access_token', 'sage_refresh_token', 'sage_business_id']);
+    const tokenMap = Object.fromEntries((tokenData || []).map(r => [r.setting_name, r.setting_value]));
+    console.log('Sage settings found:', Object.keys(tokenMap));
+    if (!tokenMap.sage_access_token) {
+      alert('❌ No Sage access token found. Please reconnect Sage in Admin → Settings.');
+      return;
+    }
+
+    // Step 2: Test the proxy with a simple call
+    console.log('Testing Sage proxy...');
+    const testRes = await fetch('/api/sage-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: 'user', method: 'GET', businessId: tokenMap.sage_business_id })
+    });
+    if (!testRes.ok) {
+      const err = await testRes.json().catch(() => ({ error: testRes.statusText }));
+      alert(`❌ Sage API error: ${err.error || testRes.statusText}\n\nYou may need to reconnect Sage in Admin → Settings.`);
+      return;
+    }
+    console.log('✅ Sage proxy OK');
+
+    // Step 3: Run the sync
     const results = await window.SageAPI.syncCustomersQuick();
     await fetchCustomers();
     alert(`✅ Sage sync complete!\n\n${results.new.length} new customers added\n${results.updated.length} existing customers updated (emails refreshed)`);
   } catch (error) {
-    alert('Failed to sync from Sage: ' + error.message);
+    console.error('Sync error:', error);
+    alert('❌ Sync failed: ' + error.message + '\n\nCheck browser console for details.');
   } finally {
     setSyncing(false);
   }
@@ -9168,9 +9198,6 @@ const { error } = await window.supabase
                 console.error('Error updating customer:', updateError);
             }
         }
-    setShowSyncDialog(false);
-    setSyncResults(null);
-    
     if (skipCount > 0) {
       alert(`Successfully synced ${successCount} new customers from Sage!\n${skipCount} customers were skipped (already exist).`);
     } else {
@@ -9567,107 +9594,7 @@ billingPostcode: customer.address ? customer.address.split('↵').pop() : '',
                 />
               )}
 
-              {showSyncDialog && syncResults && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-      <div className="p-6 border-b border-gray-200">
-        <h2 className="text-xl font-bold">Sync Preview</h2>
-        <p className="text-gray-600">Review changes before applying</p>
-      </div>
-      
-      <div className="p-6">
-        {/* New Customers */}
-        {syncResults.new.length > 0 && (
-          <div className="mb-6">
-            <h3 className="font-semibold mb-3 text-green-700">
-              New Customers to Import ({syncResults.new.length})
-            </h3>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {syncResults.new.map((customer, idx) => (
-                <div key={idx} className="p-3 bg-green-50 rounded-lg">
-                  <div className="font-medium">{customer.companyName}</div>
-<div className="text-sm text-gray-600">
-  {customer.email || 'No email'}
-  {customer.billingAddress && customer.billingAddress.length > 0 && 
-    ` | ${customer.billingAddress.filter(line => line).join(', ')}`
-  }
-</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {/* Add this section for UPDATED customers */}
-{syncResults.updated && syncResults.updated.length > 0 && (
-  <div className="mb-6">
-    <h3 className="font-semibold mb-3 text-yellow-700">
-      Customers to Update ({syncResults.updated.length})
-    </h3>
-    <div className="space-y-2 max-h-60 overflow-y-auto">
-      {syncResults.updated.map((customer, idx) => (
-        <div key={idx} className="p-3 bg-yellow-50 rounded-lg">
-          <div className="font-medium">{customer.name}</div>
-          <div className="text-sm text-gray-600">
-            {customer.email && `Email: ${customer.email}`}
-            {customer.address && ` | Address: ${customer.address}`}
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-        {/* Conflicts */}
-        {syncResults && syncResults.conflicts && syncResults.conflicts.length > 0 && (
-          <div className="mb-6">
-            <h3 className="font-semibold mb-3 text-yellow-700">
-              Conflicts Found ({syncResults.conflicts.length})
-            </h3>
-            <div className="space-y-2">
-              {syncResults.conflicts.map((conflict, idx) => (
-                <div key={idx} className="p-3 bg-yellow-50 rounded-lg">
-                  <div className="font-medium">VAT: {conflict.sage.tax_number}</div>
-                  <div className="text-sm">
-                    <span className="text-gray-600">Local:</span> {conflict.local.companyName}
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-600">Sage:</span> {conflict.sage.name}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-sm text-yellow-700 mt-2">
-              Conflicts will be skipped. Update manually if needed.
-            </p>
-          </div>
-        )}
-        
-        {syncResults.new.length === 0 && syncResults.conflicts.length === 0 && (
-          <p className="text-gray-500">No new customers to sync.</p>
-        )}
-      </div>
-      
-      <div className="p-6 border-t border-gray-200 flex justify-end space-x-4">
-        <button
-          onClick={() => {
-            setShowSyncDialog(false);
-            setSyncResults(null);
-          }}
-          className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-        {(syncResults.new.length > 0 || syncResults.updated.length > 0) && (
-          <button
-            onClick={handleApplySync}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-          >
-            Import {syncResults.new.length + syncResults.updated.length} Customers
-          </button>
-        )}
-      </div>
-    </div>
-  </div>
-)}
+
 
             </div>
           );
@@ -14986,16 +14913,43 @@ const SageAPI = {
     const customer = await this.makeRequest('contacts/' + customerId);
     const result = { telephone: '', mobile: '', email: '', additional_emails: '' };
 
-    // Try to get email directly from the contact record first
-    result.email = customer?.email || customer?.main_contact_email || '';
+    // Log the full contact record so we can see all available email fields
+    console.log('📧 SAGE CONTACT RECORD for ' + customerId + ':', JSON.stringify({
+      email: customer?.email,
+      main_contact_email: customer?.main_contact_email,
+      email_address: customer?.email_address,
+      email_addresses: customer?.email_addresses,
+      contact_persons: customer?.contact_persons?.map ? customer.contact_persons.map(cp => ({name:cp.name,email:cp.email})) : customer?.contact_persons,
+      main_contact_person: customer?.main_contact_person,
+      all_keys: Object.keys(customer || {})
+    }));
+
+    // Primary email from contact record
+    result.email = customer?.email || customer?.main_contact_email || customer?.email_address || '';
+
+    // Collect all emails from email_addresses array if present (some Sage versions use this)
+    const emailAddresses = customer?.email_addresses || [];
+    if (Array.isArray(emailAddresses) && emailAddresses.length > 0) {
+      const allFromRecord = emailAddresses
+        .map(e => typeof e === 'string' ? e : (e.address || e.email || ''))
+        .filter(e => e && e.trim() && e.toLowerCase() !== result.email.toLowerCase());
+      if (!result.email && emailAddresses[0]) {
+        result.email = typeof emailAddresses[0] === 'string' ? emailAddresses[0] : (emailAddresses[0].address || emailAddresses[0].email || '');
+      }
+      if (allFromRecord.length > 0) result.additional_emails = allFromRecord.join(',');
+    }
 
     // Get main contact person details (phone + email)
     if (customer?.main_contact_person?.id) {
       try {
         const contactPerson = await this.makeRequest('contact_persons/' + customer.main_contact_person.id);
+        console.log('👤 Main contact person:', JSON.stringify({name:contactPerson.name, email:contactPerson.email, telephone:contactPerson.telephone, mobile:contactPerson.mobile}));
         result.telephone = contactPerson.telephone || '';
         result.mobile = contactPerson.mobile || '';
-        if (contactPerson.email) result.email = contactPerson.email;
+        if (contactPerson.email && !result.email) result.email = contactPerson.email;
+        else if (contactPerson.email && contactPerson.email.toLowerCase() !== result.email.toLowerCase() && !result.additional_emails.includes(contactPerson.email)) {
+          result.additional_emails = [result.additional_emails, contactPerson.email].filter(Boolean).join(',');
+        }
       } catch(e) {
         console.log('Could not fetch main contact person:', e.message);
       }
@@ -15004,38 +14958,24 @@ const SageAPI = {
     // Fetch ALL contact persons to collect all emails
     try {
       const allContacts = await this.makeRequest('contact_persons?contact_id=' + customerId + '&items_per_page=50');
+      console.log('👥 All contact persons for ' + customerId + ':', JSON.stringify(allContacts?.$items?.map(cp => ({name:cp.name,email:cp.email,telephone:cp.telephone}))));
       if (allContacts?.$items?.length > 0) {
-        console.log('Contact persons for ' + customerId + ':', allContacts.$items.map(cp => ({name: cp.name, email: cp.email})));
         const allEmails = allContacts.$items
           .map(cp => cp.email)
-          .filter(e => e && e.trim() && e.toLowerCase() !== result.email.toLowerCase());
+          .filter(e => e && e.trim() && e.toLowerCase() !== result.email.toLowerCase() && !result.additional_emails.includes(e));
+        if (!result.email && allContacts.$items[0]?.email) result.email = allContacts.$items[0].email;
         if (allEmails.length > 0) {
-          result.additional_emails = allEmails.join(',');
+          result.additional_emails = [result.additional_emails, ...allEmails].filter(Boolean).join(',');
         }
-        if (!result.email && allContacts.$items[0]?.email) {
-          result.email = allContacts.$items[0].email;
-        }
+        // Also pick up phone from first contact person if not already set
+        if (!result.telephone && allContacts.$items[0]?.telephone) result.telephone = allContacts.$items[0].telephone;
+        if (!result.mobile && allContacts.$items[0]?.mobile) result.mobile = allContacts.$items[0].mobile;
       }
     } catch (e) {
       console.log('Could not fetch contact persons list:', e.message);
     }
 
-    // Also check contact_people endpoint (Sage uses both)
-    try {
-      const contactPeople = await this.makeRequest('contact_people?contact_id=' + customerId + '&items_per_page=50');
-      if (contactPeople?.$items?.length > 0) {
-        console.log('Contact people for ' + customerId + ':', contactPeople.$items.map(cp => ({name: cp.name, email: cp.email})));
-        const moreEmails = contactPeople.$items
-          .map(cp => cp.email)
-          .filter(e => e && e.trim() && e.toLowerCase() !== result.email.toLowerCase() && !result.additional_emails.includes(e));
-        if (moreEmails.length > 0) {
-          result.additional_emails = [result.additional_emails, ...moreEmails].filter(Boolean).join(',');
-        }
-      }
-    } catch (e) {
-      console.log('contact_people endpoint not available:', e.message);
-    }
-
+    console.log('✅ Final result for ' + customerId + ':', JSON.stringify(result));
     return result;
   } catch (error) {
     console.error('Error fetching details for ' + customerId + ':', error);
