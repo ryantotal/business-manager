@@ -9132,6 +9132,45 @@ const handleQuickSync = async () => {
   }
 };
 
+const [refreshingEmails, setRefreshingEmails] = useState(false);
+const handleRefreshEmails = async () => {
+  if (!confirm('This will fetch contact emails from Sage for all customers missing a secondary email. This may take several minutes — continue?')) return;
+  setRefreshingEmails(true);
+  let updated = 0;
+  let failed = 0;
+  try {
+    const { data: customers } = await window.supabase
+      .from('customers')
+      .select('id, sage_id, name, email, additional_emails')
+      .is('additional_emails', null);
+    console.log(`📧 Refreshing emails for ${customers?.length || 0} customers...`);
+    for (const customer of (customers || [])) {
+      if (!customer.sage_id) continue;
+      try {
+        const c = await window.SageAPI.getContactPersonDetails(customer.sage_id);
+        if (c) {
+          await window.supabase.from('customers').update({
+            email: c.email || customer.email,
+            additional_emails: c.additional_emails || '',
+            phone: c.telephone || c.phone || '',
+            mobile: c.mobile || '',
+          }).eq('id', customer.id);
+          updated++;
+        }
+      } catch(e) {
+        console.warn(`Failed for ${customer.name}:`, e.message);
+        failed++;
+      }
+    }
+    if (onRefreshCustomers) await onRefreshCustomers();
+    alert(`✅ Email refresh complete!\n\n${updated} customers updated\n${failed} failed`);
+  } catch(e) {
+    alert('❌ Refresh failed: ' + e.message);
+  } finally {
+    setRefreshingEmails(false);
+  }
+};
+
 const handleApplySync = async () => {
   if (!syncResults) return;
   
@@ -9228,25 +9267,47 @@ const { error } = await window.supabase
   <span className="sm:hidden">Add</span>
 </button>
 {user.role === 'ADMIN' && (
-  <button
-    onClick={handleSyncFromSage}
-    disabled={syncing}
-    className="flex items-center px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 ml-2 disabled:opacity-50 text-sm sm:text-base"
-  >
-    {syncing ? (
-      <>
-        <Loader size={16} className="mr-1 sm:mr-2 animate-spin" />
-        <span className="hidden sm:inline">Syncing...</span>
-        <span className="sm:hidden">Sync</span>
-      </>
-    ) : (
-      <>
-        <Repeat size={16} className="mr-1 sm:mr-2" />
-        <span className="hidden sm:inline">Sync from Sage</span>
-        <span className="sm:hidden">Sync</span>
-      </>
-    )}
-  </button>
+  <>
+    <button
+      onClick={handleSyncFromSage}
+      disabled={syncing || refreshingEmails}
+      className="flex items-center px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 ml-2 disabled:opacity-50 text-sm sm:text-base"
+    >
+      {syncing ? (
+        <>
+          <Loader size={16} className="mr-1 sm:mr-2 animate-spin" />
+          <span className="hidden sm:inline">Syncing...</span>
+          <span className="sm:hidden">Sync</span>
+        </>
+      ) : (
+        <>
+          <Repeat size={16} className="mr-1 sm:mr-2" />
+          <span className="hidden sm:inline">Sync from Sage</span>
+          <span className="sm:hidden">Sync</span>
+        </>
+      )}
+    </button>
+    <button
+      onClick={handleRefreshEmails}
+      disabled={syncing || refreshingEmails}
+      className="flex items-center px-3 py-2 sm:px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 ml-2 disabled:opacity-50 text-sm sm:text-base"
+      title="Fetch secondary emails from Sage for all customers missing them"
+    >
+      {refreshingEmails ? (
+        <>
+          <Loader size={16} className="mr-1 sm:mr-2 animate-spin" />
+          <span className="hidden sm:inline">Refreshing Emails...</span>
+          <span className="sm:hidden">...</span>
+        </>
+      ) : (
+        <>
+          <Mail size={16} className="mr-1 sm:mr-2" />
+          <span className="hidden sm:inline">Refresh Emails</span>
+          <span className="sm:hidden">Emails</span>
+        </>
+      )}
+    </button>
+  </>
 )}
     </div>
   </div>
