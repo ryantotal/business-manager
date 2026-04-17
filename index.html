@@ -1721,6 +1721,7 @@ const [wtnFields, setWtnFields] = useState(() => {
     landfillPct: 0,
     notes: job?.notes || '',
     recipientEmail: customerEmail,
+    additionalEmails: matchedCustomer?.additional_emails || '',
     recipientEmailSource: customerEmail ? 'customer-record' : 'manual',
     recurringWtn: false,
     recurringWtnFrequency: 'monthly',
@@ -1739,12 +1740,14 @@ useEffect(() => {
   // Also always re-derive recipient email from customer record (never use stale saved email)
   const matchedCust = customers?.find(c => (c.name || c.companyName) === job?.customerName);
   const freshRecipientEmail = matchedCust?.email || '';
+  const freshAdditionalEmails = matchedCust?.additional_emails || '';
   setWtnFields(prev => ({
     ...prev,
     wtnNumber: autoWtnNumber,
     transferDate: prev.transferDate || autoDate,
     transferTime: prev.transferTime || timeStr,
     recipientEmail: freshRecipientEmail || prev.recipientEmail || '',
+    additionalEmails: freshAdditionalEmails || prev.additionalEmails || '',
     recipientEmailSource: (freshRecipientEmail || prev.recipientEmail) ? 'customer-record' : 'manual',
   }));
 
@@ -11874,7 +11877,6 @@ info@totalwasteservicesltd.com`;
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">Service</th>
                   <th className="px-4 py-3 text-left">Site</th>
-                  <th className="px-4 py-3 text-left">Price (ex VAT)</th>
                   <th className="px-4 py-3 text-left">Status</th>
                   <th className="px-4 py-3 text-left">Documents</th>
                 </tr>
@@ -11919,7 +11921,6 @@ info@totalwasteservicesltd.com`;
                         {qty && <div className="text-gray-400">Qty: {qty}</div>}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">{[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ') || '—'}</td>
-                      <td className="px-4 py-3 font-medium text-xs">{displayPrice}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${done ? 'bg-green-100 text-green-700' : job.isCancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                           {done ? 'Completed' : job.isCancelled ? 'Cancelled' : 'Scheduled'}
@@ -11943,9 +11944,6 @@ info@totalwasteservicesltd.com`;
                             <div><div className="text-gray-400 uppercase tracking-wide mb-1">Date</div><div className="font-semibold">{job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</div></div>
                             <div><div className="text-gray-400 uppercase tracking-wide mb-1">Site</div><div className="font-semibold">{[job.siteAddress1, job.siteCity, job.sitePostcode].filter(Boolean).join(', ') || '—'}</div></div>
                             {qty && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Quantity</div><div className="font-semibold">{qty}</div></div>}
-                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Price (ex VAT)</div><div className="font-semibold text-green-700">{displayPrice}</div></div>
-                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">VAT (20%)</div><div className="font-semibold">{bestPrice ? `£${(bestPrice*0.2).toFixed(2)}` : '—'}</div></div>
-                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Total (inc VAT)</div><div className="font-bold">{bestPrice ? `£${(bestPrice*1.2).toFixed(2)}` : '—'}</div></div>
                             {lineItems.length > 0 && (
                               <div className="col-span-2 sm:col-span-3">
                                 <div className="text-gray-400 uppercase tracking-wide mb-2">Products & Services</div>
@@ -11953,8 +11951,6 @@ info@totalwasteservicesltd.com`;
                                   <thead className="bg-gray-50"><tr>
                                     <th className="px-3 py-2 text-left text-gray-500">Product / Service</th>
                                     <th className="px-3 py-2 text-right text-gray-500">Qty</th>
-                                    <th className="px-3 py-2 text-right text-gray-500">Unit Price</th>
-                                    <th className="px-3 py-2 text-right text-gray-500">Total</th>
                                   </tr></thead>
                                   <tbody className="divide-y divide-gray-100">
                                     {lineItems.map((item, i) => {
@@ -11963,8 +11959,6 @@ info@totalwasteservicesltd.com`;
                                       return <tr key={i}>
                                         <td className="px-3 py-2 font-medium">{item.product_name || item.description || '—'}</td>
                                         <td className="px-3 py-2 text-right text-gray-600">{q}</td>
-                                        <td className="px-3 py-2 text-right text-gray-600">£{rrp.toFixed(2)}</td>
-                                        <td className="px-3 py-2 text-right font-semibold">£{(rrp*q).toFixed(2)}</td>
                                       </tr>;
                                     })}
                                   </tbody>
@@ -15136,24 +15130,22 @@ postcode: sageCustomer.main_address?.postal_code || '',
 county: sageCustomer.main_address?.region || '',
 };
 
-// Try to get phone if the method exists
-if (this.getContactPersonDetails && sageCustomer.main_contact_person?.id) {
+// Always fetch contact details to get all emails (including additional_emails)
+if (this.getContactPersonDetails) {
   try {
-    console.log(`📞 Fetching phone for ${sageCustomer.displayed_as}...`);
+    console.log(`📞 Fetching contact details for ${sageCustomer.displayed_as}...`);
     const fullContact = await this.getContactPersonDetails(sageCustomer.id);
     console.log(`   Result:`, fullContact);
     if (fullContact) {
-      mappedCustomer.phone = fullContact.telephone || fullContact.phone || '';
-      mappedCustomer.mobile = fullContact.mobile || '';
+      mappedCustomer.phone = fullContact.telephone || fullContact.phone || mappedCustomer.phone || '';
+      mappedCustomer.mobile = fullContact.mobile || mappedCustomer.mobile || '';
       mappedCustomer.email = fullContact.email || mappedCustomer.email;
       mappedCustomer.additional_emails = fullContact.additional_emails || '';
       console.log(`   ✓ Set phone: ${mappedCustomer.phone}, email: ${mappedCustomer.email}, additional: ${mappedCustomer.additional_emails}`);
     }
   } catch (err) {
-    console.log(`   ✗ Error: ${err.message}`);
+    console.log(`   ✗ Error fetching contact details: ${err.message}`);
   }
-} else {
-  console.log(`⚠️ Skipping phone for ${sageCustomer.displayed_as}: No contact person ID`);
 }
 
     if (!existing) {
