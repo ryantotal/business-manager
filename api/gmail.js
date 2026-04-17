@@ -15,7 +15,6 @@ async function refreshAccessToken(refreshToken) {
 }
 
 function buildEmail({ to, subject, body, fromEmail, fromName, pdfHtml }) {
-  // Build HTML email with message at top, quote below
   const htmlBody = `
     <div style="font-family:Arial,sans-serif;max-width:800px;margin:0 auto">
       <div style="padding:20px 0 30px 0;white-space:pre-wrap;font-size:14px;color:#333;border-bottom:2px solid #eee;margin-bottom:30px">${body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
@@ -187,8 +186,6 @@ export default async function handler(req, res) {
         process.env.SUPABASE_SERVICE_KEY
       );
 
-      // wtn_number is stored inside wtn_data JSON, not as a column
-      // Search by job_number — strip WTN- prefix if present
       const jobNum = id.replace(/^WTN-/i, '');
       let { data: jobs } = await supabase
         .from('jobs')
@@ -196,7 +193,6 @@ export default async function handler(req, res) {
         .eq('job_number', jobNum)
         .limit(1);
 
-      // Also try wtn_sent jobs that contain this ID in wtn_data
       if (!jobs?.length) {
         const { data: fallback } = await supabase
           .from('jobs')
@@ -215,15 +211,39 @@ export default async function handler(req, res) {
       let wtnData = {};
       try { wtnData = typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : (job.wtn_data || {}); } catch(e) {}
 
-      // Build full WTN reconstruction from wtn_data fields
       const transferDateStr = wtnData.transferDate ? new Date(wtnData.transferDate).toLocaleDateString('en-GB') : '—';
+      const qty = parseFloat(wtnData.quantity) || 0;
+
+      // Pie chart SVG
+      const toRad = d => d * Math.PI / 180;
+      const cx = 80, cy = 80, r = 65;
+      const slices = [
+        { pct: wtnData.recycledPct, color: '#16a34a', label: 'Recycled/Reused' },
+        { pct: wtnData.recoveredPct, color: '#2563eb', label: 'Recovered' },
+        { pct: wtnData.landfillPct, color: '#ea580c', label: 'Disposal' },
+      ].filter(s => s.pct > 0);
+      let ang = -90;
+      const piePaths = slices.map(s => {
+        const sw = s.pct / 100 * 360;
+        const en = ang + sw;
+        const x1 = cx + r * Math.cos(toRad(ang)), y1 = cy + r * Math.sin(toRad(ang));
+        const x2 = cx + r * Math.cos(toRad(en)), y2 = cy + r * Math.sin(toRad(en));
+        const d = `M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${sw > 180 ? 1 : 0} 1 ${x2},${y2} Z`;
+        ang = en;
+        return `<path d="${d}" fill="${s.color}" stroke="white" stroke-width="1.5"/>`;
+      }).join('');
+
+      const containerOptions = ['Loose', 'Sacks', 'Skip', 'Drum', 'Roll-on roll-off container', 'Other'];
+
       const fallbackContent = `
         <div style="max-width:720px;margin:0 auto;background:#fff;border:2px solid #000;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1f2937;">
+
+          <!-- Header -->
           <div style="background:#fff;padding:14px 20px;border-bottom:3px solid #1a5c2a;">
             <table style="width:100%;border-collapse:collapse;"><tr>
               <td style="width:140px;vertical-align:middle;"><strong style="font-size:13px;color:#1a5c2a;">TOTAL WASTE SERVICES LTD</strong></td>
               <td style="text-align:center;vertical-align:middle;padding:0 12px;">
-                <div style="font-size:17px;font-weight:700;color:#1a5c2a;">WASTE TRANSFER NOTE</div>
+                <div style="font-size:17px;font-weight:700;color:#1a5c2a;letter-spacing:.5px;margin-bottom:3px;">WASTE TRANSFER NOTE</div>
                 <div style="font-size:9px;color:#666;">Duty of Care — Environmental Protection Act 1990 s.34</div>
                 <div style="font-size:9px;color:#666;">Waste (England &amp; Wales) Regulations 2011</div>
               </td>
@@ -234,77 +254,165 @@ export default async function handler(req, res) {
               </td>
             </tr></table>
           </div>
+
+          <!-- Legal banner -->
           <div style="background:#fff8c5;border-bottom:2px solid #000;padding:6px 20px;font-size:9px;font-weight:700;text-align:center;">⚠ LEGAL DOCUMENT — Both parties must retain a signed copy for a minimum of 2 years and produce on request to the Environment Agency or Local Authority within 7 days.</div>
 
+          <!-- Section A -->
           <div style="border-bottom:2px solid #000;">
             <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section A — Description of Waste</div>
             <table style="width:100%;border-collapse:collapse;">
               <tr>
-                <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;"><div style="font-size:8px;color:#555;text-transform:uppercase;">A1 Description of Waste</div><div style="font-weight:700;">${wtnData.wasteDescription || '—'}</div></td>
-                <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;"><div style="font-size:8px;color:#555;text-transform:uppercase;">Container / Skip Size</div><div style="font-weight:700;">${wtnData.skipSize || '—'}</div></td>
+                <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">A1 Description of waste</div>
+                  <div style="font-weight:700;">${wtnData.wasteDescription || '—'}</div>
+                </td>
+                <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Container / Skip Size</div>
+                  <div style="font-weight:700;">${wtnData.skipSize || '—'}</div>
+                </td>
               </tr>
               <tr>
-                <td style="padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;"><div style="font-size:8px;color:#555;text-transform:uppercase;">EWC Code</div><div style="font-weight:700;">${wtnData.listOfWasteCode || '—'}</div></td>
-                <td style="padding:7px 12px;border-bottom:1px solid #ccc;"><div style="font-size:8px;color:#555;text-transform:uppercase;">A3 Quantity</div><div style="font-weight:700;">${wtnData.quantity || '—'} ${wtnData.unit || ''}</div></td>
+                <td style="padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">EWC Code (List of Waste Regulations)</div>
+                  <div style="font-weight:700;">${wtnData.listOfWasteCode || '—'}</div>
+                </td>
+                <td style="padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">A3 Quantity</div>
+                  <div style="font-weight:700;">${qty} ${wtnData.unit || ''}</div>
+                </td>
               </tr>
-              <tr><td colspan="2" style="padding:6px 12px;border-bottom:1px solid #ccc;font-size:10px;"><strong>Hazardous waste?</strong> ${wtnData.isHazardous ? 'YES' : 'No'}</td></tr>
+              <tr>
+                <td colspan="2" style="padding:6px 12px;border-bottom:1px solid #ccc;font-size:10px;">
+                  <strong>A2 How is the waste contained?</strong>&nbsp;&nbsp;
+                  ${containerOptions.map(c => `<span style="margin-right:12px;">${wtnData.wasteContainer === c ? '☑' : '☐'} ${c}</span>`).join('')}
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" style="padding:7px 12px;font-size:10px;">
+                  <strong>Hazardous waste?</strong> ${wtnData.isHazardous ? '<span style="color:red;font-weight:700;">YES — Consignment Note Required</span>' : 'No'}
+                </td>
+              </tr>
             </table>
           </div>
 
+          <!-- Section B -->
           <div style="border-bottom:2px solid #000;">
             <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section B — Current Holder of the Waste (Transferor)</div>
             <table style="width:100%;border-collapse:collapse;">
               <tr>
-                <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;"><div style="font-size:8px;color:#555;text-transform:uppercase;">B1 Name &amp; Address</div><div style="font-weight:700;">${wtnData.transferorName || job.customer_name || '—'}</div><div style="font-size:11px;">${wtnData.transferorAddress || ''}</div></td>
-                <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;"><div style="font-size:9px;"><strong>B3 Are you:</strong> ☑ ${wtnData.transferorIsProducer ? 'Producer of the waste' : 'Holder of the waste'}</div><div style="font-size:9px;margin-top:3px;">Permit/Carrier Reg: ${wtnData.transferorPermitNumber || '—'}</div></td>
+                <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">B1 Full name &amp; company name and address</div>
+                  <div style="font-weight:700;">${wtnData.transferorName || job.customer_name || '—'}</div>
+                  <div style="font-size:11px;margin-top:2px;">${wtnData.transferorAddress || ''}</div>
+                </td>
+                <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">B2 SIC Code (2007)</div>
+                  <div style="font-weight:700;margin-bottom:6px;">${wtnData.transferorSicCode || '—'}</div>
+                  <div style="font-size:9px;margin-bottom:4px;">
+                    <strong>B3 Are you:</strong>&nbsp;&nbsp;
+                    <span style="margin-right:10px;">${wtnData.transferorIsProducer ? '☑' : '☐'} Producer of the waste</span>
+                    <span>${wtnData.transferorPermitNumber ? '☑' : '☐'} Holder of environmental permit</span>
+                  </div>
+                  <div style="font-size:9px;"><span style="color:#555;">Permit / Carrier Reg / Exemption No:</span> <strong>${wtnData.transferorPermitNumber || '—'}</strong></div>
+                </td>
               </tr>
               <tr>
-                <td style="padding:8px 12px;border-right:1px solid #ccc;"><div style="font-size:8px;color:#555;text-transform:uppercase;">Transferor's Signature</div><div style="border-bottom:1.5px solid #000;margin:14px 0 3px;width:80%;"></div><div style="font-weight:700;font-size:11px;">${wtnData.transferorSignature || '—'}</div></td>
-                <td style="padding:8px 12px;"><div style="font-size:8px;color:#555;text-transform:uppercase;">Date of Transfer</div><div style="font-size:14px;font-weight:700;margin-top:8px;">${transferDateStr}</div></td>
+                <td style="padding:8px 12px;border-right:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Transferor's Signature</div>
+                  <div style="border-bottom:1.5px solid #000;margin:14px 0 3px;width:80%;"></div>
+                  <div style="font-weight:700;font-size:11px;">${wtnData.transferorSignature || '___________________________'}</div>
+                  <div style="font-size:9px;color:#555;margin-top:2px;">Representing: ${wtnData.transferorRepresenting || wtnData.transferorName || '—'}</div>
+                </td>
+                <td style="padding:8px 12px;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Date of transfer</div>
+                  <div style="font-size:14px;font-weight:700;margin-top:8px;">${transferDateStr}</div>
+                  ${wtnData.transferTime ? `<div style="font-size:10px;color:#555;">Time: ${wtnData.transferTime}</div>` : ''}
+                </td>
               </tr>
             </table>
           </div>
 
+          <!-- Section C -->
           <div style="border-bottom:2px solid #000;">
-            <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section C — Person Collecting the Waste (Carrier / Transferee)</div>
+            <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section C — Person Collecting the Waste (Transferee / Carrier)</div>
             <table style="width:100%;border-collapse:collapse;">
               <tr>
-                <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;"><div style="font-size:8px;color:#555;text-transform:uppercase;">C1 Name &amp; Address</div><div style="font-weight:700;">${wtnData.transfereeName || '—'}</div><div style="font-size:11px;">${wtnData.transfereeAddress || ''}</div></td>
-                <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;"><div style="font-size:9px;">☑ Registered waste carrier</div><div style="font-size:9px;"><strong>EA Carrier Reg No.:</strong> ${wtnData.transfereeCarrierReg || '—'}</div><div style="font-size:9px;margin-top:3px;"><strong>Permit/Exemption:</strong> ${wtnData.transfereePermitNumber || '—'}</div></td>
+                <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">C1 Full name &amp; company name and address</div>
+                  <div style="font-weight:700;">${wtnData.transfereeName || '—'}</div>
+                  <div style="font-size:11px;margin-top:2px;">${wtnData.transfereeAddress || ''}</div>
+                </td>
+                <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:9px;margin-bottom:6px;">
+                    <strong>C3 Are you:</strong>&nbsp;&nbsp;
+                    <span style="margin-right:10px;">${wtnData.transfereeCarrierReg ? '☑' : '☐'} Registered waste carrier, broker or dealer</span>
+                    <span>${wtnData.transfereePermitNumber ? '☑' : '☐'} Holder of environmental permit</span>
+                  </div>
+                  <div style="font-size:9px;"><span style="color:#555;">EA Carrier Registration No. (CBDU...):</span> <strong>${wtnData.transfereeCarrierReg || '—'}</strong></div>
+                  <div style="font-size:9px;margin-top:3px;"><span style="color:#555;">Environmental Permit / Exemption No.:</span> <strong>${wtnData.transfereePermitNumber || '—'}</strong></div>
+                </td>
               </tr>
               <tr>
-                <td style="padding:8px 12px;border-right:1px solid #ccc;"><div style="font-size:8px;color:#555;text-transform:uppercase;">Transferee's Signature</div><div style="border-bottom:1.5px solid #000;margin:14px 0 3px;width:80%;"></div><div style="font-weight:700;font-size:11px;">${wtnData.transfereeSignature || '—'}</div></td>
-                <td style="padding:8px 12px;"><div style="font-size:8px;color:#555;text-transform:uppercase;">Date</div><div style="font-size:14px;font-weight:700;margin-top:8px;">${transferDateStr}</div></td>
+                <td style="padding:8px 12px;border-right:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Transferee's Signature</div>
+                  <div style="border-bottom:1.5px solid #000;margin:14px 0 3px;width:80%;"></div>
+                  <div style="font-weight:700;font-size:11px;">${wtnData.transfereeSignature || '___________________________'}</div>
+                  <div style="font-size:9px;color:#555;margin-top:2px;">Representing: ${wtnData.transfereeRepresenting || wtnData.transfereeName || '—'}</div>
+                </td>
+                <td style="padding:8px 12px;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Date of transfer</div>
+                  <div style="font-size:14px;font-weight:700;margin-top:8px;">${transferDateStr}</div>
+                </td>
               </tr>
             </table>
           </div>
 
+          <!-- Section D -->
           <div style="border-bottom:2px solid #000;">
-            <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section D — The Transfer &amp; Broker</div>
+            <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section D — The Transfer</div>
             <table style="width:100%;border-collapse:collapse;">
               <tr>
-                <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;"><div style="font-size:8px;color:#555;text-transform:uppercase;">D1 Address of Collection Point</div><div style="font-weight:700;">${wtnData.transferAddress || wtnData.transferorAddress || '—'}</div></td>
-                <td style="width:50%;padding:7px 12px;"><div style="font-size:8px;color:#555;text-transform:uppercase;">D2 Broker who arranged this transfer</div><div style="font-weight:700;">${wtnData.brokerName || 'Total Waste Services LTD'}</div><div style="font-size:10px;">${wtnData.brokerAddress || 'Battlefield Enterprise Park, 10 Park Plaza, Shrewsbury, SY1 3AF'}</div><div style="font-size:10px;"><strong>Reg:</strong> ${wtnData.brokerCarrierReg || '—'}</div></td>
+                <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">D1 Address of transfer / collection point</div>
+                  <div style="font-weight:700;">${wtnData.transferAddress || wtnData.transferorAddress || '—'}</div>
+                </td>
+                <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Date &amp; time of transfer</div>
+                  <div style="font-weight:700;">${transferDateStr}${wtnData.transferTime ? ' at ' + wtnData.transferTime : ''}</div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" style="padding:7px 12px;vertical-align:top;">
+                  <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">D2 Broker or dealer who arranged this transfer (if applicable)</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
+                    <div><div style="font-size:8px;color:#555;text-transform:uppercase;">Name / Company</div><div style="font-weight:700;">${wtnData.brokerName || 'Total Waste Services LTD'}</div></div>
+                    <div><div style="font-size:8px;color:#555;text-transform:uppercase;">Address</div><div style="font-size:10px;font-weight:600;">${wtnData.brokerAddress || 'Battlefield Enterprise Park, 10 Park Plaza, Shrewsbury, SY1 3AF'}</div></div>
+                    <div><div style="font-size:8px;color:#555;text-transform:uppercase;">Registration No. (CBDU...)</div><div style="font-weight:700;">${wtnData.brokerCarrierReg || '—'}</div></div>
+                  </div>
+                </td>
               </tr>
             </table>
           </div>
 
+          <!-- Waste Hierarchy + Pie Chart -->
           <div style="border-bottom:2px solid #000;">
-            <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Waste Hierarchy &amp; Recycling Breakdown (Regulation 12)</div>
-            <div style="padding:12px;">
-              <div style="display:flex;gap:16px;flex-wrap:wrap;">
-                <div style="display:flex;align-items:center;gap:8px;font-size:11px;"><div style="width:12px;height:12px;border-radius:50%;background:#16a34a;"></div><span><strong>${wtnData.recycledPct || 0}%</strong> Recycled/Reused (${((wtnData.recycledPct||0) * (wtnData.quantity||0) / 100).toFixed(2)} ${wtnData.unit||''})</span></div>
-                <div style="display:flex;align-items:center;gap:8px;font-size:11px;"><div style="width:12px;height:12px;border-radius:50%;background:#f59e0b;"></div><span><strong>${wtnData.recoveredPct || 0}%</strong> Recovered</span></div>
-                <div style="display:flex;align-items:center;gap:8px;font-size:11px;"><div style="width:12px;height:12px;border-radius:50%;background:#6b7280;"></div><span><strong>${wtnData.landfillPct || 0}%</strong> Disposal</span></div>
+            <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Waste Hierarchy Confirmation &amp; Recycling Breakdown (Reg. 12)</div>
+            <div style="display:flex;align-items:center;gap:16px;padding:10px;">
+              <svg viewBox="0 0 160 160" width="120" height="120">${piePaths}</svg>
+              <div>
+                ${slices.map(s => `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:10px;"><div style="width:11px;height:11px;border-radius:50%;background:${s.color};flex-shrink:0;"></div><span style="font-weight:600;">${s.pct}%</span>&nbsp;${s.label}&nbsp;<span style="color:#6b7280;font-size:9px;">(${(qty * s.pct / 100).toFixed(2)} ${wtnData.unit || ''})</span></div>`).join('')}
+                <div style="font-size:9px;color:#166534;margin-top:6px;line-height:1.4;">By completing this WTN I confirm that I have fulfilled my duty to apply the waste hierarchy as required by Regulation 12 of the Waste (England &amp; Wales) Regulations 2011. ✓</div>
               </div>
-              <div style="font-size:9px;color:#166534;margin-top:8px;">I confirm I have applied the waste hierarchy as required by Regulation 12 of the Waste (England &amp; Wales) Regulations 2011. ✓</div>
-              ${wtnData.notes ? '<div style="margin-top:8px;font-size:11px;"><strong>Notes:</strong> ' + wtnData.notes + '</div>' : ''}
             </div>
+            ${wtnData.notes ? `<div style="padding:6px 12px;font-size:10px;border-top:1px solid #ccc;"><strong>Notes:</strong> ${wtnData.notes}</div>` : ''}
+            <div style="background:#f0fdf4;border-top:1px solid #ccc;padding:8px 12px;font-size:9px;line-height:1.5;color:#166534;">⚖️ <strong>Duty of Care:</strong> Both parties confirm they have fulfilled duty of care obligations under the Environmental Protection Act 1990 s.34. The carrier in Section C holds a valid EA waste carrier registration. Both parties must retain a signed copy for a minimum of 2 years (3 years for hazardous waste) and produce on request within 7 days. Failure to produce is a criminal offence.</div>
           </div>
 
+          <!-- Footer -->
           <div style="background:#f3f4f6;border-top:2px solid #000;padding:8px 20px;display:flex;justify-content:space-between;font-size:9px;color:#555;">
-            <span>Total Waste Services LTD • Broker Reg: ${wtnData.brokerCarrierReg || '—'}</span>
-            <span>WMC2A • Retain for 2 years minimum</span>
+            <span>Total Waste Services LTD &bull; Broker Reg: ${wtnData.brokerCarrierReg || '—'} &bull; www.totalwasteservicesltd.com</span>
+            <span>WMC2A &bull; Issued ${new Date().toLocaleDateString('en-GB')}</span>
           </div>
         </div>`;
 
