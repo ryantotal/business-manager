@@ -9109,7 +9109,7 @@ const displayCustomers = filteredCustomers.map(customer => ({
 
     // Step 3: Run the sync
     const results = await window.SageAPI.syncCustomersQuick();
-    await fetchCustomers();
+    await loadCustomersFromSupabase();
     alert(`✅ Sage sync complete!\n\n${results.new.length} new customers added\n${results.updated.length} existing customers updated (emails refreshed)`);
   } catch (error) {
     console.error('Sync error:', error);
@@ -9122,7 +9122,7 @@ const handleQuickSync = async () => {
   setSyncing(true);
   try {
     const results = await window.SageAPI.syncCustomersQuick();
-    await fetchCustomers();
+    await loadCustomersFromSupabase();
     alert(`✅ Sage sync complete!\n\n${results.new.length} new customers added\n${results.updated.length} existing customers updated (emails refreshed)`);
   } catch (error) {
     console.error('Quick sync error:', error);
@@ -14948,7 +14948,7 @@ const SageAPI = {
     for (const cpId of cpIds) {
       try {
         const cp = await this.makeRequest('contact_persons/' + cpId);
-        console.log('👤 Contact person:', JSON.stringify({name:cp.name, email:cp.email, telephone:cp.telephone, mobile:cp.mobile}));
+        console.log('👤 Contact person FULL:', JSON.stringify(cp));
         if (!result.telephone && cp.telephone) result.telephone = cp.telephone;
         if (!result.mobile && cp.mobile) result.mobile = cp.mobile;
         if (cp.email) {
