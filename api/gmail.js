@@ -211,6 +211,15 @@ export default async function handler(req, res) {
       let wtnData = {};
       try { wtnData = typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : (job.wtn_data || {}); } catch(e) {}
 
+      // Fetch company settings for logo
+      let companyLogoUrl = '';
+      let companyName = 'Total Waste Services Ltd';
+      try {
+        const { data: settings } = await supabase.from('settings').select('setting_name,setting_value');
+        companyLogoUrl = settings?.find(s => s.setting_name === 'logo_url')?.setting_value || '';
+        companyName = settings?.find(s => s.setting_name === 'company_name')?.setting_value || companyName;
+      } catch(e) {}
+
       const transferDateStr = wtnData.transferDate ? new Date(wtnData.transferDate).toLocaleDateString('en-GB') : '—';
       const qty = parseFloat(wtnData.quantity) || 0;
 
@@ -248,7 +257,7 @@ export default async function handler(req, res) {
           <!-- Header -->
           <div style="background:#fff;padding:14px 20px;border-bottom:3px solid #1a5c2a;">
             <table style="width:100%;border-collapse:collapse;"><tr>
-              <td style="width:140px;vertical-align:middle;"><strong style="font-size:13px;color:#1a5c2a;">TOTAL WASTE SERVICES LTD</strong></td>
+              <td style="width:140px;vertical-align:middle;">${companyLogoUrl ? `<img src="${companyLogoUrl}" style="height:52px;object-fit:contain;display:block;" alt="logo">` : `<strong style="font-size:13px;color:#1a5c2a;">${companyName}</strong>`}</td>
               <td style="text-align:center;vertical-align:middle;padding:0 12px;">
                 <div style="font-size:17px;font-weight:700;color:#1a5c2a;letter-spacing:.5px;margin-bottom:3px;">WASTE TRANSFER NOTE</div>
                 <div style="font-size:9px;color:#666;">Duty of Care — Environmental Protection Act 1990 s.34</div>
@@ -412,13 +421,13 @@ export default async function handler(req, res) {
                 <div style="font-size:9px;color:#166534;margin-top:6px;line-height:1.4;">By completing this WTN I confirm that I have fulfilled my duty to apply the waste hierarchy as required by Regulation 12 of the Waste (England &amp; Wales) Regulations 2011. ✓</div>
               </div>
             </div>
-            ${wtnData.notes ? `<div style="padding:6px 12px;font-size:10px;border-top:1px solid #ccc;"><strong>Notes:</strong> ${wtnData.notes}</div>` : ''}
+            ${wtnData.notes ? `<div style="padding:10px 12px;font-size:11px;border-top:1px solid #ccc;line-height:1.5;"><strong>Notes:</strong><div style="margin-top:4px;white-space:pre-wrap;">${wtnData.notes}</div></div>` : ''}
             <div style="background:#f0fdf4;border-top:1px solid #ccc;padding:8px 12px;font-size:9px;line-height:1.5;color:#166534;">⚖️ <strong>Duty of Care:</strong> Both parties confirm they have fulfilled duty of care obligations under the Environmental Protection Act 1990 s.34. The carrier in Section C holds a valid EA waste carrier registration. Both parties must retain a signed copy for a minimum of 2 years (3 years for hazardous waste) and produce on request within 7 days. Failure to produce is a criminal offence.</div>
           </div>
 
           <!-- Footer -->
           <div style="background:#f3f4f6;border-top:2px solid #000;padding:8px 20px;display:flex;justify-content:space-between;font-size:9px;color:#555;">
-            <span>Total Waste Services LTD &bull; Broker Reg: ${wtnData.brokerCarrierReg || '—'} &bull; www.totalwasteservicesltd.com</span>
+            <span>${companyName} &bull; Broker Reg: ${wtnData.brokerCarrierReg || '—'} &bull; www.totalwasteservicesltd.com</span>
             <span>WMC2A &bull; Issued ${new Date().toLocaleDateString('en-GB')}</span>
           </div>
         </div>`;
@@ -448,6 +457,11 @@ export default async function handler(req, res) {
     ${(() => {
       if (!wtnData.htmlContent) return fallbackContent;
       let h = wtnData.htmlContent;
+      // Patch missing logo: if img src is empty or blob/localhost, replace with Supabase logo
+      if (companyLogoUrl) {
+        h = h.replace(/<img([^>]*?)src=["'](blob:[^"']*|http:\/\/localhost[^"']*|)["']([^>]*?)>/gi,
+          `<img$1src="${companyLogoUrl}"$3>`);
+      }
       // Strip print button (has its own button in toolbar)
       h = h.replace(/<div[^>]*class="wtn-print-btn"[^>]*>[\s\S]*?<\/div>\s*<\/div>/i, '');
       // Fix CBDU saved in wrong field: if permit field contains CBDU number, swap it to carrier reg
