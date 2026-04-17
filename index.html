@@ -866,7 +866,8 @@ return (
             const inProgress = myJobs.filter(j => !j.is_completed && j.status !== 'COMPLETED' && j.status !== 'COLLECTED' && !j.is_cancelled);
 
             const downloadWTN = (job) => {
-              setWtnModalJob(job);
+              const wtnId = 'WTN-' + (job.job_number || job.jobNumber);
+              window.open('https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=' + wtnId, '_blank');
             };
 
             return (
@@ -989,7 +990,7 @@ return (
                             <th className="px-5 py-3 text-left"><SortBtn field="jobref" label="Job Ref" /></th>
                             <th className="px-5 py-3 text-left"><SortBtn field="date" label="Date" /></th>
                             <th className="px-5 py-3 text-left"><SortBtn field="type" label="Service" /></th>
-                            <th className="px-5 py-3 text-left text-gray-500">Site Address</th>
+                            <th className="px-5 py-3 text-left text-gray-500" style={{maxWidth:'160px',width:'160px'}}>Site Address</th>
                             <th className="px-5 py-3 text-left"><SortBtn field="price" label="Price (ex VAT)" /></th>
                             <th className="px-5 py-3 text-left"><SortBtn field="status" label="Status" /></th>
                             <th className="px-5 py-3 text-left text-gray-500">Documents</th>
@@ -1050,7 +1051,9 @@ return (
                                     {serviceDetail && <div className="text-gray-400">{serviceDetail}</div>}
                                     {qtyDisplay && <div className="text-gray-400">Qty: {qtyDisplay}</div>}
                                   </td>
-                                  <td className="px-5 py-3 text-gray-500 text-xs" style={{maxWidth:'180px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{[job.site_address1, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</td>
+                                  <td className="px-5 py-3 text-gray-500 text-xs" style={{maxWidth:'160px',width:'160px'}}>
+                                    <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'160px'}}>{[job.site_address1, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</div>
+                                  </td>
                                   <td className="px-5 py-3 font-medium text-gray-800 text-xs">{displayPrice}</td>
                                   <td className="px-5 py-3">
                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -1313,7 +1316,7 @@ const WtnPortalModal = ({ job, onClose }) => {
                 {[
                   {title:'Section A — Description of Waste', rows:[[{label:'Waste Description',val:wtnData.wasteDescription},{label:'EWC Code',val:wtnData.listOfWasteCode}],[{label:'Container / Skip',val:wtnData.skipSize},{label:'Quantity',val:`${wtnData.quantity||'—'} ${wtnData.unit||''}`}]]},
                   {title:'Section B — Transferor (Waste Producer)', rows:[[{label:'Name / Company',val:wtnData.transferorName||job.customer_name||job.customerName},{label:'Address',val:wtnData.transferorAddress}],[{label:'Signature',val:wtnData.transferorSignature||'___________'},{label:'Date',val:wtnData.transferDate?new Date(wtnData.transferDate).toLocaleDateString('en-GB'):'—'}]]},
-                  {title:'Section C — Carrier', rows:[[{label:'Carrier Name',val:wtnData.transfereeName},{label:'EA Carrier Reg',val:wtnData.transfereeCarrierReg}]]},
+                  {title:'Section C — Carrier', rows:[[{label:'Carrier Name',val:wtnData.transfereeName},{label:'EA Carrier Reg',val:wtnData.transfereeCarrierReg||'—'}],[{label:'Carrier Address',val:wtnData.transfereeAddress},{label:'Permit/Exemption No.',val:wtnData.transfereePermitNumber||'—'}]]},
                   {title:'Section D — Broker & Transfer Details', rows:[[{label:'Broker',val:wtnData.brokerName||coName},{label:'Collection Address',val:wtnData.transferAddress}]]},
                 ].map(sec => (
                   <div key={sec.title}>
@@ -9006,7 +9009,8 @@ const { error } = await window.supabase
     credit_days: sageCustomer.credit_days || 30,
     account_status: sageCustomer.account_status || 'Active',
     main_contact_name: sageCustomer.main_contact_name || '',
-    delivery_address: sageCustomer.delivery_address || null
+    delivery_address: sageCustomer.delivery_address || null,
+    additional_emails: sageCustomer.additional_emails || ''
   });
       
       if (error) {
@@ -9033,7 +9037,8 @@ const { error } = await window.supabase
                     credit_days: sageCustomer.credit_days,
                     account_status: sageCustomer.account_status,
                     delivery_address: sageCustomer.delivery_address,
-                    main_contact_name: sageCustomer.main_contact_name || ''
+                    main_contact_name: sageCustomer.main_contact_name || '',
+                    additional_emails: sageCustomer.additional_emails || ''
                 })
                 .eq('id', sageCustomer.id);
 
