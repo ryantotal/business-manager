@@ -841,8 +841,15 @@ return (
                 .eq('customer_name', customer.company_name || customer.name)
                 .order('created_at', { ascending: false });
 
+              // Fetch company settings for logo etc
+              const { data: settings } = await window.supabase
+                .from('settings')
+                .select('setting_name, setting_value');
+              const logoSetting = settings?.find(s => s.setting_name === 'logo_url')?.setting_value || null;
+              const nameSetting = settings?.find(s => s.setting_name === 'company_name')?.setting_value || null;
+
               setPortalJobs(jobs || []);
-              setPortalUser({ company: customer.company_name || customer.name, customer });
+              setPortalUser({ company: customer.company_name || customer.name, customer, logoUrl: logoSetting, companyName: nameSetting });
             } catch (err) {
               setPortalError('An error occurred. Please try again.');
             } finally {
@@ -984,14 +991,19 @@ return (
                       </div>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="w-full text-sm" style={{tableLayout:'fixed'}}>
+                        <colgroup>
+                          <col style={{width:'12%'}} /><col style={{width:'12%'}} /><col style={{width:'17%'}} />
+                          <col style={{width:'28%'}} /><col style={{width:'14%'}} />
+                          <col style={{width:'17%'}} />
+                        </colgroup>
                         <thead className="bg-gray-50 text-xs uppercase border-b">
                           <tr>
                             <th className="px-5 py-3 text-left"><SortBtn field="jobref" label="Job Ref" /></th>
                             <th className="px-5 py-3 text-left"><SortBtn field="date" label="Date" /></th>
                             <th className="px-5 py-3 text-left"><SortBtn field="type" label="Service" /></th>
-                            <th className="px-5 py-3 text-left text-gray-500" style={{maxWidth:'160px',width:'160px'}}>Site Address</th>
-                            <th className="px-5 py-3 text-left"><SortBtn field="price" label="Price (ex VAT)" /></th>
+                            <th className="px-5 py-3 text-left text-gray-500">Site Address</th>
+
                             <th className="px-5 py-3 text-left"><SortBtn field="status" label="Status" /></th>
                             <th className="px-5 py-3 text-left text-gray-500">Documents</th>
                           </tr>
@@ -1005,6 +1017,8 @@ return (
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
                             const hasWtn = job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null' && job.wtn_data !== '{}');
+                            const siNumber = job.sage_si_number || job.invoice_number || null;
+                            const isInvoiced = !!siNumber;
 
                             // Get price — try customer_final_price, then line items RRP total, then unit_price × qty, then job_value
                             const lineItems = (() => {
@@ -1038,7 +1052,7 @@ return (
                             return (
                               <React.Fragment key={job.id}>
                                 <tr
-                                  className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-50' : 'hover:bg-gray-50'}`}
+                                  className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-100' : isInvoiced ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}
                                   onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
                                 >
                                   <td className="px-5 py-3 font-mono font-medium text-blue-700 text-xs flex items-center gap-1">
@@ -1051,10 +1065,10 @@ return (
                                     {serviceDetail && <div className="text-gray-400">{serviceDetail}</div>}
                                     {qtyDisplay && <div className="text-gray-400">Qty: {qtyDisplay}</div>}
                                   </td>
-                                  <td className="px-5 py-3 text-gray-500 text-xs" style={{maxWidth:'160px',width:'160px'}}>
-                                    <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'160px'}}>{[job.site_address1, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</div>
+                                  <td className="px-5 py-3 text-gray-500 text-xs">
+                                    <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{[job.site_address1, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</div>
                                   </td>
-                                  <td className="px-5 py-3 font-medium text-gray-800 text-xs">{displayPrice}</td>
+
                                   <td className="px-5 py-3">
                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                       done ? 'bg-green-100 text-green-700' :
@@ -1063,35 +1077,38 @@ return (
                                     }`}>{done ? 'Completed' : cancelled ? 'Cancelled' : 'Scheduled'}</span>
                                   </td>
                                   <td className="px-5 py-3">
-                                    {done && isWasteJob && hasWtn ? (
-                                      <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
-                                        className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
-                                        📄 Waste Transfer Note
-                                      </button>
-                                    ) : done && isWasteJob ? (
-                                      <span className="text-gray-400 text-xs">WTN pending</span>
-                                    ) : (
-                                      <span className="text-gray-300 text-xs">—</span>
-                                    )}
+                                    <div className="flex flex-col gap-1">
+                                      {isInvoiced && (
+                                        <span className="text-green-700 font-bold text-xs">{siNumber}</span>
+                                      )}
+                                      {done && isWasteJob && hasWtn ? (
+                                        <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
+                                          className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
+                                          📄 Waste Transfer Note
+                                        </button>
+                                      ) : done && isWasteJob ? (
+                                        <span className="text-gray-400 text-xs">WTN pending</span>
+                                      ) : !isInvoiced ? (
+                                        <span className="text-gray-300 text-xs">—</span>
+                                      ) : null}
+                                    </div>
                                   </td>
                                 </tr>
                                 {isExpanded && (
                                   <tr className="bg-green-50">
                                     <td colSpan={7} className="px-8 py-4 border-t border-green-100">
-                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs" style={{gridTemplateColumns:"repeat(3,minmax(0,1fr))",overflow:"hidden"}}>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Job Reference</div><div className="font-semibold">{job.job_number}</div></div>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Service</div><div className="font-semibold">{job.job_type}</div></div>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Status</div><div className="font-semibold">{done ? 'Completed' : cancelled ? 'Cancelled' : 'Scheduled'}</div></div>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Date</div><div className="font-semibold">{job.job_date ? new Date(job.job_date).toLocaleDateString('en-GB') : '—'}</div></div>
                                         {job.delivery_date && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Delivery Date</div><div className="font-semibold">{new Date(job.delivery_date).toLocaleDateString('en-GB')}</div></div>}
                                         {job.collection_date && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Collection Date</div><div className="font-semibold">{new Date(job.collection_date).toLocaleDateString('en-GB')}</div></div>}
-                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Site Address</div><div className="font-semibold">{[job.site_address1, job.site_address2, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</div></div>
+                                        <div style={{minWidth:0,overflow:'hidden'}}><div className="text-gray-400 uppercase tracking-wide mb-1">Site Address</div><div className="font-semibold" style={{wordBreak:'break-all',overflowWrap:'anywhere'}}>{[job.site_address1, job.site_address2, job.site_city].filter(Boolean).join(', ') || '—'}{job.site_postcode && <div style={{marginTop:1}}>{job.site_postcode}</div>}</div></div>
                                         {job.quantity && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Quantity</div><div className="font-semibold">{job.quantity} {job.unit || ''}</div></div>}
                                         {job.waste_type && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Waste Type</div><div className="font-semibold">{job.waste_type}</div></div>}
                                         {job.aggregate_type && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Material</div><div className="font-semibold">{job.aggregate_type}</div></div>}
-                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Price (ex VAT)</div><div className="font-semibold text-green-700">{displayPrice}</div></div>
-                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">VAT (20%)</div><div className="font-semibold">{bestPrice != null ? `£${(bestPrice * 0.2).toFixed(2)}` : '—'}</div></div>
-                                        <div><div className="text-gray-400 uppercase tracking-wide mb-1">Total (inc VAT)</div><div className="font-bold text-gray-900">{bestPrice != null ? `£${(bestPrice * 1.2).toFixed(2)}` : '—'}</div></div>
+                                        {isInvoiced && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Invoice</div><div className="font-bold text-green-700">{siNumber}</div></div>}
                                         {job.notes && <div className="col-span-2 sm:col-span-3"><div className="text-gray-400 uppercase tracking-wide mb-1">Notes</div><div className="font-semibold">{job.notes}</div></div>}
                                         {lineItems.length > 0 && (
                                           <div className="col-span-2 sm:col-span-3">
@@ -1101,8 +1118,6 @@ return (
                                                 <tr>
                                                   <th className="px-3 py-2 text-left font-medium text-gray-500">Product / Service</th>
                                                   <th className="px-3 py-2 text-right font-medium text-gray-500">Qty</th>
-                                                  <th className="px-3 py-2 text-right font-medium text-gray-500">Unit Price</th>
-                                                  <th className="px-3 py-2 text-right font-medium text-gray-500">Total</th>
                                                 </tr>
                                               </thead>
                                               <tbody className="divide-y divide-gray-100">
@@ -1118,8 +1133,6 @@ return (
                                                         )}
                                                       </td>
                                                       <td className="px-3 py-2 text-right text-gray-600">{qty}</td>
-                                                      <td className="px-3 py-2 text-right text-gray-600">£{rrp.toFixed(2)}</td>
-                                                      <td className="px-3 py-2 text-right font-semibold">£{(rrp * qty).toFixed(2)}</td>
                                                     </tr>
                                                   );
                                                 })}
@@ -1148,7 +1161,7 @@ return (
                   </div>
 
                   <div className="text-center text-xs text-gray-400 pb-4">
-                    {localStorage.getItem('companyName') || 'Total Waste Services Ltd'} &bull; info@totalwasteservicesltd.com &bull; All prices exclude VAT
+                    {portalUser?.companyName || localStorage.getItem('companyName') || 'Total Waste Services Ltd'} &bull; info@totalwasteservicesltd.com
                   </div>
                   </>);
                   })()}
@@ -1160,6 +1173,8 @@ return (
                 <WtnPortalModal
                   job={wtnModalJob}
                   onClose={() => setWtnModalJob(null)}
+                  logoUrl={portalUser?.logoUrl || localStorage.getItem('companyLogo')}
+                  companyName={portalUser?.companyName || localStorage.getItem('companyName')}
                 />
               )}
             </React.Fragment>
@@ -1256,11 +1271,11 @@ return (
 
         // Job Form Component
 // ── EWC Code Picker ───────────────────────────────────────────────────────
-const WtnPortalModal = ({ job, onClose }) => {
+const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp }) => {
   const rawWtn = job.wtn_data || (job.wtnData ? JSON.stringify(job.wtnData) : null);
   const savedWtn = rawWtn ? (typeof rawWtn === 'string' ? JSON.parse(rawWtn) : rawWtn) : null;
-  const coName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
-  const logoSrc = localStorage.getItem('companyLogo');
+  const coName = companyNameProp || localStorage.getItem('companyName') || 'Total Waste Services Ltd';
+  const logoSrc = logoUrl || localStorage.getItem('companyLogo');
 
   // If no saved wtn_data, build a basic WTN from the job record itself
   const wtnData = savedWtn || {
@@ -1306,40 +1321,118 @@ const WtnPortalModal = ({ job, onClose }) => {
                   ⚠ This WTN has been reconstructed from job records. Some fields may be incomplete. Please contact {coName} for the original document.
                 </div>
               )}
-              <div style={{border:'2px solid #000'}}>
-                <div style={{background:'#fff',padding:'12px 16px',borderBottom:'3px solid #1a5c2a',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                  <div>{logoSrc ? <img src={logoSrc} style={{height:40,objectFit:'contain'}} alt="logo"/> : <strong style={{color:'#1a5c2a'}}>{coName}</strong>}</div>
-                  <div style={{textAlign:'center'}}><div style={{fontSize:15,fontWeight:700,color:'#1a5c2a'}}>WASTE TRANSFER NOTE</div><div style={{fontSize:8,color:'#666'}}>Environmental Protection Act 1990 s.34</div></div>
-                  <div style={{textAlign:'right'}}><div style={{fontSize:13,fontWeight:700,color:'#1a5c2a'}}>WTN-{job.job_number||job.jobNumber}</div><div style={{fontSize:8,color:'#555'}}>{wtnData.transferDate ? new Date(wtnData.transferDate).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')}</div></div>
-                </div>
-                <div style={{background:'#fff8c5',padding:'4px 16px',fontSize:8,fontWeight:700,textAlign:'center',borderBottom:'2px solid #000'}}>⚠ LEGAL DOCUMENT — Retain for minimum 2 years. Produce on request to Environment Agency within 7 days.</div>
-                {[
-                  {title:'Section A — Description of Waste', rows:[[{label:'Waste Description',val:wtnData.wasteDescription},{label:'EWC Code',val:wtnData.listOfWasteCode}],[{label:'Container / Skip',val:wtnData.skipSize},{label:'Quantity',val:`${wtnData.quantity||'—'} ${wtnData.unit||''}`}]]},
-                  {title:'Section B — Transferor (Waste Producer)', rows:[[{label:'Name / Company',val:wtnData.transferorName||job.customer_name||job.customerName},{label:'Address',val:wtnData.transferorAddress}],[{label:'Signature',val:wtnData.transferorSignature||'___________'},{label:'Date',val:wtnData.transferDate?new Date(wtnData.transferDate).toLocaleDateString('en-GB'):'—'}]]},
-                  {title:'Section C — Carrier', rows:[[{label:'Carrier Name',val:wtnData.transfereeName},{label:'EA Carrier Reg',val:wtnData.transfereeCarrierReg||'—'}],[{label:'Carrier Address',val:wtnData.transfereeAddress},{label:'Permit/Exemption No.',val:wtnData.transfereePermitNumber||'—'}]]},
-                  {title:'Section D — Broker & Transfer Details', rows:[[{label:'Broker',val:wtnData.brokerName||coName},{label:'Collection Address',val:wtnData.transferAddress}]]},
-                ].map(sec => (
-                  <div key={sec.title}>
-                    <div style={{background:'#d1fae5',padding:'4px 12px',fontSize:9,fontWeight:700,textTransform:'uppercase',borderBottom:'1px solid #000',borderTop:'2px solid #000'}}>{sec.title}</div>
-                    {sec.rows.map((row,i) => (
-                      <div key={i} style={{display:'grid',gridTemplateColumns:`repeat(${row.length},1fr)`,borderBottom:'1px solid #ccc'}}>
-                        {row.map((cell,j) => <div key={j} style={{padding:'6px 12px',borderRight:j<row.length-1?'1px solid #ccc':'none'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>{cell.label}</div><div style={{fontWeight:700}}>{cell.val||'—'}</div></div>)}
-                      </div>
-                    ))}
+              {(() => {
+                const qty = parseFloat(wtnData.quantity)||0;
+                const containerOptions = ['Loose','Sacks','Skip','Drum','Roll-on roll-off container','Other'];
+                // Pie chart
+                const toRad = d=>d*Math.PI/180;
+                const cx=60,cy=60,r=50;
+                const slices=[{pct:wtnData.recycledPct,color:'#16a34a',label:'Recycled/Reused'},{pct:wtnData.recoveredPct,color:'#2563eb',label:'Recovered'},{pct:wtnData.landfillPct,color:'#ea580c',label:'Disposal'}].filter(s=>s.pct>0);
+                let ang=-90;
+                const paths=slices.map(s=>{const sw=s.pct/100*360;const en=ang+sw;const x1=cx+r*Math.cos(toRad(ang)),y1=cy+r*Math.sin(toRad(ang));const x2=cx+r*Math.cos(toRad(en)),y2=cy+r*Math.sin(toRad(en));const d=`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${sw>180?1:0} 1 ${x2},${y2} Z`;ang=en;return `<path d="${d}" fill="${s.color}" stroke="white" stroke-width="1.5"/>`;}).join('');
+                return (
+                <div style={{border:'2px solid #000'}}>
+                  {/* Header */}
+                  <div style={{background:'#fff',padding:'12px 16px',borderBottom:'3px solid #1a5c2a'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse'}}><tbody><tr>
+                      <td style={{width:100,verticalAlign:'middle'}}>{logoSrc ? <img src={logoSrc} style={{height:40,objectFit:'contain'}} alt="logo"/> : <strong style={{color:'#1a5c2a'}}>{coName}</strong>}</td>
+                      <td style={{textAlign:'center',verticalAlign:'middle',padding:'0 12px'}}><div style={{fontSize:15,fontWeight:700,color:'#1a5c2a',marginBottom:2}}>WASTE TRANSFER NOTE</div><div style={{fontSize:8,color:'#666'}}>Duty of Care — Environmental Protection Act 1990 s.34</div><div style={{fontSize:8,color:'#666'}}>Waste (England &amp; Wales) Regulations 2011</div></td>
+                      <td style={{width:110,textAlign:'right',verticalAlign:'middle'}}><div style={{fontSize:13,fontWeight:700,color:'#1a5c2a'}}>{wtnData.wtnNumber||`WTN-${job.job_number||job.jobNumber}`}</div><div style={{fontSize:8,color:'#555',marginTop:2}}>Job: {job.job_number||job.jobNumber||'—'}</div><div style={{fontSize:8,color:'#555'}}>{wtnData.transferDate ? new Date(wtnData.transferDate).toLocaleDateString('en-GB') : '—'}</div></td>
+                    </tr></tbody></table>
                   </div>
-                ))}
-                <div style={{background:'#d1fae5',padding:'4px 12px',fontSize:9,fontWeight:700,textTransform:'uppercase',borderBottom:'1px solid #000',borderTop:'2px solid #000'}}>Waste Hierarchy (Reg. 12)</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',borderBottom:'1px solid #ccc'}}>
-                  {[{l:'Recycled/Reused',v:`${wtnData.recycledPct||0}%`},{l:'Recovered',v:`${wtnData.recoveredPct||0}%`},{l:'Disposal',v:`${wtnData.landfillPct||0}%`}].map((x,i,a) => (
-                    <div key={i} style={{padding:'6px 12px',borderRight:i<a.length-1?'1px solid #ccc':'none'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase'}}>{x.l}</div><div style={{fontWeight:700}}>{x.v}</div></div>
-                  ))}
+                  <div style={{background:'#fff8c5',padding:'4px 16px',fontSize:8,fontWeight:700,textAlign:'center',borderBottom:'2px solid #000'}}>⚠ LEGAL DOCUMENT — Both parties must retain a signed copy for a minimum of 2 years and produce on request to the Environment Agency or Local Authority within 7 days.</div>
+
+                  {/* Section A */}
+                  <div style={{borderBottom:'2px solid #000'}}>
+                    <div style={{background:'#d1fae5',padding:'4px 10px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:.5,borderBottom:'1px solid #000'}}>Section A — Description of Waste</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderBottom:'1px solid #ccc'}}>
+                      <div style={{padding:'5px 10px',borderRight:'1px solid #ccc'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>A1 Description of waste</div><div style={{fontWeight:700}}>{wtnData.wasteDescription||'—'}</div></div>
+                      <div style={{padding:'5px 10px'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Container / Skip Size</div><div style={{fontWeight:700}}>{wtnData.skipSize||'—'}</div></div>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderBottom:'1px solid #ccc'}}>
+                      <div style={{padding:'5px 10px',borderRight:'1px solid #ccc'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>EWC Code (List of Waste Regulations)</div><div style={{fontWeight:700}}>{wtnData.listOfWasteCode||'—'}</div></div>
+                      <div style={{padding:'5px 10px'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>A3 Quantity</div><div style={{fontWeight:700}}>{qty} {wtnData.unit}</div></div>
+                    </div>
+                    <div style={{padding:'5px 10px',borderBottom:'1px solid #ccc',fontSize:10}}>
+                      <strong>A2 How is the waste contained?</strong>&nbsp;&nbsp;
+                      {containerOptions.map(c=><span key={c} style={{marginRight:10}}>{wtnData.wasteContainer===c?'☑':'☐'} {c}</span>)}
+                    </div>
+                    <div style={{padding:'5px 10px',fontSize:10}}><strong>Hazardous waste?</strong> {wtnData.isHazardous ? <span style={{color:'red',fontWeight:700}}>YES — Consignment Note Required</span> : 'No'}</div>
+                  </div>
+
+                  {/* Section B */}
+                  <div style={{borderBottom:'2px solid #000'}}>
+                    <div style={{background:'#d1fae5',padding:'4px 10px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:.5,borderBottom:'1px solid #000'}}>Section B — Current Holder of the Waste (Transferor)</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderBottom:'1px solid #ccc'}}>
+                      <div style={{padding:'5px 10px',borderRight:'1px solid #ccc'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>B1 Full name &amp; company name and address</div><div style={{fontWeight:700}}>{wtnData.transferorName||'—'}</div><div style={{fontSize:10,marginTop:2}}>{wtnData.transferorAddress||'—'}</div></div>
+                      <div style={{padding:'5px 10px'}}>
+                        <div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>B2 SIC Code (2007)</div><div style={{fontWeight:700,marginBottom:6}}>{wtnData.transferorSicCode||'—'}</div>
+                        <div style={{fontSize:9}}><strong>B3 Are you:</strong>&nbsp;&nbsp;<span style={{marginRight:10}}>{wtnData.transferorIsProducer?'☑':'☐'} Producer of the waste</span><span>{wtnData.transferorPermitNumber?'☑':'☐'} Holder of environmental permit</span></div>
+                        <div style={{fontSize:9,marginTop:4}}><span style={{color:'#555'}}>Permit / Carrier Reg / Exemption No:</span> <strong>{wtnData.transferorPermitNumber||'—'}</strong></div>
+                      </div>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderBottom:'1px solid #ccc'}}>
+                      <div style={{padding:'6px 10px',borderRight:'1px solid #ccc'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Transferor's Signature</div><div style={{borderBottom:'1.5px solid #000',margin:'12px 0 3px',width:'80%'}}></div><div style={{fontWeight:700,fontSize:10}}>{wtnData.transferorSignature||'___________________________'}</div><div style={{fontSize:8,color:'#555',marginTop:2}}>Representing: {wtnData.transferorRepresenting||wtnData.transferorName||'—'}</div></div>
+                      <div style={{padding:'6px 10px'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Date of transfer</div><div style={{fontSize:13,fontWeight:700,marginTop:8}}>{wtnData.transferDate?new Date(wtnData.transferDate).toLocaleDateString('en-GB'):'—'}</div>{wtnData.transferTime&&<div style={{fontSize:9,color:'#555'}}>Time: {wtnData.transferTime}</div>}</div>
+                    </div>
+                  </div>
+
+                  {/* Section C */}
+                  <div style={{borderBottom:'2px solid #000'}}>
+                    <div style={{background:'#d1fae5',padding:'4px 10px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:.5,borderBottom:'1px solid #000'}}>Section C — Person Collecting the Waste (Transferee / Carrier)</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderBottom:'1px solid #ccc'}}>
+                      <div style={{padding:'5px 10px',borderRight:'1px solid #ccc'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>C1 Full name &amp; company name and address</div><div style={{fontWeight:700}}>{wtnData.transfereeName||'—'}</div><div style={{fontSize:10,marginTop:2}}>{wtnData.transfereeAddress||'—'}</div></div>
+                      <div style={{padding:'5px 10px'}}>
+                        <div style={{fontSize:9,marginBottom:6}}><strong>C3 Are you:</strong>&nbsp;&nbsp;<span style={{marginRight:10}}>{wtnData.transfereeCarrierReg?'☑':'☐'} Registered waste carrier, broker or dealer</span><span>{wtnData.transfereePermitNumber?'☑':'☐'} Holder of environmental permit</span></div>
+                        <div style={{fontSize:9}}><span style={{color:'#555'}}>EA Carrier Registration No. (CBDU...):</span> <strong>{wtnData.transfereeCarrierReg||'—'}</strong></div>
+                        <div style={{fontSize:9,marginTop:3}}><span style={{color:'#555'}}>Environmental Permit / Exemption No.:</span> <strong>{wtnData.transfereePermitNumber||'—'}</strong></div>
+                      </div>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'}}>
+                      <div style={{padding:'6px 10px',borderRight:'1px solid #ccc'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Transferee's Signature</div><div style={{borderBottom:'1.5px solid #000',margin:'12px 0 3px',width:'80%'}}></div><div style={{fontWeight:700,fontSize:10}}>{wtnData.transfereeSignature||'___________________________'}</div><div style={{fontSize:8,color:'#555',marginTop:2}}>Representing: {wtnData.transfereeRepresenting||wtnData.transfereeName||'—'}</div></div>
+                      <div style={{padding:'6px 10px'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Date of transfer</div><div style={{fontSize:13,fontWeight:700,marginTop:8}}>{wtnData.transferDate?new Date(wtnData.transferDate).toLocaleDateString('en-GB'):'—'}</div></div>
+                    </div>
+                  </div>
+
+                  {/* Section D */}
+                  <div style={{borderBottom:'2px solid #000'}}>
+                    <div style={{background:'#d1fae5',padding:'4px 10px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:.5,borderBottom:'1px solid #000'}}>Section D — The Transfer</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderBottom:'1px solid #ccc'}}>
+                      <div style={{padding:'5px 10px',borderRight:'1px solid #ccc'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>D1 Address of transfer / collection point</div><div style={{fontWeight:700}}>{wtnData.transferAddress||[job.site_address1||job.siteAddress1,job.site_address2||job.siteAddress2,job.site_city||job.siteCity,job.site_postcode||job.sitePostcode].filter(Boolean).join(', ')||'—'}</div></div>
+                      <div style={{padding:'5px 10px'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Date &amp; time of transfer</div><div style={{fontWeight:700}}>{wtnData.transferDate?new Date(wtnData.transferDate).toLocaleDateString('en-GB'):'—'}{wtnData.transferTime?' at '+wtnData.transferTime:''}</div></div>
+                    </div>
+                    <div style={{padding:'5px 10px'}}>
+                      <div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:4}}>D2 Broker or dealer who arranged this transfer (if applicable)</div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:4}}>
+                        <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Name / Company</div><div style={{fontWeight:700}}>{wtnData.brokerName||'—'}</div></div>
+                        <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Address</div><div style={{fontSize:10,fontWeight:600}}>{wtnData.brokerAddress||'—'}</div></div>
+                        <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Registration No. (CBDU...)</div><div style={{fontWeight:700}}>{wtnData.brokerCarrierReg||'—'}</div></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Waste Hierarchy + Pie Chart */}
+                  <div style={{borderBottom:'2px solid #000'}}>
+                    <div style={{background:'#d1fae5',padding:'4px 10px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:.5,borderBottom:'1px solid #000'}}>Waste Hierarchy Confirmation &amp; Recycling Breakdown (Reg. 12)</div>
+                    <div style={{display:'flex',alignItems:'center',gap:16,padding:10}}>
+                      <svg viewBox="0 0 120 120" width="90" height="90" dangerouslySetInnerHTML={{__html:paths}} />
+                      <div>
+                        {slices.map(s=><div key={s.label} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,fontSize:10}}><div style={{width:10,height:10,borderRadius:'50%',background:s.color,flexShrink:0}}></div><span style={{fontWeight:600}}>{s.pct}%</span>&nbsp;{s.label}&nbsp;<span style={{color:'#6b7280',fontSize:9}}>({(qty*s.pct/100).toFixed(2)} {wtnData.unit})</span></div>)}
+                        <div style={{fontSize:8,color:'#166534',marginTop:6,lineHeight:1.4}}>By completing this WTN I confirm that I have fulfilled my duty to apply the waste hierarchy as required by Regulation 12 of the Waste (England &amp; Wales) Regulations 2011. ✓</div>
+                      </div>
+                    </div>
+                    {wtnData.notes&&<div style={{padding:'5px 10px',fontSize:10,borderTop:'1px solid #ccc'}}><strong>Notes:</strong> {wtnData.notes}</div>}
+                    <div style={{background:'#f0fdf4',borderTop:'1px solid #ccc',padding:'6px 10px',fontSize:8,lineHeight:1.5,color:'#166534'}}>⚖️ <strong>Duty of Care:</strong> Both parties confirm they have fulfilled duty of care obligations under the Environmental Protection Act 1990 s.34. The carrier in Section C holds a valid EA waste carrier registration. Both parties must retain a signed copy for a minimum of 2 years (3 years for hazardous waste) and produce on request within 7 days. Failure to produce is a criminal offence.</div>
+                  </div>
+
+                  {/* Footer */}
+                  <div style={{background:'#f3f4f6',borderTop:'2px solid #000',padding:'6px 16px',display:'flex',justifyContent:'space-between',fontSize:8,color:'#555'}}>
+                    <span>{coName} • Broker Reg: {wtnData.brokerCarrierReg||'—'} • www.totalwasteservicesltd.com</span>
+                    <span>WMC2A — Issued {new Date().toLocaleDateString('en-GB')}</span>
+                  </div>
                 </div>
-                <div style={{padding:'6px 12px',fontSize:8,color:'#555',borderBottom:'1px solid #ccc'}}>I confirm compliance with Regulation 12, Waste (England & Wales) Regulations 2011.</div>
-                <div style={{background:'#f3f4f6',borderTop:'2px solid #000',padding:'6px 16px',display:'flex',justifyContent:'space-between',fontSize:8,color:'#555'}}>
-                  <span>{coName} • Broker Reg: {wtnData.brokerCarrierReg||'—'}</span>
-                  <span>WMC2A • Retain for 2 years minimum</span>
-                </div>
-              </div>
+                );
+              })()}
             </div>
         </div>
       </div>
@@ -3803,8 +3896,18 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
 
                           const htmlBody = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>${wtnFields.wtnNumber}</title>
+<style>@media print { .wtn-print-btn { display:none !important; } }</style>
 </head>
 <body style="margin:0;padding:20px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1f2937;background:#f5f5f5;">
+<div style="max-width:680px;margin:0 auto;">
+  <div class="wtn-print-btn" style="text-align:center;margin-bottom:14px;">
+    <a href="https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=${wtnFields.wtnNumber}" target="_blank"
+       style="display:inline-block;background:#16a34a;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;padding:12px 28px;border-radius:6px;text-decoration:none;letter-spacing:.3px;">
+      🖨️ View &amp; Print WTN
+    </a>
+    <div style="font-size:11px;color:#666;margin-top:6px;">Click to open the printable version of this Waste Transfer Note</div>
+  </div>
+</div>
 <div style="max-width:680px;margin:0 auto;background:#fff;border:2px solid #000;">
 
   <!-- Header -->
