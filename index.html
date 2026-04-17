@@ -14939,40 +14939,28 @@ const SageAPI = {
       if (allFromRecord.length > 0) result.additional_emails = allFromRecord.join(',');
     }
 
-    // Get main contact person details (phone + email)
-    if (customer?.main_contact_person?.id) {
+    // Collect all contact person IDs to fetch (main + preferred, deduped)
+    const cpIds = new Set();
+    if (customer?.main_contact_person?.id) cpIds.add(customer.main_contact_person.id);
+    if (customer?.preferred_contact_person?.id) cpIds.add(customer.preferred_contact_person.id);
+
+    // Fetch each contact person individually (the list endpoint doesn't work reliably)
+    for (const cpId of cpIds) {
       try {
-        const contactPerson = await this.makeRequest('contact_persons/' + customer.main_contact_person.id);
-        console.log('👤 Main contact person:', JSON.stringify({name:contactPerson.name, email:contactPerson.email, telephone:contactPerson.telephone, mobile:contactPerson.mobile}));
-        result.telephone = contactPerson.telephone || '';
-        result.mobile = contactPerson.mobile || '';
-        if (contactPerson.email && !result.email) result.email = contactPerson.email;
-        else if (contactPerson.email && contactPerson.email.toLowerCase() !== result.email.toLowerCase() && !result.additional_emails.includes(contactPerson.email)) {
-          result.additional_emails = [result.additional_emails, contactPerson.email].filter(Boolean).join(',');
+        const cp = await this.makeRequest('contact_persons/' + cpId);
+        console.log('👤 Contact person:', JSON.stringify({name:cp.name, email:cp.email, telephone:cp.telephone, mobile:cp.mobile}));
+        if (!result.telephone && cp.telephone) result.telephone = cp.telephone;
+        if (!result.mobile && cp.mobile) result.mobile = cp.mobile;
+        if (cp.email) {
+          if (!result.email) {
+            result.email = cp.email;
+          } else if (cp.email.toLowerCase() !== result.email.toLowerCase() && !result.additional_emails.includes(cp.email)) {
+            result.additional_emails = [result.additional_emails, cp.email].filter(Boolean).join(',');
+          }
         }
       } catch(e) {
-        console.log('Could not fetch main contact person:', e.message);
+        console.log('Could not fetch contact person ' + cpId + ':', e.message);
       }
-    }
-
-    // Fetch ALL contact persons to collect all emails
-    try {
-      const allContacts = await this.makeRequest('contact_persons?contact_id=' + customerId + '&items_per_page=50');
-      console.log('👥 All contact persons for ' + customerId + ':', JSON.stringify(allContacts?.$items?.map(cp => ({name:cp.name,email:cp.email,telephone:cp.telephone}))));
-      if (allContacts?.$items?.length > 0) {
-        const allEmails = allContacts.$items
-          .map(cp => cp.email)
-          .filter(e => e && e.trim() && e.toLowerCase() !== result.email.toLowerCase() && !result.additional_emails.includes(e));
-        if (!result.email && allContacts.$items[0]?.email) result.email = allContacts.$items[0].email;
-        if (allEmails.length > 0) {
-          result.additional_emails = [result.additional_emails, ...allEmails].filter(Boolean).join(',');
-        }
-        // Also pick up phone from first contact person if not already set
-        if (!result.telephone && allContacts.$items[0]?.telephone) result.telephone = allContacts.$items[0].telephone;
-        if (!result.mobile && allContacts.$items[0]?.mobile) result.mobile = allContacts.$items[0].mobile;
-      }
-    } catch (e) {
-      console.log('Could not fetch contact persons list:', e.message);
     }
 
     console.log('✅ Final result for ' + customerId + ':', JSON.stringify(result));
@@ -15281,9 +15269,13 @@ async syncCustomersQuick() {
     console.log('🚀 Starting customer sync...');
 
     const sageCustomers = await this.getCustomers();
-    const customerContacts = sageCustomers.$items.filter(contact =>
-      contact.contact_types?.some(type => type.id === 'CUSTOMER')
-    );
+    const customerContacts = sageCustomers.$items.filter(contact => {
+      const types = contact.contact_types || [];
+      const isCustomer = types.some(t => t.id === 'CUSTOMER');
+      const isSupplier = types.some(t => t.id === 'SUPPLIER');
+      return isCustomer && !isSupplier; // Pure customers only — dual-type contacts go in suppliers
+    });
+    console.log(`📊 Sage returned ${sageCustomers.$items.length} total contacts, ${customerContacts.length} pure customers`);
 
     // Fetch all existing customers once — get enough fields to diff against
     const { data: existingCustomers } = await window.supabase
@@ -15347,7 +15339,9 @@ async syncCustomersQuick() {
               fromSage.mobile = c.mobile || existing.mobile || '';
               fromSage.additional_emails = c.additional_emails || '';
             }
-          } catch(e) {}
+          } catch(e) {
+            console.warn(`⚠️ getContactPersonDetails failed for ${sageCustomer.displayed_as}:`, e.message);
+          }
         } else {
           // Emails already populated — keep them, no API call
           fromSage.email = existing.email || fromSage.email;
