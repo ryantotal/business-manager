@@ -9077,12 +9077,11 @@ const displayCustomers = filteredCustomers.map(customer => ({
           };
 
           const handleSyncFromSage = async () => {
-            // Map database customers to the format the UI expects
   setSyncing(true);
   try {
     const results = await window.SageAPI.syncCustomersQuick();
-    setSyncResults(results);
-    setShowSyncDialog(true);
+    await fetchCustomers();
+    alert(`✅ Sage sync complete!\n\n${results.new.length} new customers added\n${results.updated.length} existing customers updated (emails refreshed)`);
   } catch (error) {
     alert('Failed to sync from Sage: ' + error.message);
   } finally {
@@ -9090,21 +9089,11 @@ const displayCustomers = filteredCustomers.map(customer => ({
   }
 };
 const handleQuickSync = async () => {
-  console.log('Quick sync - checking for new customers only...');
   setSyncing(true);
-  
   try {
-    // Use the new quick sync function
     const results = await window.SageAPI.syncCustomersQuick();
-    
-    setSyncResults(results);
-    setShowSyncDialog(true);
-    
-    // Refresh the customer list if new ones were added
-    if (results.new.length > 0) {
-      await fetchCustomers(); // Refresh the list
-    }
-    
+    await fetchCustomers();
+    alert(`✅ Sage sync complete!\n\n${results.new.length} new customers added\n${results.updated.length} existing customers updated (emails refreshed)`);
   } catch (error) {
     console.error('Quick sync error:', error);
     alert('Quick sync failed: ' + error.message);
@@ -15349,59 +15338,136 @@ async syncSuppliersFromSage() {
 // QUICK SYNC FUNCTIONS - For manual button clicks (new records only, no phone lookups)
 async syncCustomersQuick() {
   try {
-    console.log('🚀 Starting QUICK customer sync (new records only)...');
-    
+    console.log('🚀 Starting customer sync...');
+
     const sageCustomers = await this.getCustomers();
-    const customerContacts = sageCustomers.$items.filter(contact => 
+    const customerContacts = sageCustomers.$items.filter(contact =>
       contact.contact_types?.some(type => type.id === 'CUSTOMER')
     );
-    
-    // Get existing Sage IDs only (fast query)
+
+    // Fetch all existing customers once — get enough fields to diff against
     const { data: existingCustomers } = await window.supabase
       .from('customers')
-      .select('sage_id');
-    
-    const existingSageIds = new Set(existingCustomers?.map(c => c.sage_id) || []);
+      .select('id, sage_id, name, email, additional_emails, phone, mobile, reference, credit_limit, credit_days, account_status, address, city, postcode, county, vat_number');
+
+    const existingBySageId = new Map((existingCustomers || []).map(c => [c.sage_id, c]));
     const newCustomers = [];
-    
+    const updatedCustomers = [];
+
     for (const sageCustomer of customerContacts) {
-      if (!existingSageIds.has(sageCustomer.id)) {
-        console.log(`✅ Found NEW customer: ${sageCustomer.displayed_as}`);
-        
-        // Quick mapping - NO phone API calls
-        const mappedCustomer = {
-          sage_id: sageCustomer.id,
-          name: sageCustomer.displayed_as || '',
-          email: sageCustomer.email || '',
-          phone: '', // Skip phone lookup for quick sync
-          mobile: '',
-          reference: sageCustomer.reference || '',
-          credit_limit: parseFloat(sageCustomer.credit_limit) || 0,
-          credit_days: parseInt(sageCustomer.credit_days) || 30,
-          account_status: sageCustomer.deletable === false ? 'Active' : 'Inactive',
-          address: sageCustomer.main_address?.displayed_as || '',
-          city: sageCustomer.main_address?.city || '',
-          postcode: sageCustomer.main_address?.postal_code || '',
-          county: sageCustomer.main_address?.region || '',
-          vat_number: sageCustomer.tax_number || '',
-          delivery_address: sageCustomer.delivery_address?.displayed_as || null
-        };
-        
-        // Insert immediately
-        const { error } = await window.supabase.from('customers').insert(mappedCustomer);
-        if (!error) {
-          newCustomers.push(mappedCustomer);
-        } else {
-          console.error(`Failed to insert customer ${sageCustomer.displayed_as}:`, error);
+      const existing = existingBySageId.get(sageCustomer.id);
+
+      // Build what Sage says this customer should look like (without emails yet)
+      const fromSage = {
+        sage_id: sageCustomer.id,
+        name: sageCustomer.displayed_as || '',
+        email: sageCustomer.email || '',
+        phone: '',
+        mobile: '',
+        additional_emails: '',
+        reference: sageCustomer.reference || '',
+        credit_limit: parseFloat(sageCustomer.credit_limit) || 0,
+        credit_days: parseInt(sageCustomer.credit_days) || 30,
+        account_status: sageCustomer.deletable === false ? 'Active' : 'Inactive',
+        address: sageCustomer.main_address?.displayed_as || '',
+        city: sageCustomer.main_address?.city || '',
+        postcode: sageCustomer.main_address?.postal_code || '',
+        county: sageCustomer.main_address?.region || '',
+        vat_number: sageCustomer.tax_number || '',
+        delivery_address: sageCustomer.delivery_address?.displayed_as || null,
+      };
+
+      if (!existing) {
+        // NEW customer — fetch emails and insert
+        if (this.getContactPersonDetails) {
+          try {
+            const c = await this.getContactPersonDetails(sageCustomer.id);
+            if (c) {
+              fromSage.email = c.email || fromSage.email;
+              fromSage.phone = c.telephone || c.phone || '';
+              fromSage.mobile = c.mobile || '';
+              fromSage.additional_emails = c.additional_emails || '';
+            }
+          } catch(e) {}
         }
+        console.log(`✅ NEW: ${sageCustomer.displayed_as}`);
+        const { error } = await window.supabase.from('customers').insert(fromSage);
+        if (!error) newCustomers.push(fromSage);
+        else console.error(`Insert failed for ${sageCustomer.displayed_as}:`, error);
+
+      } else {
+        // EXISTING — only fetch emails if not already stored
+        const missingEmails = !existing.additional_emails;
+        if (missingEmails && this.getContactPersonDetails) {
+          try {
+            const c = await this.getContactPersonDetails(sageCustomer.id);
+            if (c) {
+              fromSage.email = c.email || existing.email || fromSage.email;
+              fromSage.phone = c.telephone || c.phone || existing.phone || '';
+              fromSage.mobile = c.mobile || existing.mobile || '';
+              fromSage.additional_emails = c.additional_emails || '';
+            }
+          } catch(e) {}
+        } else {
+          // Emails already populated — keep them, no API call
+          fromSage.email = existing.email || fromSage.email;
+          fromSage.additional_emails = existing.additional_emails || '';
+          fromSage.phone = existing.phone || '';
+          fromSage.mobile = existing.mobile || '';
+        }
+
+        // Only write to DB if something actually changed
+        const changed = (
+          fromSage.name !== existing.name ||
+          fromSage.email !== existing.email ||
+          fromSage.additional_emails !== (existing.additional_emails || '') ||
+          fromSage.phone !== (existing.phone || '') ||
+          fromSage.reference !== (existing.reference || '') ||
+          fromSage.credit_limit !== (existing.credit_limit || 0) ||
+          fromSage.credit_days !== (existing.credit_days || 30) ||
+          fromSage.account_status !== (existing.account_status || '') ||
+          fromSage.address !== (existing.address || '') ||
+          fromSage.city !== (existing.city || '') ||
+          fromSage.postcode !== (existing.postcode || '') ||
+          fromSage.vat_number !== (existing.vat_number || '')
+        );
+
+        if (changed) {
+          const { error } = await window.supabase
+            .from('customers')
+            .update({
+              name: fromSage.name,
+              email: fromSage.email,
+              additional_emails: fromSage.additional_emails,
+              phone: fromSage.phone,
+              mobile: fromSage.mobile,
+              reference: fromSage.reference,
+              credit_limit: fromSage.credit_limit,
+              credit_days: fromSage.credit_days,
+              account_status: fromSage.account_status,
+              address: fromSage.address,
+              city: fromSage.city,
+              postcode: fromSage.postcode,
+              county: fromSage.county,
+              vat_number: fromSage.vat_number,
+            })
+            .eq('id', existing.id);
+          if (!error) {
+            updatedCustomers.push(fromSage);
+            console.log(`🔄 CHANGED: ${sageCustomer.displayed_as}`);
+          } else {
+            console.error(`Update failed for ${sageCustomer.displayed_as}:`, error);
+          }
+        }
+        // else: nothing changed, skip entirely
       }
     }
-    
-    console.log(`✅ Quick sync complete: ${newCustomers.length} new customers added`);
-    return { new: newCustomers, updated: [], conflicts: [] };
-    
+
+    console.log(`✅ Sync done: ${newCustomers.length} new, ${updatedCustomers.length} changed`);
+    return { new: newCustomers, updated: updatedCustomers, conflicts: [] };
+
   } catch (error) {
-    console.error('❌ Quick customer sync failed:', error);
+    console.error('❌ Customer sync failed:', error);
     throw error;
   }
 },
