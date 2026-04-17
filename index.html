@@ -1006,7 +1006,17 @@ return (
                             const hasWtn = job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null' && job.wtn_data !== '{}');
 
                             // Get price — try customer_final_price, then line items RRP total, then unit_price × qty, then job_value
-                            const lineItems = (() => { try { return typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : (job.sage_line_items || []); } catch(e) { return []; } })();
+                            const lineItems = (() => {
+                              // Try sage_line_items first, fall back to job lineItems
+                              try {
+                                const sageItems = typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : (job.sage_line_items || []);
+                                const jobItems = typeof job.line_items === 'string' ? JSON.parse(job.line_items) : (job.line_items || []);
+                                // If sage items only have 'Various' as names, prefer job items
+                                const allVarious = sageItems.length > 0 && sageItems.every(i => (i.product_name || '').toLowerCase() === 'various' && !i.description);
+                                if (allVarious && jobItems.length > 0) return jobItems;
+                                return sageItems.length > 0 ? sageItems : jobItems;
+                              } catch(e) { return []; }
+                            })();
                             const lineItemsTotal = lineItems.reduce((sum, item) => {
                               const rrp = parseFloat(item.customer_price || item.unit_price || 0);
                               const qty = parseFloat(item.quantity || 1);
@@ -1098,7 +1108,12 @@ return (
                                                   const qty = parseFloat(item.quantity || 1);
                                                   return (
                                                     <tr key={i}>
-                                                      <td className="px-3 py-2 font-medium">{item.product_name || item.description || '—'}</td>
+                                                      <td className="px-3 py-2 font-medium">
+                                                        <div>{item.product_name || '—'}</div>
+                                                        {item.description && item.description !== item.product_name && (
+                                                          <div className="text-gray-500 text-xs mt-0.5">{item.description}</div>
+                                                        )}
+                                                      </td>
                                                       <td className="px-3 py-2 text-right text-gray-600">{qty}</td>
                                                       <td className="px-3 py-2 text-right text-gray-600">£{rrp.toFixed(2)}</td>
                                                       <td className="px-3 py-2 text-right font-semibold">£{(rrp * qty).toFixed(2)}</td>
