@@ -182,26 +182,27 @@ export default async function handler(req, res) {
     if (!id) return res.status(400).send('Missing WTN ID');
 
     try {
-      const { createClient } = await import('@supabase/supabase-js');
       const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.SUPABASE_SERVICE_KEY
       );
 
-      // Try by wtn_number first, then by job_number as fallback
+      // wtn_number is stored inside wtn_data JSON, not as a column
+      // Search by job_number — strip WTN- prefix if present
+      const jobNum = id.replace(/^WTN-/i, '');
       let { data: jobs } = await supabase
         .from('jobs')
-        .select('wtn_data, wtn_number, customer_name, job_number, job_type, job_date, site_address1, site_postcode')
-        .eq('wtn_number', id)
+        .select('wtn_data, wtn_sent, customer_name, job_number, job_type, job_date, site_address1, site_postcode')
+        .eq('job_number', jobNum)
         .limit(1);
 
-      // Fallback: strip WTN- prefix and search by job number
+      // Also try wtn_sent jobs that contain this ID in wtn_data
       if (!jobs?.length) {
-        const jobNum = id.replace(/^WTN-/i, '');
         const { data: fallback } = await supabase
           .from('jobs')
-          .select('wtn_data, wtn_number, customer_name, job_number, job_type, job_date, site_address1, site_postcode')
-          .eq('job_number', jobNum)
+          .select('wtn_data, wtn_sent, customer_name, job_number, job_type, job_date, site_address1, site_postcode')
+          .eq('wtn_sent', true)
+          .ilike('wtn_data', '%' + jobNum + '%')
           .limit(1);
         jobs = fallback;
       }
