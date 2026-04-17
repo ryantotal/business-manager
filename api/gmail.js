@@ -15,7 +15,13 @@ async function refreshAccessToken(refreshToken) {
 }
 
 function buildEmail({ to, subject, body, fromEmail, fromName, pdfHtml }) {
-  // Send as multipart: plain text + HTML quote inline
+  // Build HTML email with message at top, quote below
+  const htmlBody = `
+    <div style="font-family:Arial,sans-serif;max-width:800px;margin:0 auto">
+      <div style="padding:20px 0 30px 0;white-space:pre-wrap;font-size:14px;color:#333;border-bottom:2px solid #eee;margin-bottom:30px">${body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+      ${pdfHtml.replace(/<html>.*?<body>/s,'').replace(/<\/body>.*?<\/html>/s,'')}
+    </div>`;
+
   const boundary = 'tws_boundary_' + Date.now();
   const lines = [
     `From: ${fromName} <${fromEmail}>`,
@@ -32,7 +38,7 @@ function buildEmail({ to, subject, body, fromEmail, fromName, pdfHtml }) {
     `--${boundary}`,
     `Content-Type: text/html; charset="UTF-8"`,
     ``,
-    pdfHtml,
+    htmlBody,
     ``,
     `--${boundary}--`,
   ];
