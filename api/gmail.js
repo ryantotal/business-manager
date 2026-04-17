@@ -445,7 +445,18 @@ export default async function handler(req, res) {
     <button onclick="window.print()">🖨️ Print / Save as PDF</button>
   </div>
   <div class="content">
-    ${wtnData.htmlContent ? wtnData.htmlContent.replace(/<div[^>]*class=["']wtn-print-btn["'][^>]*>[\s\S]*?<\/div>\s*<\/div>/i, "") : fallbackContent}
+    ${(() => {
+      if (!wtnData.htmlContent) return fallbackContent;
+      let h = wtnData.htmlContent;
+      // Strip print button (has its own button in toolbar)
+      h = h.replace(/<div[^>]*class="wtn-print-btn"[^>]*>[\s\S]*?<\/div>\s*<\/div>/i, '');
+      // Fix CBDU saved in wrong field: if permit field contains CBDU number, swap it to carrier reg
+      h = h.replace(
+        /(<[^>]*>EA Carrier Registration No[^<]*<\/[^>]+>\s*<[^>]+>)\s*—\s*(<\/[^>]+>)([\s\S]*?<[^>]*>Environmental Permit[^<]*<\/[^>]+>\s*<[^>]+>)\s*(CBDU\w+)\s*(<\/)/gi,
+        '$1$4$2$3—$5'
+      );
+      return h;
+    })()}
   </div>
 </body>
 </html>`;
