@@ -235,6 +235,13 @@ export default async function handler(req, res) {
 
       const containerOptions = ['Loose', 'Sacks', 'Skip', 'Drum', 'Roll-on roll-off container', 'Other'];
 
+      // Normalise: if CBDU number was saved to permitNumber field in older records, move it to carrierReg
+      const rawCarrierReg = wtnData.transfereeCarrierReg || '';
+      const rawPermitNumber = wtnData.transfereePermitNumber || '';
+      const isCbduInPermit = /^CBDU/i.test(rawPermitNumber) && !rawCarrierReg;
+      const transfereeCarrierReg = isCbduInPermit ? rawPermitNumber : rawCarrierReg;
+      const transfereePermitNumber = isCbduInPermit ? '' : rawPermitNumber;
+
       const fallbackContent = `
         <div style="max-width:720px;margin:0 auto;background:#fff;border:2px solid #000;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1f2937;">
 
@@ -346,11 +353,11 @@ export default async function handler(req, res) {
                 <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
                   <div style="font-size:9px;margin-bottom:6px;">
                     <strong>C3 Are you:</strong>&nbsp;&nbsp;
-                    <span style="margin-right:10px;">${wtnData.transfereeCarrierReg ? '☑' : '☐'} Registered waste carrier, broker or dealer</span>
-                    <span>${wtnData.transfereePermitNumber ? '☑' : '☐'} Holder of environmental permit</span>
+                    <span style="margin-right:10px;">${transfereeCarrierReg ? '☑' : '☐'} Registered waste carrier, broker or dealer</span>
+                    <span>${transfereePermitNumber ? '☑' : '☐'} Holder of environmental permit</span>
                   </div>
-                  <div style="font-size:9px;"><span style="color:#555;">EA Carrier Registration No. (CBDU...):</span> <strong>${wtnData.transfereeCarrierReg || '—'}</strong></div>
-                  <div style="font-size:9px;margin-top:3px;"><span style="color:#555;">Environmental Permit / Exemption No.:</span> <strong>${wtnData.transfereePermitNumber || '—'}</strong></div>
+                  <div style="font-size:9px;"><span style="color:#555;">EA Carrier Registration No. (CBDU...):</span> <strong>${transfereeCarrierReg || '—'}</strong></div>
+                  <div style="font-size:9px;margin-top:3px;"><span style="color:#555;">Environmental Permit / Exemption No.:</span> <strong>${transfereePermitNumber || '—'}</strong></div>
                 </td>
               </tr>
               <tr>
@@ -438,7 +445,7 @@ export default async function handler(req, res) {
     <button onclick="window.print()">🖨️ Print / Save as PDF</button>
   </div>
   <div class="content">
-    ${wtnData.htmlContent || fallbackContent}
+    ${wtnData.htmlContent ? wtnData.htmlContent.replace(/<div[^>]*class=["']wtn-print-btn["'][^>]*>[\s\S]*?<\/div>\s*<\/div>/i, "") : fallbackContent}
   </div>
 </body>
 </html>`;
