@@ -176,5 +176,65 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(400).json({ error: 'Unknown action. Use ?action=auth, ?action=callback or ?action=send' });
+  // ── WTN: serve hosted printable WTN page ─────────────────────────────────
+  if (action === 'wtn') {
+    const { id } = req.query;
+    if (!id) return res.status(400).send('Missing WTN ID');
+
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_KEY
+      );
+
+      const { data: jobs } = await supabase
+        .from('jobs')
+        .select('wtn_data, wtn_number, customer_name, job_number')
+        .eq('wtn_number', id)
+        .limit(1);
+
+      const job = jobs?.[0];
+      if (!job) {
+        return res.status(404).send(`<html><body style="font-family:Arial;padding:40px;text-align:center;"><h2>WTN Not Found</h2><p>Reference <strong>${id}</strong> could not be found.</p><p>Contact Total Waste Services Ltd if you believe this is an error.</p></body></html>`);
+      }
+
+      let wtnData = {};
+      try { wtnData = typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : (job.wtn_data || {}); } catch(e) {}
+
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WTN ${id} - Total Waste Services Ltd</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; background: #f5f5f5; }
+    .toolbar { background: #1a5c2a; color: white; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; }
+    .toolbar h1 { font-size: 16px; font-weight: 600; }
+    .toolbar button { background: white; color: #1a5c2a; border: none; padding: 8px 20px; border-radius: 5px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .content { max-width: 720px; margin: 20px auto; padding: 0 16px; }
+    @media print { .toolbar { display: none !important; } body { background: white; } .content { margin: 0; padding: 0; max-width: 100%; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>Waste Transfer Note — ${id}</h1>
+    <button onclick="window.print()">🖨️ Print / Save as PDF</button>
+  </div>
+  <div class="content">
+    ${wtnData.htmlContent || `<div style="padding:40px;text-align:center;background:white;border:1px solid #ddd;border-radius:8px;margin-top:20px;"><p style="color:#666;">WTN content unavailable.</p><p style="margin-top:10px;font-weight:bold;">WTN: ${id}</p><p>Customer: ${job.customer_name || 'N/A'}</p><p>Job: ${job.job_number || 'N/A'}</p></div>`}
+  </div>
+</body>
+</html>`;
+
+      res.setHeader('Content-Type', 'text/html');
+      return res.send(html);
+    } catch (err) {
+      return res.status(500).send('Error: ' + err.message);
+    }
+  }
+
+  return res.status(400).json({ error: 'Unknown action. Use ?action=auth, ?action=callback, ?action=send or ?action=wtn' });
 }
