@@ -1644,6 +1644,15 @@ const [wtnFields, setWtnFields] = useState(() => {
     const matchedCustomerForEmail = customers?.find(c => (c.name || c.companyName) === job?.customerName);
     const freshEmail = matchedCustomerForEmail?.email || savedWtn.recipientEmail || '';
     const freshAdditionalEmails = matchedCustomerForEmail?.additional_emails || '';
+    // Normalise CBDU: if it was saved in permitNumber field, move it to carrierReg
+    const savedCarrierReg = savedWtn.transfereeCarrierReg || '';
+    const savedPermitNum = savedWtn.transfereePermitNumber || '';
+    const cbduInPermit = /^CBDU/i.test(savedPermitNum) && !savedCarrierReg;
+    // Also always re-derive carrier reg from supplier record (overrides stale saved value)
+    const matchedSupplierForReg = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
+    const freshCarrierReg = matchedSupplierForReg?.wasteCarrierLicense || matchedSupplierForReg?.waste_carrier_license
+      || (cbduInPermit ? savedPermitNum : savedCarrierReg) || '';
+    const freshPermitNum = cbduInPermit ? '' : savedPermitNum;
     return {
       ...savedWtn,
       // Always use current job's identifiers
@@ -1654,6 +1663,9 @@ const [wtnFields, setWtnFields] = useState(() => {
       recipientEmail: freshEmail,
       additionalEmails: freshAdditionalEmails,
       recipientEmailSource: freshEmail ? 'customer-record' : 'manual',
+      // Always use fresh carrier reg from supplier record
+      transfereeCarrierReg: freshCarrierReg,
+      transfereePermitNumber: freshPermitNum,
       // Preserve signatures from saved data
       transferorSignature: savedWtn.transferorSignature || '',
       transfereeSignature: savedWtn.transfereeSignature || '',
@@ -1781,7 +1793,7 @@ useEffect(() => {
           const addr = [data.address, data.city, data.county, data.postcode].filter(Boolean).join(', ');
           setWtnFields(prev => ({
             ...prev,
-            transfereeCarrierReg: prev.transfereeCarrierReg || cbdu,
+            transfereeCarrierReg: cbdu || prev.transfereeCarrierReg,
             transfereeAddress: prev.transfereeAddress || addr,
           }));
         }
@@ -8303,22 +8315,24 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
       : '<tr><td colspan="4" style="text-align:center">No items</td></tr>'}
     </tbody></table>
     ${!quote?.hidePricesOnPDF ? `
-    <div style="margin-top:30px;display:flex;justify-content:flex-end;">
-      <table style="width:280px;border-collapse:collapse;margin:0;">
-        <tr style="border-bottom:1px solid #ddd;">
-          <td style="padding:8px 12px;color:#555;">Subtotal (Net)</td>
-          <td style="padding:8px 12px;text-align:right;font-weight:600;">£${subtotal.toFixed(2)}</td>
-        </tr>
-        <tr style="border-bottom:1px solid #ddd;">
-          <td style="padding:8px 12px;color:#555;">VAT (20%)</td>
-          <td style="padding:8px 12px;text-align:right;font-weight:600;">£${vatAmount.toFixed(2)}</td>
-        </tr>
-        <tr style="border-top:2px solid #2c5f2d;background:#f0fdf4;">
-          <td style="padding:10px 12px;font-size:16px;font-weight:700;color:#2c5f2d;">TOTAL</td>
-          <td style="padding:10px 12px;text-align:right;font-size:16px;font-weight:700;color:#2c5f2d;">£${grandTotal.toFixed(2)}</td>
-        </tr>
-      </table>
-    </div>` : ''}
+    <table style="width:100%;border-collapse:collapse;margin-top:8px;">
+      <tr>
+        <td style="width:50%;"></td>
+        <td style="width:15%;"></td>
+        <td style="padding:8px 12px;color:#555;text-align:right;border-top:1px solid #ddd;">Subtotal (Net)</td>
+        <td style="padding:8px 12px;font-weight:600;text-align:right;border-top:1px solid #ddd;width:20%;">£${subtotal.toFixed(2)}</td>
+      </tr>
+      <tr>
+        <td></td><td></td>
+        <td style="padding:8px 12px;color:#555;text-align:right;border-top:1px solid #ddd;">VAT (20%)</td>
+        <td style="padding:8px 12px;font-weight:600;text-align:right;border-top:1px solid #ddd;">£${vatAmount.toFixed(2)}</td>
+      </tr>
+      <tr style="background:#f0fdf4;">
+        <td></td><td></td>
+        <td style="padding:10px 12px;font-size:16px;font-weight:700;color:#2c5f2d;text-align:right;border-top:2px solid #2c5f2d;">TOTAL</td>
+        <td style="padding:10px 12px;font-size:16px;font-weight:700;color:#2c5f2d;text-align:right;border-top:2px solid #2c5f2d;">£${grandTotal.toFixed(2)}</td>
+      </tr>
+    </table>` : ''}
     <div class="footer" style="clear:both">
       <p>Thank you for your business!</p>
       <p><strong>Total Waste Services Ltd</strong></p>
