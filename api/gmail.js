@@ -14,14 +14,15 @@ async function refreshAccessToken(refreshToken) {
   return res.json();
 }
 
-function buildEmail({ to, subject, body, fromEmail, fromName, pdfBase64, pdfFilename }) {
+function buildEmail({ to, subject, body, fromEmail, fromName, pdfHtml }) {
+  // Send as multipart: plain text + HTML quote inline
   const boundary = 'tws_boundary_' + Date.now();
   const lines = [
     `From: ${fromName} <${fromEmail}>`,
     `To: ${to}`,
     `Subject: ${subject}`,
     `MIME-Version: 1.0`,
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
     ``,
     `--${boundary}`,
     `Content-Type: text/plain; charset="UTF-8"`,
@@ -29,11 +30,9 @@ function buildEmail({ to, subject, body, fromEmail, fromName, pdfBase64, pdfFile
     body,
     ``,
     `--${boundary}`,
-    `Content-Type: text/html; name="${pdfFilename}"`,
-    `Content-Disposition: attachment; filename="${pdfFilename}"`,
-    `Content-Transfer-Encoding: base64`,
+    `Content-Type: text/html; charset="UTF-8"`,
     ``,
-    pdfBase64,
+    pdfHtml,
     ``,
     `--${boundary}--`,
   ];
@@ -149,8 +148,7 @@ export default async function handler(req, res) {
         body,
         fromEmail: tokenRow.user_email,
         fromName: fromName || 'Total Waste Services',
-        pdfBase64,
-        pdfFilename: pdfFilename || 'Quotation.html',
+        pdfHtml: Buffer.from(pdfBase64, 'base64').toString('utf-8'),
       });
 
       const sendRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
