@@ -1421,7 +1421,7 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
                         <div style={{fontSize:8,color:'#166534',marginTop:6,lineHeight:1.4}}>By completing this WTN I confirm that I have fulfilled my duty to apply the waste hierarchy as required by Regulation 12 of the Waste (England &amp; Wales) Regulations 2011. ✓</div>
                       </div>
                     </div>
-                    {wtnData.notes&&<div style={{padding:'5px 10px',fontSize:10,borderTop:'1px solid #ccc'}}><strong>Notes:</strong> {wtnData.notes}</div>}
+                    {wtnData.notes&&<div style={{padding:'10px 10px',fontSize:11,borderTop:'1px solid #ccc',lineHeight:1.5}}><strong>Notes:</strong><div style={{marginTop:4,whiteSpace:'pre-wrap'}}>{wtnData.notes}</div></div>}
                     <div style={{background:'#f0fdf4',borderTop:'1px solid #ccc',padding:'6px 10px',fontSize:8,lineHeight:1.5,color:'#166534'}}>⚖️ <strong>Duty of Care:</strong> Both parties confirm they have fulfilled duty of care obligations under the Environmental Protection Act 1990 s.34. The carrier in Section C holds a valid EA waste carrier registration. Both parties must retain a signed copy for a minimum of 2 years (3 years for hazardous waste) and produce on request within 7 days. Failure to produce is a criminal offence.</div>
                   </div>
 
@@ -8303,10 +8303,21 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
       : '<tr><td colspan="4" style="text-align:center">No items</td></tr>'}
     </tbody></table>
     ${!quote?.hidePricesOnPDF ? `
-    <div class="totals-box">
-      <div class="total-line subtotal"><span>Subtotal (Net):</span><span>£${subtotal.toFixed(2)}</span></div>
-      <div class="total-line"><span>VAT (20%):</span><span>£${vatAmount.toFixed(2)}</span></div>
-      <div class="total-line grand-total"><span>TOTAL:</span><span>£${grandTotal.toFixed(2)}</span></div>
+    <div style="margin-top:30px;display:flex;justify-content:flex-end;">
+      <table style="width:280px;border-collapse:collapse;margin:0;">
+        <tr style="border-bottom:1px solid #ddd;">
+          <td style="padding:8px 12px;color:#555;">Subtotal (Net)</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:600;">£${subtotal.toFixed(2)}</td>
+        </tr>
+        <tr style="border-bottom:1px solid #ddd;">
+          <td style="padding:8px 12px;color:#555;">VAT (20%)</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:600;">£${vatAmount.toFixed(2)}</td>
+        </tr>
+        <tr style="border-top:2px solid #2c5f2d;background:#f0fdf4;">
+          <td style="padding:10px 12px;font-size:16px;font-weight:700;color:#2c5f2d;">TOTAL</td>
+          <td style="padding:10px 12px;text-align:right;font-size:16px;font-weight:700;color:#2c5f2d;">£${grandTotal.toFixed(2)}</td>
+        </tr>
+      </table>
     </div>` : ''}
     <div class="footer" style="clear:both">
       <p>Thank you for your business!</p>
@@ -11833,151 +11844,229 @@ info@totalwasteservicesltd.com`;
       setWtnPreviewModal(normalized);
     };
 
+    // Preview uses same sort/filter/search state as real portal
+    const [previewFilter, setPreviewFilter] = React.useState('all');
+    const [previewSearch, setPreviewSearch] = React.useState('');
+    const [previewSort, setPreviewSort] = React.useState({ field: 'date', dir: 'desc' });
+
+    const statusFiltered = previewFilter === 'completed' ? portalJobs.filter(j => j.isCompleted || j.status === 'COMPLETED' || j.status === 'COLLECTED')
+      : previewFilter === 'inprogress' ? portalJobs.filter(j => !j.isCompleted && j.status !== 'COMPLETED' && j.status !== 'COLLECTED' && !j.isCancelled)
+      : portalJobs;
+    const searchFiltered = !previewSearch ? statusFiltered : statusFiltered.filter(j => {
+      const q = previewSearch.toLowerCase();
+      return (j.jobNumber||'').toLowerCase().includes(q)
+        || (j.jobType||'').toLowerCase().includes(q)
+        || (j.siteAddress1||'').toLowerCase().includes(q)
+        || (j.siteCity||'').toLowerCase().includes(q)
+        || (j.sitePostcode||'').toLowerCase().includes(q);
+    });
+    const filteredJobs = [...searchFiltered].sort((a, b) => {
+      const dir = previewSort.dir === 'asc' ? 1 : -1;
+      if (previewSort.field === 'date') return ((a.jobDate||'') > (b.jobDate||'') ? 1 : -1) * dir;
+      if (previewSort.field === 'jobref') return ((a.jobNumber||'') > (b.jobNumber||'') ? 1 : -1) * dir;
+      if (previewSort.field === 'type') return ((a.jobType||'') > (b.jobType||'') ? 1 : -1) * dir;
+      if (previewSort.field === 'status') return ((a.status||'') > (b.status||'') ? 1 : -1) * dir;
+      return 0;
+    });
+    const toggleSort = (field) => setPreviewSort(prev => prev.field === field ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'desc' });
+    const SortBtn = ({ field, label }) => (
+      <button onClick={() => toggleSort(field)} className={`flex items-center gap-1 text-left ${previewSort.field === field ? 'text-green-700 font-semibold' : 'text-gray-500'}`}>
+        {label}<span className="text-xs">{previewSort.field === field ? (previewSort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+      </button>
+    );
+
     return (
       <React.Fragment>
       <div>
-        <div className="flex items-center gap-3 mb-6">
+        {/* Back button */}
+        <div className="flex items-center gap-3 mb-4">
           <button onClick={() => setPortalPreviewCustomer(null)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
             ← Back to Portal Management
           </button>
-          <h2 className="font-bold text-gray-800">Previewing portal for: <span className="text-blue-700">{portalPreviewCustomer}</span></h2>
+          <span className="text-sm text-gray-500">Previewing as customer — this is exactly what they see</span>
         </div>
 
-        <div className="bg-green-700 text-white px-6 py-4 rounded-xl mb-4 flex items-center gap-4">
-          {localStorage.getItem('companyLogo')
-            ? <img src={localStorage.getItem('companyLogo')} className="h-12 object-contain" alt="logo" />
-            : <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center"><LucideIcon icon="Recycle" size={18} className="text-green-700" /></div>}
-          <div>
-            <div className="font-bold">{localStorage.getItem('companyName') || 'Total Waste Services'} — Customer Portal</div>
-            <div className="text-green-200 text-xs">{portalPreviewCustomer}</div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          {[
-            { label: 'Total Jobs', val: portalJobs.length, color: 'blue' },
-            { label: 'Completed', val: completed.length, color: 'green' },
-            { label: 'Scheduled', val: inProgress.length, color: 'orange' },
-          ].map(({ label, val, color }) => (
-            <div key={label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-              <div className={`text-3xl font-bold text-${color}-600`}>{val}</div>
-              <div className="text-sm text-gray-500 mt-1">{label}</div>
+        {/* Exact portal header */}
+        <div className="bg-green-700 text-white px-6 py-4 flex items-center justify-between rounded-xl mb-4">
+          <div className="flex items-center gap-4">
+            {localStorage.getItem('companyLogo')
+              ? <img src={localStorage.getItem('companyLogo')} className="h-12 object-contain" alt="logo" />
+              : <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center"><LucideIcon icon="Recycle" size={18} className="text-green-700" /></div>}
+            <div>
+              <div className="font-bold text-lg">{localStorage.getItem('companyName') || 'Total Waste Services'} — Customer Portal</div>
+              <div className="text-green-200 text-xs">{portalPreviewCustomer}</div>
             </div>
-          ))}
+          </div>
+          <span className="text-sm text-green-200 opacity-60">Sign Out</span>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="bg-gray-50 px-4 py-3 border-b font-semibold text-gray-800 text-sm">Jobs (as customer sees it)</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-                <tr>
-                  <th className="px-4 py-3 text-left">Job #</th>
-                  <th className="px-4 py-3 text-left">Date</th>
-                  <th className="px-4 py-3 text-left">Service</th>
-                  <th className="px-4 py-3 text-left">Site</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-left">Documents</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {portalJobs.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No jobs for this customer.</td></tr>
-                ) : portalJobs.map(job => {
-                  const done = job.isCompleted || job.status === 'COLLECTED' || job.status === 'COMPLETED';
-                  const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
-                  const isExpanded = expandedPreviewId === job.id;
-                  // Read price from line items first (where Sage prices live)
-                  const lineItems = (() => { try { return Array.isArray(job.lineItems) ? job.lineItems : (typeof job.lineItems === 'string' ? JSON.parse(job.lineItems) : []); } catch(e) { return []; } })();
-                  const lineItemsTotal = lineItems.reduce((sum, item) => {
-                    const rrp = parseFloat(item.customer_price || item.unit_price || 0);
-                    const qty = parseFloat(item.quantity || 1);
-                    return sum + (rrp * qty);
-                  }, 0);
-                  const finalPrice = parseFloat(job.customerFinalPrice) || 0;
-                  const unitPrice = parseFloat(job.customerUnitPrice) || 0;
-                  const jobQty = parseFloat(job.quantity) || 1;
-                  const jobValue = parseFloat(job.jobValue) || 0;
-                  const bestPrice = finalPrice > 0 ? finalPrice
-                    : lineItemsTotal > 0 ? lineItemsTotal
-                    : unitPrice > 0 ? unitPrice * jobQty
-                    : jobValue > 0 ? jobValue
-                    : null;
-                  const displayPrice = bestPrice != null ? `£${bestPrice.toFixed(2)}` : 'POA';
-                  const serviceDetail = job.wasteType || job.aggregateType || null;
-                  const qty = job.quantity ? `${job.quantity} ${job.unit || ''}`.trim() : null;
-                  return (
-                    <React.Fragment key={job.id}>
-                    <tr className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-50' : 'hover:bg-gray-50'}`}
-                      onClick={() => setExpandedPreviewId(isExpanded ? null : job.id)}>
-                      <td className="px-4 py-3 font-mono font-medium text-blue-700 text-xs">
-                        <span className={`text-gray-400 mr-1 inline-block transition-transform ${isExpanded?'rotate-90':''}`}>▶</span>{job.jobNumber}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">{job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</td>
-                      <td className="px-4 py-3 text-xs">
-                        <div className="font-medium">{job.jobType}</div>
-                        {serviceDetail && <div className="text-gray-400">{serviceDetail}</div>}
-                        {qty && <div className="text-gray-400">Qty: {qty}</div>}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">{[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ') || '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${done ? 'bg-green-100 text-green-700' : job.isCancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {done ? 'Completed' : job.isCancelled ? 'Cancelled' : 'Scheduled'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        {done && isWasteJob && (job.wtnSent || job.wtn_sent)
-                          ? <button onClick={() => downloadWTN(job)} className="text-green-700 hover:text-green-900 font-medium">📄 Waste Transfer Note</button>
-                          : done && isWasteJob
-                          ? <span className="text-gray-400">WTN pending</span>
-                          : <span className="text-gray-300">—</span>}
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr className="bg-green-50">
-                        <td colSpan={7} className="px-8 py-4 border-t border-green-100">
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
-                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Job Reference</div><div className="font-semibold">{job.jobNumber}</div></div>
-                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Service</div><div className="font-semibold">{job.jobType}</div></div>
-                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Status</div><div className="font-semibold">{done?'Completed':job.isCancelled?'Cancelled':'Scheduled'}</div></div>
-                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Date</div><div className="font-semibold">{job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</div></div>
-                            <div><div className="text-gray-400 uppercase tracking-wide mb-1">Site</div><div className="font-semibold">{[job.siteAddress1, job.siteCity, job.sitePostcode].filter(Boolean).join(', ') || '—'}</div></div>
-                            {qty && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Quantity</div><div className="font-semibold">{qty}</div></div>}
-                            {lineItems.length > 0 && (
-                              <div className="col-span-2 sm:col-span-3">
-                                <div className="text-gray-400 uppercase tracking-wide mb-2">Products & Services</div>
-                                <table className="w-full text-xs border border-gray-200 rounded">
-                                  <thead className="bg-gray-50"><tr>
-                                    <th className="px-3 py-2 text-left text-gray-500">Product / Service</th>
-                                    <th className="px-3 py-2 text-right text-gray-500">Qty</th>
-                                  </tr></thead>
-                                  <tbody className="divide-y divide-gray-100">
-                                    {lineItems.map((item, i) => {
-                                      const rrp = parseFloat(item.customer_price || item.unit_price || 0);
-                                      const q = parseFloat(item.quantity || 1);
-                                      return <tr key={i}>
-                                        <td className="px-3 py-2 font-medium">{item.product_name || item.description || '—'}</td>
-                                        <td className="px-3 py-2 text-right text-gray-600">{q}</td>
-                                      </tr>;
-                                    })}
-                                  </tbody>
-                                </table>
+        <div className="max-w-4xl mx-auto space-y-6">
+          {/* Stats cards — identical to real portal */}
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'Total Jobs', val: portalJobs.length, color: 'green', filter: 'all' },
+              { label: 'Completed', val: completed.length, color: 'green', filter: 'completed' },
+              { label: 'Scheduled', val: inProgress.length, color: 'orange', filter: 'inprogress' },
+            ].map(({ label, val, color, filter }) => (
+              <button key={label} onClick={() => setPreviewFilter(previewFilter === filter ? 'all' : filter)}
+                className={`rounded-xl border p-4 text-center shadow-sm transition-all ${previewFilter === filter ? `bg-${color}-600 border-${color}-600 text-white` : 'bg-white border-gray-200 hover:border-green-400'}`}>
+                <div className={`text-3xl font-bold ${previewFilter === filter ? 'text-white' : color === 'orange' ? 'text-orange-500' : 'text-green-600'}`}>{val}</div>
+                <div className={`text-sm mt-1 ${previewFilter === filter ? 'text-white opacity-80' : 'text-gray-500'}`}>{label}</div>
+                {previewFilter === filter && <div className="text-xs mt-1 opacity-70">Click to clear filter</div>}
+              </button>
+            ))}
+          </div>
+
+          {/* Jobs table — identical to real portal */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+            <div className="bg-gray-50 px-5 py-3 border-b flex items-center justify-between flex-wrap gap-3">
+              <span className="font-semibold text-gray-800 text-sm">
+                Your Jobs
+                {(previewFilter !== 'all' || previewSearch) && <span className="text-green-600 font-normal ml-2 text-xs">({filteredJobs.length} of {portalJobs.length})</span>}
+              </span>
+              <div className="flex items-center gap-2">
+                <input type="text" value={previewSearch} onChange={e => setPreviewSearch(e.target.value)}
+                  placeholder="🔍 Search by job ref, address, postcode, service..."
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-56 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                {(previewSearch || previewFilter !== 'all') && (
+                  <button onClick={() => { setPreviewSearch(''); setPreviewFilter('all'); }}
+                    className="text-xs text-gray-500 hover:text-red-600 border border-gray-200 px-2 py-1.5 rounded-lg">✕ Clear</button>
+                )}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" style={{tableLayout:'fixed'}}>
+                <colgroup>
+                  <col style={{width:'12%'}} /><col style={{width:'12%'}} /><col style={{width:'17%'}} />
+                  <col style={{width:'28%'}} /><col style={{width:'14%'}} /><col style={{width:'17%'}} />
+                </colgroup>
+                <thead className="bg-gray-50 text-xs uppercase border-b">
+                  <tr>
+                    <th className="px-5 py-3 text-left"><SortBtn field="jobref" label="Job Ref" /></th>
+                    <th className="px-5 py-3 text-left"><SortBtn field="date" label="Date" /></th>
+                    <th className="px-5 py-3 text-left"><SortBtn field="type" label="Service" /></th>
+                    <th className="px-5 py-3 text-left text-gray-500">Site Address</th>
+                    <th className="px-5 py-3 text-left"><SortBtn field="status" label="Status" /></th>
+                    <th className="px-5 py-3 text-left text-gray-500">Documents</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredJobs.length === 0 ? (
+                    <tr><td colSpan={6} className="px-5 py-8 text-center text-gray-400">No jobs found.</td></tr>
+                  ) : filteredJobs.map(job => {
+                    const done = job.isCompleted || job.status === 'COLLECTED' || job.status === 'COMPLETED';
+                    const cancelled = job.isCancelled || job.status === 'CANCELLED';
+                    const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
+                    const isExpanded = expandedPreviewId === job.id;
+                    const hasWtn = job.wtnSent || job.wtn_sent || (job.wtnData && job.wtnData !== 'null' && job.wtnData !== '{}');
+                    const siNumber = job.sageSiNumber || job.invoiceNumber || null;
+                    const isInvoiced = !!siNumber;
+                    const lineItems = (() => { try { return Array.isArray(job.lineItems) ? job.lineItems : (typeof job.lineItems === 'string' ? JSON.parse(job.lineItems) : []); } catch(e) { return []; } })();
+                    const qtyDisplay = job.quantity ? `${job.quantity} ${job.unit || ''}`.trim() : null;
+                    const serviceDetail = job.wasteType || job.aggregateType || null;
+                    return (
+                      <React.Fragment key={job.id}>
+                        <tr
+                          className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-100' : isInvoiced ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}
+                          onClick={() => setExpandedPreviewId(isExpanded ? null : job.id)}
+                        >
+                          <td className="px-5 py-3 font-mono font-medium text-blue-700 text-xs">
+                            <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''} inline-block mr-1`}>▶</span>
+                            {job.jobNumber}
+                          </td>
+                          <td className="px-5 py-3 text-gray-600 text-xs">{job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</td>
+                          <td className="px-5 py-3 text-gray-800 text-xs">
+                            <div className="font-medium">{job.jobType || '—'}</div>
+                            {serviceDetail && <div className="text-gray-400">{serviceDetail}</div>}
+                            {qtyDisplay && <div className="text-gray-400">Qty: {qtyDisplay}</div>}
+                          </td>
+                          <td className="px-5 py-3 text-gray-500 text-xs">
+                            <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{[job.siteAddress1, job.siteCity, job.sitePostcode].filter(Boolean).join(', ') || '—'}</div>
+                          </td>
+                          <td className="px-5 py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${done ? 'bg-green-100 text-green-700' : cancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {done ? 'Completed' : cancelled ? 'Cancelled' : 'Scheduled'}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex flex-col gap-1">
+                              {isInvoiced && <span className="text-green-700 font-bold text-xs">{siNumber}</span>}
+                              {done && isWasteJob && hasWtn ? (
+                                <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
+                                  className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
+                                  📄 Waste Transfer Note
+                                </button>
+                              ) : done && isWasteJob ? (
+                                <span className="text-gray-400 text-xs">WTN pending</span>
+                              ) : !isInvoiced ? (
+                                <span className="text-gray-300 text-xs">—</span>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="bg-green-50">
+                            <td colSpan={6} className="px-8 py-4 border-t border-green-100">
+                              <div className="grid gap-4 text-xs" style={{gridTemplateColumns:'repeat(3,minmax(0,1fr))'}}>
+                                <div><div className="text-gray-400 uppercase tracking-wide mb-1">Job Reference</div><div className="font-semibold">{job.jobNumber}</div></div>
+                                <div><div className="text-gray-400 uppercase tracking-wide mb-1">Service</div><div className="font-semibold">{job.jobType}</div></div>
+                                <div><div className="text-gray-400 uppercase tracking-wide mb-1">Status</div><div className="font-semibold">{done ? 'Completed' : cancelled ? 'Cancelled' : 'Scheduled'}</div></div>
+                                <div><div className="text-gray-400 uppercase tracking-wide mb-1">Date</div><div className="font-semibold">{job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</div></div>
+                                {job.deliveryDate && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Delivery Date</div><div className="font-semibold">{new Date(job.deliveryDate).toLocaleDateString('en-GB')}</div></div>}
+                                {job.collectionDate && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Collection Date</div><div className="font-semibold">{new Date(job.collectionDate).toLocaleDateString('en-GB')}</div></div>}
+                                <div style={{minWidth:0}}><div className="text-gray-400 uppercase tracking-wide mb-1">Site Address</div><div className="font-semibold" style={{wordBreak:'break-word',overflowWrap:'break-word'}}>{[job.siteAddress1, job.siteAddress2, job.siteCity].filter(Boolean).join(', ') || '—'}{job.sitePostcode && <div style={{marginTop:1}}>{job.sitePostcode}</div>}</div></div>
+                                {qtyDisplay && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Quantity</div><div className="font-semibold">{qtyDisplay}</div></div>}
+                                {job.wasteType && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Waste Type</div><div className="font-semibold">{job.wasteType}</div></div>}
+                                {job.aggregateType && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Material</div><div className="font-semibold">{job.aggregateType}</div></div>}
+                                {isInvoiced && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Invoice</div><div className="font-bold text-green-700">{siNumber}</div></div>}
+                                {job.notes && <div className="col-span-3"><div className="text-gray-400 uppercase tracking-wide mb-1">Notes</div><div className="font-semibold">{job.notes}</div></div>}
+                                {lineItems.length > 0 && (
+                                  <div className="col-span-3">
+                                    <div className="text-gray-400 uppercase tracking-wide mb-2">Products &amp; Services</div>
+                                    <table className="w-full text-xs border border-gray-200 rounded">
+                                      <thead className="bg-gray-50">
+                                        <tr>
+                                          <th className="px-3 py-2 text-left font-medium text-gray-500">Product / Service</th>
+                                          <th className="px-3 py-2 text-right font-medium text-gray-500">Qty</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100">
+                                        {lineItems.map((item, i) => (
+                                          <tr key={i}>
+                                            <td className="px-3 py-2 font-medium">
+                                              <div>{item.product_name || '—'}</div>
+                                              {item.description && item.description !== item.product_name && <div className="text-gray-500 text-xs mt-0.5">{item.description}</div>}
+                                            </td>
+                                            <td className="px-3 py-2 text-right text-gray-600">{parseFloat(item.quantity || 1)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                                {done && isWasteJob && hasWtn && (
+                                  <div className="col-span-3">
+                                    <button onClick={() => downloadWTN(job)}
+                                      className="mt-1 px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
+                                      📄 View Waste Transfer Note
+                                    </button>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
-      {wtnPreviewModal && <WtnPortalModal job={wtnPreviewModal} onClose={() => setWtnPreviewModal(null)} />}
+      {wtnPreviewModal && <WtnPortalModal job={wtnPreviewModal} onClose={() => setWtnPreviewModal(null)} logoUrl={localStorage.getItem('companyLogo')} companyName={localStorage.getItem('companyName')} />}
     </React.Fragment>
     );
   }
