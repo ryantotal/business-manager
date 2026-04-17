@@ -215,7 +215,7 @@ export default async function handler(req, res) {
       let companyLogoUrl = '';
       let companyName = 'Total Waste Services Ltd';
       try {
-        const { data: settings } = await supabase.from('settings').select('setting_name,setting_value');
+        const { data: settings } = await supabase.from('company_settings').select('setting_name,setting_value');
         companyLogoUrl = settings?.find(s => s.setting_name === 'logo_url')?.setting_value || '';
         companyName = settings?.find(s => s.setting_name === 'company_name')?.setting_value || companyName;
       } catch(e) {}
