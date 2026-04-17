@@ -9076,6 +9076,46 @@ const displayCustomers = filteredCustomers.map(customer => ({
             }
           };
 
+          const [refreshingEmails, setRefreshingEmails] = useState(false);
+
+          const handleRefreshEmails = async () => {
+  if (!confirm('This will fetch contact emails from Sage for all customers missing a secondary email. This may take several minutes — continue?')) return;
+  setRefreshingEmails(true);
+  let updated = 0;
+  let failed = 0;
+  try {
+    const { data: customers } = await window.supabase
+      .from('customers')
+      .select('id, sage_id, name, email, additional_emails')
+      .is('additional_emails', null);
+    console.log(`📧 Refreshing emails for ${customers?.length || 0} customers...`);
+    for (const customer of (customers || [])) {
+      if (!customer.sage_id) continue;
+      try {
+        const c = await window.SageAPI.getContactPersonDetails(customer.sage_id);
+        if (c) {
+          await window.supabase.from('customers').update({
+            email: c.email || customer.email,
+            additional_emails: c.additional_emails || '',
+            phone: c.telephone || c.phone || '',
+            mobile: c.mobile || '',
+          }).eq('id', customer.id);
+          updated++;
+        }
+      } catch(e) {
+        console.warn(`Failed for ${customer.name}:`, e.message);
+        failed++;
+      }
+    }
+    if (onRefreshCustomers) await onRefreshCustomers();
+    alert(`✅ Email refresh complete!\n\n${updated} customers updated\n${failed} failed`);
+  } catch(e) {
+    alert('❌ Refresh failed: ' + e.message);
+  } finally {
+    setRefreshingEmails(false);
+  }
+};
+
           const handleSyncFromSage = async () => {
   setSyncing(true);
   try {
@@ -9132,44 +9172,7 @@ const handleQuickSync = async () => {
   }
 };
 
-const [refreshingEmails, setRefreshingEmails] = useState(false);
-const handleRefreshEmails = async () => {
-  if (!confirm('This will fetch contact emails from Sage for all customers missing a secondary email. This may take several minutes — continue?')) return;
-  setRefreshingEmails(true);
-  let updated = 0;
-  let failed = 0;
-  try {
-    const { data: customers } = await window.supabase
-      .from('customers')
-      .select('id, sage_id, name, email, additional_emails')
-      .is('additional_emails', null);
-    console.log(`📧 Refreshing emails for ${customers?.length || 0} customers...`);
-    for (const customer of (customers || [])) {
-      if (!customer.sage_id) continue;
-      try {
-        const c = await window.SageAPI.getContactPersonDetails(customer.sage_id);
-        if (c) {
-          await window.supabase.from('customers').update({
-            email: c.email || customer.email,
-            additional_emails: c.additional_emails || '',
-            phone: c.telephone || c.phone || '',
-            mobile: c.mobile || '',
-          }).eq('id', customer.id);
-          updated++;
-        }
-      } catch(e) {
-        console.warn(`Failed for ${customer.name}:`, e.message);
-        failed++;
-      }
-    }
-    if (onRefreshCustomers) await onRefreshCustomers();
-    alert(`✅ Email refresh complete!\n\n${updated} customers updated\n${failed} failed`);
-  } catch(e) {
-    alert('❌ Refresh failed: ' + e.message);
-  } finally {
-    setRefreshingEmails(false);
-  }
-};
+
 
 const handleApplySync = async () => {
   if (!syncResults) return;
