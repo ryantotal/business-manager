@@ -125,7 +125,7 @@ export default async function handler(req, res) {
   // Creates a new customer or supplier contact in Sage and returns the sage_id.
   // Called from the portal when "Push to Sage" is clicked on a new record.
   if (action === 'createContact') {
-    const { contactType, name, email, address, vatNumber, creditLimit, creditDays, mainContact } = req.body;
+    const { contactType, name, email, address, city, postcode, vatNumber, creditLimit, creditDays } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Contact name is required' });
