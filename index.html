@@ -14136,6 +14136,10 @@ siteNotes: job.site_notes || job.siteNotes || '',
               credit_limit: customer.creditLimit || 0,
               credit_days: customer.paymentTerms || 30,
               account_status: customer.accountStatus || 'Active',
+              additional_emails: customer.accountsEmail || '',
+              reference: customer.reference || '',
+              primary_contact: customer.primaryContact || '',
+              company_number: customer.companyNumber || '',
             };
             const { data, error } = await window.supabase
               .from('customers')
@@ -14156,7 +14160,9 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 billingAddress: saved.address,
                 billingPostcode: saved.postcode,
                 vatNumber: saved.vat_number,
-                primaryContact: saved.primary_contact || newCustomer.primaryContact || '',
+                primaryContact: newCustomer.primaryContact || '',
+                accountsEmail: saved.additional_emails || newCustomer.accountsEmail || '',
+                companyNumber: newCustomer.companyNumber || '',
                 creditLimit: saved.credit_limit,
                 paymentTerms: saved.credit_days,
                 accountStatus: saved.account_status,
@@ -14184,6 +14190,10 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 credit_limit: updatedCustomer.creditLimit || 0,
                 credit_days: updatedCustomer.paymentTerms || 30,
                 account_status: updatedCustomer.accountStatus || 'Active',
+                additional_emails: updatedCustomer.accountsEmail || '',
+                reference: updatedCustomer.reference || '',
+                primary_contact: updatedCustomer.primaryContact || '',
+                company_number: updatedCustomer.companyNumber || '',
               };
               const { error } = await window.supabase
                 .from('customers')
@@ -14200,6 +14210,8 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 billingPostcode: customerData.postcode,
                 vatNumber: customerData.vat_number,
                 primaryContact: updatedCustomer.primaryContact || '',
+                accountsEmail: customerData.additional_emails || '',
+                companyNumber: updatedCustomer.companyNumber || '',
                 creditLimit: customerData.credit_limit,
                 paymentTerms: customerData.credit_days,
                 accountStatus: customerData.account_status,
@@ -16269,6 +16281,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               // Only push to Sage if not already linked
               if (!sage_id) {
                 try {
+                  console.log('[CustomerForm] Pushing to Sage:', formData.companyName);
                   const response = await fetch('/api/sage-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -16292,11 +16305,13 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     })
                   });
                   const result = await response.json();
+                  console.log('[CustomerForm] Sage response:', response.status, result);
                   if (!response.ok) {
                     const detail = result.details ? '\n\nSage said: ' + JSON.stringify(result.details, null, 2) : '';
                     throw new Error((result.error || 'Sage returned an error') + detail);
                   }
                   sage_id = result.sage_id;
+                  console.log('[CustomerForm] Sage contact created, sage_id:', sage_id);
                 } catch (sageErr) {
                   // Ask user whether to continue saving to portal only, or cancel
                   const continueAnyway = confirm(
