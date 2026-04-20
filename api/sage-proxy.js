@@ -220,11 +220,11 @@ export default async function handler(req, res) {
         console.log('[Sage Proxy] Step 2 — creating address for contact:', sage_id);
         const addressObj = {
           address: {
-            contact: { id: sage_id },
+            contact_id: sage_id,
             name: 'Main Address',
-            address_type: { id: 'DELIVERY' },
+            address_type_id: 'DELIVERY',
             is_main_address: true,
-            country: { id: 'GB' },
+            country_id: 'GB',
           }
         };
         if (address)  addressObj.address.address_line_1 = address;
