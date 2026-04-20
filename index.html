@@ -16305,8 +16305,75 @@ window.location.href = '/#sage-integration';  // Keep this line!
               if (error) throw error;
               setContacts(data || []);
               setContactsLoaded(true);
+
+              // Auto-sync from Sage in background (non-blocking)
+              if (formData.sage_id) {
+                autoSyncFromSage(data || []);
+              }
             } catch (err) {
               console.error('Failed to load contacts:', err);
+            }
+          };
+
+          // Background sync — runs silently when tab opens, no alerts
+          const autoSyncFromSage = async (currentContacts) => {
+            try {
+              const res = await fetch('/api/sage-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'manageContactPerson', operation: 'list', sageContactId: formData.sage_id })
+              });
+              const result = await res.json();
+              if (!res.ok) return;
+
+              const sagePersons = result.contact_persons || [];
+              if (sagePersons.length === 0) return;
+
+              const existingSageIds = new Set(currentContacts.filter(c => c.sage_contact_person_id).map(c => c.sage_contact_person_id));
+              const existingNames = new Set(currentContacts.map(c => (c.name || '').toLowerCase().trim()));
+              let changed = false;
+
+              for (const sp of sagePersons) {
+                if (existingSageIds.has(sp.id)) {
+                  // Update missing details silently
+                  const existing = currentContacts.find(c => c.sage_contact_person_id === sp.id);
+                  if (existing) {
+                    const updates = {};
+                    if (sp.email && !existing.email) updates.email = sp.email;
+                    if ((sp.telephone || sp.mobile) && !existing.phone) updates.phone = sp.telephone || sp.mobile;
+                    if (sp.name && existing.name === 'Unknown') updates.name = sp.name;
+                    if (Object.keys(updates).length > 0) {
+                      await window.supabase.from('customer_contacts').update(updates).eq('id', existing.id);
+                      changed = true;
+                    }
+                  }
+                  continue;
+                }
+                const nameMatch = currentContacts.find(c => !c.sage_contact_person_id && (c.name || '').toLowerCase().trim() === (sp.name || '').toLowerCase().trim());
+                if (nameMatch) {
+                  await window.supabase.from('customer_contacts').update({
+                    sage_contact_person_id: sp.id,
+                    email: nameMatch.email || sp.email || '',
+                    phone: nameMatch.phone || sp.telephone || sp.mobile || '',
+                  }).eq('id', nameMatch.id);
+                  changed = true;
+                  continue;
+                }
+                if (existingNames.has((sp.name || '').toLowerCase().trim())) continue;
+
+                await window.supabase.from('customer_contacts')
+                  .insert([{ customer_id: customer.id, name: sp.name || sp.displayed_as || 'Unknown', email: sp.email || '', phone: sp.telephone || sp.mobile || '', role: 'General', is_primary: sp.is_main_contact || false, sage_contact_person_id: sp.id }]);
+                changed = true;
+              }
+
+              // Reload if anything changed
+              if (changed) {
+                const { data: freshContacts } = await window.supabase
+                  .from('customer_contacts').select('*').eq('customer_id', customer.id).order('is_primary', { ascending: false });
+                setContacts(freshContacts || []);
+              }
+            } catch (err) {
+              console.warn('[Contacts] Background sync failed (non-fatal):', err.message);
             }
           };
 
@@ -16524,15 +16591,44 @@ window.location.href = '/#sage-integration';  // Keep this line!
               if (!res.ok) throw new Error(result.error || 'Failed to fetch from Sage');
 
               const sagePersons = result.contact_persons || [];
-              console.log('[Contacts] Sage returned', sagePersons.length, 'contact persons');
+              console.log('[Contacts] Sage returned', sagePersons.length, 'contact persons:', sagePersons);
 
-              // Get existing portal contacts for this customer
+              // Build sets of existing identifiers to avoid duplicates
               const existingSageIds = new Set(contacts.filter(c => c.sage_contact_person_id).map(c => c.sage_contact_person_id));
+              const existingNames = new Set(contacts.map(c => (c.name || '').toLowerCase().trim()));
               let added = 0;
+              let updated = 0;
 
               for (const sp of sagePersons) {
-                if (existingSageIds.has(sp.id)) continue; // already in portal
-                // Insert into portal
+                if (existingSageIds.has(sp.id)) {
+                  // Already linked — update details from Sage
+                  const existing = contacts.find(c => c.sage_contact_person_id === sp.id);
+                  if (existing && (sp.email || sp.telephone || sp.mobile)) {
+                    const updates = {};
+                    if (sp.email && !existing.email) updates.email = sp.email;
+                    if ((sp.telephone || sp.mobile) && !existing.phone) updates.phone = sp.telephone || sp.mobile;
+                    if (Object.keys(updates).length > 0) {
+                      await window.supabase.from('customer_contacts').update(updates).eq('id', existing.id);
+                      updated++;
+                    }
+                  }
+                  continue;
+                }
+                // Check if a contact with the same name already exists (link it to Sage)
+                const nameMatch = contacts.find(c => !c.sage_contact_person_id && (c.name || '').toLowerCase().trim() === (sp.name || '').toLowerCase().trim());
+                if (nameMatch) {
+                  await window.supabase.from('customer_contacts').update({
+                    sage_contact_person_id: sp.id,
+                    email: nameMatch.email || sp.email || '',
+                    phone: nameMatch.phone || sp.telephone || sp.mobile || '',
+                  }).eq('id', nameMatch.id);
+                  updated++;
+                  continue;
+                }
+                // Skip if name already exists (avoid visual duplicates)
+                if (existingNames.has((sp.name || '').toLowerCase().trim())) continue;
+
+                // Insert new
                 const { data, error } = await window.supabase
                   .from('customer_contacts')
                   .insert([{
@@ -16547,13 +16643,24 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   .select()
                   .single();
                 if (!error && data) {
-                  setContacts(prev => [...prev, data]);
                   added++;
                 }
               }
-              alert(added > 0 ? `Synced ${added} new contact(s) from Sage.` : 'All Sage contacts already in portal.');
+
+              // Reload contacts fresh from DB
               setContactsLoaded(false);
-              loadContacts(); // reload fresh
+              const { data: freshContacts } = await window.supabase
+                .from('customer_contacts')
+                .select('*')
+                .eq('customer_id', customer.id)
+                .order('is_primary', { ascending: false });
+              setContacts(freshContacts || []);
+              setContactsLoaded(true);
+
+              const msgs = [];
+              if (added > 0) msgs.push(`${added} new contact(s) added`);
+              if (updated > 0) msgs.push(`${updated} contact(s) updated`);
+              alert(msgs.length > 0 ? `✅ Sync complete: ${msgs.join(', ')}.` : 'All Sage contacts already in portal.');
             } catch (err) {
               alert('Sync error: ' + err.message);
             } finally {
@@ -16986,8 +17093,61 @@ window.location.href = '/#sage-integration';  // Keep this line!
               if (error) throw error;
               setContacts(data || []);
               setContactsLoaded(true);
+
+              // Auto-sync from Sage in background
+              if (formData.sage_id) {
+                autoSyncFromSage(data || []);
+              }
             } catch (err) {
               console.error('Failed to load supplier contacts:', err);
+            }
+          };
+
+          const autoSyncFromSage = async (currentContacts) => {
+            try {
+              const res = await fetch('/api/sage-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'manageContactPerson', operation: 'list', sageContactId: formData.sage_id }) });
+              const result = await res.json();
+              if (!res.ok) return;
+              const sagePersons = result.contact_persons || [];
+              if (sagePersons.length === 0) return;
+
+              const existingSageIds = new Set(currentContacts.filter(c => c.sage_contact_person_id).map(c => c.sage_contact_person_id));
+              const existingNames = new Set(currentContacts.map(c => (c.name || '').toLowerCase().trim()));
+              let changed = false;
+
+              for (const sp of sagePersons) {
+                if (existingSageIds.has(sp.id)) {
+                  const existing = currentContacts.find(c => c.sage_contact_person_id === sp.id);
+                  if (existing) {
+                    const updates = {};
+                    if (sp.email && !existing.email) updates.email = sp.email;
+                    if ((sp.telephone || sp.mobile) && !existing.phone) updates.phone = sp.telephone || sp.mobile;
+                    if (sp.name && existing.name === 'Unknown') updates.name = sp.name;
+                    if (Object.keys(updates).length > 0) {
+                      await window.supabase.from('supplier_contacts').update(updates).eq('id', existing.id);
+                      changed = true;
+                    }
+                  }
+                  continue;
+                }
+                const nameMatch = currentContacts.find(c => !c.sage_contact_person_id && (c.name || '').toLowerCase().trim() === (sp.name || '').toLowerCase().trim());
+                if (nameMatch) {
+                  await window.supabase.from('supplier_contacts').update({ sage_contact_person_id: sp.id, email: nameMatch.email || sp.email || '', phone: nameMatch.phone || sp.telephone || sp.mobile || '' }).eq('id', nameMatch.id);
+                  changed = true;
+                  continue;
+                }
+                if (existingNames.has((sp.name || '').toLowerCase().trim())) continue;
+                await window.supabase.from('supplier_contacts').insert([{ supplier_id: supplier.id, name: sp.name || sp.displayed_as || 'Unknown', email: sp.email || '', phone: sp.telephone || sp.mobile || '', role: 'General', is_primary: sp.is_main_contact || false, sage_contact_person_id: sp.id }]);
+                changed = true;
+              }
+
+              if (changed) {
+                const { data: freshContacts } = await window.supabase.from('supplier_contacts').select('*').eq('supplier_id', supplier.id).order('is_primary', { ascending: false });
+                setContacts(freshContacts || []);
+              }
+            } catch (err) {
+              console.warn('[SupplierContacts] Background sync failed (non-fatal):', err.message);
             }
           };
 
@@ -17067,17 +17227,54 @@ window.location.href = '/#sage-integration';  // Keep this line!
               const result = await res.json();
               if (!res.ok) throw new Error(result.error || 'Failed to fetch from Sage');
               const sagePersons = result.contact_persons || [];
+              console.log('[SupplierContacts] Sage returned', sagePersons.length, 'contact persons:', sagePersons);
+
               const existingSageIds = new Set(contacts.filter(c => c.sage_contact_person_id).map(c => c.sage_contact_person_id));
+              const existingNames = new Set(contacts.map(c => (c.name || '').toLowerCase().trim()));
               let added = 0;
+              let updated = 0;
+
               for (const sp of sagePersons) {
-                if (existingSageIds.has(sp.id)) continue;
+                if (existingSageIds.has(sp.id)) {
+                  const existing = contacts.find(c => c.sage_contact_person_id === sp.id);
+                  if (existing && (sp.email || sp.telephone || sp.mobile)) {
+                    const updates = {};
+                    if (sp.email && !existing.email) updates.email = sp.email;
+                    if ((sp.telephone || sp.mobile) && !existing.phone) updates.phone = sp.telephone || sp.mobile;
+                    if (Object.keys(updates).length > 0) {
+                      await window.supabase.from('supplier_contacts').update(updates).eq('id', existing.id);
+                      updated++;
+                    }
+                  }
+                  continue;
+                }
+                const nameMatch = contacts.find(c => !c.sage_contact_person_id && (c.name || '').toLowerCase().trim() === (sp.name || '').toLowerCase().trim());
+                if (nameMatch) {
+                  await window.supabase.from('supplier_contacts').update({
+                    sage_contact_person_id: sp.id,
+                    email: nameMatch.email || sp.email || '',
+                    phone: nameMatch.phone || sp.telephone || sp.mobile || '',
+                  }).eq('id', nameMatch.id);
+                  updated++;
+                  continue;
+                }
+                if (existingNames.has((sp.name || '').toLowerCase().trim())) continue;
+
                 const { data, error } = await window.supabase.from('supplier_contacts')
                   .insert([{ supplier_id: supplier.id, name: sp.name || sp.displayed_as || 'Unknown', email: sp.email || '', phone: sp.telephone || sp.mobile || '', role: 'General', is_primary: sp.is_main_contact || false, sage_contact_person_id: sp.id }])
                   .select().single();
-                if (!error && data) { setContacts(prev => [...prev, data]); added++; }
+                if (!error && data) added++;
               }
-              alert(added > 0 ? `Synced ${added} new contact(s) from Sage.` : 'All Sage contacts already in portal.');
-              setContactsLoaded(false); loadContacts();
+
+              setContactsLoaded(false);
+              const { data: freshContacts } = await window.supabase.from('supplier_contacts').select('*').eq('supplier_id', supplier.id).order('is_primary', { ascending: false });
+              setContacts(freshContacts || []);
+              setContactsLoaded(true);
+
+              const msgs = [];
+              if (added > 0) msgs.push(`${added} new contact(s) added`);
+              if (updated > 0) msgs.push(`${updated} contact(s) updated`);
+              alert(msgs.length > 0 ? `✅ Sync complete: ${msgs.join(', ')}.` : 'All Sage contacts already in portal.');
             } catch (err) { alert('Sync error: ' + err.message); }
             finally { setSyncingContacts(false); }
           };
