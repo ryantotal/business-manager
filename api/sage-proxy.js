@@ -231,16 +231,26 @@ export default async function handler(req, res) {
         if (city)     addressObj.address.city           = city;
         if (postcode) addressObj.address.postal_code    = postcode;
 
-        await sagePost('addresses', addressObj);
-        console.log('[Sage Proxy] Step 2 complete — address created');
-      }
+        const addressData = await sagePost('addresses', addressObj);
+        const address_id = addressData?.id;
+        console.log('[Sage Proxy] Step 2 complete — address created, id:', address_id);
 
-      // ── Step 3: Update contact with VAT number now address exists ─────────
-      // Sage validates tax_number against main_address, so this must come after step 2
-      if (vatNumber && hasAddress) {
-        console.log('[Sage Proxy] Step 3 — adding VAT number to contact');
-        await sagePost(`contacts/${sage_id}`, { contact: { tax_number: vatNumber } }, 'PUT');
-        console.log('[Sage Proxy] Step 3 complete — VAT number set');
+        // ── Step 3: Update contact with VAT number + explicitly set main_address ──
+        // We must pass main_address_id so Sage knows the address is linked before
+        // validating the tax number against it.
+        if (vatNumber && address_id) {
+          console.log('[Sage Proxy] Step 3 — setting main_address and VAT number');
+          await sagePost(`contacts/${sage_id}`, {
+            contact: {
+              main_address_id: address_id,
+              tax_number: vatNumber,
+            }
+          }, 'PUT');
+          console.log('[Sage Proxy] Step 3 complete — VAT number set');
+        } else if (vatNumber && !address_id) {
+          console.log('[Sage Proxy] Step 3 — setting VAT number without address id');
+          await sagePost(`contacts/${sage_id}`, { contact: { tax_number: vatNumber } }, 'PUT');
+        }
       } else if (vatNumber && !hasAddress) {
         console.log('[Sage Proxy] Skipping VAT number — no address provided (Sage requires address first)');
       }
