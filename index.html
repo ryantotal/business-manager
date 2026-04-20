@@ -5267,10 +5267,10 @@ const handleCreateInvoice = async (job) => {
       const { data: customer } = await window.supabase
         .from('customers')
         .select('*')
-        .eq('companyName', job.customerName)
+        .eq('name', job.customerName)
         .single();
       
-      if (!customer?.sageId) {
+      if (!customer?.sage_id) {
         throw new Error('Customer not synced with Sage. Please sync customer first.');
       }
       
@@ -15483,7 +15483,7 @@ async getSuppliers() {
 
     const { data: existingSuppliers } = await window.supabase
       .from('suppliers')
-      .select('id, sage_id, name, email, phone, address, postcode, vat_number, credit_limit, credit_days, account_status');
+      .select('id, sage_id, name, email, phone, address, vat_number, credit_limit, credit_days, accountstatus');
 
     const existingBySageId = new Map((existingSuppliers || []).map(s => [s.sage_id, s]));
     const newSuppliers = [];
