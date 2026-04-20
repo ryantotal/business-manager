@@ -1763,6 +1763,36 @@ useEffect(() => {
     recipientEmailSource: (freshRecipientEmail || prev.recipientEmail) ? 'customer-record' : 'manual',
   }));
 
+  // Load named WTN contacts for this customer and merge into email list
+  if (matchedCust?.id) {
+    (async () => {
+      try {
+        const { data: wtnContacts } = await window.supabase
+          .from('customer_contacts')
+          .select('email, name')
+          .eq('customer_id', matchedCust.id)
+          .eq('role', 'WTN')
+          .not('email', 'is', null);
+        if (wtnContacts && wtnContacts.length > 0) {
+          const namedEmails = wtnContacts.map(c => c.email).filter(Boolean);
+          setWtnFields(prev => {
+            const existingExtras = prev.additionalEmails
+              ? prev.additionalEmails.split(',').map(e => e.trim()).filter(Boolean)
+              : [];
+            // Merge named WTN emails in, avoiding duplicates
+            const merged = [...new Set([...existingExtras, ...namedEmails])];
+            return {
+              ...prev,
+              additionalEmails: merged.join(', '),
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load WTN named contacts:', err);
+      }
+    })();
+  }
+
   (async () => {
     try {
       const { data } = await window.supabase.from('company_settings').select('*');
@@ -8164,6 +8194,7 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
   const [sendModalBody, setSendModalBody] = useState('');
   const [sendModalTo, setSendModalTo] = useState('');
   const [sendModalSubject, setSendModalSubject] = useState('');
+  const [sendModalQuoteContacts, setSendModalQuoteContacts] = useState([]); // named Quotes contacts
 
   // Load attachments when component mounts
   useEffect(() => {
@@ -8435,6 +8466,21 @@ Please get in touch if you have any questions.
 
 Kind regards,
 Total Waste Services Ltd`);
+                        setSendModalQuoteContacts([]);
+                        // Load named Quotes contacts for this customer
+                        const matchedCust = customers?.find(c => (c.name || c.companyName) === quote.customerName);
+                        if (matchedCust?.id) {
+                          window.supabase
+                            .from('customer_contacts')
+                            .select('name, email')
+                            .eq('customer_id', matchedCust.id)
+                            .eq('role', 'Quotes')
+                            .not('email', 'is', null)
+                            .then(({ data }) => {
+                              if (data && data.length > 0) setSendModalQuoteContacts(data);
+                            })
+                            .catch(() => {});
+                        }
                         setShowSendModal(true);
                       }}
                       className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
@@ -8464,6 +8510,22 @@ Total Waste Services Ltd`);
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                         placeholder="Customer email address"
                       />
+                      {sendModalQuoteContacts.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs text-gray-500 mb-1">Named Quotes contacts — click to use:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {sendModalQuoteContacts.map((c, i) => (
+                              <button
+                                key={i}
+                                onClick={() => setSendModalTo(c.email)}
+                                className={`px-2 py-1 rounded-full text-xs border transition-colors ${sendModalTo === c.email ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-300'}`}
+                              >
+                                {c.name} &lt;{c.email}&gt;
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {!sendModalTo && <p className="text-xs text-amber-600 mt-1">⚠️ No email address — add one above or edit the quote first</p>}
                     </div>
                     <div>
@@ -13983,8 +14045,68 @@ siteNotes: job.site_notes || job.siteNotes || '',
     setShowJobForm(true);
    //setShowFullPageJob(null); // Close the full page view if open
 };
-          const handleUpdateCustomer = (updatedCustomer) => {
-            setCustomers(customers.map(customer => customer.id === updatedCustomer.id ? updatedCustomer : customer));
+          const saveCustomerToDatabase = async (customer) => {
+            const customerData = {
+              name: customer.companyName || customer.name || 'Unknown Customer',
+              sage_id: customer.sage_id || null,
+              email: customer.email || '',
+              phone: customer.phone || '',
+              vat_number: customer.vatNumber || '',
+              address: customer.billingAddress || customer.siteAddress || '',
+              postcode: customer.billingPostcode || customer.sitePostcode || '',
+              primary_contact: customer.primaryContact || '',
+              payment_terms: customer.paymentTerms || 30,
+              credit_limit: customer.creditLimit || 0,
+              account_status: customer.accountStatus || 'Active',
+              business_type: customer.businessType || '',
+              notes: customer.specialRequirements || '',
+            };
+            const { data, error } = await window.supabase
+              .from('customers')
+              .insert([customerData])
+              .select()
+              .single();
+            if (error) throw error;
+            return data;
+          };
+
+          const handleAddCustomer = async (newCustomer) => {
+            try {
+              const saved = await saveCustomerToDatabase(newCustomer);
+              setCustomers(prev => [...prev, { ...newCustomer, id: saved.id }]);
+              setShowCustomerForm(false);
+            } catch (error) {
+              alert('Error saving customer: ' + error.message);
+            }
+          };
+
+          const handleUpdateCustomer = async (updatedCustomer) => {
+            try {
+              const customerData = {
+                name: updatedCustomer.companyName || updatedCustomer.name || 'Unknown Customer',
+                sage_id: updatedCustomer.sage_id || null,
+                email: updatedCustomer.email || '',
+                phone: updatedCustomer.phone || '',
+                vat_number: updatedCustomer.vatNumber || '',
+                address: updatedCustomer.billingAddress || updatedCustomer.siteAddress || '',
+                postcode: updatedCustomer.billingPostcode || updatedCustomer.sitePostcode || '',
+                primary_contact: updatedCustomer.primaryContact || '',
+                payment_terms: updatedCustomer.paymentTerms || 30,
+                credit_limit: updatedCustomer.creditLimit || 0,
+                account_status: updatedCustomer.accountStatus || 'Active',
+                business_type: updatedCustomer.businessType || '',
+                notes: updatedCustomer.specialRequirements || '',
+              };
+              const { error } = await window.supabase
+                .from('customers')
+                .update(customerData)
+                .eq('id', updatedCustomer.id);
+              if (error) throw error;
+              setCustomers(customers.map(c => c.id === updatedCustomer.id ? { ...c, ...updatedCustomer } : c));
+            } catch (err) {
+              console.error('Error updating customer:', err);
+              alert('Error saving customer: ' + err.message);
+            }
           };
 
           const handleDeleteCustomer = (customerId) => {
@@ -14839,6 +14961,13 @@ setShowPhoneSuggestions={setShowPhoneSuggestions}
 handlePhoneSearch={handlePhoneSearch}
     />
 )}
+
+              {showCustomerForm && (
+                <CustomerForm
+                  onClose={() => setShowCustomerForm(false)}
+                  onSave={handleAddCustomer}
+                />
+              )}
 
               {showSupplierForm && (
                 <SupplierForm 
@@ -15858,54 +15987,189 @@ window.location.href = '/#sage-integration';  // Keep this line!
           });
 
           const [activeTab, setActiveTab] = useState('company');
+          const [pushingToSage, setPushingToSage] = useState(false);
+
+          // Named contacts state (only loaded when editing an existing customer)
+          const [contacts, setContacts] = useState([]);
+          const [contactsLoaded, setContactsLoaded] = useState(false);
+          const [editingContact, setEditingContact] = useState(null); // null = not editing, {} = new, {id,...} = existing
+          const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', role: 'General', is_primary: false });
+
+          const isExistingCustomer = !!(customer && customer.id);
+
+          // Load named contacts when Contacts tab is opened for an existing customer
+          const loadContacts = async () => {
+            if (!isExistingCustomer || contactsLoaded) return;
+            try {
+              const { data, error } = await window.supabase
+                .from('customer_contacts')
+                .select('*')
+                .eq('customer_id', customer.id)
+                .order('is_primary', { ascending: false });
+              if (error) throw error;
+              setContacts(data || []);
+              setContactsLoaded(true);
+            } catch (err) {
+              console.error('Failed to load contacts:', err);
+            }
+          };
+
+          const handleTabChange = (tab) => {
+            setActiveTab(tab);
+            if (tab === 'contacts') loadContacts();
+          };
 
           const handleSubmit = () => {
             const newCustomer = {
               ...formData,
-              id: customer?.id || `CUST-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`
+              id: customer?.id || undefined
             };
             onSave(newCustomer);
           };
+
+          // Push to Sage — creates the contact in Sage and saves sage_id back to Supabase + local state
+          const handlePushToSage = async () => {
+            if (!formData.companyName) {
+              alert('Please enter a company name before pushing to Sage.');
+              return;
+            }
+            setPushingToSage(true);
+            try {
+              const response = await fetch('/api/sage-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'createContact',
+                  contactType: 'CUSTOMER',
+                  name: formData.companyName,
+                  email: formData.email || '',
+                  address: formData.billingAddress || formData.siteAddress || '',
+                  vatNumber: formData.vatNumber || '',
+                  creditLimit: formData.creditLimit || 0,
+                  creditDays: formData.paymentTerms || 30,
+                  mainContact: formData.primaryContact ? { name: formData.primaryContact, email: formData.email } : undefined,
+                })
+              });
+              const result = await response.json();
+              if (!response.ok) {
+                throw new Error(result.error || 'Sage returned an error');
+              }
+              const sage_id = result.sage_id;
+              if (!sage_id) throw new Error('Sage did not return an ID');
+
+              // Save sage_id to Supabase if this is an existing record
+              if (isExistingCustomer) {
+                const { error } = await window.supabase
+                  .from('customers')
+                  .update({ sage_id })
+                  .eq('id', customer.id);
+                if (error) throw error;
+              }
+
+              // Update local form state so button hides
+              setFormData(prev => ({ ...prev, sage_id }));
+              alert(`✅ Customer created in Sage!\n\nSage ID: ${sage_id}\n\nThe record is now linked.`);
+            } catch (err) {
+              console.error('Push to Sage error:', err);
+              alert('Failed to push to Sage: ' + err.message);
+            } finally {
+              setPushingToSage(false);
+            }
+          };
+
+          // Named contacts CRUD
+          const openNewContact = () => {
+            setContactForm({ name: '', email: '', phone: '', role: 'General', is_primary: false });
+            setEditingContact({});
+          };
+
+          const openEditContact = (contact) => {
+            setContactForm({ name: contact.name, email: contact.email || '', phone: contact.phone || '', role: contact.role || 'General', is_primary: contact.is_primary || false });
+            setEditingContact(contact);
+          };
+
+          const saveContact = async () => {
+            if (!contactForm.name) { alert('Name is required'); return; }
+            try {
+              if (editingContact.id) {
+                // Update existing
+                const { error } = await window.supabase
+                  .from('customer_contacts')
+                  .update({ name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary })
+                  .eq('id', editingContact.id);
+                if (error) throw error;
+                setContacts(contacts.map(c => c.id === editingContact.id ? { ...c, ...contactForm } : c));
+              } else {
+                // Insert new
+                const { data, error } = await window.supabase
+                  .from('customer_contacts')
+                  .insert([{ customer_id: customer.id, name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary }])
+                  .select()
+                  .single();
+                if (error) throw error;
+                setContacts([...contacts, data]);
+              }
+              setEditingContact(null);
+            } catch (err) {
+              alert('Error saving contact: ' + err.message);
+            }
+          };
+
+          const deleteContact = async (contactId) => {
+            if (!confirm('Delete this contact?')) return;
+            try {
+              const { error } = await window.supabase.from('customer_contacts').delete().eq('id', contactId);
+              if (error) throw error;
+              setContacts(contacts.filter(c => c.id !== contactId));
+            } catch (err) {
+              alert('Error deleting contact: ' + err.message);
+            }
+          };
+
+          const ROLE_COLORS = { WTN: 'bg-green-100 text-green-800', Invoices: 'bg-blue-100 text-blue-800', Quotes: 'bg-purple-100 text-purple-800', General: 'bg-gray-100 text-gray-700' };
 
           return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
                 <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-                  <h2 className="text-xl font-bold">{customer ? 'Edit Customer' : 'Add New Customer'}</h2>
-                  <button onClick={onClose}>
-                    <X size={24} />
-                  </button>
+                  <div>
+                    <h2 className="text-xl font-bold">{customer ? 'Edit Customer' : 'Add New Customer'}</h2>
+                    {formData.sage_id
+                      ? <span className="text-xs text-green-600 font-medium">✅ Linked to Sage ({formData.sage_id})</span>
+                      : <span className="text-xs text-amber-600 font-medium">⚠ Not yet in Sage</span>
+                    }
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!formData.sage_id && (
+                      <button
+                        onClick={handlePushToSage}
+                        disabled={pushingToSage}
+                        className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
+                      >
+                        {pushingToSage ? '⏳ Pushing...' : '🚀 Push to Sage'}
+                      </button>
+                    )}
+                    <button onClick={onClose}><X size={24} /></button>
+                  </div>
                 </div>
                 
                 {/* Tab Navigation */}
-                <div className="flex border-b border-gray-200">
-                  <button
-                    onClick={() => setActiveTab('company')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'company' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
-                  >
-                    Company Details
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('contact')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'contact' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
-                  >
-                    Contact Information
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('financial')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'financial' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
-                  >
-                    Financial & Compliance
-                  </button>
-                  <button
-                   onClick={() => {
-                        setActiveTab('documents');
-
-                     }}
-                     className={`px-6 py-3 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
-                  >
-                     Documents
-        </button>
+                <div className="flex border-b border-gray-200 overflow-x-auto">
+                  {['company', 'contact', 'financial', 'contacts', 'documents'].map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => handleTabChange(tab)}
+                      className={`px-5 py-3 font-medium whitespace-nowrap text-sm ${activeTab === tab ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                    >
+                      {tab === 'company' && 'Company Details'}
+                      {tab === 'contact' && 'Contact Information'}
+                      {tab === 'financial' && 'Financial & Compliance'}
+                      {tab === 'contacts' && (
+                        <span>Named Contacts {isExistingCustomer && contacts.length > 0 ? <span className="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs">{contacts.length}</span> : ''}</span>
+                      )}
+                      {tab === 'documents' && 'Documents'}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="p-6">
@@ -15915,57 +16179,27 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
-                          <input
-                            type="text"
-                            value={formData.companyName}
-                            onChange={(e) => setFormData({...formData, companyName: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Legal company name"
-                          />
+                          <input type="text" value={formData.companyName} onChange={(e) => setFormData({...formData, companyName: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Legal company name" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Trading Name</label>
-                          <input
-                            type="text"
-                            value={formData.tradingName}
-                            onChange={(e) => setFormData({...formData, tradingName: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="If different from company name"
-                          />
+                          <input type="text" value={formData.tradingName} onChange={(e) => setFormData({...formData, tradingName: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="If different from company name" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Company Registration Number</label>
-                          <input
-                            type="text"
-                            value={formData.companyNumber}
-                            onChange={(e) => setFormData({...formData, companyNumber: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="12345678"
-                          />
+                          <input type="text" value={formData.companyNumber} onChange={(e) => setFormData({...formData, companyNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="12345678" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">VAT Number</label>
-                          <input
-                            type="text"
-                            value={formData.vatNumber}
-                            onChange={(e) => setFormData({...formData, vatNumber: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="GB123456789"
-                          />
+                          <input type="text" value={formData.vatNumber} onChange={(e) => setFormData({...formData, vatNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="GB123456789" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Business Type</label>
-                          <select
-                            value={formData.businessType}
-                            onChange={(e) => setFormData({...formData, businessType: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
+                          <select value={formData.businessType} onChange={(e) => setFormData({...formData, businessType: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                             <option value="Construction Company">Construction Company</option>
                             <option value="Main Contractor">Main Contractor</option>
                             <option value="Sub Contractor">Sub Contractor</option>
@@ -15981,11 +16215,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
-                          <select
-                            value={formData.accountStatus}
-                            onChange={(e) => setFormData({...formData, accountStatus: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
+                          <select value={formData.accountStatus} onChange={(e) => setFormData({...formData, accountStatus: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                             <option value="Active">Active</option>
                             <option value="On Hold">On Hold</option>
                             <option value="Suspended">Suspended</option>
@@ -15993,41 +16223,25 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           </select>
                         </div>
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Site Address</label>
-                        <input
-                          type="text"
-                          value={formData.siteAddress}
-                          onChange={(e) => setFormData({...formData, siteAddress: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
-                          placeholder="Primary site address"
-                        />
-                        <input
-                          type="text"
-                          value={formData.sitePostcode}
-                          onChange={(e) => setFormData({...formData, sitePostcode: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          placeholder="Postcode"
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Site Address</label>
+                          <input type="text" value={formData.siteAddress} onChange={(e) => setFormData({...formData, siteAddress: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Site / delivery address" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Site Postcode</label>
+                          <input type="text" value={formData.sitePostcode} onChange={(e) => setFormData({...formData, sitePostcode: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        </div>
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Billing Address</label>
-                        <input
-                          type="text"
-                          value={formData.billingAddress}
-                          onChange={(e) => setFormData({...formData, billingAddress: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
-                          placeholder="If different from site address"
-                        />
-                        <input
-                          type="text"
-                          value={formData.billingPostcode}
-                          onChange={(e) => setFormData({...formData, billingPostcode: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          placeholder="Postcode"
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Billing Address</label>
+                          <input type="text" value={formData.billingAddress} onChange={(e) => setFormData({...formData, billingAddress: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Billing Postcode</label>
+                          <input type="text" value={formData.billingPostcode} onChange={(e) => setFormData({...formData, billingPostcode: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -16037,81 +16251,38 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Primary Contact Name *</label>
-                          <input
-                            type="text"
-                            value={formData.primaryContact}
-                            onChange={(e) => setFormData({...formData, primaryContact: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Full name"
-                          />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Primary Contact Name</label>
+                          <input type="text" value={formData.primaryContact} onChange={(e) => setFormData({...formData, primaryContact: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Full name" />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
-                          <input
-                            type="text"
-                            value={formData.contactPosition}
-                            onChange={(e) => setFormData({...formData, contactPosition: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Job title"
-                          />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Contact Position</label>
+                          <input type="text" value={formData.contactPosition} onChange={(e) => setFormData({...formData, contactPosition: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Job title" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Office Phone</label>
-                          <input
-                            type="tel"
-                            value={formData.phone}
-                            onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="+44 20 1234 5678"
-                          />
+                          <input type="tel" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="+44 20 1234 5678" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
-                          <input
-                            type="tel"
-                            value={formData.mobile}
-                            onChange={(e) => setFormData({...formData, mobile: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="+44 7123 456789"
-                          />
+                          <input type="tel" value={formData.mobile} onChange={(e) => setFormData({...formData, mobile: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="+44 7123 456789" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Primary Email *</label>
-                          <input
-                            type="email"
-                            value={formData.email}
-                            onChange={(e) => setFormData({...formData, email: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="contact@company.com"
-                          />
+                          <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="contact@company.com" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Accounts Email</label>
-                          <input
-                            type="email"
-                            value={formData.accountsEmail}
-                            onChange={(e) => setFormData({...formData, accountsEmail: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="accounts@company.com"
-                          />
+                          <input type="email" value={formData.accountsEmail} onChange={(e) => setFormData({...formData, accountsEmail: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="accounts@company.com" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Contact Method</label>
-                          <select
-                            value={formData.preferredContactMethod}
-                            onChange={(e) => setFormData({...formData, preferredContactMethod: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
+                          <select value={formData.preferredContactMethod} onChange={(e) => setFormData({...formData, preferredContactMethod: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                             <option value="Email">Email</option>
                             <option value="Phone">Phone</option>
                             <option value="Mobile">Mobile</option>
@@ -16120,25 +16291,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Account Manager</label>
-                          <input
-                            type="text"
-                            value={formData.accountManager}
-                            onChange={(e) => setFormData({...formData, accountManager: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Internal account manager"
-                          />
+                          <input type="text" value={formData.accountManager} onChange={(e) => setFormData({...formData, accountManager: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Internal account manager" />
                         </div>
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Special Requirements / Notes</label>
-                        <textarea
-                          value={formData.specialRequirements}
-                          onChange={(e) => setFormData({...formData, specialRequirements: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          rows={3}
-                          placeholder="Any special delivery instructions, site access requirements, etc."
-                        />
+                        <textarea value={formData.specialRequirements} onChange={(e) => setFormData({...formData, specialRequirements: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={3} placeholder="Any special delivery instructions, site access requirements, etc." />
                       </div>
                     </div>
                   )}
@@ -16149,11 +16307,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Credit Rating</label>
-                          <select
-                            value={formData.creditRating}
-                            onChange={(e) => setFormData({...formData, creditRating: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
+                          <select value={formData.creditRating} onChange={(e) => setFormData({...formData, creditRating: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                             <option value="A+">A+ (Excellent)</option>
                             <option value="A">A (Very Good)</option>
                             <option value="B+">B+ (Good)</option>
@@ -16164,23 +16318,13 @@ window.location.href = '/#sage-integration';  // Keep this line!
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Credit Limit (£)</label>
-                          <input
-                            type="number"
-                            value={formData.creditLimit}
-                            onChange={(e) => setFormData({...formData, creditLimit: parseFloat(e.target.value) || 0})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          />
+                          <input type="number" value={formData.creditLimit} onChange={(e) => setFormData({...formData, creditLimit: parseFloat(e.target.value) || 0})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms (days)</label>
-                          <select
-                            value={formData.paymentTerms}
-                            onChange={(e) => setFormData({...formData, paymentTerms: parseInt(e.target.value)})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
+                          <select value={formData.paymentTerms} onChange={(e) => setFormData({...formData, paymentTerms: parseInt(e.target.value)})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                             <option value={0}>Payment in Advance</option>
                             <option value={7}>7 days</option>
                             <option value={14}>14 days</option>
@@ -16191,72 +16335,125 @@ window.location.href = '/#sage-integration';  // Keep this line!
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Date Registered</label>
-                          <input
-                            type="date"
-                            value={formData.dateRegistered}
-                            onChange={(e) => setFormData({...formData, dateRegistered: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          />
+                          <input type="date" value={formData.dateRegistered} onChange={(e) => setFormData({...formData, dateRegistered: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Waste Carrier License</label>
-                          <input
-                            type="text"
-                            value={formData.wasteCarrierLicense}
-                            onChange={(e) => setFormData({...formData, wasteCarrierLicense: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="If applicable"
-                          />
+                          <input type="text" value={formData.wasteCarrierLicense} onChange={(e) => setFormData({...formData, wasteCarrierLicense: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="If applicable" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Expiry Date</label>
-                          <input
-                            type="date"
-                            value={formData.insuranceExpiry}
-                            onChange={(e) => setFormData({...formData, insuranceExpiry: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          />
+                          <input type="date" value={formData.insuranceExpiry} onChange={(e) => setFormData({...formData, insuranceExpiry: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                       </div>
-
                       <div className="space-y-3 pt-4 border-t">
                         <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formData.healthSafetyCompliant}
-                            onChange={(e) => setFormData({...formData, healthSafetyCompliant: e.target.checked})}
-                            className="mr-2"
-                          />
+                          <input type="checkbox" checked={formData.healthSafetyCompliant} onChange={(e) => setFormData({...formData, healthSafetyCompliant: e.target.checked})} className="mr-2" />
                           <span className="text-sm font-medium">Health & Safety Compliant</span>
                         </label>
                         <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formData.chasAccredited}
-                            onChange={(e) => setFormData({...formData, chasAccredited: e.target.checked})}
-                            className="mr-2"
-                          />
+                          <input type="checkbox" checked={formData.chasAccredited} onChange={(e) => setFormData({...formData, chasAccredited: e.target.checked})} className="mr-2" />
                           <span className="text-sm font-medium">CHAS Accredited</span>
                         </label>
                       </div>
                     </div>
                   )}
+
+                  {/* Named Contacts Tab */}
+                  {activeTab === 'contacts' && (
+                    <div className="space-y-4">
+                      {!isExistingCustomer ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                          Save the customer record first, then come back to add named contacts.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm text-gray-500">Named contacts are used to pre-fill WTN and quote emails by role.</p>
+                            <button onClick={openNewContact} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1">
+                              <span>+</span> Add Contact
+                            </button>
+                          </div>
+
+                          {/* Add/Edit contact inline form */}
+                          {editingContact !== null && (
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                              <h4 className="font-medium text-sm">{editingContact.id ? 'Edit Contact' : 'New Contact'}</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+                                  <input type="text" value={contactForm.name} onChange={e => setContactForm({...contactForm, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Full name" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                                  <select value={contactForm.role} onChange={e => setContactForm({...contactForm, role: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                    <option value="WTN">WTN</option>
+                                    <option value="Invoices">Invoices</option>
+                                    <option value="Quotes">Quotes</option>
+                                    <option value="General">General</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                                  <input type="email" value={contactForm.email} onChange={e => setContactForm({...contactForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="email@company.com" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                                  <input type="tel" value={contactForm.phone} onChange={e => setContactForm({...contactForm, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="+44 7..." />
+                                </div>
+                              </div>
+                              <label className="flex items-center gap-2 text-sm">
+                                <input type="checkbox" checked={contactForm.is_primary} onChange={e => setContactForm({...contactForm, is_primary: e.target.checked})} />
+                                Primary contact
+                              </label>
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={() => setEditingContact(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                                <button onClick={saveContact} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Contact</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Contacts list */}
+                          {contacts.length === 0 ? (
+                            <p className="text-sm text-gray-400 text-center py-6">No named contacts yet. Add one above.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {contacts.map(contact => (
+                                <div key={contact.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-sm">{contact.name}</span>
+                                      {contact.is_primary && <span className="text-xs bg-yellow-100 text-yellow-800 px-1.5 rounded-full">Primary</span>}
+                                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[contact.role] || ROLE_COLORS.General}`}>{contact.role}</span>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-0.5 truncate">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</div>
+                                  </div>
+                                  <div className="flex gap-2 ml-2">
+                                    <button onClick={() => openEditContact(contact)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                                    <button onClick={() => deleteContact(contact.id)} className="text-xs text-red-500 hover:underline">Delete</button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Documents Tab */}
+                  {activeTab === 'documents' && (
+                    <div className="py-8 text-center text-gray-400 text-sm">Documents feature coming soon.</div>
+                  )}
                 </div>
 
                 <div className="p-6 border-t border-gray-200 flex justify-end space-x-4">
-                  <button
-                    onClick={onClose}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                  >
+                  <button onClick={onClose} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
                     Cancel
                   </button>
-                  <button
-                    onClick={handleSubmit}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
+                  <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                     {customer ? 'Update Customer' : 'Add Customer'}
                   </button>
                 </div>
@@ -16308,13 +16505,60 @@ window.location.href = '/#sage-integration';  // Keep this line!
   ...(supplier || {})
 });
           const [activeTab, setActiveTab] = useState('company');
+          const [pushingToSage, setPushingToSage] = useState(false);
 
           const handleSubmit = () => {
             const newSupplier = {
               ...formData,
-              id: supplier?.id || `SUPP-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`
+              id: supplier?.id || undefined
             };
             onSave(newSupplier);
+          };
+
+          const handlePushToSage = async () => {
+            if (!formData.companyName) {
+              alert('Please enter a company name before pushing to Sage.');
+              return;
+            }
+            setPushingToSage(true);
+            try {
+              const response = await fetch('/api/sage-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'createContact',
+                  contactType: 'SUPPLIER',
+                  name: formData.companyName,
+                  email: formData.email || '',
+                  address: formData.address || '',
+                  vatNumber: formData.vatNumber || '',
+                  creditLimit: 0,
+                  creditDays: formData.paymentTerms || 30,
+                  mainContact: formData.primaryContact ? { name: formData.primaryContact, email: formData.email } : undefined,
+                })
+              });
+              const result = await response.json();
+              if (!response.ok) throw new Error(result.error || 'Sage returned an error');
+              const sage_id = result.sage_id;
+              if (!sage_id) throw new Error('Sage did not return an ID');
+
+              // Persist sage_id to Supabase if this is an existing record
+              if (supplier && supplier.id) {
+                const { error } = await window.supabase
+                  .from('suppliers')
+                  .update({ sage_id })
+                  .eq('id', supplier.id);
+                if (error) throw error;
+              }
+
+              setFormData(prev => ({ ...prev, sage_id }));
+              alert(`✅ Supplier created in Sage!\n\nSage ID: ${sage_id}\n\nThe record is now linked.`);
+            } catch (err) {
+              console.error('Push to Sage (supplier) error:', err);
+              alert('Failed to push to Sage: ' + err.message);
+            } finally {
+              setPushingToSage(false);
+            }
           };
 
           const handleServiceChange = (service, checked) => {
@@ -16345,10 +16589,25 @@ window.location.href = '/#sage-integration';  // Keep this line!
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
                 <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-                  <h2 className="text-xl font-bold">{supplier ? 'Edit Supplier' : 'Add New Supplier'}</h2>
-                  <button onClick={onClose}>
-                    <X size={24} />
-                  </button>
+                  <div>
+                    <h2 className="text-xl font-bold">{supplier ? 'Edit Supplier' : 'Add New Supplier'}</h2>
+                    {formData.sage_id
+                      ? <span className="text-xs text-green-600 font-medium">✅ Linked to Sage ({formData.sage_id})</span>
+                      : <span className="text-xs text-amber-600 font-medium">⚠ Not yet in Sage</span>
+                    }
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!formData.sage_id && (
+                      <button
+                        onClick={handlePushToSage}
+                        disabled={pushingToSage}
+                        className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
+                      >
+                        {pushingToSage ? '⏳ Pushing...' : '🚀 Push to Sage'}
+                      </button>
+                    )}
+                    <button onClick={onClose}><X size={24} /></button>
+                  </div>
                 </div>
                 
                 {/* Tab Navigation */}
@@ -17181,9 +17440,9 @@ By approving this quotation and authorising us to commence services, you acknowl
                       name: c.companyName || c.name
                     }))}
                     value={formData.customerName}
-                    onChange={(value) => {
+                    onChange={async (value) => {
                       const customer = customers.find(c => (c.companyName || c.name) === value);
-                      setFormData({
+                      const baseUpdate = {
                         ...formData,
                         customerName: value,
                         customerReference: customer?.reference || '',
@@ -17195,8 +17454,27 @@ By approving this quotation and authorising us to commence services, you acknowl
                         customerAccountStatus: customer?.account_status || 'Active',
                         siteContact: customer?.primaryContact || formData.siteContact,
                         customerPhone: customer?.phone || formData.customerPhone,
-                        customerEmail: customer?.email || formData.customerEmail
-                      });
+                        customerEmail: customer?.email || formData.customerEmail,
+                        quoteContactEmails: [],
+                      };
+                      setFormData(baseUpdate);
+                      // Fetch named Quotes contacts for this customer
+                      if (customer?.id) {
+                        try {
+                          const { data: quotesContacts } = await window.supabase
+                            .from('customer_contacts')
+                            .select('name, email')
+                            .eq('customer_id', customer.id)
+                            .eq('role', 'Quotes')
+                            .not('email', 'is', null);
+                          if (quotesContacts && quotesContacts.length > 0) {
+                            setFormData(prev => ({
+                              ...prev,
+                              quoteContactEmails: quotesContacts.map(c => ({ name: c.name, email: c.email })),
+                            }));
+                          }
+                        } catch(e) { console.warn('Could not load Quotes contacts:', e); }
+                      }
                     }}
                     placeholder={`Select Customer (${customers.length} available)`}
                     displayField="name"
