@@ -260,28 +260,47 @@ export default async function handler(req, res) {
         console.log('[Sage Proxy] Step 3 complete — contact person created, id:', contact_person_id);
 
         // ── Step 4: Set preferred_contact_person on the contact ──────────────
+        // Sage's Options tab crashes if preferred_contact_person is null.
+        // Try multiple approaches to ensure it gets set.
         if (contact_person_id) {
+          const cpDisplayName = mainContact?.name || name;
+          
+          // Approach A: PUT with nested object including displayed_as (matches working Sage structure)
           try {
             await sageRequest(`contacts/${sage_id}`, {
               contact: {
-                main_contact_person_id: contact_person_id,
-                preferred_contact_person_id: contact_person_id
+                main_contact_person: { id: contact_person_id, displayed_as: cpDisplayName },
+                preferred_contact_person: { id: contact_person_id, displayed_as: cpDisplayName }
               }
             }, 'PUT');
-            console.log('[Sage Proxy] Step 4 complete — preferred_contact set');
-          } catch (pcErr) {
-            console.warn('[Sage Proxy] Step 4 — preferred_contact set failed:', pcErr?.data);
-            // Try alternative format — nested object
+            console.log('[Sage Proxy] Step 4 complete (approach A) — preferred_contact set');
+          } catch (pcErrA) {
+            console.warn('[Sage Proxy] Step 4 approach A failed:', pcErrA?.data);
+            
+            // Approach B: PUT with flat _id fields
             try {
               await sageRequest(`contacts/${sage_id}`, {
                 contact: {
-                  main_contact_person: { id: contact_person_id },
-                  preferred_contact_person: { id: contact_person_id }
+                  main_contact_person_id: contact_person_id,
+                  preferred_contact_person_id: contact_person_id
                 }
               }, 'PUT');
-              console.log('[Sage Proxy] Step 4 complete (alt format) — preferred_contact set');
-            } catch (pcErr2) {
-              console.warn('[Sage Proxy] Step 4 — preferred_contact alt format also failed:', pcErr2?.data);
+              console.log('[Sage Proxy] Step 4 complete (approach B) — preferred_contact set');
+            } catch (pcErrB) {
+              console.warn('[Sage Proxy] Step 4 approach B failed:', pcErrB?.data);
+              
+              // Approach C: PATCH instead of PUT
+              try {
+                await sageRequest(`contacts/${sage_id}`, {
+                  contact: {
+                    main_contact_person: { id: contact_person_id },
+                    preferred_contact_person: { id: contact_person_id }
+                  }
+                }, 'PATCH');
+                console.log('[Sage Proxy] Step 4 complete (approach C/PATCH) — preferred_contact set');
+              } catch (pcErrC) {
+                console.warn('[Sage Proxy] Step 4 all approaches failed. Last error:', pcErrC?.data);
+              }
             }
           }
         }
