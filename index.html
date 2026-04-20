@@ -9124,6 +9124,7 @@ const displayCustomers = filteredCustomers.map(customer => ({
   creditLimit: customer.creditLimit ?? customer.credit_limit ?? 0,
   accountStatus: customer.accountStatus || customer.account_status || 'Active',
   vatNumber: customer.vatNumber || customer.vat_number || '',
+  companyNumber: customer.companyNumber || customer.company_number || '',
   email: customer.email || '',
   reference: customer.reference || '',
   mobile: customer.mobile || '',
@@ -9492,6 +9493,7 @@ const { error } = await window.supabase
   paymentTerms: customer.credit_days,
   creditRating: customer.credit_rating,
   vatNumber: customer.vat_number,
+  companyNumber: customer.company_number || customer.companyNumber || '',
   accountStatus: customer.account_status,
   primaryContact: customer.primary_contact,
   businessType: customer.business_type,
@@ -9576,6 +9578,7 @@ const { error } = await window.supabase
   paymentTerms: customer.credit_days,
   creditRating: customer.credit_rating,
   vatNumber: customer.vat_number,
+  companyNumber: customer.company_number || customer.companyNumber || '',
   accountStatus: customer.account_status,
   primaryContact: customer.primary_contact,
   businessType: customer.business_type,
@@ -16238,7 +16241,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               email: c.email || '',
               accountsEmail: c.accountsEmail || c.additional_emails || '',
               tradingName: c.tradingName || '',
-              companyNumber: c.companyNumber || '',
+              companyNumber: c.companyNumber || c.company_number || '',
               contactPosition: c.contactPosition || '',
               siteAddress: c.siteAddress || '',
               sitePostcode: c.sitePostcode || '',
@@ -16824,8 +16827,15 @@ window.location.href = '/#sage-integration';  // Keep this line!
                               </div>
                               <label className="flex items-center gap-2 text-sm">
                                 <input type="checkbox" checked={contactForm.is_primary} onChange={e => setContactForm({...contactForm, is_primary: e.target.checked})} />
-                                Primary contact
+                                <span>Main contact for this customer <span className="text-xs text-gray-400">(shown first in lists)</span></span>
                               </label>
+                              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 space-y-1">
+                                <p className="font-medium">How roles work:</p>
+                                <p><span className="font-semibold">WTN</span> — CC'd on all Waste Transfer Notes</p>
+                                <p><span className="font-semibold">Invoices</span> — CC'd on invoices and WTNs</p>
+                                <p><span className="font-semibold">Quotes</span> — CC'd on quotes only</p>
+                                <p><span className="font-semibold">General</span> — CC'd on WTNs and invoices</p>
+                              </div>
                               <div className="flex gap-2 justify-end">
                                 <button onClick={() => setEditingContact(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
                                 <button onClick={saveContact} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Contact</button>
@@ -17516,8 +17526,15 @@ window.location.href = '/#sage-integration';  // Keep this line!
                               </div>
                               <label className="flex items-center gap-2 text-sm">
                                 <input type="checkbox" checked={contactForm.is_primary} onChange={e => setContactForm({...contactForm, is_primary: e.target.checked})} />
-                                Primary contact
+                                <span>Main contact for this supplier <span className="text-xs text-gray-400">(shown first in lists)</span></span>
                               </label>
+                              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 space-y-1">
+                                <p className="font-medium">How roles work:</p>
+                                <p><span className="font-semibold">WTN</span> — CC'd on all Waste Transfer Notes</p>
+                                <p><span className="font-semibold">Invoices</span> — CC'd on invoices and WTNs</p>
+                                <p><span className="font-semibold">Quotes</span> — CC'd on quotes only</p>
+                                <p><span className="font-semibold">General</span> — CC'd on WTNs and invoices</p>
+                              </div>
                               <div className="flex gap-2 justify-end">
                                 <button onClick={() => setEditingContact(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
                                 <button onClick={saveContact} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Contact</button>
