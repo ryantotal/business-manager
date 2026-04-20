@@ -9116,19 +9116,25 @@ useEffect(() => {
           });
 const displayCustomers = filteredCustomers.map(customer => ({
   ...customer,
-  companyName: customer.companyName || customer.name,
-  primaryContact: customer.primaryContact || '',
+  // Map DB column names → form field names so the edit form pre-fills correctly
+  companyName: customer.companyName || customer.name || '',
+  primaryContact: customer.primaryContact || customer.primary_contact || '',
+  vatNumber: customer.vatNumber || customer.vat_number || '',
+  creditLimit: customer.creditLimit || customer.credit_limit || 0,
+  paymentTerms: customer.paymentTerms || customer.credit_days || 30,
+  accountStatus: customer.accountStatus || customer.account_status || 'Active',
+  billingAddress: customer.billingAddress || customer.address || '',
+  billingPostcode: customer.billingPostcode || customer.postcode || '',
+  phone: customer.phone || '',
+  mobile: customer.mobile || '',
+  email: customer.email || '',
+  // Keep originals too for anything that reads them directly
   businessType: customer.businessType || 'Other',
   creditRating: customer.creditRating || 'B',
-  creditLimit: customer.creditLimit || 0,
-  accountStatus: customer.accountStatus || 'Active',
-  vatNumber: customer.vatNumber || customer.vat_number,
-  email: customer.email || '',
   reference: customer.reference || '',
-  mobile: customer.mobile || '',
   credit_days: customer.credit_days || 30,
   main_contact_name: customer.main_contact_name || '',
-  delivery_address: customer.delivery_address || null
+  delivery_address: customer.delivery_address || null,
 }));
 
           const handleDeleteCustomer = (customer) => {
@@ -9840,13 +9846,21 @@ const handleApplySupplierSync = async () => {
           });
           const displaySuppliers = filteredSuppliers.map(supplier => ({
   ...supplier,
-  companyName: supplier.name && supplier.name !== 'Unknown Supplier' 
-    ? supplier.name 
-    : supplier.companyName || supplier.name || 'Unknown Supplier',
-  primaryContact: supplier.primaryContact || 'No contact',
-  vatNumber: supplier.vat_number || supplier.vatNumber || '',
+  // Map DB column names → form field names so the edit form pre-fills correctly
+  companyName: supplier.companyName || supplier.name || 'Unknown Supplier',
+  primaryContact: supplier.primaryContact || supplier.contact_person || '',
+  vatNumber: supplier.vatNumber || supplier.vat_number || '',
   email: supplier.email || '',
-  phone: supplier.phone || ''
+  phone: supplier.phone || '',
+  address: supplier.address || '',
+  postcode: supplier.postcode || '',
+  city: supplier.city || '',
+  paymentTerms: supplier.paymentTerms || supplier.credit_days || 30,
+  creditLimit: supplier.creditLimit || supplier.credit_limit || 0,
+  accountStatus: supplier.accountStatus || supplier.accountstatus || 'Active',
+  supplierRating: supplier.supplierRating || supplier.supplierrating || 'B',
+  performanceScore: supplier.performanceScore || supplier.performancescore || 0,
+  preferredSupplier: supplier.preferredSupplier || supplier.preferredsupplier || false,
 }));
 
           const handleDeleteSupplier = (supplier) => {
