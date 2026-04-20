@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -14130,8 +14130,9 @@ siteNotes: job.site_notes || job.siteNotes || '',
               phone: customer.phone || '',
               mobile: customer.mobile || '',
               vat_number: customer.vatNumber || '',
-              address: customer.billingAddress || customer.siteAddress || '',
-              postcode: customer.billingPostcode || customer.sitePostcode || '',
+              address: customer.billingAddress || '',
+              city: customer.billingCity || '',
+              postcode: customer.billingPostcode || '',
               credit_limit: customer.creditLimit || 0,
               credit_days: customer.paymentTerms || 30,
               account_status: customer.accountStatus || 'Active',
@@ -14148,7 +14149,20 @@ siteNotes: job.site_notes || job.siteNotes || '',
           const handleAddCustomer = async (newCustomer) => {
             try {
               const saved = await saveCustomerToDatabase(newCustomer);
-              setCustomers(prev => [...prev, { ...newCustomer, id: saved.id }]);
+              // Merge DB row (snake_case) with form data (camelCase) so both are available
+              setCustomers(prev => [...prev, {
+                ...saved,
+                companyName: saved.name,
+                billingAddress: saved.address,
+                billingPostcode: saved.postcode,
+                vatNumber: saved.vat_number,
+                primaryContact: saved.primary_contact || newCustomer.primaryContact || '',
+                creditLimit: saved.credit_limit,
+                paymentTerms: saved.credit_days,
+                accountStatus: saved.account_status,
+                businessType: newCustomer.businessType || 'Other',
+                creditRating: newCustomer.creditRating || 'B',
+              }]);
               setShowCustomerForm(false);
             } catch (error) {
               alert('Error saving customer: ' + error.message);
@@ -14164,9 +14178,9 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 phone: updatedCustomer.phone || '',
                 mobile: updatedCustomer.mobile || '',
                 vat_number: updatedCustomer.vatNumber || '',
-                address: updatedCustomer.billingAddress || updatedCustomer.siteAddress || '',
-                city: updatedCustomer.billingCity || updatedCustomer.siteCity || '',
-                postcode: updatedCustomer.billingPostcode || updatedCustomer.sitePostcode || '',
+                address: updatedCustomer.billingAddress || '',
+                city: updatedCustomer.billingCity || '',
+                postcode: updatedCustomer.billingPostcode || '',
                 credit_limit: updatedCustomer.creditLimit || 0,
                 credit_days: updatedCustomer.paymentTerms || 30,
                 account_status: updatedCustomer.accountStatus || 'Active',
@@ -14176,7 +14190,20 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 .update(customerData)
                 .eq('id', updatedCustomer.id);
               if (error) throw error;
-              setCustomers(customers.map(c => c.id === updatedCustomer.id ? { ...c, ...updatedCustomer } : c));
+              // Merge DB column names alongside camelCase so both exist in-memory
+              setCustomers(customers.map(c => c.id === updatedCustomer.id ? {
+                ...c,
+                ...updatedCustomer,
+                ...customerData,
+                companyName: customerData.name,
+                billingAddress: customerData.address,
+                billingPostcode: customerData.postcode,
+                vatNumber: customerData.vat_number,
+                primaryContact: updatedCustomer.primaryContact || '',
+                creditLimit: customerData.credit_limit,
+                paymentTerms: customerData.credit_days,
+                accountStatus: customerData.account_status,
+              } : c));
             } catch (err) {
               console.error('Error updating customer:', err);
               alert('Error saving customer: ' + err.message);
@@ -16229,8 +16256,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
             const missing = [];
             if (!formData.companyName)    missing.push('Company Name');
             if (!formData.email)          missing.push('Email');
-            if (!formData.billingAddress && !formData.siteAddress)   missing.push('Address');
-            if (!formData.billingPostcode && !formData.sitePostcode)  missing.push('Postcode');
+            if (!formData.billingAddress)   missing.push('Billing Address');
+            if (!formData.billingPostcode)  missing.push('Billing Postcode');
             if (missing.length > 0) {
               alert('Please fill in the required fields (*):\n\n• ' + missing.join('\n• '));
               return;
@@ -16250,9 +16277,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       contactType: 'CUSTOMER',
                       name: formData.companyName,
                       email: formData.email || '',
-                      address: formData.billingAddress || formData.siteAddress || '',
-                      city: formData.billingCity || formData.siteCity || '',
-                      postcode: formData.billingPostcode || formData.sitePostcode || '',
+                      address: formData.billingAddress || '',
+                      city: formData.billingCity || '',
+                      postcode: formData.billingPostcode || '',
                       vatNumber: formData.vatNumber || '',
                       creditLimit: formData.creditLimit || 0,
                       creditDays: formData.paymentTerms || 30,
@@ -16428,22 +16455,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Site Address</label>
-                          <input type="text" value={formData.siteAddress} onChange={(e) => setFormData({...formData, siteAddress: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Site / delivery address" />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Site Postcode</label>
-                          <input type="text" value={formData.sitePostcode} onChange={(e) => setFormData({...formData, sitePostcode: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Billing Address *</label>
-                          <input type="text" value={formData.billingAddress} onChange={(e) => setFormData({...formData, billingAddress: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.billingAddress && !formData.siteAddress ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
+                          <input type="text" value={formData.billingAddress} onChange={(e) => setFormData({...formData, billingAddress: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.billingAddress ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Billing Postcode *</label>
-                          <input type="text" value={formData.billingPostcode} onChange={(e) => setFormData({...formData, billingPostcode: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.billingPostcode && !formData.sitePostcode ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
+                          <input type="text" value={formData.billingPostcode} onChange={(e) => setFormData({...formData, billingPostcode: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.billingPostcode ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
                         </div>
                       </div>
                     </div>
