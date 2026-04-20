@@ -262,7 +262,10 @@ export default async function handler(req, res) {
         if (contact_person_id) {
           try {
             await sagePost(`contacts/${sage_id}`, {
-              contact: { preferred_contact_person_id: contact_person_id }
+              contact: {
+                main_contact_person: { id: contact_person_id },
+                preferred_contact_person: { id: contact_person_id }
+              }
             }, 'PUT');
             console.log('[Sage Proxy] Step 4 complete — preferred_contact set');
           } catch (pcErr) {
