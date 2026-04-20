@@ -16140,7 +16140,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
 };
         // Customer Form Component
         const CustomerForm = ({ customer, onClose, onSave }) => {
-          const [formData, setFormData] = useState(customer || {
+          const defaults = {
             companyName: '',
             tradingName: '',
             companyNumber: '',
@@ -16168,7 +16168,27 @@ window.location.href = '/#sage-integration';  // Keep this line!
             specialRequirements: '',
             accountManager: '',
             dateRegistered: new Date().toISOString().split('T')[0]
-          });
+          };
+          // Normalise DB column names → form field names when editing an existing customer
+          const normalised = customer ? {
+            ...defaults,
+            ...customer,
+            companyName:    customer.companyName    || customer.name            || '',
+            tradingName:    customer.tradingName    || customer.trading_name    || '',
+            companyNumber:  customer.companyNumber  || customer.company_number  || '',
+            vatNumber:      customer.vatNumber      || customer.vat_number      || '',
+            primaryContact: customer.primaryContact || customer.primary_contact || '',
+            phone:          customer.phone          || '',
+            mobile:         customer.mobile         || '',
+            email:          customer.email          || '',
+            accountsEmail:  customer.accountsEmail  || customer.accounts_email  || '',
+            billingAddress: customer.billingAddress || customer.address         || '',
+            billingPostcode:customer.billingPostcode|| customer.postcode        || '',
+            paymentTerms:   customer.paymentTerms   || customer.credit_days     || 30,
+            creditLimit:    customer.creditLimit    || customer.credit_limit    || 0,
+            accountStatus:  customer.accountStatus  || customer.account_status  || 'Active',
+          } : null;
+          const [formData, setFormData] = useState(normalised || defaults);
 
           const [activeTab, setActiveTab] = useState('company');
           const [saving, setSaving] = useState(false);
@@ -16647,7 +16667,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
         // Supplier Form Component
         const SupplierForm = ({ supplier, onClose, onSave }) => {
-          const [formData, setFormData] = useState({
+          const supplierDefaults = {
             companyName: '',
             tradingName: '',
             companyNumber: '',
@@ -16685,8 +16705,26 @@ window.location.href = '/#sage-integration';  // Keep this line!
             performanceScore: 100,
             dateRegistered: new Date().toISOString().split('T')[0],
             notes: '',
-            ...(supplier || {})
-          });
+          };
+          const normalisedSupplier = supplier ? {
+            ...supplierDefaults,
+            ...supplier,
+            companyName:    supplier.companyName    || supplier.name            || '',
+            vatNumber:      supplier.vatNumber      || supplier.vat_number      || '',
+            primaryContact: supplier.primaryContact || supplier.contact_person  || '',
+            email:          supplier.email          || '',
+            phone:          supplier.phone          || '',
+            address:        supplier.address        || '',
+            postcode:       supplier.postcode       || '',
+            city:           supplier.city           || '',
+            paymentTerms:   supplier.paymentTerms   || supplier.credit_days     || 30,
+            creditLimit:    supplier.creditLimit    || supplier.credit_limit    || 0,
+            accountStatus:  supplier.accountStatus  || supplier.accountstatus   || 'Active',
+            supplierRating: supplier.supplierRating || supplier.supplierrating  || 'B',
+            performanceScore: supplier.performanceScore || supplier.performancescore || 0,
+            preferredSupplier: supplier.preferredSupplier || supplier.preferredsupplier || false,
+          } : null;
+          const [formData, setFormData] = useState(normalisedSupplier || supplierDefaults);
 
           const [activeTab, setActiveTab] = useState('company');
           const [saving, setSaving] = useState(false);
