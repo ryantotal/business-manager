@@ -14130,15 +14130,13 @@ siteNotes: job.site_notes || job.siteNotes || '',
               sage_id: customer.sage_id || null,
               email: customer.email || '',
               phone: customer.phone || '',
+              mobile: customer.mobile || '',
               vat_number: customer.vatNumber || '',
               address: customer.billingAddress || customer.siteAddress || '',
               postcode: customer.billingPostcode || customer.sitePostcode || '',
-              primary_contact: customer.primaryContact || '',
-              payment_terms: customer.paymentTerms || 30,
               credit_limit: customer.creditLimit || 0,
+              credit_days: customer.paymentTerms || 30,
               account_status: customer.accountStatus || 'Active',
-              business_type: customer.businessType || '',
-              notes: customer.specialRequirements || '',
             };
             const { data, error } = await window.supabase
               .from('customers')
@@ -14166,15 +14164,13 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 sage_id: updatedCustomer.sage_id || null,
                 email: updatedCustomer.email || '',
                 phone: updatedCustomer.phone || '',
+                mobile: updatedCustomer.mobile || '',
                 vat_number: updatedCustomer.vatNumber || '',
                 address: updatedCustomer.billingAddress || updatedCustomer.siteAddress || '',
                 postcode: updatedCustomer.billingPostcode || updatedCustomer.sitePostcode || '',
-                primary_contact: updatedCustomer.primaryContact || '',
-                payment_terms: updatedCustomer.paymentTerms || 30,
                 credit_limit: updatedCustomer.creditLimit || 0,
+                credit_days: updatedCustomer.paymentTerms || 30,
                 account_status: updatedCustomer.accountStatus || 'Active',
-                business_type: updatedCustomer.businessType || '',
-                notes: updatedCustomer.specialRequirements || '',
               };
               const { error } = await window.supabase
                 .from('customers')
@@ -14194,8 +14190,8 @@ siteNotes: job.site_notes || job.siteNotes || '',
 
           const handleAddSupplier = async (newSupplier) => {
   try {
-    await saveSupplierToDatabase(newSupplier);
-    setSuppliers([...suppliers, newSupplier]);
+    const saved = await saveSupplierToDatabase(newSupplier);
+    setSuppliers(prev => [...prev, { ...newSupplier, id: saved.id }]);
     setShowSupplierForm(false);
   } catch (error) {
     alert('Error saving supplier: ' + error.message);
@@ -14205,43 +14201,53 @@ siteNotes: job.site_notes || job.siteNotes || '',
 const saveSupplierToDatabase = async (supplier) => {
   const supplierData = {
     name: supplier.companyName || supplier.name || 'Unknown Supplier',
-    sage_id: supplier.sage_id || supplier.id,
+    sage_id: supplier.sage_id || null,
     email: supplier.email || '',
     phone: supplier.phone || '',
-    vat_number: supplier.vatNumber || '',
     address: supplier.address || '',
-    city: supplier.city || '',
     postcode: supplier.postcode || '',
-    county: supplier.county || '',
-    waste_carrier_license: supplier.wasteCarrierLicense || '',
-    primary_contact: supplier.primaryContact || '',
-    notes: supplier.notes || '',
+    vat_number: supplier.vatNumber || '',
+    contact_person: supplier.primaryContact || '',
+    accountstatus: supplier.accountStatus || 'Active',
+    accountsemail: supplier.accountsEmail || supplier.email || '',
+    supplierrating: supplier.supplierRating || 'B',
+    performancescore: supplier.performanceScore || 0,
+    preferredsupplier: supplier.preferredSupplier || false,
+    credit_limit: parseFloat(supplier.creditLimit) || 0,
+    credit_days: parseInt(supplier.paymentTerms) || 30,
   };
 
-  const { error } = await window.supabase
+  const { data, error } = await window.supabase
     .from('suppliers')
-    .insert([supplierData]);
+    .insert([supplierData])
+    .select()
+    .single();
     
   if (error) {
     console.error('Error saving supplier:', error);
     throw error;
   }
+  return data;
 };
 
           const handleUpdateSupplier = async (updatedSupplier) => {
             try {
               const supplierData = {
                 name: updatedSupplier.companyName || updatedSupplier.name || 'Unknown Supplier',
+                sage_id: updatedSupplier.sage_id || null,
                 email: updatedSupplier.email || '',
                 phone: updatedSupplier.phone || '',
-                vat_number: updatedSupplier.vatNumber || '',
                 address: updatedSupplier.address || '',
-                city: updatedSupplier.city || '',
                 postcode: updatedSupplier.postcode || '',
-                county: updatedSupplier.county || '',
-                waste_carrier_license: updatedSupplier.wasteCarrierLicense || '',
-                primary_contact: updatedSupplier.primaryContact || '',
-                notes: updatedSupplier.notes || '',
+                vat_number: updatedSupplier.vatNumber || '',
+                contact_person: updatedSupplier.primaryContact || '',
+                accountstatus: updatedSupplier.accountStatus || 'Active',
+                accountsemail: updatedSupplier.accountsEmail || updatedSupplier.email || '',
+                supplierrating: updatedSupplier.supplierRating || 'B',
+                performancescore: updatedSupplier.performanceScore || 0,
+                preferredsupplier: updatedSupplier.preferredSupplier || false,
+                credit_limit: parseFloat(updatedSupplier.creditLimit) || 0,
+                credit_days: parseInt(updatedSupplier.paymentTerms) || 30,
               };
               const { error } = await window.supabase
                 .from('suppliers')
