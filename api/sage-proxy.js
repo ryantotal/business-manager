@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+   import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -119,7 +119,121 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  const { endpoint, method = 'GET', body, businessId } = req.body || {};
+  const { endpoint, method = 'GET', body, businessId, action } = req.body || {};
+
+  // ── createContact action ──────────────────────────────────────────────────
+  // Creates a new customer or supplier contact in Sage and returns the sage_id.
+  // Called from the portal when "Push to Sage" is clicked on a new record.
+  if (action === 'createContact') {
+    const { contactType, name, email, address, vatNumber, creditLimit, creditDays, mainContact } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Contact name is required' });
+    }
+
+    // Build the Sage contact payload.
+    // Field names confirmed against live Sage API response.
+    // NOTE: main_address and main_contact_person are sub-resources in Sage —
+    // they cannot be created inline on a contact POST. We send only the flat
+    // fields Sage accepts directly. Address/contact person can be added in
+    // Sage after the record is created, or via separate API calls.
+    const contactObj = {
+      name,
+      contact_type_ids: [contactType === 'SUPPLIER' ? 'SUPPLIER' : 'CUSTOMER'],
+    };
+
+    // Only add optional fields if they have a value — never send null/empty
+    // strings as Sage may reject or ignore them unpredictably.
+    if (email)      contactObj.email       = email;
+    if (vatNumber)  contactObj.tax_number  = vatNumber;
+    if (creditLimit && parseFloat(creditLimit) > 0)
+                    contactObj.credit_limit = parseFloat(creditLimit);
+    if (creditDays && parseInt(creditDays) > 0)
+                    contactObj.credit_days  = parseInt(creditDays);
+
+    const contactPayload = { contact: contactObj };
+
+    try {
+      // Ensure we have a valid token (reuse existing token-fetch logic below)
+      let accessToken = null;
+
+      if (
+        tokenCache.accessToken &&
+        tokenCache.lastFetched &&
+        (Date.now() - tokenCache.lastFetched) < 300000 &&
+        !isTokenExpired(tokenCache.expiresAt)
+      ) {
+        accessToken = tokenCache.accessToken;
+      } else {
+        const { data: tokenData, error: tokenError } = await supabase
+          .from('company_settings')
+          .select('setting_name, setting_value')
+          .in('setting_name', ['sage_access_token', 'sage_refresh_token', 'sage_token_expires_at']);
+
+        if (tokenError || !tokenData || tokenData.length === 0) {
+          return res.status(401).json({ error: 'No Sage connection found. Please connect to Sage.', code: 'NO_TOKENS' });
+        }
+
+        const tokens = tokenData.reduce((acc, row) => { acc[row.setting_name] = row.setting_value; return acc; }, {});
+
+        if (isTokenExpired(tokens.sage_token_expires_at)) {
+          if (!tokens.sage_refresh_token) {
+            return res.status(401).json({ error: 'Sage session expired. Please reconnect.', code: 'NO_REFRESH_TOKEN' });
+          }
+          accessToken = await refreshAccessToken(tokens.sage_refresh_token);
+        } else {
+          accessToken = tokens.sage_access_token;
+          tokenCache = {
+            accessToken: tokens.sage_access_token,
+            refreshToken: tokens.sage_refresh_token,
+            expiresAt: tokens.sage_token_expires_at,
+            lastFetched: Date.now()
+          };
+        }
+      }
+
+      // Fetch business ID
+      const { data: bizData } = await supabase
+        .from('company_settings')
+        .select('setting_value')
+        .eq('setting_name', 'sage_business_id')
+        .single();
+
+      const headers = {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        ...(bizData?.setting_value && { 'X-Business': bizData.setting_value })
+      };
+
+      console.log('[Sage Proxy] Creating contact in Sage:', { name, contactType });
+
+      const sageRes = await fetch('https://api.accounting.sage.com/v3.1/contacts', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(contactPayload)
+      });
+
+      const sageData = await sageRes.json();
+
+      if (!sageRes.ok) {
+        console.error('[Sage Proxy] Sage createContact error:', sageData);
+        return res.status(sageRes.status).json({
+          error: 'Sage rejected the contact creation',
+          details: sageData
+        });
+      }
+
+      const sage_id = sageData?.id || sageData?.contact?.id;
+      console.log('[Sage Proxy] Contact created in Sage, sage_id:', sage_id);
+
+      return res.status(200).json({ sage_id, sageData });
+    } catch (err) {
+      console.error('[Sage Proxy] createContact error:', err);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+  // ── end createContact ─────────────────────────────────────────────────────
 
   if (!endpoint) {
     console.error('[Sage Proxy] No endpoint provided');
