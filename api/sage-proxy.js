@@ -252,8 +252,23 @@ export default async function handler(req, res) {
       if (mainContact?.telephone)         contactPersonObj.contact_person.telephone = mainContact.telephone;
       if (mainContact?.mobile)            contactPersonObj.contact_person.mobile    = mainContact.mobile;
       try {
-        await sagePost('contact_persons', contactPersonObj);
-        console.log('[Sage Proxy] Step 3 complete — contact person created');
+        const cpData = await sagePost('contact_persons', contactPersonObj);
+        const contact_person_id = cpData?.id;
+        console.log('[Sage Proxy] Step 3 complete — contact person created, id:', contact_person_id);
+
+        // ── Step 4: Set preferred_contact_id on the contact ──────────────
+        // Sage's Options tab crashes if preferred_contact is null.
+        // Setting it here prevents that crash.
+        if (contact_person_id) {
+          try {
+            await sagePost(`contacts/${sage_id}`, {
+              contact: { preferred_contact_person_id: contact_person_id }
+            }, 'PUT');
+            console.log('[Sage Proxy] Step 4 complete — preferred_contact set');
+          } catch (pcErr) {
+            console.warn('[Sage Proxy] Step 4 — preferred_contact set failed:', pcErr?.data);
+          }
+        }
       } catch (cpErr) {
         // Non-fatal — contact and address already created successfully
         console.warn('[Sage Proxy] Step 3 — contact person creation failed:', cpErr?.data);
