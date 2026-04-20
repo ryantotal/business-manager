@@ -183,11 +183,14 @@ export default async function handler(req, res) {
       };
 
       const sageRequest = async (endpoint, payload, method = 'POST') => {
-        const r = await fetch(`https://api.accounting.sage.com/v3.1/${endpoint}`, {
+        const fetchOpts = {
           method,
           headers: sageHeaders,
-          body: JSON.stringify(payload)
-        });
+        };
+        if (payload && method !== 'GET') {
+          fetchOpts.body = JSON.stringify(payload);
+        }
+        const r = await fetch(`https://api.accounting.sage.com/v3.1/${endpoint}`, fetchOpts);
         const data = await r.json();
         if (!r.ok) {
           console.error(`[Sage Proxy] ${method} ${endpoint} failed:`, JSON.stringify(data));
@@ -215,6 +218,7 @@ export default async function handler(req, res) {
       console.log('[Sage Proxy] Step 1 complete — sage_id:', sage_id);
 
       // ── Step 2: Create the address linked to the contact ─────────────────
+      let address_id = null;
       if (hasAddress) {
         console.log('[Sage Proxy] Step 2 — creating address for contact:', sage_id);
         const addressObj = {
@@ -232,24 +236,39 @@ export default async function handler(req, res) {
 
         try {
           const addrData = await sageRequest('addresses', addressObj);
-          console.log('[Sage Proxy] Step 2 complete — address created, id:', addrData?.id);
+          address_id = addrData?.id;
+          console.log('[Sage Proxy] Step 2 complete — address created, id:', address_id);
         } catch (addrErr) {
-          // Log but don't fail — contact was created
           console.warn('[Sage Proxy] Step 2 — address creation failed:', addrErr?.data);
         }
       }
 
+      // If we didn't create an address, try to fetch the default one Sage auto-created
+      if (!address_id) {
+        try {
+          const addrList = await sageRequest(`addresses?contact_id=${sage_id}`, null, 'GET');
+          const items = addrList?.$items || addrList?.items || addrList;
+          if (Array.isArray(items) && items.length > 0) {
+            address_id = items[0].id;
+            console.log('[Sage Proxy] Found existing address for contact:', address_id);
+          }
+        } catch (e) {
+          console.warn('[Sage Proxy] Could not fetch addresses for contact:', e?.data || e?.message);
+        }
+      }
+
       // ── Step 3: Create a main contact person ─────────────────────────────
-      console.log('[Sage Proxy] Step 3 — creating contact person');
+      console.log('[Sage Proxy] Step 3 — creating contact person, address_id:', address_id);
       const contactPersonObj = {
         contact_person: {
           contact_id: sage_id,
           name: mainContact?.name || name,
           is_main_contact: true,
           is_preferred_contact: true,
-          contact_person_types: [{ id: 'ACCOUNTS' }],
+          contact_person_type_ids: ['ACCOUNTS'],
         }
       };
+      if (address_id) contactPersonObj.contact_person.address_id = address_id;
       if (mainContact?.email || email)    contactPersonObj.contact_person.email     = mainContact?.email || email;
       if (mainContact?.telephone)         contactPersonObj.contact_person.telephone = mainContact.telephone;
       if (mainContact?.mobile)            contactPersonObj.contact_person.mobile    = mainContact.mobile;
