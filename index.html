@@ -9236,6 +9236,19 @@ const handleQuickSync = async () => {
 
 
 
+const handleFullSyncCustomers = async () => {
+  setSyncing(true);
+  try {
+    const results = await window.SageAPI.syncCustomersQuick(); // already does full update logic
+    if (onRefreshCustomers) await onRefreshCustomers();
+    alert(`✅ Full customer sync complete!\n\n${results.new.length} new customers added\n${results.updated.length} existing customers updated`);
+  } catch (error) {
+    alert('Full sync failed: ' + error.message);
+  } finally {
+    setSyncing(false);
+  }
+};
+
 const handleApplySync = async () => {
   if (!syncResults) return;
   
@@ -9336,19 +9349,38 @@ const { error } = await window.supabase
     <button
       onClick={handleSyncFromSage}
       disabled={syncing || refreshingEmails}
+      title="Quick Sync — adds new customers from Sage only"
       className="flex items-center px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 ml-2 disabled:opacity-50 text-sm sm:text-base"
     >
       {syncing ? (
         <>
           <Loader size={16} className="mr-1 sm:mr-2 animate-spin" />
           <span className="hidden sm:inline">Syncing...</span>
-          <span className="sm:hidden">Sync</span>
         </>
       ) : (
         <>
           <Repeat size={16} className="mr-1 sm:mr-2" />
-          <span className="hidden sm:inline">Sync from Sage</span>
-          <span className="sm:hidden">Sync</span>
+          <span className="hidden sm:inline">Quick Sync</span>
+          <span className="sm:hidden">Quick</span>
+        </>
+      )}
+    </button>
+    <button
+      onClick={handleFullSyncCustomers}
+      disabled={syncing || refreshingEmails}
+      title="Full Sync — updates all existing customers from Sage + adds new ones"
+      className="flex items-center px-3 py-2 sm:px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 ml-2 disabled:opacity-50 text-sm sm:text-base"
+    >
+      {syncing ? (
+        <>
+          <Loader size={16} className="mr-1 sm:mr-2 animate-spin" />
+          <span className="hidden sm:inline">Syncing...</span>
+        </>
+      ) : (
+        <>
+          <Repeat size={16} className="mr-1 sm:mr-2" />
+          <span className="hidden sm:inline">Full Sync</span>
+          <span className="sm:hidden">Full</span>
         </>
       )}
     </button>
@@ -9836,6 +9868,32 @@ const handleApplySupplierSync = async () => {
   }
 };
 
+const handleQuickSyncSuppliers = async () => {
+  setSyncing(true);
+  try {
+    const results = await window.SageAPI.syncSuppliersQuick();
+    alert(`✅ Quick supplier sync complete!\n\n${results.new.length} new suppliers added`);
+    window.location.reload();
+  } catch (error) {
+    alert('Quick sync failed: ' + error.message);
+  } finally {
+    setSyncing(false);
+  }
+};
+
+const handleFullSyncSuppliers = async () => {
+  setSyncing(true);
+  try {
+    const results = await window.SageAPI.syncSuppliersFullSync();
+    alert(`✅ Full supplier sync complete!\n\n${results.new.length} new suppliers added\n${results.updated.length} existing suppliers updated`);
+    window.location.reload();
+  } catch (error) {
+    alert('Full sync failed: ' + error.message);
+  } finally {
+    setSyncing(false);
+  }
+};
+
 const handleApplySync = async () => {
   if (!syncResults) return;
   
@@ -9915,25 +9973,46 @@ const handleApplySync = async () => {
     <span className="sm:hidden">Add</span>
   </button>
   {user?.role === 'ADMIN' && (
-    <button
-      onClick={handleSupplierSyncFromSage}
-      disabled={syncing}
-      className="flex items-center px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 ml-2 disabled:opacity-50 text-sm sm:text-base"
-    >
-      {syncing ? (
-        <>
-          <Loader size={16} className="mr-1 sm:mr-2 animate-spin" />
-          <span className="hidden sm:inline">Syncing...</span>
-          <span className="sm:hidden">Sync</span>
-        </>
-      ) : (
-        <>
-          <Repeat size={16} className="mr-1 sm:mr-2" />
-          <span className="hidden sm:inline">Sync from Sage</span>
-          <span className="sm:hidden">Sync</span>
-        </>
-      )}
-    </button>
+    <>
+      <button
+        onClick={handleQuickSyncSuppliers}
+        disabled={syncing}
+        title="Quick Sync — adds new suppliers from Sage only"
+        className="flex items-center px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 ml-2 disabled:opacity-50 text-sm sm:text-base"
+      >
+        {syncing ? (
+          <>
+            <Loader size={16} className="mr-1 sm:mr-2 animate-spin" />
+            <span className="hidden sm:inline">Syncing...</span>
+          </>
+        ) : (
+          <>
+            <Repeat size={16} className="mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Quick Sync</span>
+            <span className="sm:hidden">Quick</span>
+          </>
+        )}
+      </button>
+      <button
+        onClick={handleFullSyncSuppliers}
+        disabled={syncing}
+        title="Full Sync — updates all existing suppliers from Sage + adds new ones"
+        className="flex items-center px-3 py-2 sm:px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 ml-2 disabled:opacity-50 text-sm sm:text-base"
+      >
+        {syncing ? (
+          <>
+            <Loader size={16} className="mr-1 sm:mr-2 animate-spin" />
+            <span className="hidden sm:inline">Syncing...</span>
+          </>
+        ) : (
+          <>
+            <Repeat size={16} className="mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Full Sync</span>
+            <span className="sm:hidden">Full</span>
+          </>
+        )}
+      </button>
+    </>
   )}
 </div>
               </div>
@@ -15228,7 +15307,93 @@ async getSuppliers() {
   return { $items: allItems };
 },
 
-  async getProducts() {
+  async syncSuppliersFullSync() {
+  try {
+    console.log('🚀 Starting FULL supplier sync (new + updates)...');
+    const sageSuppliers = await this.getSuppliers();
+    const supplierContacts = sageSuppliers.$items.filter(contact => {
+      const types = contact.contact_types || [];
+      return types.some(t => t.id === 'SUPPLIER' || t.id === 'VENDOR');
+    });
+    console.log(`📊 Sage returned ${supplierContacts.length} suppliers`);
+
+    const { data: existingSuppliers } = await window.supabase
+      .from('suppliers')
+      .select('id, sage_id, name, email, phone, address, postcode, vat_number, credit_limit, credit_days, account_status');
+
+    const existingBySageId = new Map((existingSuppliers || []).map(s => [s.sage_id, s]));
+    const newSuppliers = [];
+    const updatedSuppliers = [];
+
+    for (const s of supplierContacts) {
+      const fromSage = {
+        sage_id: s.id,
+        name: s.displayed_as || s.name || '',
+        email: s.email || '',
+        phone: '',
+        address: s.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/
+/g, ', ') || '',
+        city: s.main_address?.city || '',
+        postcode: s.main_address?.postal_code || '',
+        county: s.main_address?.region || '',
+        vat_number: s.tax_number || '',
+        contact_person: s.main_contact_person?.displayed_as || '',
+        credit_limit: parseFloat(s.credit_limit) || 0,
+        credit_days: parseInt(s.credit_days) || 30,
+        accountstatus: s.deletable === false ? 'Active' : 'Inactive',
+      };
+
+      // Fetch contact person details for phone/email
+      if (this.getContactPersonDetails) {
+        try {
+          const cp = await this.getContactPersonDetails(s.id);
+          if (cp) {
+            fromSage.email = cp.email || fromSage.email;
+            fromSage.phone = cp.telephone || cp.phone || '';
+          }
+        } catch(e) {}
+      }
+
+      const existing = existingBySageId.get(s.id);
+      if (!existing) {
+        const { error } = await window.supabase.from('suppliers').insert({
+          ...fromSage, supplierrating: 'A+', performancescore: 0, preferredsupplier: false
+        });
+        if (!error) newSuppliers.push(fromSage);
+        else console.error(`Insert failed for ${s.displayed_as}:`, error);
+      } else {
+        const changed = (
+          fromSage.name !== (existing.name || '') ||
+          fromSage.email !== (existing.email || '') ||
+          fromSage.phone !== (existing.phone || '') ||
+          fromSage.address !== (existing.address || '') ||
+          fromSage.postcode !== (existing.postcode || '') ||
+          fromSage.vat_number !== (existing.vat_number || '') ||
+          fromSage.credit_limit !== (existing.credit_limit || 0) ||
+          fromSage.credit_days !== (existing.credit_days || 30)
+        );
+        if (changed) {
+          const { error } = await window.supabase.from('suppliers').update({
+            name: fromSage.name, email: fromSage.email, phone: fromSage.phone,
+            address: fromSage.address, city: fromSage.city, postcode: fromSage.postcode,
+            county: fromSage.county, vat_number: fromSage.vat_number,
+            contact_person: fromSage.contact_person, credit_limit: fromSage.credit_limit,
+            credit_days: fromSage.credit_days, accountstatus: fromSage.accountstatus,
+          }).eq('id', existing.id);
+          if (!error) { updatedSuppliers.push(fromSage); console.log(`🔄 UPDATED: ${s.displayed_as}`); }
+          else console.error(`Update failed for ${s.displayed_as}:`, error);
+        }
+      }
+    }
+    console.log(`✅ Full supplier sync done: ${newSuppliers.length} new, ${updatedSuppliers.length} updated`);
+    return { new: newSuppliers, updated: updatedSuppliers };
+  } catch (error) {
+    console.error('❌ Full supplier sync failed:', error);
+    throw error;
+  }
+},
+
+async getProducts() {
   return this.makeRequest('/products');
 },
 
@@ -15987,12 +16152,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
           });
 
           const [activeTab, setActiveTab] = useState('company');
-          const [pushingToSage, setPushingToSage] = useState(false);
+          const [saving, setSaving] = useState(false);
 
           // Named contacts state (only loaded when editing an existing customer)
           const [contacts, setContacts] = useState([]);
           const [contactsLoaded, setContactsLoaded] = useState(false);
-          const [editingContact, setEditingContact] = useState(null); // null = not editing, {} = new, {id,...} = existing
+          const [editingContact, setEditingContact] = useState(null);
           const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', role: 'General', is_primary: false });
 
           const isExistingCustomer = !!(customer && customer.id);
@@ -16019,63 +16184,70 @@ window.location.href = '/#sage-integration';  // Keep this line!
             if (tab === 'contacts') loadContacts();
           };
 
-          const handleSubmit = () => {
-            const newCustomer = {
-              ...formData,
-              id: customer?.id || undefined
-            };
-            onSave(newCustomer);
-          };
-
-          // Push to Sage — creates the contact in Sage and saves sage_id back to Supabase + local state
-          const handlePushToSage = async () => {
-            if (!formData.companyName) {
-              alert('Please enter a company name before pushing to Sage.');
+          // Single save action — pushes to Sage and saves to portal in one click
+          const handleSubmit = async () => {
+            // Validate required fields
+            const missing = [];
+            if (!formData.companyName)    missing.push('Company Name');
+            if (!formData.email)          missing.push('Email');
+            if (!formData.billingAddress && !formData.siteAddress)   missing.push('Address');
+            if (!formData.billingPostcode && !formData.sitePostcode)  missing.push('Postcode');
+            if (missing.length > 0) {
+              alert('Please fill in the required fields (*):\n\n• ' + missing.join('\n• '));
               return;
             }
-            setPushingToSage(true);
+            setSaving(true);
             try {
-              const response = await fetch('/api/sage-proxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'createContact',
-                  contactType: 'CUSTOMER',
-                  name: formData.companyName,
-                  email: formData.email || '',
-                  address: formData.billingAddress || formData.siteAddress || '',
-                  city: formData.billingCity || formData.siteCity || '',
-                  postcode: formData.billingPostcode || formData.sitePostcode || '',
-                  vatNumber: formData.vatNumber || '',
-                  creditLimit: formData.creditLimit || 0,
-                  creditDays: formData.paymentTerms || 30,
-                })
-              });
-              const result = await response.json();
-              if (!response.ok) {
-                const detail = result.details ? '\n\nSage said: ' + JSON.stringify(result.details, null, 2) : '';
-                throw new Error((result.error || 'Sage returned an error') + detail);
-              }
-              const sage_id = result.sage_id;
-              if (!sage_id) throw new Error('Sage did not return an ID');
+              let sage_id = formData.sage_id || null;
 
-              // Save sage_id to Supabase if this is an existing record
-              if (isExistingCustomer) {
-                const { error } = await window.supabase
-                  .from('customers')
-                  .update({ sage_id })
-                  .eq('id', customer.id);
-                if (error) throw error;
+              // Only push to Sage if not already linked
+              if (!sage_id) {
+                try {
+                  const response = await fetch('/api/sage-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'createContact',
+                      contactType: 'CUSTOMER',
+                      name: formData.companyName,
+                      email: formData.email || '',
+                      address: formData.billingAddress || formData.siteAddress || '',
+                      city: formData.billingCity || formData.siteCity || '',
+                      postcode: formData.billingPostcode || formData.sitePostcode || '',
+                      vatNumber: formData.vatNumber || '',
+                      creditLimit: formData.creditLimit || 0,
+                      creditDays: formData.paymentTerms || 30,
+                      mainContact: formData.primaryContact ? {
+                        name: formData.primaryContact,
+                        email: formData.email || '',
+                        telephone: formData.phone || '',
+                        mobile: formData.mobile || '',
+                      } : undefined,
+                    })
+                  });
+                  const result = await response.json();
+                  if (!response.ok) {
+                    const detail = result.details ? '\n\nSage said: ' + JSON.stringify(result.details, null, 2) : '';
+                    throw new Error((result.error || 'Sage returned an error') + detail);
+                  }
+                  sage_id = result.sage_id;
+                } catch (sageErr) {
+                  // Ask user whether to continue saving to portal only, or cancel
+                  const continueAnyway = confirm(
+                    'Could not create in Sage: ' + sageErr.message +
+                    '\n\nSave to portal only and retry Sage later?'
+                  );
+                  if (!continueAnyway) { setSaving(false); return; }
+                }
               }
 
-              // Update local form state so button hides
-              setFormData(prev => ({ ...prev, sage_id }));
-              alert(`✅ Customer created in Sage!\n\nSage ID: ${sage_id}\n\nThe record is now linked.`);
+              // Save to portal (Supabase) with sage_id already set
+              onSave({ ...formData, sage_id });
+
             } catch (err) {
-              console.error('Push to Sage error:', err);
-              alert('Failed to push to Sage: ' + err.message);
+              alert('Error saving customer: ' + err.message);
             } finally {
-              setPushingToSage(false);
+              setSaving(false);
             }
           };
 
@@ -16137,22 +16309,11 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   <div>
                     <h2 className="text-xl font-bold">{customer ? 'Edit Customer' : 'Add New Customer'}</h2>
                     {formData.sage_id
-                      ? <span className="text-xs text-green-600 font-medium">✅ Linked to Sage ({formData.sage_id})</span>
-                      : <span className="text-xs text-amber-600 font-medium">⚠ Not yet in Sage</span>
+                      ? <span className="text-xs text-green-600 font-medium">✅ Linked to Sage</span>
+                      : <span className="text-xs text-gray-400 font-medium">Will be created in Sage on save</span>
                     }
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!formData.sage_id && (
-                      <button
-                        onClick={handlePushToSage}
-                        disabled={pushingToSage}
-                        className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
-                      >
-                        {pushingToSage ? '⏳ Pushing...' : '🚀 Push to Sage'}
-                      </button>
-                    )}
-                    <button onClick={onClose}><X size={24} /></button>
-                  </div>
+                  <button onClick={onClose}><X size={24} /></button>
                 </div>
                 
                 {/* Tab Navigation */}
@@ -16178,6 +16339,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   {/* Company Details Tab */}
                   {activeTab === 'company' && (
                     <div className="space-y-4">
+                      <p className="text-xs text-gray-500">Fields marked <span className="text-red-500 font-bold">*</span> are required to save and create in Sage.</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
@@ -16237,12 +16399,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Billing Address</label>
-                          <input type="text" value={formData.billingAddress} onChange={(e) => setFormData({...formData, billingAddress: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Billing Address *</label>
+                          <input type="text" value={formData.billingAddress} onChange={(e) => setFormData({...formData, billingAddress: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.billingAddress && !formData.siteAddress ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Billing Postcode</label>
-                          <input type="text" value={formData.billingPostcode} onChange={(e) => setFormData({...formData, billingPostcode: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Billing Postcode *</label>
+                          <input type="text" value={formData.billingPostcode} onChange={(e) => setFormData({...formData, billingPostcode: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.billingPostcode && !formData.sitePostcode ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
                         </div>
                       </div>
                     </div>
@@ -16274,7 +16436,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Primary Email *</label>
-                          <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="contact@company.com" />
+                          <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.email ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="contact@company.com" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Accounts Email</label>
@@ -16455,8 +16617,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   <button onClick={onClose} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
                     Cancel
                   </button>
-                  <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                    {customer ? 'Update Customer' : 'Add Customer'}
+                  <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                    {saving ? '⏳ Saving...' : customer ? 'Update Customer' : 'Add Customer'}
                   </button>
                 </div>
               </div>
@@ -16466,314 +16628,199 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
         // Supplier Form Component
         const SupplierForm = ({ supplier, onClose, onSave }) => {
-         const [formData, setFormData] = useState({
-  companyName: '',
-  tradingName: '',
-  companyNumber: '',
-  vatNumber: '',
-  primaryContact: '',
-  contactPosition: '',
-  phone: '',
-  mobile: '',
-  email: '',
-  accountsEmail: '',
-  address: '',
-  city: '',
-  postcode: '',
-  county: '',
-  supplierRating: 'B',
-  preferredSupplier: false,
-  primaryServices: [],
-  wasteCarrierLicense: '',
-  wasteCarrierExpiry: '',
-  environmentalPermits: '',
-  publicLiabilityInsurance: '',
-  insuranceExpiry: '',
-  insuranceAmount: '',
-  serviceAreas: [],
-  fleetSize: '',
-  skipSizes: [],
-  aggregateTypes: [],
-  certifications: [],
-  bankName: '',
-  bankAccountNumber: '',
-  bankSortCode: '',
-  paymentTerms: 30,
-  minimumOrderValue: '',
-  accountStatus: 'Active',
-  performanceScore: 100,
-  dateRegistered: new Date().toISOString().split('T')[0],
-  notes: '',
-  ...(supplier || {})
-});
+          const [formData, setFormData] = useState({
+            companyName: '',
+            tradingName: '',
+            companyNumber: '',
+            vatNumber: '',
+            primaryContact: '',
+            contactPosition: '',
+            phone: '',
+            mobile: '',
+            email: '',
+            accountsEmail: '',
+            address: '',
+            city: '',
+            postcode: '',
+            county: '',
+            supplierRating: 'B',
+            preferredSupplier: false,
+            primaryServices: [],
+            wasteCarrierLicense: '',
+            wasteCarrierExpiry: '',
+            environmentalPermits: '',
+            publicLiabilityInsurance: '',
+            insuranceExpiry: '',
+            insuranceAmount: '',
+            serviceAreas: [],
+            fleetSize: '',
+            skipSizes: [],
+            aggregateTypes: [],
+            certifications: [],
+            bankName: '',
+            bankAccountNumber: '',
+            bankSortCode: '',
+            paymentTerms: 30,
+            minimumOrderValue: '',
+            accountStatus: 'Active',
+            performanceScore: 100,
+            dateRegistered: new Date().toISOString().split('T')[0],
+            notes: '',
+            ...(supplier || {})
+          });
+
           const [activeTab, setActiveTab] = useState('company');
-          const [pushingToSage, setPushingToSage] = useState(false);
+          const [saving, setSaving] = useState(false);
 
-          const handleSubmit = () => {
-            const newSupplier = {
-              ...formData,
-              id: supplier?.id || undefined
-            };
-            onSave(newSupplier);
-          };
-
-          const handlePushToSage = async () => {
-            if (!formData.companyName) {
-              alert('Please enter a company name before pushing to Sage.');
+          const handleSubmit = async () => {
+            const missing = [];
+            if (!formData.companyName) missing.push('Company Name');
+            if (!formData.email)       missing.push('Email');
+            if (!formData.address)     missing.push('Address');
+            if (!formData.postcode)    missing.push('Postcode');
+            if (missing.length > 0) {
+              alert('Please fill in the required fields (*):\n\n• ' + missing.join('\n• '));
               return;
             }
-            setPushingToSage(true);
+            setSaving(true);
             try {
-              const response = await fetch('/api/sage-proxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'createContact',
-                  contactType: 'SUPPLIER',
-                  name: formData.companyName,
-                  email: formData.email || '',
-                  address: formData.address || '',
-                  city: formData.city || '',
-                  postcode: formData.postcode || '',
-                  vatNumber: formData.vatNumber || '',
-                  creditLimit: 0,
-                  creditDays: formData.paymentTerms || 30,
-                })
-              });
-              const result = await response.json();
-              if (!response.ok) {
-                const detail = result.details ? '\n\nSage said: ' + JSON.stringify(result.details, null, 2) : '';
-                throw new Error((result.error || 'Sage returned an error') + detail);
+              let sage_id = formData.sage_id || null;
+              if (!sage_id) {
+                try {
+                  const response = await fetch('/api/sage-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'createContact',
+                      contactType: 'SUPPLIER',
+                      name: formData.companyName,
+                      email: formData.email || '',
+                      address: formData.address || '',
+                      city: formData.city || '',
+                      postcode: formData.postcode || '',
+                      vatNumber: formData.vatNumber || '',
+                      creditLimit: 0,
+                      creditDays: formData.paymentTerms || 30,
+                      mainContact: formData.primaryContact ? {
+                        name: formData.primaryContact,
+                        email: formData.email || '',
+                        telephone: formData.phone || '',
+                        mobile: formData.mobile || '',
+                      } : undefined,
+                    })
+                  });
+                  const result = await response.json();
+                  if (!response.ok) {
+                    const detail = result.details ? '\n\nSage said: ' + JSON.stringify(result.details, null, 2) : '';
+                    throw new Error((result.error || 'Sage returned an error') + detail);
+                  }
+                  sage_id = result.sage_id;
+                } catch (sageErr) {
+                  const continueAnyway = confirm(
+                    'Could not create in Sage: ' + sageErr.message +
+                    '\n\nSave to portal only and retry Sage later?'
+                  );
+                  if (!continueAnyway) { setSaving(false); return; }
+                }
               }
-              const sage_id = result.sage_id;
-              if (!sage_id) throw new Error('Sage did not return an ID');
-
-              // Persist sage_id to Supabase if this is an existing record
-              if (supplier && supplier.id) {
-                const { error } = await window.supabase
-                  .from('suppliers')
-                  .update({ sage_id })
-                  .eq('id', supplier.id);
-                if (error) throw error;
-              }
-
-              setFormData(prev => ({ ...prev, sage_id }));
-              alert(`✅ Supplier created in Sage!\n\nSage ID: ${sage_id}\n\nThe record is now linked.`);
+              onSave({ ...formData, sage_id });
             } catch (err) {
-              console.error('Push to Sage (supplier) error:', err);
-              alert('Failed to push to Sage: ' + err.message);
+              alert('Error saving supplier: ' + err.message);
             } finally {
-              setPushingToSage(false);
+              setSaving(false);
             }
           };
 
           const handleServiceChange = (service, checked) => {
-            if (checked) {
-              setFormData({...formData, primaryServices: [...formData.primaryServices, service]});
-            } else {
-              setFormData({...formData, primaryServices: formData.primaryServices.filter(s => s !== service)});
-            }
+            setFormData({...formData, primaryServices: checked
+              ? [...formData.primaryServices, service]
+              : formData.primaryServices.filter(s => s !== service)});
           };
-
           const handleAreaChange = (area, checked) => {
-            if (checked) {
-              setFormData({...formData, serviceAreas: [...formData.serviceAreas, area]});
-            } else {
-              setFormData({...formData, serviceAreas: formData.serviceAreas.filter(a => a !== area)});
-            }
+            setFormData({...formData, serviceAreas: checked
+              ? [...formData.serviceAreas, area]
+              : formData.serviceAreas.filter(a => a !== area)});
+          };
+          const handleCertChange = (cert, checked) => {
+            setFormData({...formData, certifications: checked
+              ? [...formData.certifications, cert]
+              : formData.certifications.filter(c => c !== cert)});
           };
 
-          const handleCertChange = (cert, checked) => {
-            if (checked) {
-              setFormData({...formData, certifications: [...formData.certifications, cert]});
-            } else {
-              setFormData({...formData, certifications: formData.certifications.filter(c => c !== cert)});
-            }
-          };
+          const tabs = ['company', 'contact', 'compliance', 'services', 'documents'];
 
           return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
+
+                {/* Header */}
                 <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-bold">{supplier ? 'Edit Supplier' : 'Add New Supplier'}</h2>
                     {formData.sage_id
-                      ? <span className="text-xs text-green-600 font-medium">✅ Linked to Sage ({formData.sage_id})</span>
-                      : <span className="text-xs text-amber-600 font-medium">⚠ Not yet in Sage</span>
+                      ? <span className="text-xs text-green-600 font-medium">✅ Linked to Sage</span>
+                      : <span className="text-xs text-gray-400 font-medium">Will be created in Sage on save</span>
                     }
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!formData.sage_id && (
-                      <button
-                        onClick={handlePushToSage}
-                        disabled={pushingToSage}
-                        className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
-                      >
-                        {pushingToSage ? '⏳ Pushing...' : '🚀 Push to Sage'}
-                      </button>
-                    )}
-                    <button onClick={onClose}><X size={24} /></button>
-                  </div>
+                  <button onClick={onClose}><X size={24} /></button>
                 </div>
-                
+
                 {/* Tab Navigation */}
-                <div className="flex border-b border-gray-200">
-                  <button
-                    onClick={() => setActiveTab('company')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'company' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
-                  >
-                    Company Details
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('services')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'services' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
-                  >
-                    Services & Equipment
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('compliance')}
-                    className={`px-6 py-3 font-medium ${activeTab === 'compliance' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
-                  >
-                    Compliance & Financial
-                  </button>
+                <div className="flex border-b border-gray-200 overflow-x-auto">
+                  {tabs.map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className={`px-5 py-3 font-medium whitespace-nowrap text-sm ${activeTab === tab ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+                    >
+                      {tab === 'company'    && 'Company Details'}
+                      {tab === 'contact'    && 'Contact Information'}
+                      {tab === 'compliance' && 'Compliance & Financial'}
+                      {tab === 'services'   && 'Services & Equipment'}
+                      {tab === 'documents'  && 'Documents'}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="p-6">
+
                   {/* Company Details Tab */}
                   {activeTab === 'company' && (
                     <div className="space-y-4">
+                      <p className="text-xs text-gray-500">Fields marked <span className="text-red-500 font-bold">*</span> are required to save and create in Sage.</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
-                          <input
-                            type="text"
-                            value={formData.companyName}
-                            onChange={(e) => setFormData({...formData, companyName: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Legal company name"
-                          />
+                          <input type="text" value={formData.companyName} onChange={e => setFormData({...formData, companyName: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.companyName ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="Legal company name" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Trading Name</label>
-                          <input
-                            type="text"
-                            value={formData.tradingName}
-                            onChange={(e) => setFormData({...formData, tradingName: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="If different from company name"
-                          />
+                          <input type="text" value={formData.tradingName} onChange={e => setFormData({...formData, tradingName: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="If different from company name" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Company Registration Number</label>
-                          <input
-                            type="text"
-                            value={formData.companyNumber}
-                            onChange={(e) => setFormData({...formData, companyNumber: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="12345678"
-                          />
+                          <input type="text" value={formData.companyNumber} onChange={e => setFormData({...formData, companyNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="12345678" />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">VAT Number *</label>
-                          <input
-                            type="text"
-                            value={formData.vatNumber}
-                            onChange={(e) => setFormData({...formData, vatNumber: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="GB123456789"
-                          />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">VAT Number</label>
+                          <input type="text" value={formData.vatNumber} onChange={e => setFormData({...formData, vatNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="GB123456789" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Primary Contact Name *</label>
-                          <input
-                            type="text"
-                            value={formData.primaryContact}
-                            onChange={(e) => setFormData({...formData, primaryContact: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Full name"
-                          />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
+                          <select value={formData.accountStatus} onChange={e => setFormData({...formData, accountStatus: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="Active">Active</option>
+                            <option value="On Hold">On Hold</option>
+                            <option value="Suspended">Suspended</option>
+                            <option value="Closed">Closed</option>
+                          </select>
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
-                          <input
-                            type="text"
-                            value={formData.contactPosition}
-                            onChange={(e) => setFormData({...formData, contactPosition: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Job title"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Office Phone</label>
-                          <input
-                            type="tel"
-                            value={formData.phone}
-                            onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="+44 20 1234 5678"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
-                          <input
-                            type="tel"
-                            value={formData.mobile}
-                            onChange={(e) => setFormData({...formData, mobile: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="+44 7123 456789"
-                          />
-                        </div>
-                      </div>
-<div>
-  <label className="block text-sm font-medium text-gray-700">Address</label>
-  <input
-    type="text"
-    name="address"
-    value={formData.address}
-    onChange={(e) => setFormData({...formData, address: e.target.value})}
-    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-  />
-</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Primary Email *</label>
-                          <input
-                            type="email"
-                            value={formData.email}
-                            onChange={(e) => setFormData({...formData, email: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="contact@supplier.com"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Accounts Email</label>
-                          <input
-                            type="email"
-                            value={formData.accountsEmail}
-                            onChange={(e) => setFormData({...formData, accountsEmail: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="accounts@supplier.com"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Rating</label>
-                          <select
-                            value={formData.supplierRating}
-                            onChange={(e) => setFormData({...formData, supplierRating: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
+                          <select value={formData.supplierRating} onChange={e => setFormData({...formData, supplierRating: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                             <option value="A+">A+ (Excellent)</option>
                             <option value="A">A (Very Good)</option>
                             <option value="A-">A- (Good)</option>
@@ -16782,122 +16829,87 @@ window.location.href = '/#sage-integration';  // Keep this line!
                             <option value="C">C (Below Average)</option>
                           </select>
                         </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
-                          <select
-                            value={formData.accountStatus}
-                            onChange={(e) => setFormData({...formData, accountStatus: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
-                            <option value="Active">Active</option>
-                            <option value="On Hold">On Hold</option>
-                            <option value="Suspended">Suspended</option>
-                            <option value="Closed">Closed</option>
-                          </select>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Address *</label>
+                          <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.address ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="Street address" />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Performance Score</label>
-                          <input
-                            type="number"
-                            value={formData.performanceScore}
-                            onChange={(e) => setFormData({...formData, performanceScore: parseInt(e.target.value) || 100})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            min="0"
-                            max="100"
-                          />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Postcode *</label>
+                          <input type="text" value={formData.postcode} onChange={e => setFormData({...formData, postcode: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.postcode ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="EC1A 1BB" />
                         </div>
                       </div>
-
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">City / Town</label>
+                          <input type="text" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="London" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">County</label>
+                          <input type="text" value={formData.county} onChange={e => setFormData({...formData, county: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        </div>
+                      </div>
                       <div>
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formData.preferredSupplier}
-                            onChange={(e) => setFormData({...formData, preferredSupplier: e.target.checked})}
-                            className="mr-2"
-                          />
-                          <span className="text-sm font-medium">Preferred Supplier</span>
+                        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                          <input type="checkbox" checked={formData.preferredSupplier} onChange={e => setFormData({...formData, preferredSupplier: e.target.checked})} />
+                          Preferred Supplier
                         </label>
                       </div>
                     </div>
                   )}
 
-                  {/* Services & Equipment Tab */}
-                  {activeTab === 'services' && (
+                  {/* Contact Information Tab */}
+                  {activeTab === 'contact' && (
                     <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Primary Services</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {['Skip Hire', 'Aggregates Supply', 'Hazardous Waste', 
-                            'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Plant Hire', 'Haulage', 'Transport'].map(service => (
-                            <label key={service} className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={formData.primaryServices.includes(service)}
-                                onChange={(e) => handleServiceChange(service, e.target.checked)}
-                                className="mr-2"
-                              />
-                              <span className="text-sm">{service}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Service Areas</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          {['London', 'South East', 'South West', 'Midlands', 'North West', 'North East', 
-                            'Scotland', 'Wales', 'Northern Ireland', 'National Coverage'].map(area => (
-                            <label key={area} className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={formData.serviceAreas?.includes(area) || false}
-                                onChange={(e) => handleAreaChange(area, e.target.checked)}
-                                className="mr-2"
-                              />
-                              <span className="text-sm">{area}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Fleet Size</label>
-                          <select
-                            value={formData.fleetSize}
-                            onChange={(e) => setFormData({...formData, fleetSize: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
-                            <option value="">Select fleet size</option>
-                            <option value="1-5">1-5 vehicles</option>
-                            <option value="6-10">6-10 vehicles</option>
-                            <option value="11-20">11-20 vehicles</option>
-                            <option value="21-50">21-50 vehicles</option>
-                            <option value="50+">50+ vehicles</option>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Primary Contact Name</label>
+                          <input type="text" value={formData.primaryContact} onChange={e => setFormData({...formData, primaryContact: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Full name" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Contact Position</label>
+                          <input type="text" value={formData.contactPosition} onChange={e => setFormData({...formData, contactPosition: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Job title" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Office Phone</label>
+                          <input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="+44 20 1234 5678" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
+                          <input type="tel" value={formData.mobile} onChange={e => setFormData({...formData, mobile: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="+44 7123 456789" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Primary Email *</label>
+                          <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.email ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="contact@supplier.com" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Accounts Email</label>
+                          <input type="email" value={formData.accountsEmail} onChange={e => setFormData({...formData, accountsEmail: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="accounts@supplier.com" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Contact Method</label>
+                          <select value={formData.preferredContactMethod || 'Email'} onChange={e => setFormData({...formData, preferredContactMethod: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="Email">Email</option>
+                            <option value="Phone">Phone</option>
+                            <option value="Mobile">Mobile</option>
+                            <option value="WhatsApp">WhatsApp</option>
                           </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Order Value (£)</label>
-                          <input
-                            type="number"
-                            value={formData.minimumOrderValue}
-                            onChange={(e) => setFormData({...formData, minimumOrderValue: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="0.00"
-                          />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Account Manager</label>
+                          <input type="text" value={formData.accountManager || ''} onChange={e => setFormData({...formData, accountManager: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Internal account manager" />
                         </div>
                       </div>
-
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
-                        <textarea
-                          value={formData.notes}
-                          onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          rows={3}
-                          placeholder="Special equipment, unique services, operational notes..."
-                        />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={3} placeholder="Any special instructions, requirements, notes..." />
                       </div>
                     </div>
                   )}
@@ -16908,174 +16920,167 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Waste Carrier License *</label>
-                          <input
-                            type="text"
-                            value={formData.wasteCarrierLicense}
-                            onChange={(e) => setFormData({...formData, wasteCarrierLicense: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="CBDU123456"
-                          />
+                          <input type="text" value={formData.wasteCarrierLicense} onChange={e => setFormData({...formData, wasteCarrierLicense: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="CBDU123456" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">License Expiry Date</label>
-                          <input
-                            type="date"
-                            value={formData.wasteCarrierExpiry}
-                            onChange={(e) => setFormData({...formData, wasteCarrierExpiry: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          />
+                          <input type="date" value={formData.wasteCarrierExpiry} onChange={e => setFormData({...formData, wasteCarrierExpiry: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Environmental Permits</label>
-                        <textarea
-                          value={formData.environmentalPermits}
-                          onChange={(e) => setFormData({...formData, environmentalPermits: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          rows={2}
-                          placeholder="List any environmental permits held..."
-                        />
+                        <textarea value={formData.environmentalPermits} onChange={e => setFormData({...formData, environmentalPermits: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder="List any environmental permits held..." />
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Public Liability Insurance</label>
-                          <input
-                            type="text"
-                            value={formData.publicLiabilityInsurance}
-                            onChange={(e) => setFormData({...formData, publicLiabilityInsurance: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Policy number"
-                          />
+                          <input type="text" value={formData.publicLiabilityInsurance} onChange={e => setFormData({...formData, publicLiabilityInsurance: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Policy number" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Expiry Date</label>
-                          <input
-                            type="date"
-                            value={formData.insuranceExpiry}
-                            onChange={(e) => setFormData({...formData, insuranceExpiry: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          />
+                          <input type="date" value={formData.insuranceExpiry} onChange={e => setFormData({...formData, insuranceExpiry: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Cover Amount (£)</label>
-                        <select
-                          value={formData.insuranceAmount}
-                          onChange={(e) => setFormData({...formData, insuranceAmount: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        >
-                          <option value="">Select amount</option>
-                          <option value="1000000">£1,000,000</option>
-                          <option value="2000000">£2,000,000</option>
-                          <option value="5000000">£5,000,000</option>
-                          <option value="10000000">£10,000,000</option>
-                        </select>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Cover Amount (£)</label>
+                          <select value={formData.insuranceAmount} onChange={e => setFormData({...formData, insuranceAmount: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="">Select amount</option>
+                            <option value="1000000">£1,000,000</option>
+                            <option value="2000000">£2,000,000</option>
+                            <option value="5000000">£5,000,000</option>
+                            <option value="10000000">£10,000,000</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Performance Score</label>
+                          <input type="number" value={formData.performanceScore} onChange={e => setFormData({...formData, performanceScore: parseInt(e.target.value) || 100})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" min="0" max="100" />
+                        </div>
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Certifications & Accreditations</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {['ISO 9001', 'ISO 14001', 'ISO 45001', 'FORS Bronze', 'FORS Silver', 'FORS Gold', 
-                            'CHAS', 'SafeContractor', 'Constructionline', 'CLOCS'].map(cert => (
-                            <label key={cert} className="flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={formData.certifications?.includes(cert) || false}
-                                onChange={(e) => handleCertChange(cert, e.target.checked)}
-                                className="mr-2"
-                              />
-                              <span className="text-sm">{cert}</span>
+                          {['ISO 9001', 'ISO 14001', 'ISO 45001', 'FORS Bronze', 'FORS Silver', 'FORS Gold', 'CHAS', 'SafeContractor', 'Constructionline', 'CLOCS'].map(cert => (
+                            <label key={cert} className="flex items-center gap-2 text-sm">
+                              <input type="checkbox" checked={formData.certifications?.includes(cert) || false} onChange={e => handleCertChange(cert, e.target.checked)} />
+                              {cert}
                             </label>
                           ))}
                         </div>
                       </div>
-
                       <div className="pt-4 border-t">
-                        <h4 className="font-medium text-gray-900 mb-3">Bank Details</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <h4 className="font-medium text-gray-900 mb-3">Financial</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
-                            <input
-                              type="text"
-                              value={formData.bankName}
-                              onChange={(e) => setFormData({...formData, bankName: e.target.value})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms (days)</label>
+                            <select value={formData.paymentTerms} onChange={e => setFormData({...formData, paymentTerms: parseInt(e.target.value)})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                              <option value={0}>Payment on Delivery</option>
+                              <option value={7}>7 days</option>
+                              <option value={14}>14 days</option>
+                              <option value={30}>30 days</option>
+                              <option value={45}>45 days</option>
+                              <option value={60}>60 days</option>
+                            </select>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
-                            <input
-                              type="text"
-                              value={formData.bankAccountNumber}
-                              onChange={(e) => setFormData({...formData, bankAccountNumber: e.target.value})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                              placeholder="12345678"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Sort Code</label>
-                            <input
-                              type="text"
-                              value={formData.bankSortCode}
-                              onChange={(e) => setFormData({...formData, bankSortCode: e.target.value})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                              placeholder="12-34-56"
-                            />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Order Value (£)</label>
+                            <input type="number" value={formData.minimumOrderValue} onChange={e => setFormData({...formData, minimumOrderValue: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="0.00" />
                           </div>
                         </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms (days)</label>
-                          <select
-                            value={formData.paymentTerms}
-                            onChange={(e) => setFormData({...formData, paymentTerms: parseInt(e.target.value)})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          >
-                            <option value={0}>Payment on Delivery</option>
-                            <option value={7}>7 days</option>
-                            <option value={14}>14 days</option>
-                            <option value={30}>30 days</option>
-                            <option value={45}>45 days</option>
-                            <option value={60}>60 days</option>
-                          </select>
+                        <div className="mt-4">
+                          <h4 className="font-medium text-gray-900 mb-3">Bank Details</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+                              <input type="text" value={formData.bankName} onChange={e => setFormData({...formData, bankName: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
+                              <input type="text" value={formData.bankAccountNumber} onChange={e => setFormData({...formData, bankAccountNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="12345678" />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Sort Code</label>
+                              <input type="text" value={formData.bankSortCode} onChange={e => setFormData({...formData, bankSortCode: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="12-34-56" />
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Date Registered</label>
-                          <input
-                            type="date"
-                            value={formData.dateRegistered}
-                            onChange={(e) => setFormData({...formData, dateRegistered: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Date Registered</label>
+                            <input type="date" value={formData.dateRegistered} onChange={e => setFormData({...formData, dateRegistered: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                          </div>
                         </div>
                       </div>
                     </div>
                   )}
+
+                  {/* Services & Equipment Tab */}
+                  {activeTab === 'services' && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Primary Services</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {['Skip Hire', 'Aggregates Supply', 'Hazardous Waste', 'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Plant Hire', 'Haulage', 'Transport'].map(service => (
+                            <label key={service} className="flex items-center gap-2 text-sm">
+                              <input type="checkbox" checked={formData.primaryServices.includes(service)} onChange={e => handleServiceChange(service, e.target.checked)} />
+                              {service}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Service Areas</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {['London', 'South East', 'South West', 'Midlands', 'North West', 'North East', 'Scotland', 'Wales', 'Northern Ireland', 'National Coverage'].map(area => (
+                            <label key={area} className="flex items-center gap-2 text-sm">
+                              <input type="checkbox" checked={formData.serviceAreas?.includes(area) || false} onChange={e => handleAreaChange(area, e.target.checked)} />
+                              {area}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Fleet Size</label>
+                          <select value={formData.fleetSize} onChange={e => setFormData({...formData, fleetSize: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="">Select fleet size</option>
+                            <option value="1-5">1-5 vehicles</option>
+                            <option value="6-10">6-10 vehicles</option>
+                            <option value="11-20">11-20 vehicles</option>
+                            <option value="21-50">21-50 vehicles</option>
+                            <option value="50+">50+ vehicles</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Order Value (£)</label>
+                          <input type="number" value={formData.minimumOrderValue} onChange={e => setFormData({...formData, minimumOrderValue: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="0.00" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Documents Tab */}
+                  {activeTab === 'documents' && (
+                    <div className="py-8 text-center text-gray-400 text-sm">Documents feature coming soon.</div>
+                  )}
+
                 </div>
 
+                {/* Footer */}
                 <div className="p-6 border-t border-gray-200 flex justify-end space-x-4">
-                  <button
-                    onClick={onClose}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                  >
+                  <button onClick={onClose} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
                     Cancel
                   </button>
-                  <button
-                    onClick={handleSubmit}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    {supplier ? 'Update Supplier' : 'Add Supplier'}
+                  <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                    {saving ? '⏳ Saving...' : supplier ? 'Update Supplier' : 'Add Supplier'}
                   </button>
                 </div>
+
               </div>
             </div>
           );
         };
+
 
        // Replace the existing QuoteForm component (around line 7141) with this FULLY TESTED version:
 
