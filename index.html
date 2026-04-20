@@ -15331,8 +15331,7 @@ async getSuppliers() {
         name: s.displayed_as || s.name || '',
         email: s.email || '',
         phone: '',
-        address: s.main_address?.displayed_as?.replace(/↵/g, ', ').replace(/
-/g, ', ') || '',
+        address: s.main_address?.displayed_as?.replace(/\u21b5/g, ', ').replace(/\n/g, ', ') || '',
         city: s.main_address?.city || '',
         postcode: s.main_address?.postal_code || '',
         county: s.main_address?.region || '',
