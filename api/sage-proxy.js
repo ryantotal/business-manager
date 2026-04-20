@@ -345,6 +345,137 @@ export default async function handler(req, res) {
   }
   // ── end createContact ─────────────────────────────────────────────────────
 
+  // ── manageContactPerson action ────────────────────────────────────────────
+  // CRUD for individual contact persons on an existing Sage contact.
+  // Called from the Named Contacts tab in the portal.
+  if (action === 'manageContactPerson') {
+    const { sageContactId, sageContactPersonId, operation, contactPerson } = req.body;
+    // operation: 'create' | 'update' | 'delete' | 'list'
+
+    if (!sageContactId && operation !== 'delete') {
+      return res.status(400).json({ error: 'sageContactId is required (customer must be linked to Sage first)' });
+    }
+
+    try {
+      // ── Get valid access token (reuse same pattern) ──────────────────────
+      let accessToken = null;
+      if (
+        tokenCache.accessToken &&
+        tokenCache.lastFetched &&
+        (Date.now() - tokenCache.lastFetched) < 300000 &&
+        !isTokenExpired(tokenCache.expiresAt)
+      ) {
+        accessToken = tokenCache.accessToken;
+      } else {
+        const { data: tokenData, error: tokenError } = await supabase
+          .from('company_settings')
+          .select('setting_name, setting_value')
+          .in('setting_name', ['sage_access_token', 'sage_refresh_token', 'sage_token_expires_at']);
+        if (tokenError || !tokenData || tokenData.length === 0) {
+          return res.status(401).json({ error: 'No Sage connection found.', code: 'NO_TOKENS' });
+        }
+        const tokens = tokenData.reduce((acc, row) => { acc[row.setting_name] = row.setting_value; return acc; }, {});
+        if (isTokenExpired(tokens.sage_token_expires_at)) {
+          if (!tokens.sage_refresh_token) return res.status(401).json({ error: 'Sage session expired.', code: 'NO_REFRESH_TOKEN' });
+          accessToken = await refreshAccessToken(tokens.sage_refresh_token);
+        } else {
+          accessToken = tokens.sage_access_token;
+          tokenCache = { accessToken: tokens.sage_access_token, refreshToken: tokens.sage_refresh_token, expiresAt: tokens.sage_token_expires_at, lastFetched: Date.now() };
+        }
+      }
+
+      const { data: bizData } = await supabase.from('company_settings').select('setting_value').eq('setting_name', 'sage_business_id').single();
+      const sageHeaders = {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        ...(bizData?.setting_value && { 'X-Business': bizData.setting_value })
+      };
+
+      const sageFetch = async (endpoint, method = 'GET', payload = null) => {
+        const opts = { method, headers: sageHeaders };
+        if (payload && method !== 'GET') opts.body = JSON.stringify(payload);
+        const r = await fetch(`https://api.accounting.sage.com/v3.1/${endpoint}`, opts);
+        if (method === 'DELETE' && r.status === 204) return { deleted: true };
+        const data = await r.json();
+        if (!r.ok) { console.error(`[Sage Proxy] ${method} ${endpoint} failed:`, JSON.stringify(data)); throw { status: r.status, data }; }
+        return data;
+      };
+
+      const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
+      // ── LIST ─────────────────────────────────────────────────────────────
+      if (operation === 'list') {
+        console.log('[Sage Proxy] Listing contact persons for:', sageContactId);
+        const result = await sageFetch(`contact_persons?contact_id=${sageContactId}`);
+        const items = result?.$items || result?.items || (Array.isArray(result) ? result : []);
+        return res.status(200).json({ contact_persons: items });
+      }
+
+      // ── CREATE ───────────────────────────────────────────────────────────
+      if (operation === 'create') {
+        console.log('[Sage Proxy] Creating contact person on:', sageContactId);
+
+        // Get an address_id — Sage requires it
+        let address_id = null;
+        try {
+          const addrList = await sageFetch(`addresses?contact_id=${sageContactId}`);
+          const items = addrList?.$items || addrList?.items || (Array.isArray(addrList) ? addrList : []);
+          if (items.length > 0) address_id = items[0].id;
+        } catch (e) {
+          console.warn('[Sage Proxy] Could not fetch addresses:', e?.data || e?.message);
+        }
+
+        const cpObj = {
+          contact_person: {
+            contact_id: sageContactId,
+            name: contactPerson.name,
+            contact_person_type_ids: ['ACCOUNTS'],
+            is_main_contact: false,
+            is_preferred_contact: false,
+          }
+        };
+        if (address_id) cpObj.contact_person.address_id = address_id;
+        if (contactPerson.email && isValidEmail(contactPerson.email)) cpObj.contact_person.email = contactPerson.email;
+        if (contactPerson.telephone) cpObj.contact_person.telephone = contactPerson.telephone;
+        if (contactPerson.mobile) cpObj.contact_person.mobile = contactPerson.mobile;
+
+        const created = await sageFetch('contact_persons', 'POST', cpObj);
+        console.log('[Sage Proxy] Contact person created:', created?.id);
+        return res.status(200).json({ sage_contact_person_id: created?.id, data: created });
+      }
+
+      // ── UPDATE ───────────────────────────────────────────────────────────
+      if (operation === 'update' && sageContactPersonId) {
+        console.log('[Sage Proxy] Updating contact person:', sageContactPersonId);
+        const cpObj = { contact_person: {} };
+        if (contactPerson.name) cpObj.contact_person.name = contactPerson.name;
+        if (contactPerson.email && isValidEmail(contactPerson.email)) cpObj.contact_person.email = contactPerson.email;
+        else if (contactPerson.email === '') cpObj.contact_person.email = '';
+        if (contactPerson.telephone !== undefined) cpObj.contact_person.telephone = contactPerson.telephone;
+        if (contactPerson.mobile !== undefined) cpObj.contact_person.mobile = contactPerson.mobile;
+
+        const updated = await sageFetch(`contact_persons/${sageContactPersonId}`, 'PUT', cpObj);
+        return res.status(200).json({ data: updated });
+      }
+
+      // ── DELETE ───────────────────────────────────────────────────────────
+      if (operation === 'delete' && sageContactPersonId) {
+        console.log('[Sage Proxy] Deleting contact person:', sageContactPersonId);
+        await sageFetch(`contact_persons/${sageContactPersonId}`, 'DELETE');
+        return res.status(200).json({ deleted: true });
+      }
+
+      return res.status(400).json({ error: 'Invalid operation. Use: list, create, update, delete' });
+
+    } catch (err) {
+      console.error('[Sage Proxy] manageContactPerson error:', err);
+      if (err.data) return res.status(err.status || 500).json({ error: 'Sage error', details: err.data });
+      return res.status(500).json({ error: err.message || 'Unknown error' });
+    }
+  }
+  // ── end manageContactPerson ───────────────────────────────────────────────
+
   if (!endpoint) {
     console.error('[Sage Proxy] No endpoint provided');
     return res.status(400).json({ error: 'Endpoint is required' });
