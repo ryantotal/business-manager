@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -9105,7 +9105,7 @@ useEffect(() => {
           const filteredCustomers = customers.filter(customer => {
   if (searchQuery && 
       !(customer.companyName || customer.name || '').toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !(customer.primaryContact || '').toLowerCase().includes(searchQuery.toLowerCase())) {
+      !(customer.primary_contact || customer.primaryContact || '').toLowerCase().includes(searchQuery.toLowerCase())) {
     return false;
   }
   // ... rest of the filter logic
@@ -9116,25 +9116,21 @@ useEffect(() => {
           });
 const displayCustomers = filteredCustomers.map(customer => ({
   ...customer,
-  // Map DB column names → form field names so the edit form pre-fills correctly
-  companyName: customer.companyName || customer.name || '',
-  primaryContact: customer.primaryContact || customer.primary_contact || '',
-  vatNumber: customer.vatNumber || customer.vat_number || '',
-  creditLimit: customer.creditLimit || customer.credit_limit || 0,
-  paymentTerms: customer.paymentTerms || customer.credit_days || 30,
+  companyName: customer.companyName || customer.name,
+  primaryContact: customer.primary_contact || customer.primaryContact || '',
+  businessType: customer.businessType || customer.business_type || 'Other',
+  creditRating: customer.creditRating || customer.credit_rating || 'B',
+  creditLimit: customer.creditLimit ?? customer.credit_limit ?? 0,
   accountStatus: customer.accountStatus || customer.account_status || 'Active',
+  vatNumber: customer.vatNumber || customer.vat_number || '',
+  email: customer.email || '',
+  reference: customer.reference || '',
+  mobile: customer.mobile || '',
+  credit_days: customer.credit_days || 30,
   billingAddress: customer.billingAddress || customer.address || '',
   billingPostcode: customer.billingPostcode || customer.postcode || '',
-  phone: customer.phone || '',
-  mobile: customer.mobile || '',
-  email: customer.email || '',
-  // Keep originals too for anything that reads them directly
-  businessType: customer.businessType || 'Other',
-  creditRating: customer.creditRating || 'B',
-  reference: customer.reference || '',
-  credit_days: customer.credit_days || 30,
   main_contact_name: customer.main_contact_name || '',
-  delivery_address: customer.delivery_address || null,
+  delivery_address: customer.delivery_address || null
 }));
 
           const handleDeleteCustomer = (customer) => {
@@ -9498,19 +9494,16 @@ const { error } = await window.supabase
   accountStatus: customer.account_status,
   primaryContact: customer.primary_contact,
   businessType: customer.business_type,
-  companyName: customer.name,  // Note: it's 'name' not 'company_name'
+  companyName: customer.name,
   phone: customer.phone,
   email: customer.email,
   address: customer.address,
-  // ADD THESE LINES for billing address fields only:
-billingAddress: customer.address ? customer.address.split('↵').slice(0, -1).join(', ') : '',
-billingPostcode: customer.address ? customer.address.split('↵').pop() : '',
-  // Parse address for the delivery address display (lines 3340-3343)
+  billingAddress: customer.address || '',
+  billingPostcode: customer.postcode || '',
   customerDeliveryAddress: {
-    address_line_1: customer.address?.split('↵')[0] || '',
-    address_line_2: customer.address?.split('↵')[1] || '',
-    city: customer.address?.split('↵')[2] || '',
-    postal_code: customer.address?.split('↵')[3] || ''
+    address_line_1: customer.address || '',
+    city: customer.city || '',
+    postal_code: customer.postcode || ''
   }
 })}
                         >
@@ -9585,19 +9578,16 @@ billingPostcode: customer.address ? customer.address.split('↵').pop() : '',
   accountStatus: customer.account_status,
   primaryContact: customer.primary_contact,
   businessType: customer.business_type,
-  companyName: customer.name,  // Note: it's 'name' not 'company_name'
+  companyName: customer.name,
   phone: customer.phone,
   email: customer.email,
   address: customer.address,
-  // ADD THESE LINES for billing address fields only:
-billingAddress: customer.address ? customer.address.split('↵').slice(0, -1).join(', ') : '',
-billingPostcode: customer.address ? customer.address.split('↵').pop() : '',
-  // Parse address for the delivery address display (lines 3340-3343)
+  billingAddress: customer.address || '',
+  billingPostcode: customer.postcode || '',
   customerDeliveryAddress: {
-    address_line_1: customer.address?.split('↵')[0] || '',
-    address_line_2: customer.address?.split('↵')[1] || '',
-    city: customer.address?.split('↵')[2] || '',
-    postal_code: customer.address?.split('↵')[3] || ''
+    address_line_1: customer.address || '',
+    city: customer.city || '',
+    postal_code: customer.postcode || ''
   }
 })}
                             >
@@ -9835,7 +9825,7 @@ const handleApplySupplierSync = async () => {
           const filteredSuppliers = suppliers.filter(supplier => {
             if (searchQuery && 
                 !(supplier.name || supplier.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) &&
-                !(supplier.primaryContact || '').toLowerCase().includes(searchQuery.toLowerCase())) {
+                !(supplier.contact_person || supplier.primaryContact || '').toLowerCase().includes(searchQuery.toLowerCase())) {
               return false;
             }
             if (filters.service && !supplier.primaryServices?.includes(filters.service)) return false;
@@ -9846,21 +9836,15 @@ const handleApplySupplierSync = async () => {
           });
           const displaySuppliers = filteredSuppliers.map(supplier => ({
   ...supplier,
-  // Map DB column names → form field names so the edit form pre-fills correctly
-  companyName: supplier.companyName || supplier.name || 'Unknown Supplier',
-  primaryContact: supplier.primaryContact || supplier.contact_person || '',
-  vatNumber: supplier.vatNumber || supplier.vat_number || '',
+  companyName: supplier.name && supplier.name !== 'Unknown Supplier' 
+    ? supplier.name 
+    : supplier.companyName || supplier.name || 'Unknown Supplier',
+  primaryContact: supplier.contact_person || supplier.primaryContact || supplier.primary_contact || 'No contact',
+  vatNumber: supplier.vat_number || supplier.vatNumber || '',
   email: supplier.email || '',
   phone: supplier.phone || '',
-  address: supplier.address || '',
-  postcode: supplier.postcode || '',
-  city: supplier.city || '',
-  paymentTerms: supplier.paymentTerms || supplier.credit_days || 30,
-  creditLimit: supplier.creditLimit || supplier.credit_limit || 0,
-  accountStatus: supplier.accountStatus || supplier.accountstatus || 'Active',
-  supplierRating: supplier.supplierRating || supplier.supplierrating || 'B',
-  performanceScore: supplier.performanceScore || supplier.performancescore || 0,
-  preferredSupplier: supplier.preferredSupplier || supplier.preferredsupplier || false,
+  accountStatus: supplier.accountstatus || supplier.accountStatus || 'Active',
+  supplierRating: supplier.supplierrating || supplier.supplierRating || 'B',
 }));
 
           const handleDeleteSupplier = (supplier) => {
@@ -14181,6 +14165,7 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 mobile: updatedCustomer.mobile || '',
                 vat_number: updatedCustomer.vatNumber || '',
                 address: updatedCustomer.billingAddress || updatedCustomer.siteAddress || '',
+                city: updatedCustomer.billingCity || updatedCustomer.siteCity || '',
                 postcode: updatedCustomer.billingPostcode || updatedCustomer.sitePostcode || '',
                 credit_limit: updatedCustomer.creditLimit || 0,
                 credit_days: updatedCustomer.paymentTerms || 30,
@@ -14218,7 +14203,9 @@ const saveSupplierToDatabase = async (supplier) => {
     sage_id: supplier.sage_id || null,
     email: supplier.email || '',
     phone: supplier.phone || '',
+    mobile: supplier.mobile || '',
     address: supplier.address || '',
+    city: supplier.city || '',
     postcode: supplier.postcode || '',
     vat_number: supplier.vatNumber || '',
     contact_person: supplier.primaryContact || '',
@@ -14251,7 +14238,9 @@ const saveSupplierToDatabase = async (supplier) => {
                 sage_id: updatedSupplier.sage_id || null,
                 email: updatedSupplier.email || '',
                 phone: updatedSupplier.phone || '',
+                mobile: updatedSupplier.mobile || '',
                 address: updatedSupplier.address || '',
+                city: updatedSupplier.city || '',
                 postcode: updatedSupplier.postcode || '',
                 vat_number: updatedSupplier.vatNumber || '',
                 contact_person: updatedSupplier.primaryContact || '',
@@ -16140,7 +16129,38 @@ window.location.href = '/#sage-integration';  // Keep this line!
 };
         // Customer Form Component
         const CustomerForm = ({ customer, onClose, onSave }) => {
-          const defaults = {
+          // Normalise DB column names (snake_case) → form field names (camelCase)
+          const normaliseCustomer = (c) => {
+            if (!c) return null;
+            return {
+              ...c,
+              companyName: c.companyName || c.name || '',
+              vatNumber: c.vatNumber || c.vat_number || '',
+              primaryContact: c.primaryContact || c.primary_contact || c.contact_person || '',
+              billingAddress: c.billingAddress || c.address || '',
+              billingPostcode: c.billingPostcode || c.postcode || '',
+              creditLimit: c.creditLimit ?? c.credit_limit ?? 10000,
+              paymentTerms: c.paymentTerms ?? c.credit_days ?? 30,
+              creditRating: c.creditRating || c.credit_rating || 'B',
+              accountStatus: c.accountStatus || c.account_status || 'Active',
+              businessType: c.businessType || c.business_type || 'Construction Company',
+              phone: c.phone || '',
+              mobile: c.mobile || '',
+              email: c.email || '',
+              accountsEmail: c.accountsEmail || c.additional_emails || '',
+              tradingName: c.tradingName || '',
+              companyNumber: c.companyNumber || '',
+              contactPosition: c.contactPosition || '',
+              siteAddress: c.siteAddress || '',
+              sitePostcode: c.sitePostcode || '',
+              preferredContactMethod: c.preferredContactMethod || 'Email',
+              specialRequirements: c.specialRequirements || '',
+              accountManager: c.accountManager || '',
+              dateRegistered: c.dateRegistered || c.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+            };
+          };
+
+          const [formData, setFormData] = useState(() => normaliseCustomer(customer) || {
             companyName: '',
             tradingName: '',
             companyNumber: '',
@@ -16168,27 +16188,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
             specialRequirements: '',
             accountManager: '',
             dateRegistered: new Date().toISOString().split('T')[0]
-          };
-          // Normalise DB column names → form field names when editing an existing customer
-          const normalised = customer ? {
-            ...defaults,
-            ...customer,
-            companyName:    customer.companyName    || customer.name            || '',
-            tradingName:    customer.tradingName    || customer.trading_name    || '',
-            companyNumber:  customer.companyNumber  || customer.company_number  || '',
-            vatNumber:      customer.vatNumber      || customer.vat_number      || '',
-            primaryContact: customer.primaryContact || customer.primary_contact || '',
-            phone:          customer.phone          || '',
-            mobile:         customer.mobile         || '',
-            email:          customer.email          || '',
-            accountsEmail:  customer.accountsEmail  || customer.accounts_email  || '',
-            billingAddress: customer.billingAddress || customer.address         || '',
-            billingPostcode:customer.billingPostcode|| customer.postcode        || '',
-            paymentTerms:   customer.paymentTerms   || customer.credit_days     || 30,
-            creditLimit:    customer.creditLimit    || customer.credit_limit    || 0,
-            accountStatus:  customer.accountStatus  || customer.account_status  || 'Active',
-          } : null;
-          const [formData, setFormData] = useState(normalised || defaults);
+          });
 
           const [activeTab, setActiveTab] = useState('company');
           const [saving, setSaving] = useState(false);
@@ -16667,7 +16667,37 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
         // Supplier Form Component
         const SupplierForm = ({ supplier, onClose, onSave }) => {
-          const supplierDefaults = {
+          // Normalise DB column names (snake_case) → form field names (camelCase)
+          const normaliseSupplier = (s) => {
+            if (!s) return null;
+            return {
+              ...s,
+              companyName: s.companyName || s.name || '',
+              vatNumber: s.vatNumber || s.vat_number || '',
+              primaryContact: s.primaryContact || s.contact_person || s.primary_contact || '',
+              address: s.address || '',
+              city: s.city || '',
+              postcode: s.postcode || '',
+              county: s.county || '',
+              phone: s.phone || '',
+              mobile: s.mobile || '',
+              email: s.email || '',
+              accountsEmail: s.accountsEmail || s.accountsemail || '',
+              accountStatus: s.accountStatus || s.accountstatus || 'Active',
+              supplierRating: s.supplierRating || s.supplierrating || 'B',
+              performanceScore: s.performanceScore ?? s.performancescore ?? 100,
+              preferredSupplier: s.preferredSupplier ?? s.preferredsupplier ?? false,
+              paymentTerms: s.paymentTerms ?? s.credit_days ?? 30,
+              creditLimit: s.creditLimit ?? s.credit_limit ?? 0,
+              primaryServices: s.primaryServices || [],
+              serviceAreas: s.serviceAreas || [],
+              certifications: s.certifications || [],
+              skipSizes: s.skipSizes || [],
+              aggregateTypes: s.aggregateTypes || [],
+            };
+          };
+
+          const [formData, setFormData] = useState(() => normaliseSupplier(supplier) || {
             companyName: '',
             tradingName: '',
             companyNumber: '',
@@ -16705,26 +16735,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
             performanceScore: 100,
             dateRegistered: new Date().toISOString().split('T')[0],
             notes: '',
-          };
-          const normalisedSupplier = supplier ? {
-            ...supplierDefaults,
-            ...supplier,
-            companyName:    supplier.companyName    || supplier.name            || '',
-            vatNumber:      supplier.vatNumber      || supplier.vat_number      || '',
-            primaryContact: supplier.primaryContact || supplier.contact_person  || '',
-            email:          supplier.email          || '',
-            phone:          supplier.phone          || '',
-            address:        supplier.address        || '',
-            postcode:       supplier.postcode       || '',
-            city:           supplier.city           || '',
-            paymentTerms:   supplier.paymentTerms   || supplier.credit_days     || 30,
-            creditLimit:    supplier.creditLimit    || supplier.credit_limit    || 0,
-            accountStatus:  supplier.accountStatus  || supplier.accountstatus   || 'Active',
-            supplierRating: supplier.supplierRating || supplier.supplierrating  || 'B',
-            performanceScore: supplier.performanceScore || supplier.performancescore || 0,
-            preferredSupplier: supplier.preferredSupplier || supplier.preferredsupplier || false,
-          } : null;
-          const [formData, setFormData] = useState(normalisedSupplier || supplierDefaults);
+          });
 
           const [activeTab, setActiveTab] = useState('company');
           const [saving, setSaving] = useState(false);
