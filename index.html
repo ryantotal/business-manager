@@ -14222,14 +14222,38 @@ siteNotes: job.site_notes || job.siteNotes || '',
             }
           };
 
-          const handleDeleteCustomer = (customerId) => {
-            setCustomers(customers.filter(customer => customer.id !== customerId));
+          const handleDeleteCustomer = async (customerId) => {
+            try {
+              const { error } = await window.supabase
+                .from('customers')
+                .delete()
+                .eq('id', customerId);
+              if (error) throw error;
+              setCustomers(customers.filter(customer => customer.id !== customerId));
+            } catch (err) {
+              console.error('Error deleting customer:', err);
+              alert('Error deleting customer: ' + err.message);
+            }
           };
 
           const handleAddSupplier = async (newSupplier) => {
   try {
     const saved = await saveSupplierToDatabase(newSupplier);
-    setSuppliers(prev => [...prev, { ...newSupplier, id: saved.id }]);
+    // Merge DB row (snake_case) with form data (camelCase) so both are available
+    setSuppliers(prev => [...prev, {
+      ...saved,
+      companyName: saved.name,
+      primaryContact: saved.contact_person || newSupplier.primaryContact || '',
+      vatNumber: saved.vat_number || '',
+      accountsEmail: saved.accountsemail || newSupplier.accountsEmail || '',
+      accountStatus: saved.accountstatus || 'Active',
+      supplierRating: saved.supplierrating || 'B',
+      performanceScore: saved.performancescore ?? 100,
+      preferredSupplier: saved.preferredsupplier || false,
+      creditLimit: saved.credit_limit,
+      paymentTerms: saved.credit_days,
+      companyNumber: newSupplier.companyNumber || '',
+    }]);
     setShowSupplierForm(false);
   } catch (error) {
     alert('Error saving supplier: ' + error.message);
@@ -14296,15 +14320,40 @@ const saveSupplierToDatabase = async (supplier) => {
                 .update(supplierData)
                 .eq('id', updatedSupplier.id);
               if (error) throw error;
-              setSuppliers(suppliers.map(s => s.id === updatedSupplier.id ? {...s, ...updatedSupplier} : s));
+              // Merge DB column names alongside camelCase so both exist in-memory
+              setSuppliers(suppliers.map(s => s.id === updatedSupplier.id ? {
+                ...s,
+                ...updatedSupplier,
+                ...supplierData,
+                companyName: supplierData.name,
+                primaryContact: supplierData.contact_person,
+                vatNumber: supplierData.vat_number,
+                accountsEmail: supplierData.accountsemail,
+                accountStatus: supplierData.accountstatus,
+                supplierRating: supplierData.supplierrating,
+                performanceScore: supplierData.performancescore,
+                preferredSupplier: supplierData.preferredsupplier,
+                creditLimit: supplierData.credit_limit,
+                paymentTerms: supplierData.credit_days,
+              } : s));
             } catch(err) {
               console.error('Error updating supplier:', err);
               alert('Error saving supplier: ' + err.message);
             }
           };
 
-          const handleDeleteSupplier = (supplierId) => {
-            setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
+          const handleDeleteSupplier = async (supplierId) => {
+            try {
+              const { error } = await window.supabase
+                .from('suppliers')
+                .delete()
+                .eq('id', supplierId);
+              if (error) throw error;
+              setSuppliers(suppliers.filter(supplier => supplier.id !== supplierId));
+            } catch (err) {
+              console.error('Error deleting supplier:', err);
+              alert('Error deleting supplier: ' + err.message);
+            }
           };
 
         const handleAddQuote = async (newQuote) => {
@@ -16346,19 +16395,71 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const saveContact = async () => {
             if (!contactForm.name) { alert('Name is required'); return; }
             try {
+              let sage_contact_person_id = editingContact.sage_contact_person_id || null;
+
+              // Push to Sage if customer is linked
+              if (formData.sage_id) {
+                try {
+                  if (sage_contact_person_id) {
+                    // Update existing in Sage
+                    await fetch('/api/sage-proxy', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'manageContactPerson',
+                        operation: 'update',
+                        sageContactId: formData.sage_id,
+                        sageContactPersonId: sage_contact_person_id,
+                        contactPerson: {
+                          name: contactForm.name,
+                          email: contactForm.email || '',
+                          telephone: contactForm.phone || '',
+                        }
+                      })
+                    });
+                    console.log('[Contacts] Updated in Sage:', sage_contact_person_id);
+                  } else {
+                    // Create new in Sage
+                    const sageRes = await fetch('/api/sage-proxy', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'manageContactPerson',
+                        operation: 'create',
+                        sageContactId: formData.sage_id,
+                        contactPerson: {
+                          name: contactForm.name,
+                          email: contactForm.email || '',
+                          telephone: contactForm.phone || '',
+                        }
+                      })
+                    });
+                    const sageResult = await sageRes.json();
+                    if (sageRes.ok && sageResult.sage_contact_person_id) {
+                      sage_contact_person_id = sageResult.sage_contact_person_id;
+                      console.log('[Contacts] Created in Sage:', sage_contact_person_id);
+                    } else {
+                      console.warn('[Contacts] Sage push failed:', sageResult);
+                    }
+                  }
+                } catch (sageErr) {
+                  console.warn('[Contacts] Sage push error (saving to portal anyway):', sageErr.message);
+                }
+              }
+
               if (editingContact.id) {
                 // Update existing
                 const { error } = await window.supabase
                   .from('customer_contacts')
-                  .update({ name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary })
+                  .update({ name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, sage_contact_person_id })
                   .eq('id', editingContact.id);
                 if (error) throw error;
-                setContacts(contacts.map(c => c.id === editingContact.id ? { ...c, ...contactForm } : c));
+                setContacts(contacts.map(c => c.id === editingContact.id ? { ...c, ...contactForm, sage_contact_person_id } : c));
               } else {
                 // Insert new
                 const { data, error } = await window.supabase
                   .from('customer_contacts')
-                  .insert([{ customer_id: customer.id, name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary }])
+                  .insert([{ customer_id: customer.id, name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, sage_contact_person_id }])
                   .select()
                   .single();
                 if (error) throw error;
@@ -16373,11 +16474,86 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const deleteContact = async (contactId) => {
             if (!confirm('Delete this contact?')) return;
             try {
+              const contact = contacts.find(c => c.id === contactId);
+              // Delete from Sage if linked
+              if (contact?.sage_contact_person_id && formData.sage_id) {
+                try {
+                  await fetch('/api/sage-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'manageContactPerson',
+                      operation: 'delete',
+                      sageContactId: formData.sage_id,
+                      sageContactPersonId: contact.sage_contact_person_id,
+                    })
+                  });
+                  console.log('[Contacts] Deleted from Sage:', contact.sage_contact_person_id);
+                } catch (sageErr) {
+                  console.warn('[Contacts] Sage delete failed (removing from portal anyway):', sageErr.message);
+                }
+              }
               const { error } = await window.supabase.from('customer_contacts').delete().eq('id', contactId);
               if (error) throw error;
               setContacts(contacts.filter(c => c.id !== contactId));
             } catch (err) {
               alert('Error deleting contact: ' + err.message);
+            }
+          };
+
+          const [syncingContacts, setSyncingContacts] = useState(false);
+
+          const syncContactsFromSage = async () => {
+            if (!formData.sage_id) { alert('Customer is not linked to Sage.'); return; }
+            setSyncingContacts(true);
+            try {
+              const res = await fetch('/api/sage-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'manageContactPerson',
+                  operation: 'list',
+                  sageContactId: formData.sage_id,
+                })
+              });
+              const result = await res.json();
+              if (!res.ok) throw new Error(result.error || 'Failed to fetch from Sage');
+
+              const sagePersons = result.contact_persons || [];
+              console.log('[Contacts] Sage returned', sagePersons.length, 'contact persons');
+
+              // Get existing portal contacts for this customer
+              const existingSageIds = new Set(contacts.filter(c => c.sage_contact_person_id).map(c => c.sage_contact_person_id));
+              let added = 0;
+
+              for (const sp of sagePersons) {
+                if (existingSageIds.has(sp.id)) continue; // already in portal
+                // Insert into portal
+                const { data, error } = await window.supabase
+                  .from('customer_contacts')
+                  .insert([{
+                    customer_id: customer.id,
+                    name: sp.name || sp.displayed_as || 'Unknown',
+                    email: sp.email || '',
+                    phone: sp.telephone || sp.mobile || '',
+                    role: 'General',
+                    is_primary: sp.is_main_contact || false,
+                    sage_contact_person_id: sp.id,
+                  }])
+                  .select()
+                  .single();
+                if (!error && data) {
+                  setContacts(prev => [...prev, data]);
+                  added++;
+                }
+              }
+              alert(added > 0 ? `Synced ${added} new contact(s) from Sage.` : 'All Sage contacts already in portal.');
+              setContactsLoaded(false);
+              loadContacts(); // reload fresh
+            } catch (err) {
+              alert('Sync error: ' + err.message);
+            } finally {
+              setSyncingContacts(false);
             }
           };
 
@@ -16606,10 +16782,17 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       ) : (
                         <>
                           <div className="flex items-center justify-between">
-                            <p className="text-sm text-gray-500">Named contacts are used to pre-fill WTN and quote emails by role.</p>
-                            <button onClick={openNewContact} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1">
-                              <span>+</span> Add Contact
-                            </button>
+                            <p className="text-sm text-gray-500">Contacts are synced with Sage. Adding/editing here pushes to Sage automatically.</p>
+                            <div className="flex gap-2">
+                              {formData.sage_id && (
+                                <button onClick={syncContactsFromSage} disabled={syncingContacts} className="px-3 py-1.5 border border-blue-300 text-blue-700 text-sm rounded-lg hover:bg-blue-50 flex items-center gap-1 disabled:opacity-50">
+                                  {syncingContacts ? 'Syncing...' : '↓ Sync from Sage'}
+                                </button>
+                              )}
+                              <button onClick={openNewContact} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1">
+                                <span>+</span> Add Contact
+                              </button>
+                            </div>
                           </div>
 
                           {/* Add/Edit contact inline form */}
@@ -16652,7 +16835,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
                           {/* Contacts list */}
                           {contacts.length === 0 ? (
-                            <p className="text-sm text-gray-400 text-center py-6">No named contacts yet. Add one above.</p>
+                            <p className="text-sm text-gray-400 text-center py-6">No named contacts yet. Add one above{formData.sage_id ? ' or sync from Sage.' : '.'}</p>
                           ) : (
                             <div className="space-y-2">
                               {contacts.map(contact => (
@@ -16662,6 +16845,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                                       <span className="font-medium text-sm">{contact.name}</span>
                                       {contact.is_primary && <span className="text-xs bg-yellow-100 text-yellow-800 px-1.5 rounded-full">Primary</span>}
                                       <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[contact.role] || ROLE_COLORS.General}`}>{contact.role}</span>
+                                      {contact.sage_contact_person_id && <span className="text-xs text-green-600">✅ Sage</span>}
                                     </div>
                                     <div className="text-xs text-gray-500 mt-0.5 truncate">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</div>
                                   </div>
@@ -16787,6 +16971,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               let sage_id = formData.sage_id || null;
               if (!sage_id) {
                 try {
+                  console.log('[SupplierForm] Pushing to Sage:', formData.companyName);
                   const response = await fetch('/api/sage-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -16810,11 +16995,13 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     })
                   });
                   const result = await response.json();
+                  console.log('[SupplierForm] Sage response:', response.status, result);
                   if (!response.ok) {
                     const detail = result.details ? '\n\nSage said: ' + JSON.stringify(result.details, null, 2) : '';
                     throw new Error((result.error || 'Sage returned an error') + detail);
                   }
                   sage_id = result.sage_id;
+                  console.log('[SupplierForm] Sage contact created, sage_id:', sage_id);
                 } catch (sageErr) {
                   const continueAnyway = confirm(
                     'Could not create in Sage: ' + sageErr.message +
