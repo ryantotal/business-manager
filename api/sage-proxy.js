@@ -199,9 +199,6 @@ export default async function handler(req, res) {
       };
 
       // ── Step 1: Create the contact ───────────────────────────────────────
-      // Include VAT number here ONLY if no address is being set.
-      // If we're also sending an address, VAT goes in Step 3 after the address
-      // is created — Sage triggers HMRC validation when both are present together.
       const hasAddress = !!(address || postcode || city);
       console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress });
       const contactObj = {
@@ -212,7 +209,7 @@ export default async function handler(req, res) {
       if (creditLimit && parseFloat(creditLimit) > 0)  contactObj.credit_limit = parseFloat(creditLimit);
       if (creditDays  && parseInt(creditDays)   > 0)   contactObj.credit_days  = parseInt(creditDays);
       // Send VAT on creation if there's no address — Sage accepts it fine without one
-      if (vatNumber && !hasAddress)                     contactObj.tax_number   = vatNumber;
+      // VAT number intentionally not sent — causes Sage UI crash. Add manually in Sage.
 
       const contactData = await sagePost('contacts', { contact: contactObj });
       const sage_id = contactData?.id;
@@ -226,7 +223,7 @@ export default async function handler(req, res) {
           address: {
             contact_id: sage_id,
             name: 'Main Address',
-            address_type_id: 'DELIVERY',
+            address_type_id: 'ACCOUNTS',
             is_main_address: true,
             country_id: 'GB',
           }
@@ -235,24 +232,10 @@ export default async function handler(req, res) {
         if (city)     addressObj.address.city           = city;
         if (postcode) addressObj.address.postal_code    = postcode;
 
-        const addressData = await sagePost('addresses', addressObj);
-        const address_id = addressData?.id;
-        console.log('[Sage Proxy] Step 2 complete — address created, id:', address_id);
-
-        // ── Step 3: Add VAT number after address exists ───────────────────
-        // Now that address is created, add VAT. Non-fatal if Sage rejects it
-        // (e.g. VAT number doesn't match HMRC record for that address).
-        if (vatNumber) {
-          try {
-            console.log('[Sage Proxy] Step 3 — adding VAT number');
-            await sagePost(`contacts/${sage_id}`, {
-              contact: { tax_number: vatNumber }
-            }, 'PUT');
-            console.log('[Sage Proxy] Step 3 complete — VAT number set');
-          } catch (vatErr) {
-            console.warn('[Sage Proxy] Step 3 — VAT number not set (HMRC mismatch or invalid):', vatErr?.data);
-          }
-        }
+        await sagePost('addresses', addressObj);
+        console.log('[Sage Proxy] Step 2 complete — address created');
+        // Note: VAT number is not sent to Sage via API — it causes a Sage UI crash.
+        // VAT can be added directly in Sage once the contact exists.
       }
 
       return res.status(200).json({ sage_id, contactData });
