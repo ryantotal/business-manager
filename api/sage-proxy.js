@@ -204,9 +204,28 @@ export default async function handler(req, res) {
       const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
       const hasAddress = !!(address || postcode || city);
       console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress });
+      
+      // Look up the correct contact_type_id from Sage
+      let contactTypeId = contactType === 'SUPPLIER' ? 'VENDOR' : 'CUSTOMER';
+      try {
+        const types = await sageRequest('contact_types', null, 'GET');
+        const items = types?.$items || types?.items || (Array.isArray(types) ? types : []);
+        const match = items.find(t => 
+          (t.id || '').toUpperCase() === contactType ||
+          (t.displayed_as || '').toUpperCase().includes(contactType) ||
+          (t.id || '').toUpperCase() === (contactType === 'SUPPLIER' ? 'VENDOR' : 'CUSTOMER')
+        );
+        if (match) {
+          contactTypeId = match.id;
+          console.log('[Sage Proxy] Found contact type:', contactTypeId, match.displayed_as);
+        }
+      } catch (e) {
+        console.warn('[Sage Proxy] Could not look up contact types, using default:', contactTypeId);
+      }
+
       const contactObj = {
         name,
-        contact_type_ids: [contactType === 'SUPPLIER' ? 'SUPPLIER' : 'CUSTOMER'],
+        contact_type_ids: [contactTypeId],
       };
       if (email && isValidEmail(email))                     contactObj.email        = email;
       if (creditLimit && parseFloat(creditLimit) > 0)       contactObj.credit_limit = parseFloat(creditLimit);
