@@ -16044,15 +16044,17 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   name: formData.companyName,
                   email: formData.email || '',
                   address: formData.billingAddress || formData.siteAddress || '',
+                  city: formData.billingCity || formData.siteCity || '',
+                  postcode: formData.billingPostcode || formData.sitePostcode || '',
                   vatNumber: formData.vatNumber || '',
                   creditLimit: formData.creditLimit || 0,
                   creditDays: formData.paymentTerms || 30,
-                  mainContact: formData.primaryContact ? { name: formData.primaryContact, email: formData.email } : undefined,
                 })
               });
               const result = await response.json();
               if (!response.ok) {
-                throw new Error(result.error || 'Sage returned an error');
+                const detail = result.details ? '\n\nSage said: ' + JSON.stringify(result.details, null, 2) : '';
+                throw new Error((result.error || 'Sage returned an error') + detail);
               }
               const sage_id = result.sage_id;
               if (!sage_id) throw new Error('Sage did not return an ID');
@@ -16531,14 +16533,18 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   name: formData.companyName,
                   email: formData.email || '',
                   address: formData.address || '',
+                  city: formData.city || '',
+                  postcode: formData.postcode || '',
                   vatNumber: formData.vatNumber || '',
                   creditLimit: 0,
                   creditDays: formData.paymentTerms || 30,
-                  mainContact: formData.primaryContact ? { name: formData.primaryContact, email: formData.email } : undefined,
                 })
               });
               const result = await response.json();
-              if (!response.ok) throw new Error(result.error || 'Sage returned an error');
+              if (!response.ok) {
+                const detail = result.details ? '\n\nSage said: ' + JSON.stringify(result.details, null, 2) : '';
+                throw new Error((result.error || 'Sage returned an error') + detail);
+              }
               const sage_id = result.sage_id;
               if (!sage_id) throw new Error('Sage did not return an ID');
 
