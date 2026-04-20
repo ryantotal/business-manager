@@ -201,15 +201,16 @@ export default async function handler(req, res) {
       };
 
       // ── Step 1: Create the contact ───────────────────────────────────────
+      const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
       const hasAddress = !!(address || postcode || city);
       console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress });
       const contactObj = {
         name,
         contact_type_ids: [contactType === 'SUPPLIER' ? 'SUPPLIER' : 'CUSTOMER'],
       };
-      if (email)                                        contactObj.email        = email;
-      if (creditLimit && parseFloat(creditLimit) > 0)  contactObj.credit_limit = parseFloat(creditLimit);
-      if (creditDays  && parseInt(creditDays)   > 0)   contactObj.credit_days  = parseInt(creditDays);
+      if (email && isValidEmail(email))                     contactObj.email        = email;
+      if (creditLimit && parseFloat(creditLimit) > 0)       contactObj.credit_limit = parseFloat(creditLimit);
+      if (creditDays  && parseInt(creditDays)   > 0)        contactObj.credit_days  = parseInt(creditDays);
 
       const contactData = await sageRequest('contacts', { contact: contactObj });
       // Sage returns the contact object directly with id at top level
@@ -269,9 +270,10 @@ export default async function handler(req, res) {
         }
       };
       if (address_id) contactPersonObj.contact_person.address_id = address_id;
-      if (mainContact?.email || email)    contactPersonObj.contact_person.email     = mainContact?.email || email;
-      if (mainContact?.telephone)         contactPersonObj.contact_person.telephone = mainContact.telephone;
-      if (mainContact?.mobile)            contactPersonObj.contact_person.mobile    = mainContact.mobile;
+      const cpEmail = mainContact?.email || email;
+      if (cpEmail && isValidEmail(cpEmail))   contactPersonObj.contact_person.email     = cpEmail;
+      if (mainContact?.telephone)             contactPersonObj.contact_person.telephone = mainContact.telephone;
+      if (mainContact?.mobile)                contactPersonObj.contact_person.mobile    = mainContact.mobile;
       try {
         const cpData = await sageRequest('contact_persons', contactPersonObj);
         // Sage returns the contact_person object directly with id at top level
