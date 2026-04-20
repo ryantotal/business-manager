@@ -1763,23 +1763,24 @@ useEffect(() => {
     recipientEmailSource: (freshRecipientEmail || prev.recipientEmail) ? 'customer-record' : 'manual',
   }));
 
-  // Load named WTN contacts for this customer and merge into email list
+  // Load named contacts for this customer and merge into email list
   if (matchedCust?.id) {
     (async () => {
       try {
-        const { data: wtnContacts } = await window.supabase
+        const { data: namedContacts } = await window.supabase
           .from('customer_contacts')
-          .select('email, name')
+          .select('email, name, role')
           .eq('customer_id', matchedCust.id)
-          .eq('role', 'WTN')
           .not('email', 'is', null);
-        if (wtnContacts && wtnContacts.length > 0) {
-          const namedEmails = wtnContacts.map(c => c.email).filter(Boolean);
+        if (namedContacts && namedContacts.length > 0) {
+          const namedEmails = namedContacts
+            .filter(c => c.email && ['WTN', 'Invoices', 'General'].includes(c.role))
+            .map(c => c.email);
           setWtnFields(prev => {
             const existingExtras = prev.additionalEmails
               ? prev.additionalEmails.split(',').map(e => e.trim()).filter(Boolean)
               : [];
-            // Merge named WTN emails in, avoiding duplicates
+            // Merge named contact emails in, avoiding duplicates
             const merged = [...new Set([...existingExtras, ...namedEmails])];
             return {
               ...prev,
@@ -1788,7 +1789,7 @@ useEffect(() => {
           });
         }
       } catch (err) {
-        console.warn('Could not load WTN named contacts:', err);
+        console.warn('Could not load named contacts:', err);
       }
     })();
   }
@@ -16685,9 +16686,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <label className="block text-sm font-medium text-gray-700 mb-1">Primary Email *</label>
                           <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.email ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="contact@company.com" />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Accounts Email</label>
-                          <input type="email" value={formData.accountsEmail} onChange={(e) => setFormData({...formData, accountsEmail: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="accounts@company.com" />
+                        <div className="flex items-end pb-2">
+                          <p className="text-xs text-gray-400">Need to CC extra people on invoices or WTNs? Add them in the <button type="button" onClick={() => handleTabChange('contacts')} className="text-blue-600 underline">Named Contacts</button> tab.</p>
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -16956,6 +16956,124 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const [activeTab, setActiveTab] = useState('company');
           const [saving, setSaving] = useState(false);
 
+          // Named contacts state (only loaded when editing an existing supplier)
+          const [contacts, setContacts] = useState([]);
+          const [contactsLoaded, setContactsLoaded] = useState(false);
+          const [editingContact, setEditingContact] = useState(null);
+          const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', role: 'General', is_primary: false });
+          const [syncingContacts, setSyncingContacts] = useState(false);
+
+          const isExistingSupplier = !!(supplier && supplier.id);
+
+          const loadContacts = async () => {
+            if (!isExistingSupplier || contactsLoaded) return;
+            try {
+              const { data, error } = await window.supabase
+                .from('supplier_contacts')
+                .select('*')
+                .eq('supplier_id', supplier.id)
+                .order('is_primary', { ascending: false });
+              if (error) throw error;
+              setContacts(data || []);
+              setContactsLoaded(true);
+            } catch (err) {
+              console.error('Failed to load supplier contacts:', err);
+            }
+          };
+
+          const handleTabChange = (tab) => {
+            setActiveTab(tab);
+            if (tab === 'contacts') loadContacts();
+          };
+
+          const openNewContact = () => {
+            setContactForm({ name: '', email: '', phone: '', role: 'General', is_primary: false });
+            setEditingContact({});
+          };
+
+          const openEditContact = (contact) => {
+            setContactForm({ name: contact.name, email: contact.email || '', phone: contact.phone || '', role: contact.role || 'General', is_primary: contact.is_primary || false });
+            setEditingContact(contact);
+          };
+
+          const saveContact = async () => {
+            if (!contactForm.name) { alert('Name is required'); return; }
+            try {
+              let sage_contact_person_id = editingContact.sage_contact_person_id || null;
+              if (formData.sage_id) {
+                try {
+                  if (sage_contact_person_id) {
+                    await fetch('/api/sage-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'manageContactPerson', operation: 'update', sageContactId: formData.sage_id, sageContactPersonId: sage_contact_person_id,
+                        contactPerson: { name: contactForm.name, email: contactForm.email || '', telephone: contactForm.phone || '' } }) });
+                  } else {
+                    const sageRes = await fetch('/api/sage-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'manageContactPerson', operation: 'create', sageContactId: formData.sage_id,
+                        contactPerson: { name: contactForm.name, email: contactForm.email || '', telephone: contactForm.phone || '' } }) });
+                    const sageResult = await sageRes.json();
+                    if (sageRes.ok && sageResult.sage_contact_person_id) sage_contact_person_id = sageResult.sage_contact_person_id;
+                  }
+                } catch (sageErr) { console.warn('[SupplierContacts] Sage push error:', sageErr.message); }
+              }
+              if (editingContact.id) {
+                const { error } = await window.supabase.from('supplier_contacts')
+                  .update({ name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, sage_contact_person_id })
+                  .eq('id', editingContact.id);
+                if (error) throw error;
+                setContacts(contacts.map(c => c.id === editingContact.id ? { ...c, ...contactForm, sage_contact_person_id } : c));
+              } else {
+                const { data, error } = await window.supabase.from('supplier_contacts')
+                  .insert([{ supplier_id: supplier.id, name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, sage_contact_person_id }])
+                  .select().single();
+                if (error) throw error;
+                setContacts([...contacts, data]);
+              }
+              setEditingContact(null);
+            } catch (err) { alert('Error saving contact: ' + err.message); }
+          };
+
+          const deleteContact = async (contactId) => {
+            if (!confirm('Delete this contact?')) return;
+            try {
+              const contact = contacts.find(c => c.id === contactId);
+              if (contact?.sage_contact_person_id && formData.sage_id) {
+                try {
+                  await fetch('/api/sage-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'manageContactPerson', operation: 'delete', sageContactId: formData.sage_id, sageContactPersonId: contact.sage_contact_person_id }) });
+                } catch (sageErr) { console.warn('[SupplierContacts] Sage delete failed:', sageErr.message); }
+              }
+              const { error } = await window.supabase.from('supplier_contacts').delete().eq('id', contactId);
+              if (error) throw error;
+              setContacts(contacts.filter(c => c.id !== contactId));
+            } catch (err) { alert('Error deleting contact: ' + err.message); }
+          };
+
+          const syncContactsFromSage = async () => {
+            if (!formData.sage_id) { alert('Supplier is not linked to Sage.'); return; }
+            setSyncingContacts(true);
+            try {
+              const res = await fetch('/api/sage-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'manageContactPerson', operation: 'list', sageContactId: formData.sage_id }) });
+              const result = await res.json();
+              if (!res.ok) throw new Error(result.error || 'Failed to fetch from Sage');
+              const sagePersons = result.contact_persons || [];
+              const existingSageIds = new Set(contacts.filter(c => c.sage_contact_person_id).map(c => c.sage_contact_person_id));
+              let added = 0;
+              for (const sp of sagePersons) {
+                if (existingSageIds.has(sp.id)) continue;
+                const { data, error } = await window.supabase.from('supplier_contacts')
+                  .insert([{ supplier_id: supplier.id, name: sp.name || sp.displayed_as || 'Unknown', email: sp.email || '', phone: sp.telephone || sp.mobile || '', role: 'General', is_primary: sp.is_main_contact || false, sage_contact_person_id: sp.id }])
+                  .select().single();
+                if (!error && data) { setContacts(prev => [...prev, data]); added++; }
+              }
+              alert(added > 0 ? `Synced ${added} new contact(s) from Sage.` : 'All Sage contacts already in portal.');
+              setContactsLoaded(false); loadContacts();
+            } catch (err) { alert('Sync error: ' + err.message); }
+            finally { setSyncingContacts(false); }
+          };
+
+          const ROLE_COLORS = { WTN: 'bg-green-100 text-green-800', Invoices: 'bg-blue-100 text-blue-800', Quotes: 'bg-purple-100 text-purple-800', General: 'bg-gray-100 text-gray-700' };
+
           const handleSubmit = async () => {
             const missing = [];
             if (!formData.companyName) missing.push('Company Name');
@@ -17034,7 +17152,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               : formData.certifications.filter(c => c !== cert)});
           };
 
-          const tabs = ['company', 'contact', 'compliance', 'services', 'documents'];
+          const tabs = ['company', 'contact', 'compliance', 'services', 'contacts', 'documents'];
 
           return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -17057,13 +17175,16 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   {tabs.map(tab => (
                     <button
                       key={tab}
-                      onClick={() => setActiveTab(tab)}
+                      onClick={() => handleTabChange(tab)}
                       className={`px-5 py-3 font-medium whitespace-nowrap text-sm ${activeTab === tab ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
                     >
                       {tab === 'company'    && 'Company Details'}
                       {tab === 'contact'    && 'Contact Information'}
                       {tab === 'compliance' && 'Compliance & Financial'}
                       {tab === 'services'   && 'Services & Equipment'}
+                      {tab === 'contacts'   && (
+                        <span>Named Contacts {isExistingSupplier && contacts.length > 0 ? <span className="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs">{contacts.length}</span> : ''}</span>
+                      )}
                       {tab === 'documents'  && 'Documents'}
                     </button>
                   ))}
@@ -17174,9 +17295,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <label className="block text-sm font-medium text-gray-700 mb-1">Primary Email *</label>
                           <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.email ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="contact@supplier.com" />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Accounts Email</label>
-                          <input type="email" value={formData.accountsEmail} onChange={e => setFormData({...formData, accountsEmail: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="accounts@supplier.com" />
+                        <div className="flex items-end pb-2">
+                          <p className="text-xs text-gray-400">Need extra contacts? Add them in Sage under this supplier's Contacts tab.</p>
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -17343,6 +17463,92 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <input type="number" value={formData.minimumOrderValue} onChange={e => setFormData({...formData, minimumOrderValue: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="0.00" />
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Named Contacts Tab */}
+                  {activeTab === 'contacts' && (
+                    <div className="space-y-4">
+                      {!isExistingSupplier ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                          Save the supplier record first, then come back to add named contacts.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm text-gray-500">Contacts are synced with Sage. Adding/editing here pushes to Sage automatically.</p>
+                            <div className="flex gap-2">
+                              {formData.sage_id && (
+                                <button onClick={syncContactsFromSage} disabled={syncingContacts} className="px-3 py-1.5 border border-blue-300 text-blue-700 text-sm rounded-lg hover:bg-blue-50 flex items-center gap-1 disabled:opacity-50">
+                                  {syncingContacts ? 'Syncing...' : '↓ Sync from Sage'}
+                                </button>
+                              )}
+                              <button onClick={openNewContact} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1">
+                                <span>+</span> Add Contact
+                              </button>
+                            </div>
+                          </div>
+                          {editingContact !== null && (
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                              <h4 className="font-medium text-sm">{editingContact.id ? 'Edit Contact' : 'New Contact'}</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+                                  <input type="text" value={contactForm.name} onChange={e => setContactForm({...contactForm, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Full name" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                                  <select value={contactForm.role} onChange={e => setContactForm({...contactForm, role: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                    <option value="WTN">WTN</option>
+                                    <option value="Invoices">Invoices</option>
+                                    <option value="Quotes">Quotes</option>
+                                    <option value="General">General</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                                  <input type="email" value={contactForm.email} onChange={e => setContactForm({...contactForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="email@company.com" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                                  <input type="tel" value={contactForm.phone} onChange={e => setContactForm({...contactForm, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="+44 7..." />
+                                </div>
+                              </div>
+                              <label className="flex items-center gap-2 text-sm">
+                                <input type="checkbox" checked={contactForm.is_primary} onChange={e => setContactForm({...contactForm, is_primary: e.target.checked})} />
+                                Primary contact
+                              </label>
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={() => setEditingContact(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                                <button onClick={saveContact} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Contact</button>
+                              </div>
+                            </div>
+                          )}
+                          {contacts.length === 0 ? (
+                            <p className="text-sm text-gray-400 text-center py-6">No named contacts yet. Add one above{formData.sage_id ? ' or sync from Sage.' : '.'}</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {contacts.map(contact => (
+                                <div key={contact.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-sm">{contact.name}</span>
+                                      {contact.is_primary && <span className="text-xs bg-yellow-100 text-yellow-800 px-1.5 rounded-full">Primary</span>}
+                                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[contact.role] || ROLE_COLORS.General}`}>{contact.role}</span>
+                                      {contact.sage_contact_person_id && <span className="text-xs text-green-600">✅ Sage</span>}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-0.5 truncate">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</div>
+                                  </div>
+                                  <div className="flex gap-2 ml-2">
+                                    <button onClick={() => openEditContact(contact)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                                    <button onClick={() => deleteContact(contact.id)} className="text-xs text-red-500 hover:underline">Delete</button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
 
