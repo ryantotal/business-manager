@@ -125,7 +125,7 @@ export default async function handler(req, res) {
   // Creates a new customer or supplier contact in Sage and returns the sage_id.
   // Called from the portal when "Push to Sage" is clicked on a new record.
   if (action === 'createContact') {
-    const { contactType, name, email, address, city, postcode, vatNumber, creditLimit, creditDays } = req.body;
+    const { contactType, name, email, address, city, postcode, vatNumber, creditLimit, creditDays, mainContact } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Contact name is required' });
@@ -234,8 +234,29 @@ export default async function handler(req, res) {
 
         await sagePost('addresses', addressObj);
         console.log('[Sage Proxy] Step 2 complete — address created');
-        // Note: VAT number is not sent to Sage via API — it causes a Sage UI crash.
-        // VAT can be added directly in Sage once the contact exists.
+      }
+
+      // ── Step 3: Create a main contact person ─────────────────────────────
+      // Required to prevent Sage UI crashing on the Options/Statement tab.
+      // Sage expects a preferred_contact on every contact record.
+      console.log('[Sage Proxy] Step 3 — creating contact person');
+      const contactPersonObj = {
+        contact_person: {
+          contact_id: sage_id,
+          name: mainContact?.name || name,
+          is_main_contact: true,
+          contact_person_types: [{ id: 'ACCOUNTS' }],
+        }
+      };
+      if (mainContact?.email || email)    contactPersonObj.contact_person.email     = mainContact?.email || email;
+      if (mainContact?.telephone)         contactPersonObj.contact_person.telephone = mainContact.telephone;
+      if (mainContact?.mobile)            contactPersonObj.contact_person.mobile    = mainContact.mobile;
+      try {
+        await sagePost('contact_persons', contactPersonObj);
+        console.log('[Sage Proxy] Step 3 complete — contact person created');
+      } catch (cpErr) {
+        // Non-fatal — contact and address already created successfully
+        console.warn('[Sage Proxy] Step 3 — contact person creation failed:', cpErr?.data);
       }
 
       return res.status(200).json({ sage_id, contactData });
