@@ -1,4 +1,4 @@
-   import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -131,30 +131,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Contact name is required' });
     }
 
-    // Build the Sage contact payload.
-    // Field names confirmed against live Sage API response.
-    // NOTE: main_address and main_contact_person are sub-resources in Sage —
-    // they cannot be created inline on a contact POST. We send only the flat
-    // fields Sage accepts directly. Address/contact person can be added in
-    // Sage after the record is created, or via separate API calls.
-    const contactObj = {
-      name,
-      contact_type_ids: [contactType === 'SUPPLIER' ? 'SUPPLIER' : 'CUSTOMER'],
-    };
-
-    // Only add optional fields if they have a value — never send null/empty
-    // strings as Sage may reject or ignore them unpredictably.
-    if (email)      contactObj.email       = email;
-    if (vatNumber)  contactObj.tax_number  = vatNumber;
-    if (creditLimit && parseFloat(creditLimit) > 0)
-                    contactObj.credit_limit = parseFloat(creditLimit);
-    if (creditDays && parseInt(creditDays) > 0)
-                    contactObj.credit_days  = parseInt(creditDays);
-
-    const contactPayload = { contact: contactObj };
-
     try {
-      // Ensure we have a valid token (reuse existing token-fetch logic below)
+      // ── Step 0: Get valid access token ───────────────────────────────────
       let accessToken = null;
 
       if (
@@ -199,38 +177,86 @@ export default async function handler(req, res) {
         .eq('setting_name', 'sage_business_id')
         .single();
 
-      const headers = {
+      const sageHeaders = {
         'Authorization': `Bearer ${accessToken}`,
         'Accept': 'application/json',
         'Content-Type': 'application/json',
         ...(bizData?.setting_value && { 'X-Business': bizData.setting_value })
       };
 
-      console.log('[Sage Proxy] Creating contact in Sage:', { name, contactType });
-
-      const sageRes = await fetch('https://api.accounting.sage.com/v3.1/contacts', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(contactPayload)
-      });
-
-      const sageData = await sageRes.json();
-
-      if (!sageRes.ok) {
-        console.error('[Sage Proxy] Sage createContact error:', sageData);
-        return res.status(sageRes.status).json({
-          error: 'Sage rejected the contact creation',
-          details: sageData
+      const sagePost = async (endpoint, payload, method = 'POST') => {
+        const r = await fetch(`https://api.accounting.sage.com/v3.1/${endpoint}`, {
+          method,
+          headers: sageHeaders,
+          body: JSON.stringify(payload)
         });
+        const data = await r.json();
+        if (!r.ok) {
+          console.error(`[Sage Proxy] ${method} ${endpoint} failed:`, data);
+          throw { status: r.status, data };
+        }
+        return data;
+      };
+
+      // ── Step 1: Create the contact (no VAT number yet) ───────────────────
+      console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType });
+      const contactObj = {
+        name,
+        contact_type_ids: [contactType === 'SUPPLIER' ? 'SUPPLIER' : 'CUSTOMER'],
+      };
+      if (email)                                        contactObj.email        = email;
+      if (creditLimit && parseFloat(creditLimit) > 0)  contactObj.credit_limit = parseFloat(creditLimit);
+      if (creditDays  && parseInt(creditDays)   > 0)   contactObj.credit_days  = parseInt(creditDays);
+
+      const contactData = await sagePost('contacts', { contact: contactObj });
+      const sage_id = contactData?.id;
+      if (!sage_id) throw { status: 500, data: { message: 'Sage did not return a contact ID' } };
+      console.log('[Sage Proxy] Step 1 complete — sage_id:', sage_id);
+
+      // ── Step 2: Create the address linked to the contact ─────────────────
+      // Only if we have at least one address field to send
+      const hasAddress = address || postcode || city;
+      if (hasAddress) {
+        console.log('[Sage Proxy] Step 2 — creating address for contact:', sage_id);
+        const addressObj = {
+          address: {
+            contact: { id: sage_id },
+            name: 'Main Address',
+            address_type: { id: 'DELIVERY' },
+            is_main_address: true,
+            country: { id: 'GB' },
+          }
+        };
+        if (address)  addressObj.address.address_line_1 = address;
+        if (city)     addressObj.address.city           = city;
+        if (postcode) addressObj.address.postal_code    = postcode;
+
+        await sagePost('addresses', addressObj);
+        console.log('[Sage Proxy] Step 2 complete — address created');
       }
 
-      const sage_id = sageData?.id || sageData?.contact?.id;
-      console.log('[Sage Proxy] Contact created in Sage, sage_id:', sage_id);
+      // ── Step 3: Update contact with VAT number now address exists ─────────
+      // Sage validates tax_number against main_address, so this must come after step 2
+      if (vatNumber && hasAddress) {
+        console.log('[Sage Proxy] Step 3 — adding VAT number to contact');
+        await sagePost(`contacts/${sage_id}`, { contact: { tax_number: vatNumber } }, 'PUT');
+        console.log('[Sage Proxy] Step 3 complete — VAT number set');
+      } else if (vatNumber && !hasAddress) {
+        console.log('[Sage Proxy] Skipping VAT number — no address provided (Sage requires address first)');
+      }
 
-      return res.status(200).json({ sage_id, sageData });
+      return res.status(200).json({ sage_id, contactData });
+
     } catch (err) {
       console.error('[Sage Proxy] createContact error:', err);
-      return res.status(500).json({ error: err.message });
+      // err may be our thrown object { status, data } or a real Error
+      if (err.data) {
+        return res.status(err.status || 500).json({
+          error: 'Sage rejected the contact creation',
+          details: err.data
+        });
+      }
+      return res.status(500).json({ error: err.message || 'Unknown error' });
     }
   }
   // ── end createContact ─────────────────────────────────────────────────────
