@@ -58,7 +58,7 @@ async function refreshAccessToken(refreshToken) {
 
     console.log('[Sage Proxy] Token refreshed successfully');
     
-    // Calculate expiry time (5 minutes from now)
+    // Calculate expiry time
     const expiresAt = new Date(Date.now() + (data.expires_in * 1000)).toISOString();
     
     // Update database with new tokens
@@ -122,8 +122,6 @@ export default async function handler(req, res) {
   const { endpoint, method = 'GET', body, businessId, action } = req.body || {};
 
   // ── createContact action ──────────────────────────────────────────────────
-  // Creates a new customer or supplier contact in Sage and returns the sage_id.
-  // Called from the portal when "Push to Sage" is clicked on a new record.
   if (action === 'createContact') {
     const { contactType, name, email, address, city, postcode, vatNumber, creditLimit, creditDays, mainContact } = req.body;
 
@@ -184,7 +182,7 @@ export default async function handler(req, res) {
         ...(bizData?.setting_value && { 'X-Business': bizData.setting_value })
       };
 
-      const sagePost = async (endpoint, payload, method = 'POST') => {
+      const sageRequest = async (endpoint, payload, method = 'POST') => {
         const r = await fetch(`https://api.accounting.sage.com/v3.1/${endpoint}`, {
           method,
           headers: sageHeaders,
@@ -192,9 +190,10 @@ export default async function handler(req, res) {
         });
         const data = await r.json();
         if (!r.ok) {
-          console.error(`[Sage Proxy] ${method} ${endpoint} failed:`, data);
+          console.error(`[Sage Proxy] ${method} ${endpoint} failed:`, JSON.stringify(data));
           throw { status: r.status, data };
         }
+        console.log(`[Sage Proxy] ${method} ${endpoint} response:`, JSON.stringify(data).substring(0, 500));
         return data;
       };
 
@@ -208,12 +207,11 @@ export default async function handler(req, res) {
       if (email)                                        contactObj.email        = email;
       if (creditLimit && parseFloat(creditLimit) > 0)  contactObj.credit_limit = parseFloat(creditLimit);
       if (creditDays  && parseInt(creditDays)   > 0)   contactObj.credit_days  = parseInt(creditDays);
-      // Send VAT on creation if there's no address — Sage accepts it fine without one
-      // VAT number intentionally not sent — causes Sage UI crash. Add manually in Sage.
 
-      const contactData = await sagePost('contacts', { contact: contactObj });
+      const contactData = await sageRequest('contacts', { contact: contactObj });
+      // Sage returns the contact object directly with id at top level
       const sage_id = contactData?.id;
-      if (!sage_id) throw { status: 500, data: { message: 'Sage did not return a contact ID' } };
+      if (!sage_id) throw { status: 500, data: { message: 'Sage did not return a contact ID', response: contactData } };
       console.log('[Sage Proxy] Step 1 complete — sage_id:', sage_id);
 
       // ── Step 2: Create the address linked to the contact ─────────────────
@@ -232,19 +230,23 @@ export default async function handler(req, res) {
         if (city)     addressObj.address.city           = city;
         if (postcode) addressObj.address.postal_code    = postcode;
 
-        await sagePost('addresses', addressObj);
-        console.log('[Sage Proxy] Step 2 complete — address created');
+        try {
+          const addrData = await sageRequest('addresses', addressObj);
+          console.log('[Sage Proxy] Step 2 complete — address created, id:', addrData?.id);
+        } catch (addrErr) {
+          // Log but don't fail — contact was created
+          console.warn('[Sage Proxy] Step 2 — address creation failed:', addrErr?.data);
+        }
       }
 
       // ── Step 3: Create a main contact person ─────────────────────────────
-      // Required to prevent Sage UI crashing on the Options/Statement tab.
-      // Sage expects a preferred_contact on every contact record.
       console.log('[Sage Proxy] Step 3 — creating contact person');
       const contactPersonObj = {
         contact_person: {
           contact_id: sage_id,
           name: mainContact?.name || name,
           is_main_contact: true,
+          is_preferred_contact: true,
           contact_person_types: [{ id: 'ACCOUNTS' }],
         }
       };
@@ -252,24 +254,35 @@ export default async function handler(req, res) {
       if (mainContact?.telephone)         contactPersonObj.contact_person.telephone = mainContact.telephone;
       if (mainContact?.mobile)            contactPersonObj.contact_person.mobile    = mainContact.mobile;
       try {
-        const cpData = await sagePost('contact_persons', contactPersonObj);
+        const cpData = await sageRequest('contact_persons', contactPersonObj);
+        // Sage returns the contact_person object directly with id at top level
         const contact_person_id = cpData?.id;
         console.log('[Sage Proxy] Step 3 complete — contact person created, id:', contact_person_id);
 
-        // ── Step 4: Set preferred_contact_id on the contact ──────────────
-        // Sage's Options tab crashes if preferred_contact is null.
-        // Setting it here prevents that crash.
+        // ── Step 4: Set preferred_contact_person on the contact ──────────────
         if (contact_person_id) {
           try {
-            await sagePost(`contacts/${sage_id}`, {
+            await sageRequest(`contacts/${sage_id}`, {
               contact: {
-                main_contact_person: { id: contact_person_id },
-                preferred_contact_person: { id: contact_person_id }
+                main_contact_person_id: contact_person_id,
+                preferred_contact_person_id: contact_person_id
               }
             }, 'PUT');
             console.log('[Sage Proxy] Step 4 complete — preferred_contact set');
           } catch (pcErr) {
             console.warn('[Sage Proxy] Step 4 — preferred_contact set failed:', pcErr?.data);
+            // Try alternative format — nested object
+            try {
+              await sageRequest(`contacts/${sage_id}`, {
+                contact: {
+                  main_contact_person: { id: contact_person_id },
+                  preferred_contact_person: { id: contact_person_id }
+                }
+              }, 'PUT');
+              console.log('[Sage Proxy] Step 4 complete (alt format) — preferred_contact set');
+            } catch (pcErr2) {
+              console.warn('[Sage Proxy] Step 4 — preferred_contact alt format also failed:', pcErr2?.data);
+            }
           }
         }
       } catch (cpErr) {
@@ -281,7 +294,6 @@ export default async function handler(req, res) {
 
     } catch (err) {
       console.error('[Sage Proxy] createContact error:', err);
-      // err may be our thrown object { status, data } or a real Error
       if (err.data) {
         return res.status(err.status || 500).json({
           error: 'Sage rejected the contact creation',
@@ -311,7 +323,6 @@ export default async function handler(req, res) {
     } else {
       console.log('[Sage Proxy] Fetching tokens from database...');
       
-      // Fetch all token-related data from database
       const { data: tokenData, error: tokenError } = await supabase
         .from('company_settings')
         .select('setting_name, setting_value')
@@ -330,7 +341,6 @@ export default async function handler(req, res) {
         });
       }
 
-      // Extract tokens from result
       const tokens = tokenData.reduce((acc, row) => {
         acc[row.setting_name] = row.setting_value;
         return acc;
@@ -343,7 +353,6 @@ export default async function handler(req, res) {
         expiresAt: tokens.sage_token_expires_at
       });
 
-      // Check if token is expired
       if (isTokenExpired(tokens.sage_token_expires_at)) {
         console.log('[Sage Proxy] Token is expired, refreshing...');
         
@@ -366,10 +375,8 @@ export default async function handler(req, res) {
           });
         }
       } else {
-        // Token is still valid
         accessToken = tokens.sage_access_token;
         
-        // Update cache
         tokenCache = {
           accessToken: tokens.sage_access_token,
           refreshToken: tokens.sage_refresh_token,
@@ -387,7 +394,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Make request to Sage API
     console.log('[Sage Proxy] Making request to Sage API:', {
       url: `https://api.accounting.sage.com/v3.1/${endpoint}`,
       method: method,
@@ -400,7 +406,6 @@ export default async function handler(req, res) {
       'Content-Type': 'application/json'
     };
 
-    // Add optional X-Business header if provided
     if (businessId) {
       headers['X-Business'] = businessId;
     }
@@ -432,12 +437,10 @@ export default async function handler(req, res) {
     if (sageResponse.status === 401) {
       console.log('[Sage Proxy] Received 401, attempting token refresh...');
       
-      // Try to refresh token if we haven't already
       if (tokenCache.refreshToken && !req.body._retryCount) {
         try {
           const newAccessToken = await refreshAccessToken(tokenCache.refreshToken);
           
-          // Retry the request with new token
           console.log('[Sage Proxy] Retrying request with new token...');
           req.body._retryCount = 1;
           return handler(req, res);
@@ -458,7 +461,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Return the response with the same status code
     res.status(sageResponse.status).json(data);
     
   } catch (error) {
