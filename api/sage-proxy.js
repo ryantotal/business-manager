@@ -409,7 +409,41 @@ export default async function handler(req, res) {
         console.log('[Sage Proxy] Listing contact persons for:', sageContactId);
         const result = await sageFetch(`contact_persons?contact_id=${sageContactId}`);
         const items = result?.$items || result?.items || (Array.isArray(result) ? result : []);
-        return res.status(200).json({ contact_persons: items });
+        
+        // Deduplicate by id — Sage can return the same person under multiple addresses
+        const seen = new Set();
+        const uniqueItems = [];
+        for (const item of items) {
+          if (!item?.id || seen.has(item.id)) continue;
+          seen.add(item.id);
+          // Fetch full details for each contact person (list endpoint only returns summary)
+          try {
+            const full = await sageFetch(`contact_persons/${item.id}`, 'GET');
+            uniqueItems.push({
+              id: full.id || item.id,
+              name: full.name || full.displayed_as || item.name || item.displayed_as || 'Unknown',
+              email: full.email || '',
+              telephone: full.telephone || '',
+              mobile: full.mobile || '',
+              is_main_contact: full.is_main_contact || false,
+              is_preferred_contact: full.is_preferred_contact || false,
+              displayed_as: full.displayed_as || item.displayed_as || '',
+            });
+          } catch (e) {
+            // Fallback to summary data
+            uniqueItems.push({
+              id: item.id,
+              name: item.name || item.displayed_as || 'Unknown',
+              email: item.email || '',
+              telephone: item.telephone || '',
+              mobile: item.mobile || '',
+              is_main_contact: item.is_main_contact || false,
+              displayed_as: item.displayed_as || '',
+            });
+          }
+        }
+        console.log('[Sage Proxy] Returning', uniqueItems.length, 'unique contact persons');
+        return res.status(200).json({ contact_persons: uniqueItems });
       }
 
       // ── CREATE ───────────────────────────────────────────────────────────
