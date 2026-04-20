@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Total Waste Services - Construction Broker Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="TWS Portal">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%232563eb' width='100' height='100' rx='20'/><text x='50' y='68' text-anchor='middle' fill='white' font-size='50' font-weight='bold'>TW</text></svg>">
+    <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiVFdTIFBvcnRhbCIsInNob3J0X25hbWUiOiJUV1MiLCJzdGFydF91cmwiOiIvIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiI2ZmZmZmZiIsInRoZW1lX2NvbG9yIjoiIzI1NjNlYiJ9">
+    <title>TWS Portal</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -21,6 +28,8 @@
         --primary-color: #2563eb;
         --primary-hover: #1d4ed8;
         --primary-light: #dbeafe;
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-top: env(safe-area-inset-top, 0px);
     }
 
     /* Apply primary color to common elements */
@@ -47,40 +56,100 @@
     .hover\:bg-blue-700:hover {
         background-color: var(--primary-hover) !important;
     }
+
     /* Prevent horizontal scrolling/bouncing */
-html, body {
-  overflow-x: hidden;
-  max-width: 100vw;
-  overscroll-behavior-x: none;
-}
-/* Simple truncation for all table cells */
-  td {
-    max-width: 150px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    padding: 8px 10px !important;
-  }
+    html, body {
+      overflow-x: hidden;
+      max-width: 100vw;
+      overscroll-behavior-x: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* PWA standalone padding for notch/status bar */
+    @media all and (display-mode: standalone) {
+      body { padding-top: var(--safe-top); }
+    }
+
+    /* ── Mobile-first improvements ────────────────────────────── */
+
+    /* Bottom nav bar space on mobile */
+    @media (max-width: 639px) {
+      .main-content-area {
+        padding-bottom: 70px !important;
+      }
+      /* Make modals full-screen on mobile */
+      .fixed.inset-0 .rounded-xl,
+      .fixed.inset-0 .rounded-lg {
+        border-radius: 0 !important;
+        max-height: 100vh !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+      }
+      .fixed.inset-0 > div > .rounded-xl,
+      .fixed.inset-0 > div > .rounded-lg {
+        border-radius: 12px 12px 0 0 !important;
+        max-height: 95vh !important;
+        height: auto !important;
+        margin-top: auto !important;
+      }
+      /* Bigger touch targets */
+      button, a, select, input[type="checkbox"] {
+        min-height: 36px;
+      }
+      input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+      }
+      /* Tables scroll horizontally */
+      .overflow-x-auto {
+        -webkit-overflow-scrolling: touch;
+      }
+      /* Hide desktop table headers that don't fit */
+      table th, table td {
+        padding: 6px 8px !important;
+        font-size: 12px !important;
+      }
+    }
+
+    /* Touch-friendly tap highlights */
+    button, a {
+      -webkit-tap-highlight-color: rgba(37, 99, 235, 0.1);
+    }
+
+    /* Smooth scrolling */
+    * {
+      scroll-behavior: smooth;
+    }
+
+    /* Simple truncation for all table cells */
+    td {
+      max-width: 150px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 8px 10px !important;
+    }
   
-  /* Slightly wider for address column */
-  td:nth-child(6) {
-    max-width: 200px;
-  }
+    /* Slightly wider for address column */
+    td:nth-child(6) {
+      max-width: 200px;
+    }
   
-  /* Smaller width for type and status columns */
-  td:nth-child(8), td:nth-child(9) {
-    max-width: 100px;
-  }
+    /* Smaller width for type and status columns */
+    td:nth-child(8), td:nth-child(9) {
+      max-width: 100px;
+    }
   
-  /* Keep headers aligned */
-  th {
-    padding: 8px 10px !important;
-  }
+    /* Keep headers aligned */
+    th {
+      padding: 8px 10px !important;
+    }
   
-  /* Optional: Slightly smaller font for more space */
-  table {
-    font-size: 14px;
-  }
+    /* Optional: Slightly smaller font for more space */
+    table {
+      font-size: 14px;
+    }
 </style>
 </head>
 <body>
@@ -14270,10 +14339,7 @@ const saveSupplierToDatabase = async (supplier) => {
     sage_id: supplier.sage_id || null,
     email: supplier.email || '',
     phone: supplier.phone || '',
-    mobile: supplier.mobile || '',
-    address: supplier.address || '',
-    city: supplier.city || '',
-    postcode: supplier.postcode || '',
+    address: [supplier.address, supplier.city, supplier.postcode].filter(Boolean).join(', '),
     vat_number: supplier.vatNumber || '',
     contact_person: supplier.primaryContact || '',
     accountstatus: supplier.accountStatus || 'Active',
@@ -14305,10 +14371,7 @@ const saveSupplierToDatabase = async (supplier) => {
                 sage_id: updatedSupplier.sage_id || null,
                 email: updatedSupplier.email || '',
                 phone: updatedSupplier.phone || '',
-                mobile: updatedSupplier.mobile || '',
-                address: updatedSupplier.address || '',
-                city: updatedSupplier.city || '',
-                postcode: updatedSupplier.postcode || '',
+                address: [updatedSupplier.address, updatedSupplier.city, updatedSupplier.postcode].filter(Boolean).join(', '),
                 vat_number: updatedSupplier.vatNumber || '',
                 contact_person: updatedSupplier.primaryContact || '',
                 accountstatus: updatedSupplier.accountStatus || 'Active',
@@ -15432,10 +15495,13 @@ async getSuppliers() {
         name: s.displayed_as || s.name || '',
         email: s.email || '',
         phone: '',
-        address: s.main_address?.displayed_as?.replace(/\u21b5/g, ', ').replace(/\n/g, ', ') || '',
-        city: s.main_address?.city || '',
-        postcode: s.main_address?.postal_code || '',
-        county: s.main_address?.region || '',
+        address: [
+          s.main_address?.address_line_1,
+          s.main_address?.address_line_2,
+          s.main_address?.city,
+          s.main_address?.region,
+          s.main_address?.postal_code
+        ].filter(Boolean).join(', ') || s.main_address?.displayed_as?.replace(/\u21b5/g, ', ').replace(/\n/g, ', ') || '',
         vat_number: s.tax_number || '',
         contact_person: s.main_contact_person?.displayed_as || '',
         credit_limit: parseFloat(s.credit_limit) || 0,
@@ -15467,7 +15533,6 @@ async getSuppliers() {
           fromSage.email !== (existing.email || '') ||
           fromSage.phone !== (existing.phone || '') ||
           fromSage.address !== (existing.address || '') ||
-          fromSage.postcode !== (existing.postcode || '') ||
           fromSage.vat_number !== (existing.vat_number || '') ||
           fromSage.credit_limit !== (existing.credit_limit || 0) ||
           fromSage.credit_days !== (existing.credit_days || 30)
@@ -15475,8 +15540,7 @@ async getSuppliers() {
         if (changed) {
           const { error } = await window.supabase.from('suppliers').update({
             name: fromSage.name, email: fromSage.email, phone: fromSage.phone,
-            address: fromSage.address, city: fromSage.city, postcode: fromSage.postcode,
-            county: fromSage.county, vat_number: fromSage.vat_number,
+            address: fromSage.address, vat_number: fromSage.vat_number,
             contact_person: fromSage.contact_person, credit_limit: fromSage.credit_limit,
             credit_days: fromSage.credit_days, accountstatus: fromSage.accountstatus,
           }).eq('id', existing.id);
