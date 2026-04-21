@@ -1346,8 +1346,8 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
   const coName = companyNameProp || localStorage.getItem('companyName') || 'Total Waste Services Ltd';
   const logoSrc = logoUrl || localStorage.getItem('companyLogo');
 
-  // If no saved wtn_data, build a basic WTN from the job record itself
-  const wtnData = savedWtn || {
+  // Live state so we can enrich with supplier lookup
+  const [wtnData, setWtnData] = useState(() => savedWtn || {
     wtnNumber: `WTN-${job.job_number || job.jobNumber}`,
     transferDate: job.job_date || job.jobDate || job.collection_date || '',
     wasteDescription: job.waste_type || job.wasteType || job.job_type || job.jobType || '—',
@@ -1364,7 +1364,64 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
     transferAddress: [job.site_address1||job.siteAddress1, job.site_postcode||job.sitePostcode].filter(Boolean).join(', '),
     recycledPct: 0, recoveredPct: 0, landfillPct: 100,
     brokerCarrierReg: localStorage.getItem('carrierReg') || '—',
-  };
+  });
+
+  // Enrich with supplier details if CBDU/permit/signature/address are missing
+  useEffect(() => {
+    const supplierName = job.supplier_name || job.supplierName;
+    if (!supplierName) return;
+    const needsCarrier = !wtnData.transfereeCarrierReg || wtnData.transfereeCarrierReg === '—';
+    const needsPermit = !wtnData.transfereePermitNumber || wtnData.transfereePermitNumber === '—';
+    const needsAddr = !wtnData.transfereeAddress || wtnData.transfereeAddress === '—';
+    const needsSignature = !wtnData.transfereeSignature || wtnData.transfereeSignature === '—';
+    if (!needsCarrier && !needsPermit && !needsAddr && !needsSignature) return;
+
+    (async () => {
+      try {
+        const { data: supp } = await window.supabase
+          .from('suppliers').select('*').eq('name', supplierName).single();
+        if (!supp) return;
+        setWtnData(prev => ({
+          ...prev,
+          transfereeCarrierReg: prev.transfereeCarrierReg && prev.transfereeCarrierReg !== '—' ? prev.transfereeCarrierReg : (supp.waste_carrier_license || supp.wasteCarrierLicense || prev.transfereeCarrierReg),
+          transfereePermitNumber: prev.transfereePermitNumber && prev.transfereePermitNumber !== '—' ? prev.transfereePermitNumber : (supp.environmental_permit || supp.environmentalPermit || prev.transfereePermitNumber || ''),
+          transfereeAddress: prev.transfereeAddress && prev.transfereeAddress !== '—' ? prev.transfereeAddress : [supp.address, supp.city, supp.county, supp.postcode].filter(Boolean).join(', ') || prev.transfereeAddress,
+          transfereeSignature: prev.transfereeSignature && prev.transfereeSignature !== '—' ? prev.transfereeSignature : (supp.contact_name || supp.contactName || prev.transfereeSignature || ''),
+        }));
+      } catch(e) { console.warn('[WtnPortalModal] Supplier lookup failed:', e); }
+    })();
+  }, []);
+
+  // Also enrich with customer details if transferor permit/signature are missing
+  useEffect(() => {
+    const customerName = job.customer_name || job.customerName;
+    if (!customerName) return;
+    const needsPermit = !wtnData.transferorPermitNumber || wtnData.transferorPermitNumber === '—';
+    const needsSignature = !wtnData.transferorSignature || wtnData.transferorSignature === '(signed)' || wtnData.transferorSignature === '—';
+    if (!needsPermit && !needsSignature) return;
+
+    // Look up from most recent WTN for this customer
+    (async () => {
+      try {
+        const { data: prevWtns } = await window.supabase
+          .from('jobs')
+          .select('wtn_data')
+          .eq('customer_name', customerName)
+          .eq('wtn_sent', true)
+          .not('wtn_data', 'is', null)
+          .order('wtn_sent_at', { ascending: false })
+          .limit(1);
+        if (!prevWtns || prevWtns.length === 0) return;
+        const prev = typeof prevWtns[0].wtn_data === 'string' ? JSON.parse(prevWtns[0].wtn_data) : prevWtns[0].wtn_data;
+        setWtnData(w => ({
+          ...w,
+          transferorPermitNumber: w.transferorPermitNumber && w.transferorPermitNumber !== '—' ? w.transferorPermitNumber : (prev.transferorPermitNumber || w.transferorPermitNumber || ''),
+          transferorSignature: w.transferorSignature && w.transferorSignature !== '(signed)' && w.transferorSignature !== '—' ? w.transferorSignature : (prev.transferorSignature || w.transferorSignature || ''),
+        }));
+      } catch(e) {}
+    })();
+  }, []);
+
   const isReconstructed = !savedWtn;
   const Row = ({label, val}) => (
     <div style={{padding:'6px 12px'}}><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>{label}</div><div style={{fontWeight:700,fontSize:11}}>{val||'—'}</div></div>
@@ -1707,7 +1764,7 @@ const [wtnFields, setWtnFields] = useState(() => {
   const todayStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().slice(0,5);
   const autoWtnNumber = 'WTN-' + (job?.jobNumber || job?.id || 'DRAFT');
-  const autoDate = job?.collectionDate || job?.jobDate || todayStr;
+  const autoDate = job?.collectionDate || ((job?.isCompleted || job?.is_completed) ? todayStr : null) || job?.jobDate || todayStr;
 
   if (savedWtn) {
     // Always re-derive recipient email from customer record (never use stale saved email)
@@ -1901,7 +1958,7 @@ useEffect(() => {
   const todayStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().slice(0,5);
   const autoWtnNumber = 'WTN-' + (job?.jobNumber || '');
-  const autoDate = job?.collectionDate || job?.jobDate || todayStr;
+  const autoDate = job?.collectionDate || ((job?.isCompleted || job?.is_completed) ? todayStr : null) || job?.jobDate || todayStr;
 
   // Always update WTN number to match current job, and refresh date/time if blank
   // Also always re-derive recipient email from customer record (never use stale saved email)
