@@ -1699,6 +1699,7 @@ const loadJobAttachments = async (jobId) => {
 const [attachmentType, setAttachmentType] = useState('Waste Transfer Note');
 const [wtnSending, setWtnSending] = useState(false);
 const [wtnSentOk, setWtnSentOk] = useState(false);
+const [wtnSuggestions, setWtnSuggestions] = useState({}); // tracks which fields were auto-filled from previous WTNs
 const [wtnFields, setWtnFields] = useState(() => {
   // If job has saved WTN data, restore it (survives reload)
   const savedWtn = job?.wtnData || (job?.wtn_data ? (typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : job.wtn_data) : null);
@@ -2025,9 +2026,183 @@ useEffect(() => {
       } catch(e) {}
     })();
   }
+
+  // ── WTN Autocomplete from previous WTNs ──────────────────────────
+  // Only suggest for NEW WTNs (not already sent/saved with meaningful data)
+  const alreadyHasWtn = job?.wtn_sent || job?.wtnSent || job?.wtn_sent_at || job?.wtnSentAt;
+  const savedWtnCheck = job?.wtn_data ? (typeof job.wtn_data === 'string' ? (() => { try { return JSON.parse(job.wtn_data); } catch(e) { return null; } })() : job.wtn_data) : null;
+  const hasExistingWtnData = savedWtnCheck && (savedWtnCheck.listOfWasteCode || savedWtnCheck.transferorSignature || savedWtnCheck.transferorPermitNumber);
+
+  if (!alreadyHasWtn && !hasExistingWtnData && job?.customerName) {
+    (async () => {
+      try {
+        console.log('[WTN AutoSuggest] Looking up previous WTNs for', job.customerName, job.supplierName, job.wasteType);
+        const suggestions = {};
+
+        // 1. Customer-specific lookup: permit, signature, SIC code, unit preference
+        const { data: custWtns } = await window.supabase
+          .from('jobs')
+          .select('wtn_data')
+          .eq('customer_name', job.customerName)
+          .eq('wtn_sent', true)
+          .not('wtn_data', 'is', null)
+          .order('wtn_sent_at', { ascending: false })
+          .limit(5);
+
+        if (custWtns && custWtns.length > 0) {
+          // Parse WTN data from most recent first
+          const parsedCustWtns = custWtns.map(j => {
+            try { return typeof j.wtn_data === 'string' ? JSON.parse(j.wtn_data) : j.wtn_data; }
+            catch(e) { return null; }
+          }).filter(Boolean);
+
+          if (parsedCustWtns.length > 0) {
+            const latest = parsedCustWtns[0];
+            // Permit number (Section B)
+            if (latest.transferorPermitNumber) {
+              suggestions.transferorPermitNumber = latest.transferorPermitNumber;
+            }
+            // Signature name (Section B)
+            if (latest.transferorSignature) {
+              suggestions.transferorSignature = latest.transferorSignature;
+            }
+            // SIC Code
+            if (latest.transferorSicCode) {
+              suggestions.transferorSicCode = latest.transferorSicCode;
+            }
+            // Unit preference — find most commonly used unit across all this customer's WTNs
+            const unitCounts = {};
+            parsedCustWtns.forEach(w => {
+              if (w.unit) unitCounts[w.unit] = (unitCounts[w.unit] || 0) + 1;
+            });
+            const preferredUnit = Object.entries(unitCounts).sort((a,b) => b[1] - a[1])[0];
+            if (preferredUnit && preferredUnit[1] >= 2) {
+              suggestions.unit = preferredUnit[0];
+            }
+          }
+        }
+
+        // 2. Supplier-specific lookup: carrier reg, permit, signature (Section C)
+        if (job.supplierName) {
+          const { data: suppWtns } = await window.supabase
+            .from('jobs')
+            .select('wtn_data')
+            .eq('supplier_name', job.supplierName)
+            .eq('wtn_sent', true)
+            .not('wtn_data', 'is', null)
+            .order('wtn_sent_at', { ascending: false })
+            .limit(3);
+
+          if (suppWtns && suppWtns.length > 0) {
+            const parsedSuppWtns = suppWtns.map(j => {
+              try { return typeof j.wtn_data === 'string' ? JSON.parse(j.wtn_data) : j.wtn_data; }
+              catch(e) { return null; }
+            }).filter(Boolean);
+
+            if (parsedSuppWtns.length > 0) {
+              const latest = parsedSuppWtns[0];
+              if (latest.transfereeCarrierReg) suggestions.transfereeCarrierReg = latest.transfereeCarrierReg;
+              if (latest.transfereePermitNumber) suggestions.transfereePermitNumber = latest.transfereePermitNumber;
+              if (latest.transfereeSignature) suggestions.transfereeSignature = latest.transfereeSignature;
+            }
+          }
+        }
+
+        // 3. Customer + Supplier + Waste Type combo lookup: EWC code, processes
+        if (job.supplierName && job.wasteType) {
+          const { data: comboWtns } = await window.supabase
+            .from('jobs')
+            .select('wtn_data')
+            .eq('customer_name', job.customerName)
+            .eq('supplier_name', job.supplierName)
+            .eq('waste_type', job.wasteType)
+            .eq('wtn_sent', true)
+            .not('wtn_data', 'is', null)
+            .order('wtn_sent_at', { ascending: false })
+            .limit(3);
+
+          if (comboWtns && comboWtns.length > 0) {
+            const parsedComboWtns = comboWtns.map(j => {
+              try { return typeof j.wtn_data === 'string' ? JSON.parse(j.wtn_data) : j.wtn_data; }
+              catch(e) { return null; }
+            }).filter(Boolean);
+
+            if (parsedComboWtns.length > 0) {
+              const latest = parsedComboWtns[0];
+              if (latest.listOfWasteCode) suggestions.listOfWasteCode = latest.listOfWasteCode;
+              if (latest.wasteProcess || latest.processesWasteThrough) {
+                suggestions.wasteProcess = latest.wasteProcess || latest.processesWasteThrough;
+              }
+            }
+          }
+        }
+
+        // 4. If no combo match for EWC, try broader: just customer + waste type
+        if (!suggestions.listOfWasteCode && job.wasteType) {
+          const { data: wasteWtns } = await window.supabase
+            .from('jobs')
+            .select('wtn_data')
+            .eq('customer_name', job.customerName)
+            .eq('waste_type', job.wasteType)
+            .eq('wtn_sent', true)
+            .not('wtn_data', 'is', null)
+            .order('wtn_sent_at', { ascending: false })
+            .limit(3);
+
+          if (wasteWtns && wasteWtns.length > 0) {
+            const parsedWasteWtns = wasteWtns.map(j => {
+              try { return typeof j.wtn_data === 'string' ? JSON.parse(j.wtn_data) : j.wtn_data; }
+              catch(e) { return null; }
+            }).filter(Boolean);
+
+            if (parsedWasteWtns.length > 0) {
+              const latest = parsedWasteWtns[0];
+              if (latest.listOfWasteCode) suggestions.listOfWasteCode = latest.listOfWasteCode;
+              if (!suggestions.wasteProcess && (latest.wasteProcess || latest.processesWasteThrough)) {
+                suggestions.wasteProcess = latest.wasteProcess || latest.processesWasteThrough;
+              }
+            }
+          }
+        }
+
+        // Apply suggestions — only fill fields that are currently empty
+        if (Object.keys(suggestions).length > 0) {
+          console.log('[WTN AutoSuggest] Applying suggestions:', suggestions);
+          const appliedSuggestions = {};
+
+          setWtnFields(prev => {
+            const updated = { ...prev };
+            Object.entries(suggestions).forEach(([key, value]) => {
+              if (!prev[key] || prev[key] === '') {
+                updated[key] = value;
+                appliedSuggestions[key] = value;
+              }
+            });
+            return updated;
+          });
+
+          // Track which fields were auto-filled so we can show indicators
+          setTimeout(() => {
+            setWtnSuggestions(appliedSuggestions);
+          }, 100);
+        }
+      } catch (err) {
+        console.warn('[WTN AutoSuggest] Error:', err);
+      }
+    })();
+  }
 }, []);
 
 const wtnTotalPct = wtnFields.recycledPct + wtnFields.recoveredPct + wtnFields.landfillPct;
+
+// Small badge shown next to fields that were auto-filled from a previous WTN
+const WtnSuggestBadge = ({ field }) => {
+  if (!wtnSuggestions[field]) return null;
+  return React.createElement('span', {
+    className: 'inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 ml-1',
+    title: 'Auto-filled from a previous WTN for this customer/supplier. You can change it.',
+  }, '⟲ previous WTN');
+};
 
 const buildWtnHtml = (f, j) => {
   const qty = parseFloat(f.quantity)||0;
@@ -3837,19 +4012,19 @@ const [isEvent, setIsEvent] = useState(false);
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteDescription} onChange={e=>setWtnFields({...wtnFields,wasteDescription:e.target.value})} placeholder="e.g. Mixed construction and demolition waste including concrete, brickwork, timber and plasterboard" /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Skip / Container Size <span className="text-gray-400 font-normal">(from job)</span></label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.skipSize} onChange={e=>setWtnFields({...wtnFields,skipSize:e.target.value})} placeholder="e.g. 8 yard skip" /></div>
-                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Processes Waste Has Been Through</label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteProcess} onChange={e=>setWtnFields({...wtnFields,wasteProcess:e.target.value})} placeholder="e.g. On-site segregation, crushing" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Processes Waste Has Been Through <WtnSuggestBadge field="wasteProcess" /></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteProcess} onChange={e=>{setWtnFields({...wtnFields,wasteProcess:e.target.value}); setWtnSuggestions(s=>({...s, wasteProcess: undefined}));}} placeholder="e.g. On-site segregation, crushing" /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">How Waste is Contained *</label>
                           <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteContainer} onChange={e=>setWtnFields({...wtnFields,wasteContainer:e.target.value})}>
                             <option>Skip</option><option>Roll-on Roll-off Container</option><option>Loose</option><option>Bagged</option><option>Drums/Barrels</option><option>IBC</option><option>Other</option>
                           </select></div>
-                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">EWC Code * <span className="text-gray-400 font-normal">(European Waste Catalogue — required by law)</span></label>
-                          <EWCPicker value={wtnFields.listOfWasteCode} onChange={v=>setWtnFields({...wtnFields,listOfWasteCode:v})} /></div>
+                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">EWC Code * <span className="text-gray-400 font-normal">(European Waste Catalogue — required by law)</span> <WtnSuggestBadge field="listOfWasteCode" /></label>
+                          <EWCPicker value={wtnFields.listOfWasteCode} onChange={v=>{setWtnFields({...wtnFields,listOfWasteCode:v}); setWtnSuggestions(s=>({...s, listOfWasteCode: undefined}));}} /></div>
                         <div className="flex gap-2">
                           <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Quantity *</label>
                             <input type="number" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.quantity} onChange={e=>setWtnFields({...wtnFields,quantity:e.target.value})} /></div>
-                          <div className="w-28"><label className="block text-xs font-medium text-gray-600 mb-1">Unit *</label>
-                            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.unit} onChange={e=>setWtnFields({...wtnFields,unit:e.target.value})}>
+                          <div className="w-28"><label className="block text-xs font-medium text-gray-600 mb-1">Unit * <WtnSuggestBadge field="unit" /></label>
+                            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.unit} onChange={e=>{setWtnFields({...wtnFields,unit:e.target.value}); setWtnSuggestions(s=>({...s, unit: undefined}));}}>
                               <option>tonnes</option><option>kg</option><option>m³</option><option>loads</option>
                             </select></div>
                         </div>
@@ -3868,12 +4043,12 @@ const [isEvent, setIsEvent] = useState(false);
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorName} onChange={e=>setWtnFields({...wtnFields,transferorName:e.target.value})} /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorAddress} onChange={e=>setWtnFields({...wtnFields,transferorAddress:e.target.value})} /></div>
-                        <div><label className="block text-xs font-medium text-gray-600 mb-1">SIC Code</label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorSicCode} onChange={e=>setWtnFields({...wtnFields,transferorSicCode:e.target.value})} placeholder="e.g. 41100" /></div>
-                        <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg / Permit / Exemption No.</label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorPermitNumber} onChange={e=>setWtnFields({...wtnFields,transferorPermitNumber:e.target.value})} placeholder="e.g. CBDU123456 or permit number" /></div>
-                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Transferor Signature / Name (typed) *</label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorSignature} onChange={e=>setWtnFields({...wtnFields,transferorSignature:e.target.value})} placeholder="Full name as signature" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">SIC Code <WtnSuggestBadge field="transferorSicCode" /></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorSicCode} onChange={e=>{setWtnFields({...wtnFields,transferorSicCode:e.target.value}); setWtnSuggestions(s=>({...s, transferorSicCode: undefined}));}} placeholder="e.g. 41100" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg / Permit / Exemption No. <WtnSuggestBadge field="transferorPermitNumber" /></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorPermitNumber} onChange={e=>{setWtnFields({...wtnFields,transferorPermitNumber:e.target.value}); setWtnSuggestions(s=>({...s, transferorPermitNumber: undefined}));}} placeholder="e.g. CBDU123456 or permit number" /></div>
+                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Transferor Signature / Name (typed) * <WtnSuggestBadge field="transferorSignature" /></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorSignature} onChange={e=>{setWtnFields({...wtnFields,transferorSignature:e.target.value}); setWtnSuggestions(s=>({...s, transferorSignature: undefined}));}} placeholder="Full name as signature" /></div>
                       </div>
                     </div>
 
@@ -3888,12 +4063,12 @@ const [isEvent, setIsEvent] = useState(false);
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeName} onChange={e=>setWtnFields({...wtnFields,transfereeName:e.target.value})} /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeAddress} onChange={e=>setWtnFields({...wtnFields,transfereeAddress:e.target.value})} placeholder="Pulled from supplier record" /></div>
-                        <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg No. (CBDU...) <span className="text-gray-400 font-normal">— supplier's, not yours</span></label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeCarrierReg} onChange={e=>setWtnFields({...wtnFields,transfereeCarrierReg:e.target.value})} placeholder="Supplier's CBDU number" /></div>
-                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Environmental Permit / Exemption No.</label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transfereePermitNumber} onChange={e=>setWtnFields({...wtnFields,transfereePermitNumber:e.target.value})} placeholder="e.g. EPR/AB1234CD" /></div>
-                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Transferee Signature / Name (typed) *</label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transfereeSignature} onChange={e=>setWtnFields({...wtnFields,transfereeSignature:e.target.value})} placeholder="Supplier representative name" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg No. (CBDU...) <span className="text-gray-400 font-normal">— supplier's, not yours</span> <WtnSuggestBadge field="transfereeCarrierReg" /></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeCarrierReg} onChange={e=>{setWtnFields({...wtnFields,transfereeCarrierReg:e.target.value}); setWtnSuggestions(s=>({...s, transfereeCarrierReg: undefined}));}} placeholder="Supplier's CBDU number" /></div>
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Environmental Permit / Exemption No. <WtnSuggestBadge field="transfereePermitNumber" /></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transfereePermitNumber} onChange={e=>{setWtnFields({...wtnFields,transfereePermitNumber:e.target.value}); setWtnSuggestions(s=>({...s, transfereePermitNumber: undefined}));}} placeholder="e.g. EPR/AB1234CD" /></div>
+                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Transferee Signature / Name (typed) * <WtnSuggestBadge field="transfereeSignature" /></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transfereeSignature} onChange={e=>{setWtnFields({...wtnFields,transfereeSignature:e.target.value}); setWtnSuggestions(s=>({...s, transfereeSignature: undefined}));}} placeholder="Supplier representative name" /></div>
                       </div>
                     </div>
 
