@@ -1928,20 +1928,25 @@ useEffect(() => {
       transferAddress: freshTransferorAddress || prev.transferAddress || '',
     };
 
-    // Auto-save corrected addresses ONLY if:
-    // 1. Job already has wtn_data in DB (not a fresh/empty WTN)
-    // 2. An address actually changed (not just initial load)
-    const hasExistingWtnData = !!(job?.wtn_data || job?.wtnData);
-    const addressChanged = hasExistingWtnData && (
-      prev.transferorAddress && prev.transferorAddress !== updated.transferorAddress ||
-      prev.transfereeAddress && prev.transfereeAddress !== updated.transfereeAddress
-    );
-    if (job?.id && addressChanged) {
-      window.supabase.from('jobs')
-        .update({ wtn_data: JSON.stringify(updated) })
-        .eq('id', job.id)
-        .then(() => console.log('[WTN] Auto-saved corrected addresses for job', job.id))
-        .catch(err => console.warn('[WTN] Auto-save failed:', err.message));
+    // Auto-save WTN data whenever the form enriches it — keeps portal in sync
+    // Only save for existing jobs (not drafts), and only if something meaningful changed
+    if (job?.id) {
+      const savedWtn = job?.wtn_data ? (typeof job.wtn_data === 'string' ? (() => { try { return JSON.parse(job.wtn_data); } catch(e) { return {}; } })() : job.wtn_data) : {};
+      const needsSave = (
+        (updated.transferorAddress && updated.transferorAddress !== (savedWtn.transferorAddress || '')) ||
+        (updated.transfereeAddress && updated.transfereeAddress !== (savedWtn.transfereeAddress || '')) ||
+        (updated.transfereeName && updated.transfereeName !== (savedWtn.transfereeName || '')) ||
+        (updated.transferorName && updated.transferorName !== (savedWtn.transferorName || '')) ||
+        (updated.recipientEmail && updated.recipientEmail !== (savedWtn.recipientEmail || '')) ||
+        (updated.transferDate && updated.transferDate !== (savedWtn.transferDate || ''))
+      );
+      if (needsSave) {
+        window.supabase.from('jobs')
+          .update({ wtn_data: JSON.stringify(updated) })
+          .eq('id', job.id)
+          .then(() => console.log('[WTN] Auto-saved enriched data for job', job.id))
+          .catch(err => console.warn('[WTN] Auto-save failed:', err.message));
+      }
     }
 
     return updated;
