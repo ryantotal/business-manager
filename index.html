@@ -942,8 +942,7 @@ return (
             const inProgress = myJobs.filter(j => !j.is_completed && j.status !== 'COMPLETED' && j.status !== 'COLLECTED' && !j.is_cancelled);
 
             const downloadWTN = (job) => {
-              const wtnId = 'WTN-' + (job.job_number || job.jobNumber);
-              window.open('https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=' + wtnId, '_blank');
+              setWtnModalJob(job);
             };
 
             return (
