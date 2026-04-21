@@ -228,8 +228,11 @@ export default async function handler(req, res) {
         contact_type_ids: [contactTypeId],
       };
       if (email && isValidEmail(email))                     contactObj.email        = email;
+      if (vatNumber)                                        contactObj.tax_number   = vatNumber;
       if (creditLimit && parseFloat(creditLimit) > 0)       contactObj.credit_limit = parseFloat(creditLimit);
       if (creditDays  && parseInt(creditDays)   > 0)        contactObj.credit_days  = parseInt(creditDays);
+      
+      console.log('[Sage Proxy] Step 1 — contact payload:', JSON.stringify({ contact: contactObj }));
 
       const contactData = await sageRequest('contacts', { contact: contactObj });
       // Sage returns the contact object directly with id at top level
@@ -279,6 +282,8 @@ export default async function handler(req, res) {
 
       // ── Step 3: Create a main contact person ─────────────────────────────
       console.log('[Sage Proxy] Step 3 — creating contact person, address_id:', address_id);
+      console.log('[Sage Proxy] Step 3 — mainContact data:', JSON.stringify(mainContact));
+      console.log('[Sage Proxy] Step 3 — email from request:', email);
       const contactPersonObj = {
         contact_person: {
           contact_id: sage_id,
@@ -293,6 +298,7 @@ export default async function handler(req, res) {
       if (cpEmail && isValidEmail(cpEmail))   contactPersonObj.contact_person.email     = cpEmail;
       if (mainContact?.telephone)             contactPersonObj.contact_person.telephone = mainContact.telephone;
       if (mainContact?.mobile)                contactPersonObj.contact_person.mobile    = mainContact.mobile;
+      console.log('[Sage Proxy] Step 3 — contact person payload:', JSON.stringify(contactPersonObj));
       try {
         const cpData = await sageRequest('contact_persons', contactPersonObj);
         // Sage returns the contact_person object directly with id at top level
