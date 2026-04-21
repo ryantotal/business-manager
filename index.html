@@ -1735,6 +1735,18 @@ const [wtnFields, setWtnFields] = useState(() => {
       // Always use fresh carrier reg from supplier record
       transfereeCarrierReg: freshCarrierReg,
       transfereePermitNumber: freshPermitNum,
+      // Always refresh addresses and names from current job (not stale WTN copy)
+      transferorName: job?.customerName || savedWtn.transferorName || '',
+      transferorAddress: [job?.siteAddress1 || job?.site_address1, job?.siteAddress2 || job?.site_address2, job?.siteCity || job?.site_city, job?.sitePostcode || job?.site_postcode].filter(Boolean).join(', ') || savedWtn.transferorAddress || '',
+      transferorPostcode: job?.sitePostcode || job?.site_postcode || savedWtn.transferorPostcode || '',
+      transferorRepresenting: job?.customerName || savedWtn.transferorRepresenting || '',
+      transfereeName: job?.supplierName || savedWtn.transfereeName || '',
+      transfereeAddress: (() => {
+        const ms = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
+        return ms ? [ms.address, ms.city, ms.county, ms.postcode].filter(Boolean).join(', ') : savedWtn.transfereeAddress || '';
+      })(),
+      transfereeRepresenting: job?.supplierName || savedWtn.transfereeRepresenting || '',
+      transferAddress: [job?.siteAddress1 || job?.site_address1, job?.siteAddress2 || job?.site_address2, job?.siteCity || job?.site_city, job?.sitePostcode || job?.site_postcode].filter(Boolean).join(', ') || savedWtn.transferAddress || '',
       // Preserve signatures from saved data
       transferorSignature: savedWtn.transferorSignature || '',
       transfereeSignature: savedWtn.transfereeSignature || '',
@@ -1822,15 +1834,48 @@ useEffect(() => {
   const matchedCust = customers?.find(c => (c.name || c.companyName) === job?.customerName);
   const freshRecipientEmail = matchedCust?.email || '';
   const freshAdditionalEmails = matchedCust?.additional_emails || '';
-  setWtnFields(prev => ({
-    ...prev,
-    wtnNumber: autoWtnNumber,
-    transferDate: prev.transferDate || autoDate,
-    transferTime: prev.transferTime || timeStr,
-    recipientEmail: freshRecipientEmail || prev.recipientEmail || '',
-    additionalEmails: freshAdditionalEmails || prev.additionalEmails || '',
-    recipientEmailSource: (freshRecipientEmail || prev.recipientEmail) ? 'customer-record' : 'manual',
-  }));
+
+  // Rebuild addresses from current job (fixes stale addresses from duplicated/recurring jobs)
+  const freshTransferorAddress = [job?.siteAddress1 || job?.site_address1, job?.siteAddress2 || job?.site_address2, job?.siteCity || job?.site_city, job?.sitePostcode || job?.site_postcode].filter(Boolean).join(', ');
+  const matchedSupp = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
+  const freshTransfereeAddress = matchedSupp ? [matchedSupp.address, matchedSupp.city, matchedSupp.county, matchedSupp.postcode].filter(Boolean).join(', ') : '';
+
+  setWtnFields(prev => {
+    const updated = {
+      ...prev,
+      wtnNumber: autoWtnNumber,
+      transferDate: prev.transferDate || autoDate,
+      transferTime: prev.transferTime || timeStr,
+      recipientEmail: freshRecipientEmail || prev.recipientEmail || '',
+      additionalEmails: freshAdditionalEmails || prev.additionalEmails || '',
+      recipientEmailSource: (freshRecipientEmail || prev.recipientEmail) ? 'customer-record' : 'manual',
+      // Always refresh names and addresses from current job data
+      transferorName: job?.customerName || prev.transferorName || '',
+      transferorAddress: freshTransferorAddress || prev.transferorAddress || '',
+      transferorPostcode: job?.sitePostcode || job?.site_postcode || prev.transferorPostcode || '',
+      transferorRepresenting: job?.customerName || prev.transferorRepresenting || '',
+      transfereeName: job?.supplierName || prev.transfereeName || '',
+      transfereeAddress: freshTransfereeAddress || prev.transfereeAddress || '',
+      transfereeRepresenting: job?.supplierName || prev.transfereeRepresenting || '',
+      transferAddress: freshTransferorAddress || prev.transferAddress || '',
+    };
+
+    // Auto-save corrected WTN data back to DB silently (fixes old jobs without manual re-save)
+    if (job?.id && (
+      prev.transferorAddress !== updated.transferorAddress ||
+      prev.transfereeName !== updated.transfereeName ||
+      prev.transfereeAddress !== updated.transfereeAddress ||
+      prev.recipientEmail !== updated.recipientEmail
+    )) {
+      window.supabase.from('jobs')
+        .update({ wtn_data: JSON.stringify(updated) })
+        .eq('id', job.id)
+        .then(() => console.log('[WTN] Auto-saved corrected addresses for job', job.id))
+        .catch(err => console.warn('[WTN] Auto-save failed:', err.message));
+    }
+
+    return updated;
+  });
 
   // Load named contacts for this customer and merge into email list
   if (matchedCust?.id) {
@@ -13939,10 +13984,19 @@ site_notes: fullJob?.site_notes || '',
                 const d = typeof src === 'string' ? JSON.parse(src) : src;
                 return JSON.stringify({
                   ...d,
-                  // Only clear one-time fields — keep names/CBDU/addresses for convenience
+                  // Clear job-specific fields — will be rebuilt from new job's data on open
                   transferDate: '',
                   transferTime: '',
                   wtnNumber: '',
+                  // Clear addresses — they'll be refreshed from the new job's site fields
+                  transferorAddress: '',
+                  transferorPostcode: '',
+                  transferorName: '',
+                  transferorRepresenting: '',
+                  transfereeName: '',
+                  transfereeAddress: '',
+                  transfereeRepresenting: '',
+                  transferAddress: '',
                   // Clear recurring WTN settings — these live on parent only
                   recurringWtn: false,
                   recurringWtnFrequency: 'monthly',
