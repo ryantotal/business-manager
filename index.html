@@ -1812,7 +1812,12 @@ const [wtnFields, setWtnFields] = useState(() => {
     recycledPct: 50,
     recoveredPct: 50,
     landfillPct: 0,
-    notes: job?.notes || '',
+    notes: (() => {
+      const n = job?.notes || '';
+      // Don't put system notes on the WTN — they're internal
+      if (n.startsWith('Duplicated from') || n.startsWith('Auto-created recurring') || n.startsWith('Manually created missed recurring')) return '';
+      return n;
+    })(),
     recipientEmail: customerEmail,
     additionalEmails: matchedCustomer?.additional_emails || '',
     recipientEmailSource: customerEmail ? 'customer-record' : 'manual',
