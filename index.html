@@ -1821,6 +1821,74 @@ const [wtnFields, setWtnFields] = useState(() => {
     recurringWtnNextDate: '',
   };
 });
+// If this is a child/recurring job with incomplete WTN data, inherit from parent
+useEffect(() => {
+  const parentId = job?.parentJobId || job?.parent_job_id;
+  if (!parentId) return;
+  
+  // Check if the child's WTN data is actually complete or just a shell
+  const ownWtn = job?.wtn_data ? (typeof job.wtn_data === 'string' ? (() => { try { return JSON.parse(job.wtn_data); } catch(e) { return null; } })() : job.wtn_data) : null;
+  const hasCompleteWtn = ownWtn && (ownWtn.listOfWasteCode || ownWtn.transferorSignature || ownWtn.transferorPermitNumber);
+  if (hasCompleteWtn) return; // WTN is already fully populated
+
+  (async () => {
+    try {
+      const { data: parent } = await window.supabase
+        .from('jobs')
+        .select('wtn_data')
+        .eq('id', parentId)
+        .single();
+      if (!parent?.wtn_data) return;
+
+      const parentWtn = typeof parent.wtn_data === 'string' ? JSON.parse(parent.wtn_data) : parent.wtn_data;
+      console.log('[WTN] Inheriting WTN data from parent job:', parentId);
+
+      setWtnFields(prev => ({
+        ...prev,
+        // Inherit waste details from parent
+        wasteDescription: prev.wasteDescription || parentWtn.wasteDescription || '',
+        skipSize: prev.skipSize || parentWtn.skipSize || '',
+        listOfWasteCode: prev.listOfWasteCode || parentWtn.listOfWasteCode || '',
+        wasteContainer: parentWtn.wasteContainer || prev.wasteContainer || 'Skip',
+        quantity: parentWtn.quantity || prev.quantity || 1,
+        unit: parentWtn.unit || prev.unit || 'tonnes',
+        isHazardous: parentWtn.isHazardous || prev.isHazardous || false,
+        processesWasteThrough: parentWtn.processesWasteThrough || prev.processesWasteThrough || '',
+        // Inherit Section B (transferor) details
+        transferorSicCode: parentWtn.transferorSicCode || prev.transferorSicCode || '',
+        transferorIsProducer: parentWtn.transferorIsProducer ?? prev.transferorIsProducer ?? true,
+        transferorPermitNumber: parentWtn.transferorPermitNumber || prev.transferorPermitNumber || '',
+        transferorSignature: parentWtn.transferorSignature || prev.transferorSignature || '',
+        // Inherit Section C (transferee/carrier) details
+        transfereeCarrierReg: parentWtn.transfereeCarrierReg || prev.transfereeCarrierReg || '',
+        transfereePermitNumber: parentWtn.transfereePermitNumber || prev.transfereePermitNumber || '',
+        transfereeSignature: parentWtn.transfereeSignature || prev.transfereeSignature || '',
+        // Inherit recycling breakdown
+        recycledPct: parentWtn.recycledPct ?? prev.recycledPct ?? 50,
+        recoveredPct: parentWtn.recoveredPct ?? prev.recoveredPct ?? 50,
+        landfillPct: parentWtn.landfillPct ?? prev.landfillPct ?? 0,
+      }));
+
+      // Also save the inherited data to the child job so it persists
+      const childWtn = {
+        ...parentWtn,
+        transferDate: '',
+        transferTime: '',
+        wtnNumber: '',
+        recurringWtn: false,
+        recurringWtnFrequency: 'monthly',
+        recurringWtnNextDate: '',
+      };
+      await window.supabase.from('jobs')
+        .update({ wtn_data: JSON.stringify(childWtn) })
+        .eq('id', job.id);
+      console.log('[WTN] Saved inherited WTN data to child job:', job.id);
+    } catch (err) {
+      console.warn('[WTN] Failed to inherit from parent:', err.message);
+    }
+  })();
+}, [job?.id]);
+
 // Refresh broker details from Supabase on form open (fixes race condition with localStorage)
 useEffect(() => {
   const now = new Date();
@@ -1860,13 +1928,15 @@ useEffect(() => {
       transferAddress: freshTransferorAddress || prev.transferAddress || '',
     };
 
-    // Auto-save corrected WTN data back to DB silently (fixes old jobs without manual re-save)
-    if (job?.id && (
-      prev.transferorAddress !== updated.transferorAddress ||
-      prev.transfereeName !== updated.transfereeName ||
-      prev.transfereeAddress !== updated.transfereeAddress ||
-      prev.recipientEmail !== updated.recipientEmail
-    )) {
+    // Auto-save corrected addresses ONLY if:
+    // 1. Job already has wtn_data in DB (not a fresh/empty WTN)
+    // 2. An address actually changed (not just initial load)
+    const hasExistingWtnData = !!(job?.wtn_data || job?.wtnData);
+    const addressChanged = hasExistingWtnData && (
+      prev.transferorAddress && prev.transferorAddress !== updated.transferorAddress ||
+      prev.transfereeAddress && prev.transfereeAddress !== updated.transfereeAddress
+    );
+    if (job?.id && addressChanged) {
       window.supabase.from('jobs')
         .update({ wtn_data: JSON.stringify(updated) })
         .eq('id', job.id)
