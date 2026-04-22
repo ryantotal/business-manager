@@ -1141,7 +1141,7 @@ return (
                           ) : filteredJobs.map(job => {
                             const done = job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED';
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
-                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.job_type);
+                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
                             const hasWtn = job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null' && job.wtn_data !== '{}');
                             const siNumber = job.sage_si_number || job.invoice_number || null;
@@ -1190,7 +1190,7 @@ return (
                                       {isInvoiced && (
                                         <span className="text-green-700 font-bold text-xs">{siNumber}</span>
                                       )}
-                                      {done && isWasteJob && hasWtn ? (
+                                      {isWasteJob && hasWtn ? (
                                         <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
                                           className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
                                           📄 Waste Transfer Note
@@ -1249,7 +1249,7 @@ return (
                                             </table>
                                           </div>
                                         )}
-                                        {done && isWasteJob && (job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null')) && (
+                                        {isWasteJob && (job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null')) && (
                                           <div className="col-span-2 sm:col-span-3">
                                             <button onClick={() => downloadWTN(job)}
                                               className="mt-1 px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
@@ -1288,7 +1288,7 @@ return (
                           {filteredJobs.map(job => {
                             const done = job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED';
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
-                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.job_type);
+                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
                             const hasWtn = job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null' && job.wtn_data !== '{}');
                             const siNumber = job.sage_si_number || job.invoice_number || null;
@@ -1331,7 +1331,7 @@ return (
                                       {isInvoiced && <span className="text-green-700 font-bold">{siNumber}</span>}
                                     </div>
                                     {/* Quick WTN button on card */}
-                                    {done && isWasteJob && hasWtn && (
+                                    {isWasteJob && hasWtn && (
                                       <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
                                         className="mt-2 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium">
                                         📄 View WTN
@@ -1369,7 +1369,7 @@ return (
                                         ))}
                                       </div>
                                     )}
-                                    {done && isWasteJob && hasWtn && (
+                                    {isWasteJob && hasWtn && (
                                       <button onClick={() => downloadWTN(job)}
                                         className="mt-3 w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
                                         📄 View Waste Transfer Note
@@ -6504,19 +6504,21 @@ jobs.forEach(job => {
                           'IN_PROGRESS': 'bg-blue-100 text-blue-800',
                           'COLLECTED': 'bg-purple-100 text-purple-800'
                         };
-                        const mStatus = job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
+                        const mStatus = job.onStop ? 'bg-red-100 text-red-800 border border-red-300' :
+                          job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
                           job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
                           job.isCancelled ? 'bg-red-100 text-red-800' :
                           mStatusCfg[job.status];
                         const mIsFinished = job.isCompleted || job.status === 'COLLECTED';
-                        const mStatusLabel = job.status === 'COLLECTED' ? 'Collected' :
+                        const mStatusLabel = job.onStop ? '⛔ ON STOP' :
+                          job.status === 'COLLECTED' ? 'Collected' :
                           job.isCompleted ? 'Completed' :
                           job.isCancelled ? 'Cancelled' :
                           (job.status || '').replace('_', ' ');
                         return (
                           <div
                             key={job.id}
-                            className={`px-4 py-3 active:bg-gray-100 cursor-pointer ${mIsFinished ? 'bg-green-50 border-l-4 border-l-green-500' : ''}`}
+                            className={`px-4 py-3 active:bg-gray-100 cursor-pointer ${job.onStop ? 'bg-red-50 border-l-4 border-l-red-500' : mIsFinished ? 'bg-green-50 border-l-4 border-l-green-500' : ''}`}
                             onClick={() => handleJobClick(job)}
                           >
                             <div className="flex items-start gap-3">
@@ -6570,7 +6572,8 @@ const statusConfig = {
 'IN_PROGRESS': 'bg-blue-100 text-blue-800',
 'COLLECTED': 'bg-purple-100 text-purple-800'
  };
-const status = job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
+const status = job.onStop ? 'bg-red-100 text-red-800 border border-red-300' :
+job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
 job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
 job.isCancelled ? 'bg-red-100 text-red-800' :
 statusConfig[job.status];
@@ -6632,7 +6635,8 @@ style={{ backgroundColor: jobColors[job.jobType] }}
 </td>
 <td className="px-3 py-3 whitespace-nowrap">
 <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${status}`}>
-{job.status === 'COLLECTED' ? 'Collected' :
+{job.onStop ? '⛔ ON STOP' :
+job.status === 'COLLECTED' ? 'Collected' :
 job.isCompleted ? 'Completed' :
 job.isCancelled ? 'Cancelled' :
 job.status.replace('_', ' ')}
@@ -6702,8 +6706,8 @@ job.status.replace('_', ' ')}
                         <div className="overflow-y-auto flex-1">
                           {filteredJobs.map((j) => {
                             const isActive = j.id === selectedJob.id;
-                            const statusLabel = j.status === 'COLLECTED' ? 'Collected' : j.isCompleted ? 'Completed' : j.isCancelled ? 'Cancelled' : j.status;
-                            const statusColor = j.status === 'COLLECTED' ? 'bg-purple-100 text-purple-700' : j.isCompleted ? 'bg-emerald-100 text-emerald-700' : j.isCancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
+                            const statusLabel = j.onStop ? '⛔ ON STOP' : j.status === 'COLLECTED' ? 'Collected' : j.isCompleted ? 'Completed' : j.isCancelled ? 'Cancelled' : j.status;
+                            const statusColor = j.onStop ? 'bg-red-100 text-red-700 border border-red-300' : j.status === 'COLLECTED' ? 'bg-purple-100 text-purple-700' : j.isCompleted ? 'bg-emerald-100 text-emerald-700' : j.isCancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
                             const product = j.lineItems && j.lineItems.length > 0 ? (j.lineItems[0].product_name || j.lineItems[0].description) : (j.sageProductName || null);
                             return (
                               <div
@@ -7504,7 +7508,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
-const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh }) => {
+const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onStop, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh }) => {
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
@@ -7779,8 +7783,8 @@ console.log(JSON.stringify(invoiceData, null, 2));
           <div className="overflow-y-auto flex-1">
             {navJobs.map((j) => {
               const isActive = j.id === job.id;
-              const statusLabel = j.status === 'COLLECTED' ? 'Collected' : j.isCompleted ? 'Completed' : j.isCancelled ? 'Cancelled' : j.status;
-              const statusColor = j.status === 'COLLECTED' ? 'bg-purple-100 text-purple-700' : j.isCompleted ? 'bg-emerald-100 text-emerald-700' : j.isCancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
+              const statusLabel = j.onStop ? '⛔ ON STOP' : j.status === 'COLLECTED' ? 'Collected' : j.isCompleted ? 'Completed' : j.isCancelled ? 'Cancelled' : j.status;
+              const statusColor = j.onStop ? 'bg-red-100 text-red-700 border border-red-300' : j.status === 'COLLECTED' ? 'bg-purple-100 text-purple-700' : j.isCompleted ? 'bg-emerald-100 text-emerald-700' : j.isCancelled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
               const product = j.lineItems && j.lineItems.length > 0 ? (j.lineItems[0].product_name || j.lineItems[0].description) : (j.sageProductName || null);
               return (
                 <div
@@ -7855,12 +7859,14 @@ console.log(JSON.stringify(invoiceData, null, 2));
         <p className="text-gray-600">{job.jobType}</p>
       </div>
       <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+        job.onStop ? 'bg-red-100 text-red-800 border border-red-300' :
         job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
         job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
         job.isCancelled ? 'bg-red-100 text-red-800' :
         'bg-blue-100 text-blue-800'
       }`}>
-        {job.status === 'COLLECTED' ? 'Collected' :
+        {job.onStop ? '⛔ ON STOP' :
+         job.status === 'COLLECTED' ? 'Collected' :
          job.isCompleted ? 'Completed' :
          job.isCancelled ? 'Cancelled' :
          job.status}
@@ -7930,6 +7936,17 @@ console.log(JSON.stringify(invoiceData, null, 2));
   </>
 )}
       
+      {/* Stop/Unstop button */}
+      {!job.isCompleted && !job.isCancelled && job.status !== 'COMPLETED' && job.status !== 'COLLECTED' && (
+        <button
+          onClick={() => onStop(job)}
+          className={`p-2 rounded-lg ${job.onStop ? 'text-green-600 hover:bg-green-100' : 'text-red-600 hover:bg-red-100'}`}
+          title={job.onStop ? 'Take Off Stop' : 'Put On Stop'}
+        >
+          <LucideIcon icon={job.onStop ? 'PlayCircle' : 'StopCircle'} size={20} />
+        </button>
+      )}
+
       {user?.role === 'ADMIN' && (
         <button
           onClick={() => setDeleteConfirmation({ show: true, jobId: job.id, jobNumber: job.jobNumber || 'this job' })}
@@ -7942,6 +7959,26 @@ console.log(JSON.stringify(invoiceData, null, 2));
     </div>
   </div>
 </div>
+
+      {/* ON STOP Banner */}
+      {job.onStop && (
+        <div className="bg-red-50 border-b-2 border-red-300 px-4 sm:px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-red-600 text-xl">⛔</span>
+            <div>
+              <p className="font-semibold text-red-800">This job is ON STOP</p>
+              <p className="text-sm text-red-600">Do not proceed with delivery or collection until the stop is lifted.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => onStop(job)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2"
+          >
+            <LucideIcon icon="PlayCircle" size={16} />
+            Take Off Stop
+          </button>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="bg-white border-b border-gray-200">
@@ -12786,7 +12823,7 @@ info@totalwasteservicesltd.com`;
                           <td className="px-5 py-3">
                             <div className="flex flex-col gap-1">
                               {isInvoiced && <span className="text-green-700 font-bold text-xs">{siNumber}</span>}
-                              {done && isWasteJob && hasWtn ? (
+                              {isWasteJob && hasWtn ? (
                                 <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
                                   className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
                                   📄 Waste Transfer Note
@@ -12839,7 +12876,7 @@ info@totalwasteservicesltd.com`;
                                     </table>
                                   </div>
                                 )}
-                                {done && isWasteJob && hasWtn && (
+                                {isWasteJob && hasWtn && (
                                   <div className="col-span-3">
                                     <button onClick={() => downloadWTN(job)}
                                       className="mt-1 px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
@@ -13285,6 +13322,7 @@ collectionDate: job.collection_date,
   status: job.status || 'CONFIRMED',
   isCompleted: job.is_completed || false,
   isCancelled: job.is_cancelled || false,
+  onStop: job.on_stop || false,
   wasteTransferNote: job.waste_transfer_note,
   hazardousWaste: job.hazardous_waste || false,
   consignmentNote: job.consignment_note,
@@ -15692,6 +15730,21 @@ onClick={() => {
   setSelectedCollectionDate(new Date().toISOString().split('T')[0]);
 }}
     onComplete={handleCompleteJob}
+    onStop={async (job) => {
+      const newStopState = !job.onStop;
+      try {
+        const { error } = await window.supabase
+          .from('jobs')
+          .update({ on_stop: newStopState })
+          .eq('id', job.id);
+        if (error) throw error;
+        const updatedJob = { ...job, onStop: newStopState, on_stop: newStopState };
+        setJobs(prevJobs => prevJobs.map(j => j.id === job.id ? { ...j, onStop: newStopState, on_stop: newStopState } : j));
+        setShowFullPageJob(updatedJob);
+      } catch (err) {
+        alert('Error updating stop status: ' + err.message);
+      }
+    }}
     user={user}
     onDeleteAttachment={handleDeleteAttachment}
   />
