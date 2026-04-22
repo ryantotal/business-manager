@@ -21,6 +21,19 @@ function isTokenExpired(expiresAt) {
   return new Date().getTime() > (new Date(expiresAt).getTime() - 30000);
 }
 
+// ── FIX: Helper to normalise VAT number for Sage ──────────────────────────
+// Sage expects the numeric-only portion for UK VAT numbers.
+// Users may enter "GB117223643" but Sage wants "117223643".
+function normaliseTaxNumber(vatNumber) {
+  if (!vatNumber) return '';
+  let v = vatNumber.trim().toUpperCase();
+  // Strip common UK prefixes
+  if (v.startsWith('GB')) v = v.slice(2);
+  // Remove any spaces or dashes
+  v = v.replace(/[\s\-]/g, '');
+  return v;
+}
+
 // Helper function to refresh the access token
 async function refreshAccessToken(refreshToken) {
   console.log('[Sage Proxy] Attempting to refresh access token...');
@@ -200,10 +213,22 @@ export default async function handler(req, res) {
         return data;
       };
 
-      // ── Step 1: Create the contact ───────────────────────────────────────
+      // ── Step 1: Create the contact (with inline main_address) ────────────
+      // FIX: Sage validates tax_number against the contact's main_address
+      // country_id. The old code created the contact first, then the address
+      // in a separate call — so tax_number had nothing to validate against.
+      //
+      // The Sage API supports sending main_address inline on POST /contacts,
+      // which creates both atomically. We now use this approach so that
+      // address + tax_number are present together and Sage can validate them.
+      //
+      // UK VAT numbers must be exactly 9 digits, no "GB" prefix.
+      // If no address is provided we omit tax_number entirely (Sage would
+      // reject it with "does not match the main address").
       const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
       const hasAddress = !!(address || postcode || city);
-      console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress });
+      const cleanVat = normaliseTaxNumber(vatNumber);
+      console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress, cleanVat });
       
       // Look up the correct contact_type_id from Sage
       let contactTypeId = contactType === 'SUPPLIER' ? 'VENDOR' : 'CUSTOMER';
@@ -228,9 +253,33 @@ export default async function handler(req, res) {
         contact_type_ids: [contactTypeId],
       };
       if (email && isValidEmail(email))                     contactObj.email        = email;
-      if (vatNumber)                                        contactObj.tax_number   = vatNumber;
       if (creditLimit && parseFloat(creditLimit) > 0)       contactObj.credit_limit = parseFloat(creditLimit);
       if (creditDays  && parseInt(creditDays)   > 0)        contactObj.credit_days  = parseInt(creditDays);
+
+      // Include main_address inline so Sage creates contact + address atomically.
+      // This lets Sage validate tax_number against the address in the same request.
+      if (hasAddress) {
+        contactObj.main_address = {
+          address_type_id: 'ACCOUNTS',
+          country_group_id: 'GB',
+        };
+        if (address)  contactObj.main_address.address_line_1 = address;
+        if (city)     contactObj.main_address.city           = city;
+        if (postcode) contactObj.main_address.postal_code    = postcode;
+
+        // Only include tax_number when we also have an address — Sage requires
+        // a main_address to validate the tax number format against.
+        if (cleanVat) {
+          contactObj.tax_number = cleanVat;
+        }
+      }
+      // If no address provided, we deliberately omit tax_number.
+      // Sage would reject it ("does not match the main address").
+      // The VAT number will be stored in the portal DB and can be
+      // pushed to Sage later once an address is added.
+      if (!hasAddress && cleanVat) {
+        console.warn('[Sage Proxy] Omitting tax_number — no address provided to validate against. Will store in portal only.');
+      }
       
       console.log('[Sage Proxy] Step 1 — contact payload:', JSON.stringify({ contact: contactObj }));
 
@@ -240,44 +289,19 @@ export default async function handler(req, res) {
       if (!sage_id) throw { status: 500, data: { message: 'Sage did not return a contact ID', response: contactData } };
       console.log('[Sage Proxy] Step 1 complete — sage_id:', sage_id);
 
-      // ── Step 2: Create the address linked to the contact ─────────────────
+      // ── Step 2: Fetch the address ID that Sage auto-created ──────────────
+      // When using inline main_address, Sage creates the address automatically.
+      // We need its ID for the contact person in Step 3.
       let address_id = null;
-      if (hasAddress) {
-        console.log('[Sage Proxy] Step 2 — creating address for contact:', sage_id);
-        const addressObj = {
-          address: {
-            contact_id: sage_id,
-            name: 'Main Address',
-            address_type_id: 'ACCOUNTS',
-            is_main_address: true,
-            country_id: 'GB',
-          }
-        };
-        if (address)  addressObj.address.address_line_1 = address;
-        if (city)     addressObj.address.city           = city;
-        if (postcode) addressObj.address.postal_code    = postcode;
-
-        try {
-          const addrData = await sageRequest('addresses', addressObj);
-          address_id = addrData?.id;
-          console.log('[Sage Proxy] Step 2 complete — address created, id:', address_id);
-        } catch (addrErr) {
-          console.warn('[Sage Proxy] Step 2 — address creation failed:', addrErr?.data);
+      try {
+        const addrList = await sageRequest(`addresses?contact_id=${sage_id}`, null, 'GET');
+        const items = addrList?.$items || addrList?.items || addrList;
+        if (Array.isArray(items) && items.length > 0) {
+          address_id = items[0].id;
+          console.log('[Sage Proxy] Step 2 — found address for contact:', address_id);
         }
-      }
-
-      // If we didn't create an address, try to fetch the default one Sage auto-created
-      if (!address_id) {
-        try {
-          const addrList = await sageRequest(`addresses?contact_id=${sage_id}`, null, 'GET');
-          const items = addrList?.$items || addrList?.items || addrList;
-          if (Array.isArray(items) && items.length > 0) {
-            address_id = items[0].id;
-            console.log('[Sage Proxy] Found existing address for contact:', address_id);
-          }
-        } catch (e) {
-          console.warn('[Sage Proxy] Could not fetch addresses for contact:', e?.data || e?.message);
-        }
+      } catch (e) {
+        console.warn('[Sage Proxy] Step 2 — could not fetch addresses:', e?.data || e?.message);
       }
 
       // ── Step 3: Create a main contact person ─────────────────────────────
