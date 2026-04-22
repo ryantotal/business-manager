@@ -213,14 +213,10 @@ export default async function handler(req, res) {
         return data;
       };
 
-      // ── Step 1: Create the contact (with inline main_address) ────────────
-      // FIX: Sage validates tax_number against the contact's main_address
-      // country_id. The old code created the contact first, then the address
-      // in a separate call — so tax_number had nothing to validate against.
-      //
-      // The Sage API supports sending main_address inline on POST /contacts,
-      // which creates both atomically. We now use this approach so that
-      // address + tax_number are present together and Sage can validate them.
+      // ── Step 1: Create the contact (WITHOUT tax_number) ────────────────
+      // Sage validates tax_number against the contact's main_address.
+      // We create the contact first, then the address, then apply tax_number
+      // via PUT once the address exists.
       //
       // UK VAT numbers must be exactly 9 digits, no "GB" prefix.
       // If no address is provided we omit tax_number entirely (Sage would
@@ -230,78 +226,85 @@ export default async function handler(req, res) {
       const cleanVat = normaliseTaxNumber(vatNumber);
       console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress, cleanVat });
       
-      // Look up the correct contact_type_id from Sage
-      let contactTypeId = contactType === 'SUPPLIER' ? 'VENDOR' : 'CUSTOMER';
-      try {
-        const types = await sageRequest('contact_types', null, 'GET');
-        const items = types?.$items || types?.items || (Array.isArray(types) ? types : []);
-        const match = items.find(t => 
-          (t.id || '').toUpperCase() === contactType ||
-          (t.displayed_as || '').toUpperCase().includes(contactType) ||
-          (t.id || '').toUpperCase() === (contactType === 'SUPPLIER' ? 'VENDOR' : 'CUSTOMER')
-        );
-        if (match) {
-          contactTypeId = match.id;
-          console.log('[Sage Proxy] Found contact type:', contactTypeId, match.displayed_as);
-        }
-      } catch (e) {
-        console.warn('[Sage Proxy] Could not look up contact types, using default:', contactTypeId);
-      }
+      // Use the documented contact_type_id values directly.
+      // Sage v3.1 docs confirm these are "CUSTOMER" and "VENDOR".
+      const contactTypeId = contactType === 'SUPPLIER' ? 'VENDOR' : 'CUSTOMER';
+      console.log('[Sage Proxy] Using contact type:', contactTypeId);
 
       const contactObj = {
         name,
         contact_type_ids: [contactTypeId],
       };
       if (email && isValidEmail(email))                     contactObj.email        = email;
+      // NOTE: tax_number deliberately omitted — added via PUT in Step 2b
       if (creditLimit && parseFloat(creditLimit) > 0)       contactObj.credit_limit = parseFloat(creditLimit);
       if (creditDays  && parseInt(creditDays)   > 0)        contactObj.credit_days  = parseInt(creditDays);
-
-      // Include main_address inline so Sage creates contact + address atomically.
-      // This lets Sage validate tax_number against the address in the same request.
-      if (hasAddress) {
-        contactObj.main_address = {
-          address_type_id: 'ACCOUNTS',
-          country_group_id: 'GB',
-        };
-        if (address)  contactObj.main_address.address_line_1 = address;
-        if (city)     contactObj.main_address.city           = city;
-        if (postcode) contactObj.main_address.postal_code    = postcode;
-
-        // Only include tax_number when we also have an address — Sage requires
-        // a main_address to validate the tax number format against.
-        if (cleanVat) {
-          contactObj.tax_number = cleanVat;
-        }
-      }
-      // If no address provided, we deliberately omit tax_number.
-      // Sage would reject it ("does not match the main address").
-      // The VAT number will be stored in the portal DB and can be
-      // pushed to Sage later once an address is added.
-      if (!hasAddress && cleanVat) {
-        console.warn('[Sage Proxy] Omitting tax_number — no address provided to validate against. Will store in portal only.');
-      }
       
       console.log('[Sage Proxy] Step 1 — contact payload:', JSON.stringify({ contact: contactObj }));
 
       const contactData = await sageRequest('contacts', { contact: contactObj });
-      // Sage returns the contact object directly with id at top level
       const sage_id = contactData?.id;
       if (!sage_id) throw { status: 500, data: { message: 'Sage did not return a contact ID', response: contactData } };
       console.log('[Sage Proxy] Step 1 complete — sage_id:', sage_id);
 
-      // ── Step 2: Fetch the address ID that Sage auto-created ──────────────
-      // When using inline main_address, Sage creates the address automatically.
-      // We need its ID for the contact person in Step 3.
+      // ── Step 2: Create the address linked to the contact ─────────────────
       let address_id = null;
-      try {
-        const addrList = await sageRequest(`addresses?contact_id=${sage_id}`, null, 'GET');
-        const items = addrList?.$items || addrList?.items || addrList;
-        if (Array.isArray(items) && items.length > 0) {
-          address_id = items[0].id;
-          console.log('[Sage Proxy] Step 2 — found address for contact:', address_id);
+      if (hasAddress) {
+        console.log('[Sage Proxy] Step 2 — creating address for contact:', sage_id);
+        const addressObj = {
+          address: {
+            contact_id: sage_id,
+            name: 'Main Address',
+            address_type_id: 'ACCOUNTS',
+            is_main_address: true,
+            country_id: 'GB',
+          }
+        };
+        if (address)  addressObj.address.address_line_1 = address;
+        if (city)     addressObj.address.city           = city;
+        if (postcode) addressObj.address.postal_code    = postcode;
+
+        try {
+          const addrData = await sageRequest('addresses', addressObj);
+          address_id = addrData?.id;
+          console.log('[Sage Proxy] Step 2 complete — address created, id:', address_id);
+        } catch (addrErr) {
+          console.warn('[Sage Proxy] Step 2 — address creation failed:', addrErr?.data);
         }
-      } catch (e) {
-        console.warn('[Sage Proxy] Step 2 — could not fetch addresses:', e?.data || e?.message);
+      }
+
+      // If we didn't create an address, try to fetch the default one Sage auto-created
+      if (!address_id) {
+        try {
+          const addrList = await sageRequest(`addresses?contact_id=${sage_id}`, null, 'GET');
+          const items = addrList?.$items || addrList?.items || addrList;
+          if (Array.isArray(items) && items.length > 0) {
+            address_id = items[0].id;
+            console.log('[Sage Proxy] Found existing address for contact:', address_id);
+          }
+        } catch (e) {
+          console.warn('[Sage Proxy] Could not fetch addresses for contact:', e?.data || e?.message);
+        }
+      }
+
+      // ── Step 2b: Now apply tax_number via PUT (address exists) ───────────
+      // Sage validates tax_number against country_id on the main_address.
+      // Now that the address is created with country_id: 'GB', the PUT
+      // will succeed because Sage can match the 9-digit UK VAT format.
+      if (cleanVat && address_id) {
+        console.log('[Sage Proxy] Step 2b — setting tax_number on contact:', cleanVat);
+        try {
+          await sageRequest(`contacts/${sage_id}`, {
+            contact: { tax_number: cleanVat }
+          }, 'PUT');
+          console.log('[Sage Proxy] Step 2b complete — tax_number set');
+        } catch (vatErr) {
+          // Non-fatal — contact and address already exist
+          console.warn('[Sage Proxy] Step 2b — failed to set tax_number:', vatErr?.data);
+          console.warn('[Sage Proxy] VAT number will be stored in portal only');
+        }
+      } else if (cleanVat && !address_id) {
+        console.warn('[Sage Proxy] Skipping tax_number — no address to validate against. Stored in portal only.');
       }
 
       // ── Step 3: Create a main contact person ─────────────────────────────
