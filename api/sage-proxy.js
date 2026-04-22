@@ -258,6 +258,7 @@ export default async function handler(req, res) {
             address_type_id: 'ACCOUNTS',
             is_main_address: true,
             country_id: 'GB',
+            country_group_id: 'ALL',
           }
         };
         if (address)  addressObj.address.address_line_1 = address;
@@ -267,9 +268,28 @@ export default async function handler(req, res) {
         try {
           const addrData = await sageRequest('addresses', addressObj);
           address_id = addrData?.id;
-          console.log('[Sage Proxy] Step 2 complete — address created, id:', address_id);
+          // Log what Sage actually stored so we can see the country/country_group
+          console.log('[Sage Proxy] Step 2 complete — address created:', JSON.stringify({
+            id: addrData?.id,
+            country: addrData?.country,
+            country_group: addrData?.country_group,
+            is_main_address: addrData?.is_main_address
+          }));
         } catch (addrErr) {
-          console.warn('[Sage Proxy] Step 2 — address creation failed:', addrErr?.data);
+          console.warn('[Sage Proxy] Step 2 — address creation failed:', JSON.stringify(addrErr?.data));
+          // If country_group_id: 'ALL' failed, retry without it
+          try {
+            delete addressObj.address.country_group_id;
+            const addrData2 = await sageRequest('addresses', addressObj);
+            address_id = addrData2?.id;
+            console.log('[Sage Proxy] Step 2 complete (retry without country_group) — address created:', JSON.stringify({
+              id: addrData2?.id,
+              country: addrData2?.country,
+              country_group: addrData2?.country_group,
+            }));
+          } catch (addrErr2) {
+            console.warn('[Sage Proxy] Step 2 — retry also failed:', JSON.stringify(addrErr2?.data));
+          }
         }
       }
 
@@ -351,12 +371,43 @@ export default async function handler(req, res) {
       // ── Step 5: Now apply tax_number via PUT ─────────────────────────────
       // Sage requires BOTH a main_address AND a main_contact_person before
       // it will accept a tax_number. That's why this runs last.
+      //
+      // Important: A bare PUT with just { tax_number } can reset relationships
+      // on the contact. We fetch the contact first and re-send key fields
+      // alongside tax_number to avoid breaking the main_address link.
       if (cleanVat && address_id) {
-        console.log('[Sage Proxy] Step 5 — setting tax_number on contact:', cleanVat);
+        // Diagnostic: fetch the address to see what country Sage has stored
         try {
-          await sageRequest(`contacts/${sage_id}`, {
-            contact: { tax_number: cleanVat }
-          }, 'PUT');
+          const addrCheck = await sageRequest(`addresses/${address_id}`, null, 'GET');
+          console.log('[Sage Proxy] Step 5 — address check:', JSON.stringify({
+            country: addrCheck?.country,
+            country_group: addrCheck?.country_group,
+            is_main_address: addrCheck?.is_main_address
+          }));
+        } catch (e) {
+          console.log('[Sage Proxy] Step 5 — could not fetch address for diagnostic');
+        }
+
+        console.log('[Sage Proxy] Step 5 — setting tax_number on contact:', cleanVat);
+        
+        // Fetch the full contact so we can merge tax_number without losing data
+        try {
+          const currentContact = await sageRequest(`contacts/${sage_id}`, null, 'GET');
+          console.log('[Sage Proxy] Step 5 — current contact main_address:', JSON.stringify(currentContact?.main_address?.id));
+          
+          // Build a PUT payload that preserves the existing main_address
+          const updatePayload = {
+            contact: {
+              tax_number: cleanVat,
+            }
+          };
+          // If the contact has a main_address, reference it to prevent Sage from
+          // thinking we're trying to clear it
+          if (currentContact?.main_address?.id) {
+            updatePayload.contact.main_address = { id: currentContact.main_address.id };
+          }
+          
+          await sageRequest(`contacts/${sage_id}`, updatePayload, 'PUT');
           console.log('[Sage Proxy] Step 5 complete — tax_number set');
         } catch (vatErr) {
           console.warn('[Sage Proxy] Step 5 — failed to set tax_number:', JSON.stringify(vatErr?.data));
