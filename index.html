@@ -1143,7 +1143,7 @@ return (
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
-                            const hasWtn = job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null' && job.wtn_data !== '{}');
+                            const hasWtn = job.wtn_portal_visible || job.wtn_sent || job.wtn_sent_at;
                             const siNumber = job.sage_si_number || job.invoice_number || null;
                             const isInvoiced = !!siNumber;
 
@@ -1290,7 +1290,7 @@ return (
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
-                            const hasWtn = job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null' && job.wtn_data !== '{}');
+                            const hasWtn = job.wtn_portal_visible || job.wtn_sent || job.wtn_sent_at;
                             const siNumber = job.sage_si_number || job.invoice_number || null;
                             const isInvoiced = !!siNumber;
                             const serviceDetail = job.waste_type || job.aggregate_type || null;
@@ -4730,6 +4730,7 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             wtn_sent_at: new Date().toISOString(),
                             wtn_recipient: emailsToSend.join(', '),
                             wtn_data: JSON.stringify({...wtnFields, htmlContent: htmlBody}),
+                            wtn_portal_visible: true,
                           };
                           if (wtnFields.recurringWtn && wtnFields.recurringWtnNextDate) {
                             wtnSaveData.wtn_recurring = true;
@@ -4802,6 +4803,28 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
                               👁 Preview WTN
                             </button>
+                            <button type="button"
+                              disabled={wtnTotalPct!==100}
+                              onClick={async () => {
+                                try {
+                                  const wtnPayload = {};
+                                  Object.keys(wtnFields).forEach(k => { if (wtnFields[k] !== undefined) wtnPayload[k] = wtnFields[k]; });
+                                  await window.supabase.from('jobs').update({
+                                    wtn_data: JSON.stringify(wtnPayload),
+                                    wtn_portal_visible: true
+                                  }).eq('id', job.id);
+                                  alert('✅ WTN published to customer portal!');
+                                } catch(err) {
+                                  alert('Error publishing WTN: ' + err.message);
+                                }
+                              }}
+                              className={`flex-1 py-2 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-2 transition-colors ${
+                                wtnTotalPct!==100 ? 'bg-gray-300 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'
+                              }`}>
+                              🌐 Publish to Portal
+                            </button>
+                          </div>
+                          <div className="flex gap-3">
                             <button type="button"
                               disabled={wtnSending || wtnTotalPct!==100}
                               onClick={handleSendEmail}
@@ -6582,14 +6605,14 @@ const firstProduct = job.lineItems && job.lineItems.length > 0 ? job.lineItems[0
 return (
 <tr
 key={job.id}
-className={`hover:bg-gray-50 cursor-pointer ${isFinished ? 'opacity-75' : ''}`}
+className={`hover:bg-gray-50 cursor-pointer ${job.onStop ? 'bg-red-50' : isFinished ? 'opacity-75' : ''}`}
 onClick={() => handleJobClick(job)}
 >
 <td className="px-3 py-3 whitespace-nowrap">
 <div className="flex items-center">
 <div
 className="w-2 h-8 rounded mr-3"
-style={{ backgroundColor: jobColors[job.jobType] }}
+style={{ backgroundColor: job.onStop ? '#ef4444' : jobColors[job.jobType] }}
 />
 <div>
 <div className={`text-sm font-medium text-gray-900 ${isFinished ? '' : ''}`}>
@@ -7940,10 +7963,15 @@ console.log(JSON.stringify(invoiceData, null, 2));
       {!job.isCompleted && !job.isCancelled && job.status !== 'COMPLETED' && job.status !== 'COLLECTED' && (
         <button
           onClick={() => onStop(job)}
-          className={`p-2 rounded-lg ${job.onStop ? 'text-green-600 hover:bg-green-100' : 'text-red-600 hover:bg-red-100'}`}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 ${
+            job.onStop 
+              ? 'bg-green-100 text-green-700 border border-green-300 hover:bg-green-200' 
+              : 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200'
+          }`}
           title={job.onStop ? 'Take Off Stop' : 'Put On Stop'}
         >
-          <LucideIcon icon={job.onStop ? 'PlayCircle' : 'StopCircle'} size={20} />
+          <span>{job.onStop ? '▶' : '⛔'}</span>
+          <span className="hidden sm:inline">{job.onStop ? 'Off Stop' : 'On Stop'}</span>
         </button>
       )}
 
@@ -12790,7 +12818,7 @@ info@totalwasteservicesltd.com`;
                     const cancelled = job.isCancelled || job.status === 'CANCELLED';
                     const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
                     const isExpanded = expandedPreviewId === job.id;
-                    const hasWtn = job.wtnSent || job.wtn_sent || (job.wtnData && job.wtnData !== 'null' && job.wtnData !== '{}');
+                    const hasWtn = job.wtn_portal_visible || job.wtnSent || job.wtn_sent;
                     const siNumber = job.sageSiNumber || job.invoiceNumber || null;
                     const isInvoiced = !!siNumber;
                     const lineItems = (() => { try { return Array.isArray(job.lineItems) ? job.lineItems : (typeof job.lineItems === 'string' ? JSON.parse(job.lineItems) : []); } catch(e) { return []; } })();
