@@ -287,36 +287,18 @@ export default async function handler(req, res) {
         }
       }
 
-      // ── Step 2b: Now apply tax_number via PUT (address exists) ───────────
-      // Sage validates tax_number against country_id on the main_address.
-      // Now that the address is created with country_id: 'GB', the PUT
-      // will succeed because Sage can match the 9-digit UK VAT format.
-      if (cleanVat && address_id) {
-        console.log('[Sage Proxy] Step 2b — setting tax_number on contact:', cleanVat);
-        try {
-          await sageRequest(`contacts/${sage_id}`, {
-            contact: { tax_number: cleanVat }
-          }, 'PUT');
-          console.log('[Sage Proxy] Step 2b complete — tax_number set');
-        } catch (vatErr) {
-          // Non-fatal — contact and address already exist
-          console.warn('[Sage Proxy] Step 2b — failed to set tax_number:', vatErr?.data);
-          console.warn('[Sage Proxy] VAT number will be stored in portal only');
-        }
-      } else if (cleanVat && !address_id) {
-        console.warn('[Sage Proxy] Skipping tax_number — no address to validate against. Stored in portal only.');
-      }
-
       // ── Step 3: Create a main contact person ─────────────────────────────
       console.log('[Sage Proxy] Step 3 — creating contact person, address_id:', address_id);
       console.log('[Sage Proxy] Step 3 — mainContact data:', JSON.stringify(mainContact));
       console.log('[Sage Proxy] Step 3 — email from request:', email);
+      const isCustomer = contactType !== 'SUPPLIER';
       const contactPersonObj = {
         contact_person: {
           contact_id: sage_id,
           name: mainContact?.name || name,
           is_main_contact: true,
-          is_preferred_contact: true,
+          // is_preferred_contact is only allowed for CUSTOMER contacts, not VENDOR/Supplier
+          ...(isCustomer && { is_preferred_contact: true }),
           contact_person_type_ids: ['ACCOUNTS'],
         }
       };
@@ -332,54 +314,58 @@ export default async function handler(req, res) {
         const contact_person_id = cpData?.id;
         console.log('[Sage Proxy] Step 3 complete — contact person created, id:', contact_person_id);
 
-        // ── Step 4: Set preferred_contact_person on the contact ──────────────
-        // Sage's Options tab crashes if preferred_contact_person is null.
-        // Try multiple approaches to ensure it gets set.
+        // ── Step 4: Set main/preferred contact_person on the contact ────────
+        // preferred_contact_person is only valid for CUSTOMER contacts.
+        // For VENDOR/Supplier, only set main_contact_person.
         if (contact_person_id) {
           const cpDisplayName = mainContact?.name || name;
+          const contactUpdate = {
+            main_contact_person: { id: contact_person_id, displayed_as: cpDisplayName },
+          };
+          // Only add preferred_contact_person for customers
+          if (isCustomer) {
+            contactUpdate.preferred_contact_person = { id: contact_person_id, displayed_as: cpDisplayName };
+          }
           
-          // Approach A: PUT with nested object including displayed_as (matches working Sage structure)
           try {
-            await sageRequest(`contacts/${sage_id}`, {
-              contact: {
-                main_contact_person: { id: contact_person_id, displayed_as: cpDisplayName },
-                preferred_contact_person: { id: contact_person_id, displayed_as: cpDisplayName }
-              }
-            }, 'PUT');
-            console.log('[Sage Proxy] Step 4 complete (approach A) — preferred_contact set');
-          } catch (pcErrA) {
-            console.warn('[Sage Proxy] Step 4 approach A failed:', pcErrA?.data);
-            
-            // Approach B: PUT with flat _id fields
+            await sageRequest(`contacts/${sage_id}`, { contact: contactUpdate }, 'PUT');
+            console.log('[Sage Proxy] Step 4 complete — main_contact_person set');
+          } catch (pcErr) {
+            console.warn('[Sage Proxy] Step 4 failed:', pcErr?.data);
+            // Fallback: try with just the _id field
             try {
-              await sageRequest(`contacts/${sage_id}`, {
-                contact: {
-                  main_contact_person_id: contact_person_id,
-                  preferred_contact_person_id: contact_person_id
-                }
-              }, 'PUT');
-              console.log('[Sage Proxy] Step 4 complete (approach B) — preferred_contact set');
-            } catch (pcErrB) {
-              console.warn('[Sage Proxy] Step 4 approach B failed:', pcErrB?.data);
-              
-              // Approach C: PATCH instead of PUT
-              try {
-                await sageRequest(`contacts/${sage_id}`, {
-                  contact: {
-                    main_contact_person: { id: contact_person_id },
-                    preferred_contact_person: { id: contact_person_id }
-                  }
-                }, 'PATCH');
-                console.log('[Sage Proxy] Step 4 complete (approach C/PATCH) — preferred_contact set');
-              } catch (pcErrC) {
-                console.warn('[Sage Proxy] Step 4 all approaches failed. Last error:', pcErrC?.data);
-              }
+              const fallback = { main_contact_person_id: contact_person_id };
+              if (isCustomer) fallback.preferred_contact_person_id = contact_person_id;
+              await sageRequest(`contacts/${sage_id}`, { contact: fallback }, 'PUT');
+              console.log('[Sage Proxy] Step 4 complete (fallback) — main_contact_person set');
+            } catch (pcErr2) {
+              console.warn('[Sage Proxy] Step 4 fallback also failed:', pcErr2?.data);
             }
           }
         }
       } catch (cpErr) {
         // Non-fatal — contact and address already created successfully
         console.warn('[Sage Proxy] Step 3 — contact person creation failed:', cpErr?.data);
+      }
+
+      // ── Step 5: Now apply tax_number via PUT ─────────────────────────────
+      // Sage requires BOTH a main_address AND a main_contact_person before
+      // it will accept a tax_number. That's why this runs last.
+      if (cleanVat && address_id) {
+        console.log('[Sage Proxy] Step 5 — setting tax_number on contact:', cleanVat);
+        try {
+          await sageRequest(`contacts/${sage_id}`, {
+            contact: { tax_number: cleanVat }
+          }, 'PUT');
+          console.log('[Sage Proxy] Step 5 complete — tax_number set');
+        } catch (vatErr) {
+          console.warn('[Sage Proxy] Step 5 — failed to set tax_number:', JSON.stringify(vatErr?.data));
+          console.warn('[Sage Proxy] VAT number will be stored in portal only');
+        }
+      } else if (cleanVat && !address_id) {
+        console.warn('[Sage Proxy] Skipping tax_number — no address to validate against. Stored in portal only.');
+      } else if (!cleanVat) {
+        console.log('[Sage Proxy] Step 5 — no VAT number provided (raw vatNumber was:', JSON.stringify(vatNumber), ')');
       }
 
       return res.status(200).json({ sage_id, contactData });
