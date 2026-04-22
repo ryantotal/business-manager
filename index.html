@@ -7965,10 +7965,14 @@ console.log(JSON.stringify(invoiceData, null, 2));
       {!job.isCompleted && !job.isCancelled && job.status !== 'COMPLETED' && job.status !== 'COLLECTED' && (
         <button
           onClick={() => onStop(job)}
-          className={`p-2 rounded-lg ${job.onStop ? 'text-green-600 hover:bg-green-100' : 'text-red-600 hover:bg-red-100'}`}
+          className="p-2 rounded-lg hover:bg-gray-100"
           title={job.onStop ? 'Take Off Stop' : 'Put On Stop'}
         >
-          <LucideIcon icon={job.onStop ? 'PlayCircle' : 'OctagonX'} size={20} />
+          {job.onStop ? (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ea580c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86"></polygon><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+          )}
         </button>
       )}
 
