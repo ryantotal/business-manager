@@ -8823,7 +8823,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
 );
 };
 // Full Page Quote View Component - UPDATED TO MATCH JOB LAYOUT
-const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user }) => {
+const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user, customers }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [quoteAttachments, setQuoteAttachments] = useState([]);
   const [showSendModal, setShowSendModal] = useState(false);
@@ -15685,6 +15685,7 @@ onClick={() => {
     onReject={handleRejectQuote}
     onConvertToJob={handleConvertQuoteToJob}
     user={user}
+    customers={customers}
   />
 )}
               <div className="p-4 sm:p-6 main-content-area">
