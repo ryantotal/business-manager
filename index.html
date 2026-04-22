@@ -75,7 +75,7 @@
     /* Bottom nav bar space on mobile */
     @media (max-width: 639px) {
       .main-content-area {
-        padding-bottom: 70px !important;
+        padding-bottom: 80px !important;
       }
       /* Make modals full-screen on mobile */
       .fixed.inset-0 .rounded-xl,
@@ -109,6 +109,64 @@
       table th, table td {
         padding: 6px 8px !important;
         font-size: 12px !important;
+      }
+
+      /* ── WTN Modal mobile layout ──────────────────────────── */
+      /* Stack 2-column and 3-column grids to single column */
+      .wtn-modal-body [style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+      }
+      /* Remove right borders and add bottom borders between stacked cells */
+      .wtn-modal-body [style*="grid-template-columns"] > div {
+        border-right: none !important;
+        border-bottom: 1px solid #e5e7eb;
+        padding: 8px 10px !important;
+      }
+      .wtn-modal-body [style*="grid-template-columns"] > div:last-child {
+        border-bottom: none;
+      }
+      /* Scale up the entire WTN body for readability — 1.3x the tiny desktop sizes */
+      .wtn-modal-body {
+        font-size: 13px !important;
+      }
+      .wtn-modal-body div, .wtn-modal-body span, .wtn-modal-body strong {
+        line-height: 1.5 !important;
+      }
+      /* Make section headers bigger */
+      .wtn-modal-body [style*="text-transform: uppercase"][style*="letter-spacing"] {
+        font-size: 11px !important;
+        padding: 8px 12px !important;
+      }
+      /* Container checkboxes — wrap on mobile */
+      .wtn-modal-body .wtn-container-opts {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 4px 12px !important;
+      }
+      /* Pie chart section — stack vertically */
+      .wtn-modal-body .wtn-pie-section {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 12px !important;
+      }
+      /* WTN header table — stack on mobile */
+      .wtn-modal-body .wtn-header-table td {
+        display: block !important;
+        width: 100% !important;
+        text-align: left !important;
+        padding: 4px 0 !important;
+      }
+      /* Legal warning banner — readable on mobile */
+      .wtn-modal-body [style*="background: rgb(255, 248, 197)"],
+      .wtn-modal-body [style*="background-color: rgb(255, 248, 197)"] {
+        font-size: 11px !important;
+        padding: 8px 12px !important;
+      }
+      /* Duty of care footer */
+      .wtn-modal-body [style*="background: rgb(240, 253, 244)"],
+      .wtn-modal-body [style*="background-color: rgb(240, 253, 244)"] {
+        font-size: 11px !important;
+        padding: 8px 12px !important;
       }
     }
 
@@ -949,18 +1007,18 @@ return (
               <React.Fragment>
               <div className="min-h-screen bg-gray-50">
                 {/* Portal Header */}
-                <div className="bg-green-700 text-white px-6 py-4 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
+                <div className="bg-green-700 text-white px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                     {localStorage.getItem('companyLogo')
-                      ? <img src={localStorage.getItem('companyLogo')} className="h-12 object-contain" alt="logo" />
-                      : <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center"><Recycle className="w-6 h-6 text-green-700" /></div>}
-                    <div>
-                      <div className="font-bold text-lg">{localStorage.getItem('companyName') || 'Total Waste Services'} — Customer Portal</div>
-                      <div className="text-green-200 text-xs">{portalUser.company}</div>
+                      ? <img src={localStorage.getItem('companyLogo')} className="h-8 sm:h-12 object-contain flex-shrink-0" alt="logo" />
+                      : <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center flex-shrink-0"><Recycle className="w-4 h-4 sm:w-6 sm:h-6 text-green-700" /></div>}
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm sm:text-lg truncate">{localStorage.getItem('companyName') || 'Total Waste Services'} — Customer Portal</div>
+                      <div className="text-green-200 text-xs truncate">{portalUser.company}</div>
                     </div>
                   </div>
                   <button onClick={() => { setPortalUser(null); setPortalPin(''); setPortalPasscode(''); }}
-                    className="text-sm text-green-200 hover:text-white underline">Sign Out</button>
+                    className="text-xs sm:text-sm text-green-200 hover:text-white underline flex-shrink-0">Sign Out</button>
                 </div>
 
                 <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
@@ -1028,37 +1086,38 @@ return (
                       { label: 'Scheduled', val: inProgress.length, color: 'orange', filter: 'inprogress' },
                     ];
                     return (<>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-3 gap-2 sm:gap-4">
                     {cards.map(({ label, val, color, filter }) => (
                       <button key={label} onClick={() => setPortalFilter(portalFilter === filter ? 'all' : filter)}
-                        className={`rounded-xl border p-4 text-center shadow-sm transition-all ${portalFilter === filter ? `bg-${color}-600 border-${color}-600 text-white` : 'bg-white border-gray-200 hover:border-green-400'}`}>
-                        <div className={`text-3xl font-bold ${portalFilter === filter ? 'text-white' : color === 'orange' ? 'text-orange-500' : 'text-green-600'}`}>{val}</div>
-                        <div className={`text-sm mt-1 ${portalFilter === filter ? 'text-white opacity-80' : 'text-gray-500'}`}>{label}</div>
-                        {portalFilter === filter && <div className="text-xs mt-1 opacity-70">Click to clear filter</div>}
+                        className={`rounded-xl border p-2 sm:p-4 text-center shadow-sm transition-all ${portalFilter === filter ? `bg-${color}-600 border-${color}-600 text-white` : 'bg-white border-gray-200 hover:border-green-400'}`}>
+                        <div className={`text-xl sm:text-3xl font-bold ${portalFilter === filter ? 'text-white' : color === 'orange' ? 'text-orange-500' : 'text-green-600'}`}>{val}</div>
+                        <div className={`text-xs sm:text-sm mt-1 ${portalFilter === filter ? 'text-white opacity-80' : 'text-gray-500'}`}>{label}</div>
+                        {portalFilter === filter && <div className="text-xs mt-1 opacity-70 hidden sm:block">Click to clear filter</div>}
                       </button>
                     ))}
                   </div>
 
                   {/* Search & sort controls */}
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                    <div className="bg-gray-50 px-5 py-3 border-b flex items-center justify-between flex-wrap gap-3">
+                    <div className="bg-gray-50 px-3 sm:px-5 py-3 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
                       <span className="font-semibold text-gray-800 text-sm">
                         Your Jobs
                         {(portalFilter !== 'all' || portalSearch) && <span className="text-green-600 font-normal ml-2 text-xs">({filteredJobs.length} of {myJobs.length})</span>}
                       </span>
                       <div className="flex items-center gap-2">
                         <input type="text" value={portalSearch} onChange={e => setPortalSearch(e.target.value)}
-                          placeholder="🔍 Search by job ref, address, postcode, service..."
-                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-56 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                          placeholder="🔍 Search jobs..."
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-green-500" />
                         {(portalSearch || portalFilter !== 'all') && (
                           <button onClick={() => { setPortalSearch(''); setPortalFilter('all'); }}
-                            className="text-xs text-gray-500 hover:text-red-600 border border-gray-200 px-2 py-1.5 rounded-lg">
+                            className="text-xs text-gray-500 hover:text-red-600 border border-gray-200 px-2 py-1.5 rounded-lg flex-shrink-0">
                             ✕ Clear
                           </button>
                         )}
                       </div>
                     </div>
-                    <div className="overflow-x-auto">
+                    {/* Desktop table — hidden on mobile */}
+                    <div className="hidden sm:block overflow-x-auto">
                       <table className="w-full text-sm" style={{tableLayout:'fixed'}}>
                         <colgroup>
                           <col style={{width:'11%'}} /><col style={{width:'11%'}} /><col style={{width:'16%'}} />
@@ -1088,35 +1147,17 @@ return (
                             const siNumber = job.sage_si_number || job.invoice_number || null;
                             const isInvoiced = !!siNumber;
 
-                            // Get price — try customer_final_price, then line items RRP total, then unit_price × qty, then job_value
                             const lineItems = (() => {
-                              // Try sage_line_items first, fall back to job lineItems
                               try {
                                 const sageItems = typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : (job.sage_line_items || []);
                                 const jobItems = typeof job.line_items === 'string' ? JSON.parse(job.line_items) : (job.line_items || []);
-                                // If sage items only have 'Various' as names, prefer job items
                                 const allVarious = sageItems.length > 0 && sageItems.every(i => (i.product_name || '').toLowerCase() === 'various' && !i.description);
                                 if (allVarious && jobItems.length > 0) return jobItems;
                                 return sageItems.length > 0 ? sageItems : jobItems;
                               } catch(e) { return []; }
                             })();
-                            const lineItemsTotal = lineItems.reduce((sum, item) => {
-                              const rrp = parseFloat(item.customer_price || item.unit_price || 0);
-                              const qty = parseFloat(item.quantity || 1);
-                              return sum + (rrp * qty);
-                            }, 0);
-                            const finalPrice = parseFloat(job.customer_final_price) || 0;
-                            const unitPrice = parseFloat(job.customer_unit_price) || 0;
-                            const jobQty = parseFloat(job.quantity) || 1;
-                            const jobValue = parseFloat(job.job_value) || 0;
-                            const bestPrice = finalPrice > 0 ? finalPrice
-                              : lineItemsTotal > 0 ? lineItemsTotal
-                              : unitPrice > 0 ? unitPrice * jobQty
-                              : jobValue > 0 ? jobValue
-                              : null;
-                            const displayPrice = bestPrice != null ? `£${bestPrice.toFixed(2)}` : 'POA';
-                            const qtyDisplay = job.quantity ? `${job.quantity} ${job.unit || ''}`.trim() : null;
                             const serviceDetail = job.waste_type || job.aggregate_type || null;
+                            const qtyDisplay = job.quantity ? `${job.quantity} ${job.unit || ''}`.trim() : null;
                             return (
                               <React.Fragment key={job.id}>
                                 <tr
@@ -1225,6 +1266,122 @@ return (
                           })}
                         </tbody>
                       </table>
+                    </div>
+
+                    {/* Mobile card list — visible only on small screens */}
+                    <div className="sm:hidden">
+                      {/* Mobile sort controls */}
+                      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b text-xs overflow-x-auto">
+                        <span className="text-gray-400 flex-shrink-0">Sort:</span>
+                        {[{field:'date',label:'Date'},{field:'jobref',label:'Ref'},{field:'type',label:'Type'},{field:'status',label:'Status'}].map(s => (
+                          <button key={s.field} onClick={() => toggleSort(s.field)}
+                            className={`px-2 py-1 rounded-full flex-shrink-0 ${portalSort.field === s.field ? 'bg-green-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
+                            {s.label} {portalSort.field === s.field ? (portalSort.dir === 'asc' ? '↑' : '↓') : ''}
+                          </button>
+                        ))}
+                      </div>
+
+                      {filteredJobs.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-gray-400 text-sm">No jobs found.</div>
+                      ) : (
+                        <div className="divide-y divide-gray-100">
+                          {filteredJobs.map(job => {
+                            const done = job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED';
+                            const cancelled = job.is_cancelled || job.status === 'CANCELLED';
+                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.job_type);
+                            const isExpanded = expandedJobId === job.id;
+                            const hasWtn = job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null' && job.wtn_data !== '{}');
+                            const siNumber = job.sage_si_number || job.invoice_number || null;
+                            const isInvoiced = !!siNumber;
+                            const serviceDetail = job.waste_type || job.aggregate_type || null;
+                            const qtyDisplay = job.quantity ? `${job.quantity} ${job.unit || ''}`.trim() : null;
+
+                            const lineItems = (() => {
+                              try {
+                                const sageItems = typeof job.sage_line_items === 'string' ? JSON.parse(job.sage_line_items) : (job.sage_line_items || []);
+                                const jobItems = typeof job.line_items === 'string' ? JSON.parse(job.line_items) : (job.line_items || []);
+                                const allVarious = sageItems.length > 0 && sageItems.every(i => (i.product_name || '').toLowerCase() === 'various' && !i.description);
+                                if (allVarious && jobItems.length > 0) return jobItems;
+                                return sageItems.length > 0 ? sageItems : jobItems;
+                              } catch(e) { return []; }
+                            })();
+
+                            return (
+                              <div key={job.id} className={`${isExpanded ? 'bg-green-50' : isInvoiced ? 'bg-green-50' : 'bg-white'}`}>
+                                {/* Card header — always visible */}
+                                <button
+                                  className="w-full px-4 py-3 flex items-start gap-3 text-left active:bg-gray-50"
+                                  onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
+                                >
+                                  <span className={`text-gray-400 transition-transform mt-0.5 ${isExpanded ? 'rotate-90' : ''} inline-block`}>▶</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="font-mono font-bold text-blue-700 text-sm">{job.job_number}</span>
+                                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
+                                        done ? 'bg-green-100 text-green-700' :
+                                        cancelled ? 'bg-red-100 text-red-700' :
+                                        'bg-blue-100 text-blue-700'
+                                      }`}>{done ? 'Completed' : cancelled ? 'Cancelled' : 'Scheduled'}</span>
+                                    </div>
+                                    <div className="text-xs text-gray-800 font-medium mt-1">{job.job_type || '—'}{serviceDetail ? ` · ${serviceDetail}` : ''}</div>
+                                    <div className="text-xs text-gray-500 mt-0.5 truncate">{[job.site_address1, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</div>
+                                    <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
+                                      <span>{job.job_date ? new Date(job.job_date).toLocaleDateString('en-GB') : '—'}</span>
+                                      {qtyDisplay && <span>Qty: {qtyDisplay}</span>}
+                                      {isInvoiced && <span className="text-green-700 font-bold">{siNumber}</span>}
+                                    </div>
+                                    {/* Quick WTN button on card */}
+                                    {done && isWasteJob && hasWtn && (
+                                      <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
+                                        className="mt-2 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium">
+                                        📄 View WTN
+                                      </button>
+                                    )}
+                                    {done && isWasteJob && !hasWtn && (
+                                      <span className="text-gray-400 text-xs mt-1 block">WTN pending</span>
+                                    )}
+                                  </div>
+                                </button>
+
+                                {/* Expanded details */}
+                                {isExpanded && (
+                                  <div className="px-4 pb-4 pt-1 border-t border-green-100">
+                                    <div className="grid grid-cols-2 gap-3 text-xs">
+                                      <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Service</div><div className="font-semibold">{job.job_type}</div></div>
+                                      <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Date</div><div className="font-semibold">{job.job_date ? new Date(job.job_date).toLocaleDateString('en-GB') : '—'}</div></div>
+                                      {job.delivery_date && <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Delivery</div><div className="font-semibold">{new Date(job.delivery_date).toLocaleDateString('en-GB')}</div></div>}
+                                      {job.collection_date && <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Collection</div><div className="font-semibold">{new Date(job.collection_date).toLocaleDateString('en-GB')}</div></div>}
+                                      <div className="col-span-2" style={{minWidth:0}}><div className="text-gray-400 uppercase tracking-wide mb-0.5">Site Address</div><div className="font-semibold" style={{wordBreak:'break-word'}}>{[job.site_address1, job.site_address2, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</div></div>
+                                      {job.waste_type && <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Waste Type</div><div className="font-semibold">{job.waste_type}</div></div>}
+                                      {job.aggregate_type && <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Material</div><div className="font-semibold">{job.aggregate_type}</div></div>}
+                                      {job.quantity && <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Quantity</div><div className="font-semibold">{job.quantity} {job.unit || ''}</div></div>}
+                                      {isInvoiced && <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Invoice</div><div className="font-bold text-green-700">{siNumber}</div></div>}
+                                    </div>
+                                    {job.notes && <div className="mt-3 text-xs"><div className="text-gray-400 uppercase tracking-wide mb-0.5">Notes</div><div className="font-semibold">{job.notes}</div></div>}
+                                    {lineItems.length > 0 && (
+                                      <div className="mt-3">
+                                        <div className="text-gray-400 uppercase tracking-wide mb-1 text-xs">Products & Services</div>
+                                        {lineItems.map((item, i) => (
+                                          <div key={i} className="flex justify-between py-1 border-b border-gray-100 text-xs last:border-0">
+                                            <span className="font-medium">{item.product_name || '—'}</span>
+                                            <span className="text-gray-500">{parseFloat(item.quantity || 1)}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {done && isWasteJob && hasWtn && (
+                                      <button onClick={() => downloadWTN(job)}
+                                        className="mt-3 w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
+                                        📄 View Waste Transfer Note
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1427,20 +1584,19 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
   );
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-50 overflow-y-auto" onClick={onClose}>
-      <div className="min-h-screen flex items-start justify-center p-4">
-        <div id="wtn-print-root" className="bg-white rounded-xl max-w-2xl w-full my-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 wtn-print-hide">
-            <h2 className="font-bold text-gray-900">Waste Transfer Note — {job.job_number || job.jobNumber}</h2>
-            <div className="flex gap-2">
+      <div className="min-h-screen flex items-start justify-center p-0 sm:p-4">
+        <div id="wtn-print-root" className="bg-white sm:rounded-xl max-w-2xl w-full sm:my-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 wtn-print-hide gap-2">
+            <h2 className="font-bold text-gray-900 text-sm sm:text-base truncate">WTN — {job.job_number || job.jobNumber}</h2>
+            <div className="flex gap-2 flex-shrink-0">
               <button onClick={() => {
-                // Open WTN in a new window for clean printing
                 const wtnId = job.wtn_number || ('WTN-' + (job.job_number || job.jobNumber));
                 window.open('https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=' + wtnId, '_blank');
-              }} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">🖨 Print / Save PDF</button>
-              <button onClick={onClose} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">✕ Close</button>
+              }} className="px-2 sm:px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">🖨 <span className="hidden sm:inline">Print / Save PDF</span><span className="sm:hidden">Print</span></button>
+              <button onClick={onClose} className="px-2 sm:px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">✕</button>
             </div>
           </div>
-          <div className="p-4" style={{fontFamily:'Arial,sans-serif',fontSize:11}}>
+          <div className="p-2 sm:p-4 wtn-modal-body" style={{fontFamily:'Arial,sans-serif',fontSize:11}}>
               {isReconstructed && (
                 <div style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:6,padding:'6px 12px',marginBottom:8,fontSize:10,color:'#92400e'}}>
                   ⚠ This WTN has been reconstructed from job records. Some fields may be incomplete. Please contact {coName} for the original document.
@@ -1459,7 +1615,7 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
                 <div style={{border:'2px solid #000'}}>
                   {/* Header */}
                   <div style={{background:'#fff',padding:'12px 16px',borderBottom:'3px solid #1a5c2a'}}>
-                    <table style={{width:'100%',borderCollapse:'collapse'}}><tbody><tr>
+                    <table className="wtn-header-table" style={{width:'100%',borderCollapse:'collapse'}}><tbody><tr>
                       <td style={{width:100,verticalAlign:'middle'}}>{logoSrc ? <img src={logoSrc} style={{height:40,objectFit:'contain'}} alt="logo"/> : <strong style={{color:'#1a5c2a'}}>{coName}</strong>}</td>
                       <td style={{textAlign:'center',verticalAlign:'middle',padding:'0 12px'}}><div style={{fontSize:15,fontWeight:700,color:'#1a5c2a',marginBottom:2}}>WASTE TRANSFER NOTE</div><div style={{fontSize:8,color:'#666'}}>Duty of Care — Environmental Protection Act 1990 s.34</div><div style={{fontSize:8,color:'#666'}}>Waste (England &amp; Wales) Regulations 2011</div></td>
                       <td style={{width:110,textAlign:'right',verticalAlign:'middle'}}><div style={{fontSize:13,fontWeight:700,color:'#1a5c2a'}}>{wtnData.wtnNumber||`WTN-${job.job_number||job.jobNumber}`}</div><div style={{fontSize:8,color:'#555',marginTop:2}}>Job: {job.job_number||job.jobNumber||'—'}</div><div style={{fontSize:8,color:'#555'}}>{wtnData.transferDate ? new Date(wtnData.transferDate).toLocaleDateString('en-GB') : '—'}</div></td>
@@ -1480,7 +1636,7 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
                     </div>
                     <div style={{padding:'5px 10px',borderBottom:'1px solid #ccc',fontSize:10}}>
                       <strong>A2 How is the waste contained?</strong>&nbsp;&nbsp;
-                      {containerOptions.map(c=><span key={c} style={{marginRight:10}}>{wtnData.wasteContainer===c?'☑':'☐'} {c}</span>)}
+                      <span className="wtn-container-opts">{containerOptions.map(c=><span key={c} style={{marginRight:10}}>{wtnData.wasteContainer===c?'☑':'☐'} {c}</span>)}</span>
                     </div>
                     <div style={{padding:'5px 10px',fontSize:10}}><strong>Hazardous waste?</strong> {wtnData.isHazardous ? <span style={{color:'red',fontWeight:700}}>YES — Consignment Note Required</span> : 'No'}</div>
                   </div>
@@ -1539,7 +1695,7 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
                   {/* Waste Hierarchy + Pie Chart */}
                   <div style={{borderBottom:'2px solid #000'}}>
                     <div style={{background:'#d1fae5',padding:'4px 10px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:.5,borderBottom:'1px solid #000'}}>Waste Hierarchy Confirmation &amp; Recycling Breakdown (Reg. 12)</div>
-                    <div style={{display:'flex',alignItems:'center',gap:16,padding:10}}>
+                    <div className="wtn-pie-section" style={{display:'flex',alignItems:'center',gap:16,padding:10}}>
                       <svg viewBox="0 0 120 120" width="90" height="90" dangerouslySetInnerHTML={{__html:paths}} />
                       <div>
                         {slices.map(s=><div key={s.label} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,fontSize:10}}><div style={{width:10,height:10,borderRadius:'50%',background:s.color,flexShrink:0}}></div><span style={{fontWeight:600}}>{s.pct}%</span>&nbsp;{s.label}&nbsp;<span style={{color:'#6b7280',fontSize:9}}>({(qty*s.pct/100).toFixed(2)} {wtnData.unit})</span></div>)}
@@ -5826,8 +5982,9 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
 }, [jobs, searchQuery, filters, sortBy, sortOrder]);
 
     const handleJobClick = (job) => {
-  setShowFullPageJob(job);  // ADD THIS LINE - opens full page view
-window.scrollTo(0, 0);  // Scroll to top when opening full page view
+  scrollPositionRef.current = window.scrollY;
+  setShowFullPageJob(job);
+  window.scrollTo(0, 0);
 };
 
 // Add loadJobAttachments function
@@ -6337,7 +6494,61 @@ jobs.forEach(job => {
                       ))}
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
+                    <>
+                    {/* Mobile job cards — visible only on small screens */}
+                    <div className="sm:hidden divide-y divide-gray-100">
+                      {filteredJobs.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-gray-400 text-sm">No jobs match your filters.</div>
+                      ) : filteredJobs.map(job => {
+                        const mStatusCfg = {
+                          'QUOTED': 'bg-yellow-100 text-yellow-800',
+                          'CONFIRMED': 'bg-green-100 text-green-800',
+                          'IN_PROGRESS': 'bg-blue-100 text-blue-800',
+                          'COLLECTED': 'bg-purple-100 text-purple-800'
+                        };
+                        const mStatus = job.status === 'COLLECTED' ? 'bg-purple-100 text-purple-800' :
+                          job.isCompleted ? 'bg-emerald-100 text-emerald-800' :
+                          job.isCancelled ? 'bg-red-100 text-red-800' :
+                          mStatusCfg[job.status];
+                        const mIsFinished = job.isCompleted || job.status === 'COLLECTED';
+                        const mStatusLabel = job.status === 'COLLECTED' ? 'Collected' :
+                          job.isCompleted ? 'Completed' :
+                          job.isCancelled ? 'Cancelled' :
+                          (job.status || '').replace('_', ' ');
+                        return (
+                          <div
+                            key={job.id}
+                            className={`px-4 py-3 active:bg-gray-50 cursor-pointer ${mIsFinished ? 'opacity-80' : ''}`}
+                            onClick={() => handleJobClick(job)}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="w-1.5 h-12 rounded-full flex-shrink-0 mt-0.5" style={{backgroundColor: jobColors[job.jobType] || '#6b7280'}} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-mono font-bold text-sm text-gray-900">{job.jobNumber}</span>
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${mStatus}`}>{mStatusLabel}</span>
+                                </div>
+                                <div className="text-sm font-medium text-gray-800 mt-0.5 truncate">{job.customerName || '—'}</div>
+                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 flex-wrap">
+                                  <span>{job.jobType}</span>
+                                  <span>·</span>
+                                  <span>{job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</span>
+                                  {job.supplierName && <><span>·</span><span className="truncate">{job.supplierName}</span></>}
+                                </div>
+                                <div className="text-xs text-gray-400 mt-0.5 truncate">{[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ') || '—'}</div>
+                                <div className="flex items-center gap-3 mt-1">
+                                  {job.invoiceNumber && <span className="text-xs font-medium text-blue-600">{job.invoiceNumber}</span>}
+                                  {job.quoteReference && <span className="text-xs text-gray-400">Quote: {job.quoteReference}</span>}
+                                </div>
+                              </div>
+                              <LucideIcon icon="ChevronRight" size={16} className="text-gray-300 flex-shrink-0 mt-2" />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Desktop table — hidden on mobile */}
+                    <div className="hidden sm:block overflow-x-auto">
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
       <tr>
@@ -6444,6 +6655,7 @@ job.status.replace('_', ' ')}
 </tbody>                    
                       </table>
                     </div>
+                    </>
                   )}
                   
                   {filteredJobs.length === 0 && (
@@ -7052,7 +7264,9 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 });
 
   const handleQuoteClick = (quote) => {
+    scrollPositionRef.current = window.scrollY;
     setShowFullPageQuote(quote);
+    window.scrollTo(0, 0);
   };
 
   const isExpired = (quote) => new Date(quote.validUntil) < new Date() && quote.status !== 'ACCEPTED';
@@ -7603,9 +7817,9 @@ console.log(JSON.stringify(invoiceData, null, 2));
       {/* Main content */}
       <div className="flex-1 min-w-0">
       {/* Header Section */}
-<div className="bg-white border-b border-gray-200 px-6 py-4">
-  <div className="flex justify-between items-center">
-    <div className="flex items-center space-x-3">
+<div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4">
+  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+    <div className="flex items-center space-x-2 sm:space-x-3 flex-wrap">
       <button
         onClick={onClose}
         className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
@@ -7735,11 +7949,11 @@ console.log(JSON.stringify(invoiceData, null, 2));
 
       {/* Tab Navigation */}
       <div className="bg-white border-b border-gray-200">
-        <div className="px-6">
-          <nav className="flex space-x-8">
+        <div className="px-4 sm:px-6 overflow-x-auto">
+          <nav className="flex space-x-4 sm:space-x-8">
             <button
               onClick={() => setActiveTab('overview')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all whitespace-nowrap ${
                 activeTab === 'overview'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -12813,6 +13027,7 @@ const [suppliers, setSuppliers] = useState([]);
 const [jobAttachments, setJobAttachments] = useState([]);
 const [selectedJob, setSelectedJob] = useState(null);
 const [showFullPageJob, setShowFullPageJob] = useState(null);
+const scrollPositionRef = React.useRef(0);
 const [addressSuggestions, setAddressSuggestions] = useState([]);
 const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
 const [contactSuggestions, setContactSuggestions] = useState([]);
@@ -15375,10 +15590,10 @@ onClick={() => {
     </div>
   </div>
 
-  {/* Mobile menu */}
+  {/* Mobile menu — overflow tabs not in bottom bar */}
   {mobileMenuOpen && (
     <div className="sm:hidden px-4 py-2 space-y-1">
-      {tabs.map(tab => {
+      {tabs.filter(t => !['jobs','customers','dashboard','suppliers'].includes(t.id)).map(tab => {
         const Icon = tab.icon === 'BarChart3' ? BarChart3 :
                      tab.icon === 'Grid' ? Grid :
                      tab.icon === 'Users' ? Users :
@@ -15425,7 +15640,7 @@ onClick={() => {
   <FullPageJobView 
     job={showFullPageJob}
     jobs={jobs}
-    onClose={() => setShowFullPageJob(null)}
+    onClose={() => { setShowFullPageJob(null); setTimeout(() => window.scrollTo(0, scrollPositionRef.current), 0); }}
     onUpdateDisplay={setShowFullPageJob}
     onRefresh={loadJobsFromSupabase || window.loadJobsFromSupabase}
     onEdit={handleEditJob}
@@ -15456,7 +15671,7 @@ onClick={() => {
 {showFullPageQuote && (
   <FullPageQuoteView 
     quote={showFullPageQuote}
-    onClose={() => setShowFullPageQuote(null)}
+    onClose={() => { setShowFullPageQuote(null); setTimeout(() => window.scrollTo(0, scrollPositionRef.current), 0); }}
     onEdit={handleEditQuote}
     onDuplicate={handleDuplicateQuote}
     onDelete={handleDeleteQuote}
@@ -15467,7 +15682,7 @@ onClick={() => {
     user={user}
   />
 )}
-              <div className="p-4 sm:p-6">
+              <div className="p-4 sm:p-6 main-content-area">
                 {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} suppliers={suppliers} />}
                 {activeTab === 'documents' && (
                   <DocumentsView user={user} />
@@ -15531,6 +15746,41 @@ onClick={() => {
 )}
                 {activeTab === 'admin' && <AdminPanel user={user} />}
                 {activeTab === 'portal' && <CustomerPortalAdmin jobs={jobs} customers={customers} />}
+              </div>
+
+              {/* ── Mobile Bottom Tab Bar ──────────────────────────── */}
+              <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 flex items-stretch" style={{paddingBottom: 'var(--safe-bottom, 0px)'}}>
+                {[
+                  { id: 'jobs', label: 'Jobs', icon: 'Grid' },
+                  { id: 'customers', label: 'Customers', icon: 'Users' },
+                  { id: 'suppliers', label: 'Suppliers', icon: 'Truck' },
+                  { id: 'dashboard', label: 'Dashboard', icon: 'BarChart3' },
+                  { id: '_more', label: 'More', icon: 'Menu' },
+                ].map(item => {
+                  const isMore = item.id === '_more';
+                  const isActive = isMore ? mobileMenuOpen : activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        if (isMore) {
+                          setMobileMenuOpen(!mobileMenuOpen);
+                        } else {
+                          setActiveTab(item.id);
+                          setMobileMenuOpen(false);
+                          setShowFullPageJob(null);
+                          setShowFullPageQuote(null);
+                        }
+                      }}
+                      className={`flex-1 flex flex-col items-center justify-center py-2 pt-2.5 gap-0.5 transition-colors ${
+                        isActive ? 'text-blue-600' : 'text-gray-400'
+                      }`}
+                    >
+                      <LucideIcon icon={item.icon} size={20} />
+                      <span className="text-xs font-medium leading-tight">{item.label}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Forms */}
