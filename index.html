@@ -5982,7 +5982,7 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
 }, [jobs, searchQuery, filters, sortBy, sortOrder]);
 
     const handleJobClick = (job) => {
-  scrollPositionRef.current = window.scrollY;
+  window._savedScrollY = window.scrollY;
   setShowFullPageJob(job);
   window.scrollTo(0, 0);
 };
@@ -7264,7 +7264,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 });
 
   const handleQuoteClick = (quote) => {
-    scrollPositionRef.current = window.scrollY;
+    window._savedScrollY = window.scrollY;
     setShowFullPageQuote(quote);
     window.scrollTo(0, 0);
   };
@@ -13027,7 +13027,6 @@ const [suppliers, setSuppliers] = useState([]);
 const [jobAttachments, setJobAttachments] = useState([]);
 const [selectedJob, setSelectedJob] = useState(null);
 const [showFullPageJob, setShowFullPageJob] = useState(null);
-const scrollPositionRef = React.useRef(0);
 const [addressSuggestions, setAddressSuggestions] = useState([]);
 const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
 const [contactSuggestions, setContactSuggestions] = useState([]);
@@ -15640,7 +15639,7 @@ onClick={() => {
   <FullPageJobView 
     job={showFullPageJob}
     jobs={jobs}
-    onClose={() => { setShowFullPageJob(null); setTimeout(() => window.scrollTo(0, scrollPositionRef.current), 0); }}
+    onClose={() => { setShowFullPageJob(null); setTimeout(() => window.scrollTo(0, window._savedScrollY || 0), 0); }}
     onUpdateDisplay={setShowFullPageJob}
     onRefresh={loadJobsFromSupabase || window.loadJobsFromSupabase}
     onEdit={handleEditJob}
@@ -15671,7 +15670,7 @@ onClick={() => {
 {showFullPageQuote && (
   <FullPageQuoteView 
     quote={showFullPageQuote}
-    onClose={() => { setShowFullPageQuote(null); setTimeout(() => window.scrollTo(0, scrollPositionRef.current), 0); }}
+    onClose={() => { setShowFullPageQuote(null); setTimeout(() => window.scrollTo(0, window._savedScrollY || 0), 0); }}
     onEdit={handleEditQuote}
     onDuplicate={handleDuplicateQuote}
     onDelete={handleDeleteQuote}
