@@ -15681,7 +15681,7 @@ onClick={() => {
     user={user}
   />
 )}
-              <div className="p-4 sm:p-6 main-content-area">
+              <div className="p-4 sm:p-6 main-content-area" style={showFullPageJob || showFullPageQuote ? {display:'none'} : undefined}>
                 {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} suppliers={suppliers} />}
                 {activeTab === 'documents' && (
                   <DocumentsView user={user} />
