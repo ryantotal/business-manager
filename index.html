@@ -7963,15 +7963,10 @@ console.log(JSON.stringify(invoiceData, null, 2));
       {!job.isCompleted && !job.isCancelled && job.status !== 'COMPLETED' && job.status !== 'COLLECTED' && (
         <button
           onClick={() => onStop(job)}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 ${
-            job.onStop 
-              ? 'bg-green-100 text-green-700 border border-green-300 hover:bg-green-200' 
-              : 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200'
-          }`}
+          className={`p-2 rounded-lg ${job.onStop ? 'text-green-600 hover:bg-green-100' : 'text-red-600 hover:bg-red-100'}`}
           title={job.onStop ? 'Take Off Stop' : 'Put On Stop'}
         >
-          <span>{job.onStop ? '▶' : '⛔'}</span>
-          <span className="hidden sm:inline">{job.onStop ? 'Off Stop' : 'On Stop'}</span>
+          <LucideIcon icon={job.onStop ? 'Play' : 'Ban'} size={20} />
         </button>
       )}
 
