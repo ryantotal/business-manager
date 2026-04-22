@@ -5982,9 +5982,7 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
 }, [jobs, searchQuery, filters, sortBy, sortOrder]);
 
     const handleJobClick = (job) => {
-  window._savedScrollY = window.scrollY;
   setShowFullPageJob(job);
-  window.scrollTo(0, 0);
 };
 
 // Add loadJobAttachments function
@@ -6518,7 +6516,7 @@ jobs.forEach(job => {
                         return (
                           <div
                             key={job.id}
-                            className={`px-4 py-3 active:bg-gray-50 cursor-pointer ${mIsFinished ? 'opacity-80' : ''}`}
+                            className={`px-4 py-3 active:bg-gray-100 cursor-pointer ${mIsFinished ? 'bg-green-50 border-l-4 border-l-green-500' : ''}`}
                             onClick={() => handleJobClick(job)}
                           >
                             <div className="flex items-start gap-3">
@@ -7264,9 +7262,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 });
 
   const handleQuoteClick = (quote) => {
-    window._savedScrollY = window.scrollY;
     setShowFullPageQuote(quote);
-    window.scrollTo(0, 0);
   };
 
   const isExpired = (quote) => new Date(quote.validUntil) < new Date() && quote.status !== 'ACCEPTED';
@@ -7772,7 +7768,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
   if (!job) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="fixed inset-0 bg-gray-50 z-30 overflow-y-auto flex">
       {/* Sidebar */}
       {showSidebar && (
         <div className="w-72 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0 overflow-hidden z-10">
@@ -9052,7 +9048,7 @@ By approving this quotation and authorising us to commence services, you acknowl
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="fixed inset-0 bg-gray-50 z-30 overflow-y-auto">
       {/* Header Section */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex justify-between items-center">
@@ -13036,6 +13032,21 @@ const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
 const [showCollectionCalendar, setShowCollectionCalendar] = useState(false);
 const [selectedJobForCollection, setSelectedJobForCollection] = useState(null);
 const [selectedCollectionDate, setSelectedCollectionDate] = useState('');
+const [showScrollTop, setShowScrollTop] = useState(false);
+useEffect(() => {
+  let ticking = false;
+  const onScroll = () => {
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(() => {
+        setShowScrollTop(window.scrollY > 400);
+        ticking = false;
+      });
+    }
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  return () => window.removeEventListener('scroll', onScroll);
+}, []);
           // Load suppliers from Supabase when app starts
 useEffect(() => {
   const loadSuppliersFromSupabase = async () => {
@@ -15504,12 +15515,7 @@ const CollectionCalendarModal = () => {
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-4">
         {/* Mobile menu button */}
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="sm:hidden p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
-        >
-          <Menu size={24} />
-        </button>
+        {/* Mobile menu button - hidden, using bottom tab bar instead */}
         
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10">
@@ -15589,9 +15595,9 @@ onClick={() => {
     </div>
   </div>
 
-  {/* Mobile menu — overflow tabs not in bottom bar */}
+  {/* Mobile overflow menu — pops up above bottom bar */}
   {mobileMenuOpen && (
-    <div className="sm:hidden px-4 py-2 space-y-1">
+    <div className="sm:hidden fixed bottom-16 left-2 right-2 z-40 bg-white rounded-xl shadow-xl border border-gray-200 p-2 space-y-1" style={{marginBottom: 'var(--safe-bottom, 0px)'}}>
       {tabs.filter(t => !['jobs','customers','dashboard','suppliers'].includes(t.id)).map(tab => {
         const Icon = tab.icon === 'BarChart3' ? BarChart3 :
                      tab.icon === 'Grid' ? Grid :
@@ -15607,14 +15613,14 @@ onClick={() => {
   setShowFullPageJob(null);
   setShowFullPageQuote(null);
 }}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left ${
               activeTab === tab.id
                 ? 'bg-blue-50 text-blue-600'
                 : 'text-gray-700 hover:bg-gray-50'
             }`}
           >
             <Icon size={20} />
-            <span>{tab.name}</span>
+            <span className="font-medium">{tab.name}</span>
           </button>
         );
       })}
@@ -15639,7 +15645,7 @@ onClick={() => {
   <FullPageJobView 
     job={showFullPageJob}
     jobs={jobs}
-    onClose={() => { setShowFullPageJob(null); setTimeout(() => window.scrollTo(0, window._savedScrollY || 0), 0); }}
+    onClose={() => setShowFullPageJob(null)}
     onUpdateDisplay={setShowFullPageJob}
     onRefresh={loadJobsFromSupabase || window.loadJobsFromSupabase}
     onEdit={handleEditJob}
@@ -15670,7 +15676,7 @@ onClick={() => {
 {showFullPageQuote && (
   <FullPageQuoteView 
     quote={showFullPageQuote}
-    onClose={() => { setShowFullPageQuote(null); setTimeout(() => window.scrollTo(0, window._savedScrollY || 0), 0); }}
+    onClose={() => setShowFullPageQuote(null)}
     onEdit={handleEditQuote}
     onDuplicate={handleDuplicateQuote}
     onDelete={handleDeleteQuote}
@@ -15681,7 +15687,7 @@ onClick={() => {
     user={user}
   />
 )}
-              <div className="p-4 sm:p-6 main-content-area" style={showFullPageJob || showFullPageQuote ? {display:'none'} : undefined}>
+              <div className="p-4 sm:p-6 main-content-area">
                 {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} suppliers={suppliers} />}
                 {activeTab === 'documents' && (
                   <DocumentsView user={user} />
@@ -15691,7 +15697,7 @@ onClick={() => {
                     jobs={jobs} 
                     setJobs={setJobs}
                     onAddJob={() => {
-  setEditingJob(null);  // Clear any old job data
+  setEditingJob(null);
   setShowJobForm(true);
 }}
                     onUpdateJob={handleUpdateJob}
@@ -15746,6 +15752,17 @@ onClick={() => {
                 {activeTab === 'admin' && <AdminPanel user={user} />}
                 {activeTab === 'portal' && <CustomerPortalAdmin jobs={jobs} customers={customers} />}
               </div>
+
+              {/* ── Scroll to Top Button ──────────────────────────── */}
+              {showScrollTop && !showFullPageJob && !showFullPageQuote && (
+                <button
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-30 w-10 h-10 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 transition-all"
+                  title="Back to top"
+                >
+                  <LucideIcon icon="ChevronUp" size={20} />
+                </button>
+              )}
 
               {/* ── Mobile Bottom Tab Bar ──────────────────────────── */}
               <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 flex items-stretch" style={{paddingBottom: 'var(--safe-bottom, 0px)'}}>
