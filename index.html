@@ -12524,11 +12524,34 @@ const CustomerPortalAdmin = ({ jobs, customers }) => {
       // Also save email override if set
       const emailOverride = emailOverrides[customerName];
       if (emailOverride) updateData.email = emailOverride;
-      const { error } = await window.supabase
-        .from('customers')
-        .update(updateData)
-        .eq('name', customerName);
+      
+      // Find the customer object to get the id for a reliable update
+      const customer = customers.find(c => 
+        (c.companyName || c.name || c.company_name) === customerName
+      );
+      
+      let error;
+      if (customer?.id) {
+        // Prefer updating by id — guaranteed unique match
+        ({ error } = await window.supabase
+          .from('customers')
+          .update(updateData)
+          .eq('id', customer.id));
+      } else {
+        // Fallback: try both name fields
+        ({ error } = await window.supabase
+          .from('customers')
+          .update(updateData)
+          .eq('name', customerName));
+      }
       if (error) throw error;
+      
+      // Update local customer object so UI reflects the change immediately
+      if (customer) {
+        customer.portal_pin = creds.pin;
+        customer.portal_passcode = creds.passcode;
+      }
+      
       setSavedMsg(`✅ Credentials saved for ${customerName}`);
       setTimeout(() => setSavedMsg(''), 3000);
     } catch (err) {
@@ -12896,7 +12919,7 @@ info@totalwasteservicesltd.com`;
                             const newEmail = e.target.value.trim();
                             if (newEmail && newEmail !== customer.email) {
                               try {
-                                await window.supabase.from('customers').update({ email: newEmail }).eq('name', cName);
+                                await window.supabase.from('customers').update({ email: newEmail }).eq('id', customer.id);
                                 customer.email = newEmail; // update local ref
                                 setSavedMsg(`✅ Email saved for ${cName}`);
                                 setTimeout(() => setSavedMsg(''), 2000);
