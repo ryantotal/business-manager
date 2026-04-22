@@ -6227,6 +6227,7 @@ jobs.forEach(job => {
                {dayJobs.slice(0, expandedDays[day.toDateString()] ? dayJobs.length : 3).map(job => {
   const isFinished = job.isCompleted || job.status === 'COLLECTED';
   const isEvent = job.is_event || job.status === 'EVENT';
+  const isOnStop = job.onStop || job.on_stop;
   
   // Define event colors
   const eventColors = {
@@ -6244,17 +6245,19 @@ jobs.forEach(job => {
     <div
       key={job.id}
       className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
+        isOnStop ? 'bg-red-100 border border-red-400' :
         isFinished ? 'bg-green-500' : ''
       } ${isEvent ? 'text-white font-medium' : ''}`}
       style={{ 
         backgroundColor: isEvent 
           ? (eventColors[job.job_type] || eventColors['OTHER'])
+          : isOnStop ? '#fef2f2' 
           : (isFinished ? '' : jobColors[job.jobType] + '20'),
-        color: isEvent ? 'white' : (isFinished ? 'black' : jobColors[job.jobType]),
-        borderLeft: isEvent ? 'none' : `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
+        color: isEvent ? 'white' : isOnStop ? '#dc2626' : (isFinished ? 'black' : jobColors[job.jobType]),
+        borderLeft: isEvent ? 'none' : isOnStop ? '3px solid #dc2626' : `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
       }}
       onClick={() => handleJobClick(job)}
-      title={`${job.jobNumber} - ${job.customerName}${isFinished ? ' (Completed)' : ''}${isEvent ? ' (Event)' : ''}`}
+      title={`${job.jobNumber} - ${job.customerName}${isOnStop ? ' ⛔ ON STOP' : ''}${isFinished ? ' (Completed)' : ''}${isEvent ? ' (Event)' : ''}`}
     >
       <div className="truncate font-medium text-xs">
         {isEvent ? (
@@ -6269,7 +6272,7 @@ jobs.forEach(job => {
             {job.customerName || 'No Customer'}
           </>
         ) : (
-          <>{job.customerName || 'No Customer'}</>
+          <>{isOnStop ? '⛔ ' : ''}{job.customerName || 'No Customer'}</>
         )}
       </div>
       {!isEvent && (
@@ -13716,6 +13719,52 @@ useEffect(() => {
   checkRecurringJobs();
   window.checkRecurringJobs = checkRecurringJobs;
 
+  // ── On-Stop Daily Rollover ─────────────────────────────────────────────
+  // Jobs marked as "on stop" should roll forward to today's date every day.
+  // This ensures they always appear on today in the calendar/list view.
+  const rolloverOnStopJobs = async () => {
+    if (window._onStopRolloverRunning) return;
+    window._onStopRolloverRunning = true;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      // Find all on-stop jobs whose job_date is in the past
+      const { data: stoppedJobs, error } = await window.supabase
+        .from('jobs')
+        .select('id, job_date, job_number')
+        .eq('on_stop', true)
+        .eq('is_cancelled', false)
+        .lt('job_date', today);
+
+      if (error || !stoppedJobs || stoppedJobs.length === 0) return;
+
+      console.log(`[OnStop Rollover] Rolling ${stoppedJobs.length} on-stop jobs forward to ${today}`);
+      
+      for (const job of stoppedJobs) {
+        const { error: updateErr } = await window.supabase
+          .from('jobs')
+          .update({ job_date: today })
+          .eq('id', job.id);
+        
+        if (updateErr) {
+          console.warn(`[OnStop Rollover] Failed to update ${job.job_number}:`, updateErr.message);
+        } else {
+          console.log(`[OnStop Rollover] ${job.job_number} rolled to ${today}`);
+        }
+      }
+
+      // Refresh local state so the UI updates
+      if (typeof loadJobsFromSupabase === 'function') {
+        await loadJobsFromSupabase();
+      }
+    } catch (e) {
+      console.warn('[OnStop Rollover] Error:', e.message);
+    } finally {
+      window._onStopRolloverRunning = false;
+    }
+  };
+
+  rolloverOnStopJobs();
+
   // Recurring WTN checker — inline so it's in scope
   const checkRecurringWtnsInline = async () => {
     try {
@@ -13773,6 +13822,7 @@ useEffect(() => {
     try {
       await checkRecurringJobs();
       await checkRecurringWtnsInline();
+      await rolloverOnStopJobs();
     } catch(e) {
       // Silent fail
     }
@@ -13785,6 +13835,7 @@ useEffect(() => {
       try {
         await checkRecurringJobs();
         await checkRecurringWtnsInline();
+        await rolloverOnStopJobs();
         await window.loadJobsFromSupabase();
       } catch(e) { /* silent */ }
     }
