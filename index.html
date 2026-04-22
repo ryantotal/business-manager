@@ -6046,10 +6046,11 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
     }
     if (filters.jobType && job.jobType !== filters.jobType) return false;
     if (filters.status) {
+      if (filters.status === 'ON_STOP' && !job.onStop) return false;
       if (filters.status === 'COMPLETED' && !job.isCompleted) return false;
       if (filters.status === 'CANCELLED' && !job.isCancelled) return false;
       if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') return false;
-      if (filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
+      if (filters.status !== 'ON_STOP' && filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
         job.status !== filters.status) return false;
     }
     return true;
@@ -6233,10 +6234,11 @@ jobs.forEach(job => {
     
     // Apply status filter
     if (filters.status) {
+      if (filters.status === 'ON_STOP' && !job.onStop) includeJob = false;
       if (filters.status === 'COMPLETED' && !job.isCompleted) includeJob = false;
       if (filters.status === 'CANCELLED' && !job.isCancelled) includeJob = false;
       if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') includeJob = false;
-      if (filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
+      if (filters.status !== 'ON_STOP' && filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
         job.status !== filters.status) includeJob = false;
     }
     
@@ -6526,6 +6528,7 @@ jobs.forEach(job => {
       >
         <option value="">All Statuses</option>
         <option value="CONFIRMED">Confirmed</option>
+        <option value="ON_STOP">On Stop</option>
         <option value="COLLECTED">Collected</option>
         <option value="COMPLETED">Completed</option>
       </select>
