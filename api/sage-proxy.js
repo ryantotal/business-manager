@@ -440,93 +440,156 @@ export default async function handler(req, res) {
       // Sage requires the contact's main_address to have the correct
       // country + country_group before it will accept a UK tax_number.
       //
-      // FIX (v102): Four-phase approach —
-      //   5a. Fetch ALL addresses on the contact and patch every one with
-      //       correct country_id + country_group_id (Sage auto-creates
-      //       extra addresses that may be missing the group)
-      //   5b. Explicitly set main_address on the contact to our address
-      //   5c. PUT tax_number while re-asserting main_address.id
-      //   5d. Fallback without main_address assertion
+      // FIX (v103): Five-phase approach with comprehensive fallbacks.
+      //   The error "tax number does not match the main address" means Sage
+      //   can't map the address's country/country_group to a tax scheme.
+      //   We try multiple strategies to make it accept the VAT number.
       if (cleanVat && address_id) {
         console.log('[Sage Proxy] Step 5 — setting tax_number:', cleanVat);
+        let vatSet = false;
 
-        // ── 5a. Patch ALL addresses to ensure country_group is correct ─────
-        // Sage may have auto-created extra addresses (e.g. Delivery) that
-        // don't have country_group set. If Sage validates against ANY of
-        // them, the tax_number PUT will fail.
+        // ── 5a. Fetch ALL addresses and log their state ────────────────────
+        let allAddrs = [];
         try {
           const addrList = await sageRequest(`addresses?contact_id=${sage_id}`, null, 'GET');
-          const allAddrs = addrList?.$items || addrList?.items || (Array.isArray(addrList) ? addrList : []);
-          console.log('[Sage Proxy] Step 5a — contact has', allAddrs.length, 'addresses');
+          allAddrs = addrList?.$items || addrList?.items || (Array.isArray(addrList) ? addrList : []);
+          console.log('[Sage Proxy] Step 5a — contact has', allAddrs.length, 'address(es)');
           for (const addr of allAddrs) {
-            const addrCountryGroup = addr?.country_group?.id || addr?.country_group_id;
-            const needsPatch = !addrCountryGroup || addrCountryGroup !== gbGroupId;
-            console.log('[Sage Proxy] Step 5a — address', addr.id, ':', {
+            console.log('[Sage Proxy] Step 5a — address', addr.id, ':', JSON.stringify({
               name: addr.name || addr.displayed_as,
+              type: addr.address_type?.id || addr.address_type_id,
               is_main: addr.is_main_address,
               country: addr.country?.id || addr.country_id,
-              country_group: addrCountryGroup,
-              needsPatch
-            });
-            if (needsPatch && gbGroupId) {
-              try {
-                await sageRequest(`addresses/${addr.id}`, {
-                  address: { country_id: 'GB', country_group_id: gbGroupId }
-                }, 'PUT');
-                console.log('[Sage Proxy] Step 5a — patched address', addr.id, 'with country_group:', gbGroupId);
-              } catch (e) {
-                console.warn('[Sage Proxy] Step 5a — could not patch address', addr.id, ':', e?.data?.message || e?.message);
-              }
-            }
+              country_group: addr.country_group?.id || addr.country_group_id,
+            }));
           }
         } catch (e) {
-          console.warn('[Sage Proxy] Step 5a — could not list addresses:', e?.data || e?.message);
-          // Single-address fallback
-          if (gbGroupId) {
+          console.warn('[Sage Proxy] Step 5a — could not list addresses');
+        }
+
+        // ── 5b. Try country_group_id values until one works ────────────────
+        // Different Sage instances use different group IDs for GB.
+        // We try the auto-detected one first, then common hardcoded values.
+        const groupIdsToTry = [gbGroupId, 'GBIE', 'UK', 'GB', 'ALL'].filter(Boolean);
+        // Deduplicate
+        const uniqueGroupIds = [...new Set(groupIdsToTry)];
+        console.log('[Sage Proxy] Step 5b — will try country_group_ids:', uniqueGroupIds);
+
+        for (const groupId of uniqueGroupIds) {
+          if (vatSet) break;
+          console.log('[Sage Proxy] Step 5b — trying country_group_id:', groupId);
+
+          // Patch ALL addresses with this country_group
+          for (const addr of allAddrs) {
             try {
-              await sageRequest(`addresses/${address_id}`, {
-                address: { country_id: 'GB', country_group_id: gbGroupId }
+              await sageRequest(`addresses/${addr.id}`, {
+                address: { country_id: 'GB', country_group_id: groupId }
               }, 'PUT');
-              console.log('[Sage Proxy] Step 5a — patched our address as fallback');
-            } catch (_) { /* non-fatal */ }
+            } catch (e) {
+              console.warn('[Sage Proxy] Step 5b — could not patch address', addr.id, 'with group', groupId);
+              // If patching fails, this group ID is invalid — skip to next
+              continue;
+            }
+          }
+
+          // Ensure main_address is set to our address
+          try {
+            await sageRequest(`contacts/${sage_id}`, {
+              contact: { main_address: { id: address_id } }
+            }, 'PUT');
+          } catch (_) { /* non-fatal */ }
+
+          // Try setting tax_number
+          try {
+            await sageRequest(`contacts/${sage_id}`, {
+              contact: {
+                tax_number: cleanVat,
+                main_address: { id: address_id },
+              }
+            }, 'PUT');
+            console.log('[Sage Proxy] Step 5 COMPLETE — tax_number set with country_group:', groupId);
+            vatSet = true;
+          } catch (vatErr) {
+            console.warn('[Sage Proxy] Step 5b — tax_number failed with group', groupId, ':', vatErr?.data?.[0]?.$message || vatErr?.data?.message || 'unknown error');
           }
         }
 
-        // ── 5b. Ensure main_address on the contact points to our address ───
-        try {
-          await sageRequest(`contacts/${sage_id}`, {
-            contact: { main_address: { id: address_id } }
-          }, 'PUT');
-          console.log('[Sage Proxy] Step 5b — set main_address to:', address_id);
-        } catch (e) {
-          console.warn('[Sage Proxy] Step 5b — could not set main_address:', e?.data?.message || e?.message);
-        }
-
-        // ── 5c. PUT tax_number with main_address assertion ─────────────────
-        try {
-          const updatePayload = {
-            contact: {
-              tax_number: cleanVat,
-              main_address: { id: address_id },
-            }
-          };
-          console.log('[Sage Proxy] Step 5c — PUT payload:', JSON.stringify(updatePayload));
-          await sageRequest(`contacts/${sage_id}`, updatePayload, 'PUT');
-          console.log('[Sage Proxy] Step 5 complete — tax_number set successfully');
-        } catch (vatErr) {
-          console.warn('[Sage Proxy] Step 5c — tax_number PUT failed:', JSON.stringify(vatErr?.data));
-
-          // ── 5d. Fallback: try setting tax_number without main_address ────
+        // ── 5c. Fallback: try without any country_group patching ───────────
+        if (!vatSet) {
+          console.log('[Sage Proxy] Step 5c — trying bare tax_number PUT');
           try {
-            console.log('[Sage Proxy] Step 5d — retrying without main_address assertion');
             await sageRequest(`contacts/${sage_id}`, {
               contact: { tax_number: cleanVat }
             }, 'PUT');
-            console.log('[Sage Proxy] Step 5d complete — tax_number set on retry');
-          } catch (vatErr2) {
-            console.warn('[Sage Proxy] Step 5d — retry also failed:', JSON.stringify(vatErr2?.data));
-            console.warn('[Sage Proxy] VAT number will be stored in portal only (not in Sage)');
+            console.log('[Sage Proxy] Step 5 COMPLETE — tax_number set with bare PUT');
+            vatSet = true;
+          } catch (e) {
+            console.warn('[Sage Proxy] Step 5c — bare PUT also failed');
           }
+        }
+
+        // ── 5d. Fallback: change address type to DELIVERY and retry ────────
+        // Some Sage instances require the main address to be DELIVERY type
+        // for supplier (VENDOR) contacts for VAT to validate.
+        if (!vatSet && contactType === 'SUPPLIER') {
+          console.log('[Sage Proxy] Step 5d — trying with DELIVERY address type');
+          try {
+            await sageRequest(`addresses/${address_id}`, {
+              address: {
+                address_type_id: 'DELIVERY',
+                is_main_address: true,
+                country_id: 'GB',
+                ...(gbGroupId && { country_group_id: gbGroupId }),
+              }
+            }, 'PUT');
+            await sageRequest(`contacts/${sage_id}`, {
+              contact: {
+                tax_number: cleanVat,
+                main_address: { id: address_id },
+              }
+            }, 'PUT');
+            console.log('[Sage Proxy] Step 5 COMPLETE — tax_number set with DELIVERY address type');
+            vatSet = true;
+          } catch (e) {
+            console.warn('[Sage Proxy] Step 5d — DELIVERY type also failed:', e?.data?.[0]?.$message || 'unknown');
+          }
+        }
+
+        // ── 5e. Last resort: create a fresh DELIVERY+SALES address ─────────
+        // with explicit country_group and try one more time
+        if (!vatSet) {
+          console.log('[Sage Proxy] Step 5e — creating fresh address with all types');
+          try {
+            const freshAddr = await sageRequest('addresses', {
+              address: {
+                contact_id: sage_id,
+                name: 'Registered Address',
+                address_type_id: 'DELIVERY',
+                is_main_address: true,
+                country_id: 'GB',
+                ...(gbGroupId && { country_group_id: gbGroupId }),
+                ...(address && { address_line_1: address }),
+                ...(city && { city }),
+                ...(postcode && { postal_code: postcode }),
+              }
+            });
+            if (freshAddr?.id) {
+              await sageRequest(`contacts/${sage_id}`, {
+                contact: {
+                  tax_number: cleanVat,
+                  main_address: { id: freshAddr.id },
+                }
+              }, 'PUT');
+              console.log('[Sage Proxy] Step 5 COMPLETE — tax_number set with fresh DELIVERY address');
+              vatSet = true;
+            }
+          } catch (e) {
+            console.warn('[Sage Proxy] Step 5e — fresh address also failed:', e?.data?.[0]?.$message || 'unknown');
+          }
+        }
+
+        if (!vatSet) {
+          console.warn('[Sage Proxy] Step 5 FAILED — all strategies exhausted. VAT number stored in portal only.');
         }
       } else if (cleanVat && !address_id) {
         console.warn('[Sage Proxy] Skipping tax_number — no address to validate against. Stored in portal only.');
