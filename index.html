@@ -17987,6 +17987,16 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <input type="date" value={formData.insuranceExpiry} onChange={(e) => setFormData({...formData, insuranceExpiry: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                       </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">EA Carrier Reg No. (CBDU)</label>
+                          <input type="text" value={formData.cbduNumber || ''} onChange={(e) => setFormData({...formData, cbduNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. CBDU123456" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Environmental Permit No.</label>
+                          <input type="text" value={formData.permitNumber || ''} onChange={(e) => setFormData({...formData, permitNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. EPR/AB1234CD" />
+                        </div>
+                      </div>
                       <div className="space-y-3 pt-4 border-t">
                         <label className="flex items-center">
                           <input type="checkbox" checked={formData.healthSafetyCompliant} onChange={(e) => setFormData({...formData, healthSafetyCompliant: e.target.checked})} className="mr-2" />
@@ -18526,22 +18536,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <input type="text" value={formData.postcode} onChange={e => setFormData({...formData, postcode: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.postcode ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="EC1A 1BB" />
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">City / Town</label>
-                          <input type="text" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="London" />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">County</label>
-                          <input type="text" value={formData.county} onChange={e => setFormData({...formData, county: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                          <input type="checkbox" checked={formData.preferredSupplier} onChange={e => setFormData({...formData, preferredSupplier: e.target.checked})} />
-                          Preferred Supplier
-                        </label>
-                      </div>
                     </div>
                   )}
 
@@ -18832,29 +18826,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                             <input type="number" value={formData.minimumOrderValue} onChange={e => setFormData({...formData, minimumOrderValue: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="0.00" />
                           </div>
                         </div>
-                        <div className="mt-4">
-                          <h4 className="font-medium text-gray-900 mb-3">Bank Details</h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
-                              <input type="text" value={formData.bankName} onChange={e => setFormData({...formData, bankName: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
-                              <input type="text" value={formData.bankAccountNumber} onChange={e => setFormData({...formData, bankAccountNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="12345678" />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Sort Code</label>
-                              <input type="text" value={formData.bankSortCode} onChange={e => setFormData({...formData, bankSortCode: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="12-34-56" />
-                            </div>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Date Registered</label>
-                            <input type="date" value={formData.dateRegistered} onChange={e => setFormData({...formData, dateRegistered: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                          </div>
-                        </div>
                       </div>
                     </div>
                   )}
@@ -18903,7 +18874,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       </div>
                     </div>
                   )}
-
 
                   {/* Documents Tab */}
                   {activeTab === 'documents' && (
