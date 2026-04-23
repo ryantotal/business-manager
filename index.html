@@ -17383,7 +17383,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
           const handleTabChange = (tab) => {
             setActiveTab(tab);
-            if (tab === 'contacts') loadContacts();
+            if (tab === 'contact' || tab === 'contacts') loadContacts();
           };
 
           // Single save action — pushes to Sage and saves to portal in one click
@@ -17715,7 +17715,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 
                 {/* Tab Navigation */}
                 <div className="flex border-b border-gray-200 overflow-x-auto">
-                  {['company', 'contact', 'financial', 'contacts', 'documents'].map(tab => (
+                  {['company', 'contact', 'financial', 'documents'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => handleTabChange(tab)}
@@ -17724,9 +17724,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       {tab === 'company' && 'Company Details'}
                       {tab === 'contact' && 'Contact Information'}
                       {tab === 'financial' && 'Financial & Compliance'}
-                      {tab === 'contacts' && (
-                        <span>Named Contacts {isExistingCustomer && contacts.length > 0 ? <span className="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs">{contacts.length}</span> : ''}</span>
-                      )}
                       {tab === 'documents' && 'Documents'}
                     </button>
                   ))}
@@ -17829,7 +17826,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.email ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="contact@company.com" />
                         </div>
                         <div className="flex items-end pb-2">
-                          <p className="text-xs text-gray-400">Need to CC extra people on invoices or WTNs? Add them in the <button type="button" onClick={() => handleTabChange('contacts')} className="text-blue-600 underline">Named Contacts</button> tab.</p>
+                          <p className="text-xs text-gray-400">This is the main email for this customer. Add extra CC contacts below.</p>
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -17850,6 +17847,95 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Special Requirements / Notes</label>
                         <textarea value={formData.specialRequirements} onChange={(e) => setFormData({...formData, specialRequirements: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={3} placeholder="Any special delivery instructions, site access requirements, etc." />
+                      </div>
+
+                      {/* Additional Contacts — inline in Contact tab */}
+                      <div className="pt-4 border-t">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <h4 className="font-medium text-gray-900">Additional Contacts</h4>
+                            <p className="text-xs text-gray-500 mt-0.5">These people are CC'd on emails from Sage (invoices, statements, WTNs).</p>
+                          </div>
+                          {isExistingCustomer && (
+                            <div className="flex gap-2">
+                              {formData.sage_id && (
+                                <button type="button" onClick={syncContactsFromSage} disabled={syncingContacts} className="px-3 py-1.5 border border-blue-300 text-blue-700 text-sm rounded-lg hover:bg-blue-50 disabled:opacity-50">
+                                  {syncingContacts ? 'Syncing...' : '↓ Sync from Sage'}
+                                </button>
+                              )}
+                              <button type="button" onClick={openNewContact} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1">
+                                <span>+</span> Add Contact
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {!isExistingCustomer ? (
+                          <p className="text-sm text-gray-400 text-center py-4">Save the customer first, then add extra contacts here.</p>
+                        ) : (
+                          <>
+                            {editingContact !== null && (
+                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3 mb-3">
+                                <h4 className="font-medium text-sm">{editingContact.id ? 'Edit Contact' : 'New Contact'}</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+                                    <input type="text" value={contactForm.name} onChange={e => setContactForm({...contactForm, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Full name" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                                    <select value={contactForm.role} onChange={e => setContactForm({...contactForm, role: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                      <option value="General">General — CC'd on WTNs and invoices</option>
+                                      <option value="WTN">WTN — CC'd on Waste Transfer Notes only</option>
+                                      <option value="Invoices">Invoices — CC'd on invoices and WTNs</option>
+                                      <option value="Quotes">Quotes — CC'd on quotes only</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                                    <input type="email" value={contactForm.email} onChange={e => setContactForm({...contactForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="email@company.com" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                                    <input type="tel" value={contactForm.phone} onChange={e => setContactForm({...contactForm, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="+44 7..." />
+                                  </div>
+                                </div>
+                                <label className="flex items-center gap-2 text-sm">
+                                  <input type="checkbox" checked={contactForm.cc_emails} onChange={e => setContactForm({...contactForm, cc_emails: e.target.checked})} />
+                                  <span>CC into Sage emails</span>
+                                </label>
+                                <div className="flex gap-2 justify-end">
+                                  <button type="button" onClick={() => setEditingContact(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                                  <button type="button" onClick={saveContact} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Contact</button>
+                                </div>
+                              </div>
+                            )}
+
+                            {contacts.length === 0 && editingContact === null ? (
+                              <p className="text-sm text-gray-400 text-center py-4">No additional contacts yet.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {contacts.map(contact => (
+                                  <div key={contact.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-medium text-sm">{contact.name}</span>
+                                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[contact.role] || ROLE_COLORS.General}`}>{contact.role}</span>
+                                        {contact.cc_emails !== false && <span className="text-xs text-green-600">📧 CC'd</span>}
+                                        {contact.sage_contact_person_id && <span className="text-xs text-green-600">✅ Sage</span>}
+                                      </div>
+                                      <div className="text-xs text-gray-500 mt-0.5 truncate">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</div>
+                                    </div>
+                                    <div className="flex gap-2 ml-2 flex-shrink-0">
+                                      <button type="button" onClick={() => openEditContact(contact)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                                      <button type="button" onClick={() => deleteContact(contact.id)} className="text-xs text-red-500 hover:underline">Delete</button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   )}
@@ -17914,102 +18000,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     </div>
                   )}
 
-                  {/* Named Contacts Tab */}
-                  {activeTab === 'contacts' && (
-                    <div className="space-y-4">
-                      {!isExistingCustomer ? (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
-                          Save the customer record first, then come back to add named contacts.
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm text-gray-500">Contacts are synced with Sage. Adding/editing here pushes to Sage automatically.</p>
-                            <div className="flex gap-2">
-                              {formData.sage_id && (
-                                <button onClick={syncContactsFromSage} disabled={syncingContacts} className="px-3 py-1.5 border border-blue-300 text-blue-700 text-sm rounded-lg hover:bg-blue-50 flex items-center gap-1 disabled:opacity-50">
-                                  {syncingContacts ? 'Syncing...' : '↓ Sync from Sage'}
-                                </button>
-                              )}
-                              <button onClick={openNewContact} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1">
-                                <span>+</span> Add Contact
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Add/Edit contact inline form */}
-                          {editingContact !== null && (
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
-                              <h4 className="font-medium text-sm">{editingContact.id ? 'Edit Contact' : 'New Contact'}</h4>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
-                                  <input type="text" value={contactForm.name} onChange={e => setContactForm({...contactForm, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Full name" />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
-                                  <select value={contactForm.role} onChange={e => setContactForm({...contactForm, role: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                                    <option value="WTN">WTN</option>
-                                    <option value="Invoices">Invoices</option>
-                                    <option value="Quotes">Quotes</option>
-                                    <option value="General">General</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                                  <input type="email" value={contactForm.email} onChange={e => setContactForm({...contactForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="email@company.com" />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                                  <input type="tel" value={contactForm.phone} onChange={e => setContactForm({...contactForm, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="+44 7..." />
-                                </div>
-                              </div>
-                              <label className="flex items-center gap-2 text-sm">
-                                <input type="checkbox" checked={contactForm.cc_emails} onChange={e => setContactForm({...contactForm, cc_emails: e.target.checked})} />
-                                <span>CC into Sage emails <span className="text-xs text-gray-400">(invoices, statements, etc.)</span></span>
-                              </label>
-                              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 space-y-1">
-                                <p className="font-medium">How roles work:</p>
-                                <p><span className="font-semibold">WTN</span> — CC'd on all Waste Transfer Notes</p>
-                                <p><span className="font-semibold">Invoices</span> — CC'd on invoices and WTNs</p>
-                                <p><span className="font-semibold">Quotes</span> — CC'd on quotes only</p>
-                                <p><span className="font-semibold">General</span> — CC'd on WTNs and invoices</p>
-                              </div>
-                              <div className="flex gap-2 justify-end">
-                                <button onClick={() => setEditingContact(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-                                <button onClick={saveContact} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Contact</button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Contacts list */}
-                          {contacts.length === 0 ? (
-                            <p className="text-sm text-gray-400 text-center py-6">No named contacts yet. Add one above{formData.sage_id ? ' or sync from Sage.' : '.'}</p>
-                          ) : (
-                            <div className="space-y-2">
-                              {contacts.map(contact => (
-                                <div key={contact.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium text-sm">{contact.name}</span>
-                                      {contact.is_primary && <span className="text-xs bg-yellow-100 text-yellow-800 px-1.5 rounded-full">Primary</span>}
-                                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[contact.role] || ROLE_COLORS.General}`}>{contact.role}</span>
-                                      {contact.sage_contact_person_id && <span className="text-xs text-green-600">✅ Sage</span>}
-                                    </div>
-                                    <div className="text-xs text-gray-500 mt-0.5 truncate">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</div>
-                                  </div>
-                                  <div className="flex gap-2 ml-2">
-                                    <button onClick={() => openEditContact(contact)} className="text-xs text-blue-600 hover:underline">Edit</button>
-                                    <button onClick={() => deleteContact(contact.id)} className="text-xs text-red-500 hover:underline">Delete</button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
 
                   {/* Documents Tab */}
                   {activeTab === 'documents' && (
@@ -18213,7 +18203,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
           const handleTabChange = (tab) => {
             setActiveTab(tab);
-            if (tab === 'contacts') loadContacts();
+            if (tab === 'contact' || tab === 'contacts') loadContacts();
           };
 
           const openNewContact = () => {
@@ -18440,7 +18430,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               : formData.certifications.filter(c => c !== cert)});
           };
 
-          const tabs = ['company', 'contact', 'compliance', 'services', 'contacts', 'documents'];
+          const tabs = ['company', 'contact', 'compliance', 'services', 'documents'];
 
           return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -18470,9 +18460,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       {tab === 'contact'    && 'Contact Information'}
                       {tab === 'compliance' && 'Compliance & Financial'}
                       {tab === 'services'   && 'Services & Equipment'}
-                      {tab === 'contacts'   && (
-                        <span>Named Contacts {isExistingSupplier && contacts.length > 0 ? <span className="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs">{contacts.length}</span> : ''}</span>
-                      )}
                       {tab === 'documents'  && 'Documents'}
                     </button>
                   ))}
@@ -18587,7 +18574,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.email ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="contact@supplier.com" />
                         </div>
                         <div className="flex items-end pb-2">
-                          <p className="text-xs text-gray-400">Need extra contacts? Add them in Sage under this supplier's Contacts tab.</p>
+                          <p className="text-xs text-gray-400">This is the main email for this supplier. Add extra CC contacts below.</p>
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -18608,6 +18595,95 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                         <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={3} placeholder="Any special instructions, requirements, notes..." />
+                      </div>
+
+                      {/* Additional Contacts — inline in Contact tab */}
+                      <div className="pt-4 border-t">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <h4 className="font-medium text-gray-900">Additional Contacts</h4>
+                            <p className="text-xs text-gray-500 mt-0.5">These people are CC'd on emails from Sage (invoices, statements, WTNs).</p>
+                          </div>
+                          {isExistingSupplier && (
+                            <div className="flex gap-2">
+                              {formData.sage_id && (
+                                <button type="button" onClick={syncContactsFromSage} disabled={syncingContacts} className="px-3 py-1.5 border border-blue-300 text-blue-700 text-sm rounded-lg hover:bg-blue-50 disabled:opacity-50">
+                                  {syncingContacts ? 'Syncing...' : '↓ Sync from Sage'}
+                                </button>
+                              )}
+                              <button type="button" onClick={openNewContact} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1">
+                                <span>+</span> Add Contact
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {!isExistingSupplier ? (
+                          <p className="text-sm text-gray-400 text-center py-4">Save the supplier first, then add extra contacts here.</p>
+                        ) : (
+                          <>
+                            {editingContact !== null && (
+                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3 mb-3">
+                                <h4 className="font-medium text-sm">{editingContact.id ? 'Edit Contact' : 'New Contact'}</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+                                    <input type="text" value={contactForm.name} onChange={e => setContactForm({...contactForm, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Full name" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                                    <select value={contactForm.role} onChange={e => setContactForm({...contactForm, role: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                      <option value="General">General — CC'd on WTNs and invoices</option>
+                                      <option value="WTN">WTN — CC'd on Waste Transfer Notes only</option>
+                                      <option value="Invoices">Invoices — CC'd on invoices and WTNs</option>
+                                      <option value="Quotes">Quotes — CC'd on quotes only</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                                    <input type="email" value={contactForm.email} onChange={e => setContactForm({...contactForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="email@company.com" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                                    <input type="tel" value={contactForm.phone} onChange={e => setContactForm({...contactForm, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="+44 7..." />
+                                  </div>
+                                </div>
+                                <label className="flex items-center gap-2 text-sm">
+                                  <input type="checkbox" checked={contactForm.cc_emails} onChange={e => setContactForm({...contactForm, cc_emails: e.target.checked})} />
+                                  <span>CC into Sage emails</span>
+                                </label>
+                                <div className="flex gap-2 justify-end">
+                                  <button type="button" onClick={() => setEditingContact(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                                  <button type="button" onClick={saveContact} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Contact</button>
+                                </div>
+                              </div>
+                            )}
+
+                            {contacts.length === 0 && editingContact === null ? (
+                              <p className="text-sm text-gray-400 text-center py-4">No additional contacts yet.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {contacts.map(contact => (
+                                  <div key={contact.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-medium text-sm">{contact.name}</span>
+                                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[contact.role] || ROLE_COLORS.General}`}>{contact.role}</span>
+                                        {contact.cc_emails !== false && <span className="text-xs text-green-600">📧 CC'd</span>}
+                                        {contact.sage_contact_person_id && <span className="text-xs text-green-600">✅ Sage</span>}
+                                      </div>
+                                      <div className="text-xs text-gray-500 mt-0.5 truncate">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</div>
+                                    </div>
+                                    <div className="flex gap-2 ml-2 flex-shrink-0">
+                                      <button type="button" onClick={() => openEditContact(contact)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                                      <button type="button" onClick={() => deleteContact(contact.id)} className="text-xs text-red-500 hover:underline">Delete</button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   )}
@@ -18828,98 +18904,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     </div>
                   )}
 
-                  {/* Named Contacts Tab */}
-                  {activeTab === 'contacts' && (
-                    <div className="space-y-4">
-                      {!isExistingSupplier ? (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
-                          Save the supplier record first, then come back to add named contacts.
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm text-gray-500">Contacts are synced with Sage. Adding/editing here pushes to Sage automatically.</p>
-                            <div className="flex gap-2">
-                              {formData.sage_id && (
-                                <button onClick={syncContactsFromSage} disabled={syncingContacts} className="px-3 py-1.5 border border-blue-300 text-blue-700 text-sm rounded-lg hover:bg-blue-50 flex items-center gap-1 disabled:opacity-50">
-                                  {syncingContacts ? 'Syncing...' : '↓ Sync from Sage'}
-                                </button>
-                              )}
-                              <button onClick={openNewContact} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1">
-                                <span>+</span> Add Contact
-                              </button>
-                            </div>
-                          </div>
-                          {editingContact !== null && (
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
-                              <h4 className="font-medium text-sm">{editingContact.id ? 'Edit Contact' : 'New Contact'}</h4>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
-                                  <input type="text" value={contactForm.name} onChange={e => setContactForm({...contactForm, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Full name" />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
-                                  <select value={contactForm.role} onChange={e => setContactForm({...contactForm, role: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                                    <option value="WTN">WTN</option>
-                                    <option value="Invoices">Invoices</option>
-                                    <option value="Quotes">Quotes</option>
-                                    <option value="General">General</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                                  <input type="email" value={contactForm.email} onChange={e => setContactForm({...contactForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="email@company.com" />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                                  <input type="tel" value={contactForm.phone} onChange={e => setContactForm({...contactForm, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="+44 7..." />
-                                </div>
-                              </div>
-                              <label className="flex items-center gap-2 text-sm">
-                                <input type="checkbox" checked={contactForm.cc_emails} onChange={e => setContactForm({...contactForm, cc_emails: e.target.checked})} />
-                                <span>CC into Sage emails <span className="text-xs text-gray-400">(invoices, statements, etc.)</span></span>
-                              </label>
-                              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 space-y-1">
-                                <p className="font-medium">How roles work:</p>
-                                <p><span className="font-semibold">WTN</span> — CC'd on all Waste Transfer Notes</p>
-                                <p><span className="font-semibold">Invoices</span> — CC'd on invoices and WTNs</p>
-                                <p><span className="font-semibold">Quotes</span> — CC'd on quotes only</p>
-                                <p><span className="font-semibold">General</span> — CC'd on WTNs and invoices</p>
-                              </div>
-                              <div className="flex gap-2 justify-end">
-                                <button onClick={() => setEditingContact(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-                                <button onClick={saveContact} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Contact</button>
-                              </div>
-                            </div>
-                          )}
-                          {contacts.length === 0 ? (
-                            <p className="text-sm text-gray-400 text-center py-6">No named contacts yet. Add one above{formData.sage_id ? ' or sync from Sage.' : '.'}</p>
-                          ) : (
-                            <div className="space-y-2">
-                              {contacts.map(contact => (
-                                <div key={contact.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium text-sm">{contact.name}</span>
-                                      {contact.is_primary && <span className="text-xs bg-yellow-100 text-yellow-800 px-1.5 rounded-full">Primary</span>}
-                                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[contact.role] || ROLE_COLORS.General}`}>{contact.role}</span>
-                                      {contact.sage_contact_person_id && <span className="text-xs text-green-600">✅ Sage</span>}
-                                    </div>
-                                    <div className="text-xs text-gray-500 mt-0.5 truncate">{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</div>
-                                  </div>
-                                  <div className="flex gap-2 ml-2">
-                                    <button onClick={() => openEditContact(contact)} className="text-xs text-blue-600 hover:underline">Edit</button>
-                                    <button onClick={() => deleteContact(contact.id)} className="text-xs text-red-500 hover:underline">Delete</button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
 
                   {/* Documents Tab */}
                   {activeTab === 'documents' && (
