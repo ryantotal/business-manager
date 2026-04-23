@@ -19,15 +19,25 @@ function isTokenExpired(expiresAt) {
 }
 // ── FIX: Helper to normalise VAT number for Sage ──────────────────────────
 // Sage expects the numeric-only portion for UK VAT numbers.
-// Users may enter "GB117223643" but Sage wants "117223643".
+// Users may enter "GB117223643" or just "117223643".
+// Sage stores UK VAT numbers WITH the "GB" prefix (e.g. "GB 973631108").
+// We normalise to digits-only for the modulus check, but send with prefix to Sage.
 function normaliseTaxNumber(vatNumber) {
   if (!vatNumber) return '';
   let v = vatNumber.trim().toUpperCase();
-  // Strip common UK prefixes
-  if (v.startsWith('GB')) v = v.slice(2);
-  // Remove any spaces or dashes
-  v = v.replace(/[\s\-]/g, '');
-  return v;
+  // Strip prefix for digit extraction
+  let digits = v.startsWith('GB') ? v.slice(2) : v;
+  digits = digits.replace(/[\s\-]/g, '');
+  // Return 9-digit number only (no prefix) — Sage API may or may not want prefix
+  return digits;
+}
+
+// Return the VAT number formatted for Sage API (with GB prefix)
+function formatVatForSage(vatNumber) {
+  if (!vatNumber) return '';
+  const digits = normaliseTaxNumber(vatNumber);
+  if (!digits) return '';
+  return 'GB' + digits;
 }
 
 // ── UK VAT number validation ──────────────────────────────────────────────
@@ -185,6 +195,73 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
   const { endpoint, method = 'GET', body, businessId, action } = req.body || {};
+
+  // ── diagnoseSageVat action ──────────────────────────────────────────────
+  // Diagnostic: inspect a working contact in Sage to see what makes VAT work.
+  // Call with: { action: 'diagnoseSageVat', sageContactId: '...' }
+  // Or without sageContactId to just dump country_groups.
+  if (action === 'diagnoseSageVat') {
+    const { sageContactId } = req.body;
+    try {
+      // Get token (reuse pattern)
+      let accessToken = null;
+      const { data: tokenData } = await supabase
+        .from('company_settings')
+        .select('setting_name, setting_value')
+        .in('setting_name', ['sage_access_token', 'sage_refresh_token', 'sage_token_expires_at']);
+      if (!tokenData || tokenData.length === 0) {
+        return res.status(401).json({ error: 'No Sage tokens' });
+      }
+      const tokens = tokenData.reduce((acc, row) => { acc[row.setting_name] = row.setting_value; return acc; }, {});
+      if (isTokenExpired(tokens.sage_token_expires_at)) {
+        accessToken = await refreshAccessToken(tokens.sage_refresh_token);
+      } else {
+        accessToken = tokens.sage_access_token;
+      }
+      const { data: bizData } = await supabase.from('company_settings').select('setting_value').eq('setting_name', 'sage_business_id').single();
+      const sageHeaders = {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        ...(bizData?.setting_value && { 'X-Business': bizData.setting_value })
+      };
+      const sageFetch = async (ep) => {
+        const r = await fetch(`https://api.accounting.sage.com/v3.1/${ep}`, { headers: sageHeaders });
+        return r.json();
+      };
+
+      const result = {};
+
+      // Dump country_groups
+      const groups = await sageFetch('country_groups?items_per_page=200');
+      result.country_groups = (groups?.$items || []).map(g => ({
+        id: g.id, name: g.displayed_as, countries: (g.countries || []).map(c => c.id || c.displayed_as)
+      }));
+
+      // If a contact ID is provided, inspect it
+      if (sageContactId) {
+        result.contact = await sageFetch(`contacts/${sageContactId}`);
+        const addrs = await sageFetch(`addresses?contact_id=${sageContactId}`);
+        result.addresses = (addrs?.$items || []).map(a => ({
+          id: a.id,
+          name: a.name || a.displayed_as,
+          type: a.address_type?.id || a.address_type_id,
+          is_main: a.is_main_address,
+          country: a.country,
+          country_group: a.country_group,
+          address_line_1: a.address_line_1,
+          postal_code: a.postal_code,
+        }));
+        result.tax_number = result.contact?.tax_number;
+        result.main_address = result.contact?.main_address;
+      }
+
+      return res.status(200).json(result);
+    } catch (err) {
+      return res.status(500).json({ error: err.message, data: err.data });
+    }
+  }
+
   // ── createContact action ──────────────────────────────────────────────────
   if (action === 'createContact') {
     const { contactType, name, email, address, city, postcode, vatNumber, creditLimit, creditDays, mainContact } = req.body;
@@ -313,8 +390,11 @@ export default async function handler(req, res) {
         }
 
         const addressFields = {
-          name: 'Main Address',
-          address_type_id: 'ACCOUNTS',
+          name: isCustomer ? 'Main Address' : 'Invoice Address',
+          // FIX: Suppliers need PURCHASING type to match working Sage contacts.
+          // Customers use ACCOUNTS. The working supplier "Advanced ColdFormed"
+          // has type "Purchasing" with name "Invoice Address".
+          address_type_id: isCustomer ? 'ACCOUNTS' : 'PURCHASING',
           is_main_address: true,
           country_id: 'GB',
         };
@@ -460,23 +540,29 @@ export default async function handler(req, res) {
       }
 
       // ── Step 5: Now apply tax_number via PUT ─────────────────────────────
-      // Sage validates that tax_number passes the UK VAT modulus check
-      // (mod 97 / mod 9755).  If the number fails, Sage returns the
-      // misleading error "The tax number does not match the main address."
+      // From comparing working vs broken contacts in Sage:
+      //   Working: address_type = "Purchasing", VAT shown as "GB 973631108"
+      //   Broken:  address_type = "Accounts", VAT not set
       //
-      // We validate the number ourselves first and log a clear message
-      // if it's invalid, so the real cause is obvious.
+      // Two fixes applied:
+      //   1. Step 2 now uses PURCHASING for suppliers (done above)
+      //   2. Try tax_number both with and without "GB" prefix
+      //
+      // Sage's error "does not match the main address" can mean:
+      //   a) The VAT format doesn't match the country's tax scheme
+      //   b) The address type doesn't support VAT for that contact type
+      //   c) The VAT number itself is invalid
+      const vatWithPrefix = formatVatForSage(vatNumber);  // "GB291386772"
+      const vatWithoutPrefix = cleanVat;                   // "291386772"
+      
       if (cleanVat && address_id) {
         const vatIsValid = isValidUkVatNumber(cleanVat);
-        console.log('[Sage Proxy] Step 5 — tax_number:', cleanVat, '| valid UK VAT:', vatIsValid);
+        console.log('[Sage Proxy] Step 5 — digits:', cleanVat, '| with prefix:', vatWithPrefix, '| valid:', vatIsValid);
 
         if (!vatIsValid) {
           console.warn('[Sage Proxy] Step 5 — SKIPPING: "' + cleanVat + '" fails the UK VAT modulus check.');
-          console.warn('[Sage Proxy] UK VAT numbers must be exactly 9 digits and pass mod-97 or mod-9755.');
-          console.warn('[Sage Proxy] The Sage error "does not match the main address" actually means the number is invalid.');
           console.warn('[Sage Proxy] VAT number stored in portal only. It will sync to Sage when corrected.');
         } else {
-          // Valid UK VAT — set it on the contact
           let vatSet = false;
 
           // Ensure main_address is set
@@ -487,34 +573,65 @@ export default async function handler(req, res) {
             console.log('[Sage Proxy] Step 5 — main_address confirmed');
           } catch (_) { /* non-fatal */ }
 
-          // Try setting tax_number with main_address assertion
-          try {
-            await sageRequest(`contacts/${sage_id}`, {
-              contact: {
-                tax_number: cleanVat,
-                main_address: { id: address_id },
-              }
-            }, 'PUT');
-            console.log('[Sage Proxy] Step 5 COMPLETE — tax_number set successfully');
-            vatSet = true;
-          } catch (vatErr) {
-            console.warn('[Sage Proxy] Step 5 — tax_number PUT failed:', vatErr?.data?.[0]?.$message || JSON.stringify(vatErr?.data));
-
-            // Fallback: bare PUT
+          // Try each format: digits only, then GB-prefixed
+          const formatsToTry = [vatWithoutPrefix, vatWithPrefix];
+          
+          for (const vatFormat of formatsToTry) {
+            if (vatSet) break;
+            console.log('[Sage Proxy] Step 5 — trying tax_number format:', vatFormat);
             try {
               await sageRequest(`contacts/${sage_id}`, {
-                contact: { tax_number: cleanVat }
+                contact: {
+                  tax_number: vatFormat,
+                  main_address: { id: address_id },
+                }
               }, 'PUT');
-              console.log('[Sage Proxy] Step 5 COMPLETE — tax_number set with bare PUT');
+              console.log('[Sage Proxy] Step 5 COMPLETE — tax_number set as:', vatFormat);
               vatSet = true;
-            } catch (vatErr2) {
-              console.warn('[Sage Proxy] Step 5 — bare PUT also failed:', vatErr2?.data?.[0]?.$message || JSON.stringify(vatErr2?.data));
+            } catch (vatErr) {
+              console.warn('[Sage Proxy] Step 5 — format', vatFormat, 'failed:', vatErr?.data?.[0]?.$message || 'unknown');
+            }
+          }
+
+          // Fallback: try bare PUT (no main_address) with each format
+          if (!vatSet) {
+            for (const vatFormat of formatsToTry) {
+              if (vatSet) break;
+              try {
+                await sageRequest(`contacts/${sage_id}`, {
+                  contact: { tax_number: vatFormat }
+                }, 'PUT');
+                console.log('[Sage Proxy] Step 5 COMPLETE — bare PUT with:', vatFormat);
+                vatSet = true;
+              } catch (_) { /* try next */ }
+            }
+          }
+
+          // Last resort: change address type and retry
+          if (!vatSet) {
+            const altType = isCustomer ? 'PURCHASING' : 'ACCOUNTS';
+            console.log('[Sage Proxy] Step 5 — trying alternate address type:', altType);
+            try {
+              await sageRequest(`addresses/${address_id}`, {
+                address: { address_type_id: altType, is_main_address: true, country_id: 'GB' }
+              }, 'PUT');
+              for (const vatFormat of formatsToTry) {
+                if (vatSet) break;
+                try {
+                  await sageRequest(`contacts/${sage_id}`, {
+                    contact: { tax_number: vatFormat, main_address: { id: address_id } }
+                  }, 'PUT');
+                  console.log('[Sage Proxy] Step 5 COMPLETE — set with', altType, 'type and format:', vatFormat);
+                  vatSet = true;
+                } catch (_) { /* try next */ }
+              }
+            } catch (e) {
+              console.warn('[Sage Proxy] Step 5 — could not change address type');
             }
           }
 
           if (!vatSet) {
-            console.warn('[Sage Proxy] Step 5 FAILED — VAT number stored in portal only.');
-            console.warn('[Sage Proxy] Debug: try manually entering this VAT number in Sage to see if the issue is account-level.');
+            console.warn('[Sage Proxy] Step 5 FAILED — all attempts exhausted. VAT stored in portal only.');
           }
         }
       } else if (cleanVat && !address_id) {
