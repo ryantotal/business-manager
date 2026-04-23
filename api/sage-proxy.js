@@ -392,10 +392,10 @@ export default async function handler(req, res) {
 
         const addressFields = {
           name: isCustomer ? 'Main Address' : 'Invoice Address',
-          // FIX: Suppliers need PURCHASING type to match working Sage contacts.
-          // Customers use ACCOUNTS. The working supplier "Advanced ColdFormed"
-          // has type "Purchasing" with name "Invoice Address".
-          address_type_id: isCustomer ? 'ACCOUNTS' : 'PURCHASING',
+          // FIX: Suppliers need PURCHASING, customers need SALES.
+          // The Sage UI creates these types by default for each contact type.
+          // Using ACCOUNTS for either type causes VAT validation to fail.
+          address_type_id: isCustomer ? 'SALES' : 'PURCHASING',
           is_main_address: true,
           country_id: 'GB',
         };
@@ -609,7 +609,7 @@ export default async function handler(req, res) {
 
           // Last resort: change address type and retry
           if (!vatSet) {
-            const altType = isCustomer ? 'PURCHASING' : 'ACCOUNTS';
+            const altType = isCustomer ? 'PURCHASING' : 'SALES';
             console.log('[Sage Proxy] Step 5 — trying alternate address type:', altType);
             try {
               await sageRequest(`addresses/${address_id}`, {
