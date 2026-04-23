@@ -262,59 +262,121 @@ export default async function handler(req, res) {
         console.log('[Sage Proxy] Step 1b — GB country_group_id:', gbGroupId);
       }
 
-      // ── Step 2: Create the address linked to the contact ─────────────────
+      // ── Step 2: Create or update the address linked to the contact ────────
+      // IMPORTANT: Sage auto-creates a blank "Delivery" address when a contact
+      // is first created (Step 1).  If we blindly POST a second address we end
+      // up with TWO addresses — the blank Delivery one (potentially missing
+      // country_group) and our Accounts one.  Sage may validate tax_number
+      // against the blank one and reject it.
+      //
+      // Strategy: fetch any auto-created addresses first.  If one exists,
+      // UPDATE it with our data.  Only create a new one if none exist.
       let address_id = null;
+      let allAddressIds = []; // track every address on this contact
+
       if (hasAddress) {
-        console.log('[Sage Proxy] Step 2 — creating address for contact:', sage_id);
-        const addressObj = {
-          address: {
-            contact_id: sage_id,
-            name: 'Main Address',
-            address_type_id: 'ACCOUNTS',
-            is_main_address: true,
-            country_id: 'GB',
-          }
-        };
-        // FIX: Use the looked-up GB country_group_id instead of hardcoded 'ALL'
-        if (gbGroupId) {
-          addressObj.address.country_group_id = gbGroupId;
-        }
-        if (address)  addressObj.address.address_line_1 = address;
-        if (city)     addressObj.address.city           = city;
-        if (postcode) addressObj.address.postal_code    = postcode;
+        console.log('[Sage Proxy] Step 2 — setting up address for contact:', sage_id);
+
+        // 2a. Check for auto-created addresses
+        let existingAddresses = [];
         try {
-          const addrData = await sageRequest('addresses', addressObj);
-          address_id = addrData?.id;
-          console.log('[Sage Proxy] Step 2 complete — address created:', JSON.stringify({
-            id: addrData?.id,
-            country: addrData?.country,
-            country_group: addrData?.country_group,
-            is_main_address: addrData?.is_main_address
-          }));
-        } catch (addrErr) {
-          console.warn('[Sage Proxy] Step 2 — address creation failed:', JSON.stringify(addrErr?.data));
-          // Retry without country_group_id — Sage will use its default
+          const addrList = await sageRequest(`addresses?contact_id=${sage_id}`, null, 'GET');
+          const items = addrList?.$items || addrList?.items || (Array.isArray(addrList) ? addrList : []);
+          existingAddresses = items;
+          allAddressIds = items.map(a => a.id).filter(Boolean);
+          console.log('[Sage Proxy] Step 2a — found', existingAddresses.length, 'existing addresses:', allAddressIds);
+        } catch (e) {
+          console.log('[Sage Proxy] Step 2a — no existing addresses found');
+        }
+
+        const addressFields = {
+          name: 'Main Address',
+          address_type_id: 'ACCOUNTS',
+          is_main_address: true,
+          country_id: 'GB',
+        };
+        if (gbGroupId) addressFields.country_group_id = gbGroupId;
+        if (address)   addressFields.address_line_1   = address;
+        if (city)      addressFields.city              = city;
+        if (postcode)  addressFields.postal_code       = postcode;
+
+        if (existingAddresses.length > 0) {
+          // 2b. Update the first existing address (the auto-created Delivery one)
+          const existing = existingAddresses[0];
+          address_id = existing.id;
+          console.log('[Sage Proxy] Step 2b — updating existing address:', address_id);
           try {
-            delete addressObj.address.country_group_id;
-            const addrData2 = await sageRequest('addresses', addressObj);
-            address_id = addrData2?.id;
-            console.log('[Sage Proxy] Step 2 complete (retry without country_group) — address created:', JSON.stringify({
-              id: addrData2?.id,
-              country: addrData2?.country,
-              country_group: addrData2?.country_group,
+            const addrData = await sageRequest(`addresses/${address_id}`, { address: addressFields }, 'PUT');
+            console.log('[Sage Proxy] Step 2b complete — address updated:', JSON.stringify({
+              id: addrData?.id,
+              country: addrData?.country,
+              country_group: addrData?.country_group,
+              is_main_address: addrData?.is_main_address
             }));
-          } catch (addrErr2) {
-            console.warn('[Sage Proxy] Step 2 — retry also failed:', JSON.stringify(addrErr2?.data));
+          } catch (updateErr) {
+            console.warn('[Sage Proxy] Step 2b — update failed:', JSON.stringify(updateErr?.data));
+            // Retry without country_group_id
+            try {
+              delete addressFields.country_group_id;
+              await sageRequest(`addresses/${address_id}`, { address: addressFields }, 'PUT');
+              console.log('[Sage Proxy] Step 2b — update succeeded without country_group');
+            } catch (updateErr2) {
+              console.warn('[Sage Proxy] Step 2b — retry also failed:', JSON.stringify(updateErr2?.data));
+            }
+          }
+        } else {
+          // 2c. No existing addresses — create one
+          console.log('[Sage Proxy] Step 2c — creating new address');
+          const addressObj = { address: { ...addressFields, contact_id: sage_id } };
+          try {
+            const addrData = await sageRequest('addresses', addressObj);
+            address_id = addrData?.id;
+            if (address_id) allAddressIds.push(address_id);
+            console.log('[Sage Proxy] Step 2c complete — address created:', JSON.stringify({
+              id: addrData?.id,
+              country: addrData?.country,
+              country_group: addrData?.country_group,
+              is_main_address: addrData?.is_main_address
+            }));
+          } catch (addrErr) {
+            console.warn('[Sage Proxy] Step 2c — address creation failed:', JSON.stringify(addrErr?.data));
+            try {
+              delete addressObj.address.country_group_id;
+              const addrData2 = await sageRequest('addresses', addressObj);
+              address_id = addrData2?.id;
+              if (address_id) allAddressIds.push(address_id);
+              console.log('[Sage Proxy] Step 2c — created without country_group');
+            } catch (addrErr2) {
+              console.warn('[Sage Proxy] Step 2c — retry also failed:', JSON.stringify(addrErr2?.data));
+            }
+          }
+        }
+
+        // 2d. If there are OTHER addresses (e.g. a second auto-created one),
+        // patch them all with correct country_group too — Sage may validate
+        // tax_number against ANY address on the contact.
+        if (gbGroupId && allAddressIds.length > 1) {
+          for (const aid of allAddressIds) {
+            if (aid === address_id) continue; // already patched above
+            try {
+              await sageRequest(`addresses/${aid}`, {
+                address: { country_id: 'GB', country_group_id: gbGroupId }
+              }, 'PUT');
+              console.log('[Sage Proxy] Step 2d — patched extra address:', aid);
+            } catch (e) {
+              console.warn('[Sage Proxy] Step 2d — could not patch address', aid, ':', e?.data?.message || e?.message);
+            }
           }
         }
       }
-      // If we didn't create an address, try to fetch the default one Sage auto-created
+      // If we still don't have an address_id, try to fetch one
       if (!address_id) {
         try {
           const addrList = await sageRequest(`addresses?contact_id=${sage_id}`, null, 'GET');
           const items = addrList?.$items || addrList?.items || addrList;
           if (Array.isArray(items) && items.length > 0) {
             address_id = items[0].id;
+            allAddressIds = items.map(a => a.id).filter(Boolean);
             console.log('[Sage Proxy] Found existing address for contact:', address_id);
           }
         } catch (e) {
@@ -378,51 +440,66 @@ export default async function handler(req, res) {
       // Sage requires the contact's main_address to have the correct
       // country + country_group before it will accept a UK tax_number.
       //
-      // FIX (v101): Three-phase approach —
-      //   5a. Ensure the address has the correct country_group_id for GB
-      //   5b. Re-fetch the contact to get its current main_address link
+      // FIX (v102): Four-phase approach —
+      //   5a. Fetch ALL addresses on the contact and patch every one with
+      //       correct country_id + country_group_id (Sage auto-creates
+      //       extra addresses that may be missing the group)
+      //   5b. Explicitly set main_address on the contact to our address
       //   5c. PUT tax_number while re-asserting main_address.id
+      //   5d. Fallback without main_address assertion
       if (cleanVat && address_id) {
         console.log('[Sage Proxy] Step 5 — setting tax_number:', cleanVat);
 
-        // ── 5a. Patch the address to ensure country_group is correct ───────
-        // Even if Step 2 set it, it may have been cleared by Step 4's PUT.
-        // Force it to the GB group so Sage's tax validation passes.
-        if (gbGroupId) {
-          try {
-            await sageRequest(`addresses/${address_id}`, {
-              address: {
-                country_id: 'GB',
-                country_group_id: gbGroupId,
+        // ── 5a. Patch ALL addresses to ensure country_group is correct ─────
+        // Sage may have auto-created extra addresses (e.g. Delivery) that
+        // don't have country_group set. If Sage validates against ANY of
+        // them, the tax_number PUT will fail.
+        try {
+          const addrList = await sageRequest(`addresses?contact_id=${sage_id}`, null, 'GET');
+          const allAddrs = addrList?.$items || addrList?.items || (Array.isArray(addrList) ? addrList : []);
+          console.log('[Sage Proxy] Step 5a — contact has', allAddrs.length, 'addresses');
+          for (const addr of allAddrs) {
+            const addrCountryGroup = addr?.country_group?.id || addr?.country_group_id;
+            const needsPatch = !addrCountryGroup || addrCountryGroup !== gbGroupId;
+            console.log('[Sage Proxy] Step 5a — address', addr.id, ':', {
+              name: addr.name || addr.displayed_as,
+              is_main: addr.is_main_address,
+              country: addr.country?.id || addr.country_id,
+              country_group: addrCountryGroup,
+              needsPatch
+            });
+            if (needsPatch && gbGroupId) {
+              try {
+                await sageRequest(`addresses/${addr.id}`, {
+                  address: { country_id: 'GB', country_group_id: gbGroupId }
+                }, 'PUT');
+                console.log('[Sage Proxy] Step 5a — patched address', addr.id, 'with country_group:', gbGroupId);
+              } catch (e) {
+                console.warn('[Sage Proxy] Step 5a — could not patch address', addr.id, ':', e?.data?.message || e?.message);
               }
-            }, 'PUT');
-            console.log('[Sage Proxy] Step 5a — address country_group confirmed as:', gbGroupId);
-          } catch (e) {
-            console.warn('[Sage Proxy] Step 5a — could not patch address country_group:', e?.data || e?.message);
+            }
+          }
+        } catch (e) {
+          console.warn('[Sage Proxy] Step 5a — could not list addresses:', e?.data || e?.message);
+          // Single-address fallback
+          if (gbGroupId) {
+            try {
+              await sageRequest(`addresses/${address_id}`, {
+                address: { country_id: 'GB', country_group_id: gbGroupId }
+              }, 'PUT');
+              console.log('[Sage Proxy] Step 5a — patched our address as fallback');
+            } catch (_) { /* non-fatal */ }
           }
         }
 
-        // ── 5b. Re-fetch the contact to get current main_address ───────────
-        let mainAddressId = null;
+        // ── 5b. Ensure main_address on the contact points to our address ───
         try {
-          const currentContact = await sageRequest(`contacts/${sage_id}`, null, 'GET');
-          mainAddressId = currentContact?.main_address?.id;
-          console.log('[Sage Proxy] Step 5b — contact main_address.id:', mainAddressId);
-
-          // Diagnostic: also log what the address looks like now
-          if (mainAddressId) {
-            try {
-              const addrCheck = await sageRequest(`addresses/${mainAddressId}`, null, 'GET');
-              console.log('[Sage Proxy] Step 5b — address state:', JSON.stringify({
-                country: addrCheck?.country,
-                country_group: addrCheck?.country_group,
-                is_main_address: addrCheck?.is_main_address
-              }));
-            } catch (_) { /* non-fatal */ }
-          }
+          await sageRequest(`contacts/${sage_id}`, {
+            contact: { main_address: { id: address_id } }
+          }, 'PUT');
+          console.log('[Sage Proxy] Step 5b — set main_address to:', address_id);
         } catch (e) {
-          console.warn('[Sage Proxy] Step 5b — could not fetch contact:', e?.data || e?.message);
-          mainAddressId = address_id; // fall back to the one we created
+          console.warn('[Sage Proxy] Step 5b — could not set main_address:', e?.data?.message || e?.message);
         }
 
         // ── 5c. PUT tax_number with main_address assertion ─────────────────
@@ -430,12 +507,9 @@ export default async function handler(req, res) {
           const updatePayload = {
             contact: {
               tax_number: cleanVat,
+              main_address: { id: address_id },
             }
           };
-          // Re-assert main_address so Sage doesn't think we're clearing it
-          if (mainAddressId) {
-            updatePayload.contact.main_address = { id: mainAddressId };
-          }
           console.log('[Sage Proxy] Step 5c — PUT payload:', JSON.stringify(updatePayload));
           await sageRequest(`contacts/${sage_id}`, updatePayload, 'PUT');
           console.log('[Sage Proxy] Step 5 complete — tax_number set successfully');
@@ -443,7 +517,6 @@ export default async function handler(req, res) {
           console.warn('[Sage Proxy] Step 5c — tax_number PUT failed:', JSON.stringify(vatErr?.data));
 
           // ── 5d. Fallback: try setting tax_number without main_address ────
-          // Some Sage instances accept it without the address reference
           try {
             console.log('[Sage Proxy] Step 5d — retrying without main_address assertion');
             await sageRequest(`contacts/${sage_id}`, {
