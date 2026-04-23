@@ -20207,6 +20207,33 @@ if (typeof window.supabase === 'undefined') {
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrcGJucmpscWxoY2ttZ2NvdWx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI4MzE0OTAsImV4cCI6MjA2ODQwNzQ5MH0.YSt9xxYSskCp98iJDN0iQ5nNDRbI_EQWNnImcBxVBRU';
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     window.supabase = supabase;
+
+    // ── Diagnostic: inspect a Sage contact's address/VAT setup ────────────
+    // Usage from browser console:
+    //   diagnoseSageVat()                    — just dump country_groups
+    //   diagnoseSageVat('sage_contact_id')   — inspect a specific contact
+    // Find a contact's sage_id: open them in the portal, check the URL or
+    // the "Linked to Sage" badge in the form.
+    window.diagnoseSageVat = async (sageContactId) => {
+      try {
+        const res = await fetch('/api/sage-proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'diagnoseSageVat', sageContactId })
+        });
+        const data = await res.json();
+        console.log('%c[Sage VAT Diagnostic]', 'color: blue; font-weight: bold');
+        if (data.country_groups) {
+          console.log('Country Groups:', data.country_groups);
+        }
+        if (data.addresses) {
+          console.log('Addresses:', data.addresses);
+          console.log('Tax Number:', data.tax_number);
+          console.log('Main Address:', data.main_address);
+        }
+        return data;
+      } catch (e) { console.error('Diagnostic failed:', e); }
+    };
     // Handle OAuth callback if we're on the callback URL
 if (window.location.pathname.includes('/api/sage-callback') ||
     (window.location.search.includes('code='))) {
