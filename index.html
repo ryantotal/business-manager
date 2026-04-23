@@ -1165,7 +1165,7 @@ return (
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
-                            const hasWtn = job.wtn_portal_visible || job.wtn_sent || job.wtn_sent_at;
+                            const hasWtn = job.wtn_portal_visible || job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null');
                             const siNumber = job.sage_si_number || job.invoice_number || null;
                             const isInvoiced = !!siNumber;
 
@@ -1312,7 +1312,7 @@ return (
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
-                            const hasWtn = job.wtn_portal_visible || job.wtn_sent || job.wtn_sent_at;
+                            const hasWtn = job.wtn_portal_visible || job.wtn_sent || job.wtn_sent_at || (job.wtn_data && job.wtn_data !== 'null');
                             const siNumber = job.sage_si_number || job.invoice_number || null;
                             const isInvoiced = !!siNumber;
                             const serviceDetail = job.waste_type || job.aggregate_type || null;
@@ -2009,6 +2009,20 @@ const [wtnFields, setWtnFields] = useState(() => {
   const matchedCustomer = customers?.find(c => (c.name || c.companyName) === job?.customerName);
   const customerEmail = matchedCustomer?.email || '';
 
+  // Customer waste sites (for Section B — Transferor)
+  const customerSites = (() => {
+    const raw = matchedCustomer?.siteAddresses || matchedCustomer?.site_addresses;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try { return JSON.parse(raw); } catch { return []; }
+  })();
+  const autoCustSite = customerSites.length === 1 ? customerSites[0] : null;
+  const custSiteAddress = autoCustSite
+    ? [autoCustSite.address, autoCustSite.postcode].filter(Boolean).join(', ')
+    : [job?.siteAddress1, job?.siteAddress2, job?.siteCity, job?.sitePostcode].filter(Boolean).join(', ');
+  const custSitePermit = autoCustSite?.permitNumber || autoCustSite?.cbduNumber || '';
+  const custSiteSic = autoCustSite?.sicCode || '';
+
   // Us = the broker who arranged it (Section D2)
   const companyName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
   const companyAddress = localStorage.getItem('companyAddress') || '';
@@ -2028,13 +2042,14 @@ const [wtnFields, setWtnFields] = useState(() => {
     isHazardous: job?.hazardousWaste || false,
     // Section B — Transferor (waste producer / customer)
     transferorName: job?.customerName || '',
-    transferorAddress: [job?.siteAddress1, job?.siteAddress2, job?.siteCity, job?.sitePostcode].filter(Boolean).join(', '),
-    transferorPostcode: job?.sitePostcode || '',
-    transferorSicCode: '',
+    transferorAddress: custSiteAddress,
+    transferorPostcode: autoCustSite?.postcode || job?.sitePostcode || '',
+    transferorSicCode: custSiteSic,
     transferorIsProducer: true,
-    transferorPermitNumber: '',
+    transferorPermitNumber: custSitePermit,
     transferorSignature: '',
     transferorRepresenting: job?.customerName || '',
+    selectedTransferorSiteId: autoCustSite ? (autoCustSite.id || autoCustSite.siteName) : '',
     // Section C — Transferee (carrier collecting the waste = supplier)
     transfereeName: job?.supplierName || '',
     transfereeAddress: supplierAddress,
@@ -4281,8 +4296,47 @@ const [isEvent, setIsEvent] = useState(false);
                       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Name / Company *</label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorName} onChange={e=>setWtnFields({...wtnFields,transferorName:e.target.value})} /></div>
-                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorAddress} onChange={e=>setWtnFields({...wtnFields,transferorAddress:e.target.value})} /></div>
+                        {/* Customer site selector — only shows if customer has waste sites */}
+                        {(() => {
+                          const mc = customers?.find(c => (c.name || c.companyName) === wtnFields.transferorName);
+                          const custSites = (() => {
+                            const raw = mc?.siteAddresses || mc?.site_addresses;
+                            if (!raw) return [];
+                            if (Array.isArray(raw)) return raw;
+                            try { return JSON.parse(raw); } catch { return []; }
+                          })();
+                          if (custSites.length === 0) return (
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorAddress} onChange={e=>setWtnFields({...wtnFields,transferorAddress:e.target.value})} /></div>
+                          );
+                          return (
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Waste Site *</label>
+                              <select className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm bg-blue-50 font-medium" value={wtnFields.selectedTransferorSiteId || ''} onChange={e => {
+                                const siteId = e.target.value;
+                                if (siteId === '__main__') {
+                                  setWtnFields({...wtnFields, selectedTransferorSiteId: '__main__', transferorAddress: [mc.billingAddress || mc.address, mc.billingPostcode || mc.postcode].filter(Boolean).join(', '), transferorPermitNumber: mc.permitNumber || mc.permit_number || wtnFields.transferorPermitNumber, transferorSicCode: wtnFields.transferorSicCode});
+                                } else {
+                                  const site = custSites.find(s => (s.id || s.siteName) === siteId);
+                                  if (site) {
+                                    setWtnFields({...wtnFields, selectedTransferorSiteId: siteId, transferorAddress: [site.address, site.postcode].filter(Boolean).join(', '), transferorPermitNumber: site.permitNumber || site.cbduNumber || wtnFields.transferorPermitNumber, transferorSicCode: site.sicCode || wtnFields.transferorSicCode});
+                                    setWtnSuggestions(s=>({...s, transferorPermitNumber: undefined, transferorSicCode: undefined}));
+                                  }
+                                }
+                              }}>
+                                <option value="">— Select site —</option>
+                                <option value="__main__">Main Address ({[mc.billingAddress || mc.address, mc.billingPostcode || mc.postcode].filter(Boolean).join(', ').substring(0,40)}…)</option>
+                                {custSites.map(site => (
+                                  <option key={site.id || site.siteName} value={site.id || site.siteName}>{site.siteName}{site.postcode ? ` (${site.postcode})` : ''}</option>
+                                ))}
+                              </select>
+                              <div className="mt-2">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
+                                <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transferorAddress} onChange={e=>setWtnFields({...wtnFields,transferorAddress:e.target.value})} placeholder="Auto-filled from site selection" />
+                              </div>
+                            </div>
+                          );
+                        })()}
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">SIC Code <WtnSuggestBadge field="transferorSicCode" /></label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferorSicCode} onChange={e=>{setWtnFields({...wtnFields,transferorSicCode:e.target.value}); setWtnSuggestions(s=>({...s, transferorSicCode: undefined}));}} placeholder="e.g. 41100" /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg / Permit / Exemption No. <WtnSuggestBadge field="transferorPermitNumber" /></label>
@@ -12963,7 +13017,7 @@ info@totalwasteservicesltd.com`;
                     const cancelled = job.isCancelled || job.status === 'CANCELLED';
                     const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
                     const isExpanded = expandedPreviewId === job.id;
-                    const hasWtn = job.wtn_portal_visible || job.wtnSent || job.wtn_sent;
+                    const hasWtn = job.wtn_portal_visible || job.wtnSent || job.wtn_sent || (job.wtn_data && job.wtn_data !== 'null');
                     const siNumber = job.sageSiNumber || job.invoiceNumber || null;
                     const isInvoiced = !!siNumber;
                     const lineItems = (() => { try { return Array.isArray(job.lineItems) ? job.lineItems : (typeof job.lineItems === 'string' ? JSON.parse(job.lineItems) : []); } catch(e) { return []; } })();
@@ -14543,12 +14597,39 @@ const handleCompleteJob = async (job) => {
           setRecurringNotifications(prev => [...prev, `📄 Full WTN auto-sent to ${recipient} on completion of ${job.jobNumber}`]);
         } catch(e) { console.error('Per-job completion WTN failed:', e); }
       }
+
+      // Auto-generate portal WTN for recurring child jobs (save only, no email)
+      // This runs when: child has parent with wtn_data, and the per-job email WTN didn't already fire
+      const perJobEmailFired = parentJobData?.wtn_recurring && parentJobData?.wtn_recurring_frequency === 'per-job' && parentJobData?.wtn_recipient;
+      if (!perJobEmailFired && parentJobData?.wtn_data) {
+        try {
+          const parentWtn = typeof parentJobData.wtn_data === 'string' ? JSON.parse(parentJobData.wtn_data) : parentJobData.wtn_data;
+          const autoWtnFields = {
+            ...parentWtn,
+            wtnNumber: `WTN-${job.jobNumber || job.job_number}`,
+            transferDate: new Date().toISOString().split('T')[0],
+            transferTime: new Date().toTimeString().slice(0,5),
+            transferorName: job.customerName || job.customer_name || parentJobData.customer_name,
+            transferorAddress: [job.siteAddress1 || job.site_address1, job.siteAddress2 || job.site_address2, job.siteCity || job.site_city, job.sitePostcode || job.site_postcode].filter(Boolean).join(', ') || parentWtn.transferorAddress || '',
+            transferAddress: [job.siteAddress1 || job.site_address1, job.siteCity || job.site_city, job.sitePostcode || job.site_postcode].filter(Boolean).join(', ') || parentWtn.transferAddress || '',
+            quantity: job.quantity || job.quantity || parentWtn.quantity || 1,
+            skipSize: job.skipSize || job.skip_size || parentWtn.skipSize || '',
+          };
+          // Save WTN to portal only — no email
+          await window.supabase.from('jobs').update({
+            wtn_data: JSON.stringify(autoWtnFields),
+            wtn_portal_visible: true,
+          }).eq('id', job.id);
+          console.log(`📄 Auto-WTN saved to portal for recurring job ${job.jobNumber || job.job_number}`);
+          setRecurringNotifications(prev => [...prev, `📄 WTN auto-saved to portal for ${job.jobNumber || job.job_number}`]);
+        } catch(e) { console.error('Auto-portal WTN generation failed:', e); }
+      }
     }
 
-    // For waste jobs, prompt to send WTN — but only if auto-send didn't already handle it
+    // For waste jobs, prompt to send WTN — but only if auto-send or auto-portal didn't already handle it
     const jobTypeForCheck = job.jobType || job.job_type || updatedJob.jobType || updatedJob.job_type || '';
     const isWasteJob = ['Skip Hire','Roll-on Roll-off'].includes(jobTypeForCheck);
-    const autoWtnFired = (job.parentJobId || job.parent_job_id) && parentJobData?.wtn_recurring && parentJobData?.wtn_recurring_frequency === 'per-job';
+    const autoWtnFired = (job.parentJobId || job.parent_job_id) && parentJobData?.wtn_data;
     if (isWasteJob && !autoWtnFired) {
       const sendNow = window.confirm(
         `✅ Job ${job.jobNumber} marked as completed!\n\n📄 Would you like to send a Waste Transfer Note to ${job.customerName} now?\n\nClick OK to open the WTN tab, or Cancel to skip.`
@@ -15093,6 +15174,7 @@ siteNotes: job.site_notes || job.siteNotes || '',
               reference: customer.reference || '',
               primary_contact: customer.primaryContact || '',
               company_number: customer.companyNumber || '',
+              site_addresses: JSON.stringify(customer.siteAddresses || []),
             };
             const { data, error } = await window.supabase
               .from('customers')
@@ -15121,6 +15203,7 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 accountStatus: saved.account_status,
                 businessType: newCustomer.businessType || 'Other',
                 creditRating: newCustomer.creditRating || 'B',
+                siteAddresses: newCustomer.siteAddresses || [],
               }]);
               setShowCustomerForm(false);
             } catch (error) {
@@ -15147,6 +15230,7 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 reference: updatedCustomer.reference || '',
                 primary_contact: updatedCustomer.primaryContact || '',
                 company_number: updatedCustomer.companyNumber || '',
+                site_addresses: JSON.stringify(updatedCustomer.siteAddresses || []),
               };
               const { error } = await window.supabase
                 .from('customers')
@@ -15168,6 +15252,7 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 creditLimit: customerData.credit_limit,
                 paymentTerms: customerData.credit_days,
                 accountStatus: customerData.account_status,
+                siteAddresses: updatedCustomer.siteAddresses || [],
               } : c));
             } catch (err) {
               console.error('Error updating customer:', err);
@@ -17253,6 +17338,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
               specialRequirements: c.specialRequirements || '',
               accountManager: c.accountManager || '',
               dateRegistered: c.dateRegistered || c.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+              siteAddresses: (() => {
+                const raw = c.siteAddresses || c.site_addresses;
+                if (!raw) return [];
+                if (Array.isArray(raw)) return raw;
+                try { return JSON.parse(raw); } catch { return []; }
+              })(),
             };
           };
 
@@ -17283,11 +17374,33 @@ window.location.href = '/#sage-integration';  // Keep this line!
             preferredContactMethod: 'Email',
             specialRequirements: '',
             accountManager: '',
-            dateRegistered: new Date().toISOString().split('T')[0]
+            dateRegistered: new Date().toISOString().split('T')[0],
+            siteAddresses: [],
           });
 
           const [activeTab, setActiveTab] = useState('company');
           const [saving, setSaving] = useState(false);
+
+          // Site addresses state
+          const [editingCustSiteIdx, setEditingCustSiteIdx] = useState(null);
+          const emptyCustSite = { siteName: '', address: '', postcode: '', permitNumber: '', cbduNumber: '', sicCode: '' };
+          const [custSiteForm, setCustSiteForm] = useState(emptyCustSite);
+
+          const openNewCustSite = () => { setCustSiteForm(emptyCustSite); setEditingCustSiteIdx(-1); };
+          const openEditCustSite = (idx) => { setCustSiteForm({...formData.siteAddresses[idx]}); setEditingCustSiteIdx(idx); };
+          const saveCustSite = () => {
+            if (!custSiteForm.siteName && !custSiteForm.address) { alert('Please enter a site name or address.'); return; }
+            const sites = [...(formData.siteAddresses || [])];
+            if (editingCustSiteIdx === -1) { sites.push({...custSiteForm, id: Date.now().toString()}); }
+            else { sites[editingCustSiteIdx] = {...sites[editingCustSiteIdx], ...custSiteForm}; }
+            setFormData({...formData, siteAddresses: sites});
+            setEditingCustSiteIdx(null);
+          };
+          const deleteCustSite = (idx) => {
+            if (!confirm('Remove this site address?')) return;
+            const sites = formData.siteAddresses.filter((_, i) => i !== idx);
+            setFormData({...formData, siteAddresses: sites});
+          };
 
           // Named contacts state (only loaded when editing an existing customer)
           const [contacts, setContacts] = useState([]);
@@ -17997,6 +18110,82 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <input type="text" value={formData.permitNumber || ''} onChange={(e) => setFormData({...formData, permitNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. EPR/AB1234CD" />
                         </div>
                       </div>
+
+                      {/* Customer Waste Sites Section */}
+                      <div className="pt-4 border-t">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <h4 className="font-medium text-gray-900">Waste Sites</h4>
+                            <p className="text-xs text-gray-500 mt-0.5">Each site's permit, CBDU and SIC code will auto-fill into WTN forms when selected.</p>
+                          </div>
+                          <button type="button" onClick={openNewCustSite} className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                            <span className="text-lg leading-none">+</span> Add Site
+                          </button>
+                        </div>
+
+                        {editingCustSiteIdx !== null && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-3 space-y-3">
+                            <h5 className="text-sm font-medium text-blue-900">{editingCustSiteIdx === -1 ? 'New Site' : 'Edit Site'}</h5>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Site Name *</label>
+                                <input type="text" value={custSiteForm.siteName} onChange={e => setCustSiteForm({...custSiteForm, siteName: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Bermondsey Yard" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Postcode</label>
+                                <input type="text" value={custSiteForm.postcode} onChange={e => setCustSiteForm({...custSiteForm, postcode: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="SE1 2AA" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Full Address</label>
+                              <input type="text" value={custSiteForm.address} onChange={e => setCustSiteForm({...custSiteForm, address: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Full site address" />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Environmental Permit No.</label>
+                                <input type="text" value={custSiteForm.permitNumber} onChange={e => setCustSiteForm({...custSiteForm, permitNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. EPR/AB1234CD" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">CBDU Number</label>
+                                <input type="text" value={custSiteForm.cbduNumber} onChange={e => setCustSiteForm({...custSiteForm, cbduNumber: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. CBDU123456" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">SIC Code</label>
+                                <input type="text" value={custSiteForm.sicCode || ''} onChange={e => setCustSiteForm({...custSiteForm, sicCode: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 41100" />
+                              </div>
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <button type="button" onClick={() => setEditingCustSiteIdx(null)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                              <button type="button" onClick={saveCustSite} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Site</button>
+                            </div>
+                          </div>
+                        )}
+
+                        {formData.siteAddresses && formData.siteAddresses.length > 0 ? (
+                          <div className="space-y-2">
+                            {formData.siteAddresses.map((site, idx) => (
+                              <div key={site.id || idx} className="flex items-start justify-between p-3 bg-white border border-gray-200 rounded-lg">
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-sm">{site.siteName || 'Unnamed Site'}</div>
+                                  <div className="text-xs text-gray-500 mt-0.5">{[site.address, site.postcode].filter(Boolean).join(', ') || 'No address'}</div>
+                                  <div className="flex gap-3 mt-1 text-xs text-gray-400">
+                                    {site.permitNumber && <span>Permit: {site.permitNumber}</span>}
+                                    {site.cbduNumber && <span>CBDU: {site.cbduNumber}</span>}
+                                    {site.sicCode && <span>SIC: {site.sicCode}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex gap-2 ml-2 flex-shrink-0">
+                                  <button type="button" onClick={() => openEditCustSite(idx)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                                  <button type="button" onClick={() => deleteCustSite(idx)} className="text-xs text-red-500 hover:underline">Remove</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : editingCustSiteIdx === null ? (
+                          <p className="text-sm text-gray-400 text-center py-4">No waste sites yet. Add sites to link permits, CBDU and SIC codes for WTN auto-fill.</p>
+                        ) : null}
+                      </div>
+
                       <div className="space-y-3 pt-4 border-t">
                         <label className="flex items-center">
                           <input type="checkbox" checked={formData.healthSafetyCompliant} onChange={(e) => setFormData({...formData, healthSafetyCompliant: e.target.checked})} className="mr-2" />
