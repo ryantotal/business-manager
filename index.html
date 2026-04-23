@@ -17293,7 +17293,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const [contacts, setContacts] = useState([]);
           const [contactsLoaded, setContactsLoaded] = useState(false);
           const [editingContact, setEditingContact] = useState(null);
-          const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', role: 'General', is_primary: false });
+          const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', role: 'General', is_primary: false, cc_emails: true });
 
           const isExistingCustomer = !!(customer && customer.id);
 
@@ -17458,12 +17458,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
           // Named contacts CRUD
           const openNewContact = () => {
-            setContactForm({ name: '', email: '', phone: '', role: 'General', is_primary: false });
+            setContactForm({ name: '', email: '', phone: '', role: 'General', is_primary: false, cc_emails: true });
             setEditingContact({});
           };
 
           const openEditContact = (contact) => {
-            setContactForm({ name: contact.name, email: contact.email || '', phone: contact.phone || '', role: contact.role || 'General', is_primary: contact.is_primary || false });
+            setContactForm({ name: contact.name, email: contact.email || '', phone: contact.phone || '', role: contact.role || 'General', is_primary: contact.is_primary || false, cc_emails: contact.cc_emails !== false });
             setEditingContact(contact);
           };
 
@@ -17489,6 +17489,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           name: contactForm.name,
                           email: contactForm.email || '',
                           telephone: contactForm.phone || '',
+                          cc_emails: contactForm.cc_emails,
                         }
                       })
                     });
@@ -17506,6 +17507,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           name: contactForm.name,
                           email: contactForm.email || '',
                           telephone: contactForm.phone || '',
+                          cc_emails: contactForm.cc_emails,
                         }
                       })
                     });
@@ -17526,7 +17528,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 // Update existing
                 const { error } = await window.supabase
                   .from('customer_contacts')
-                  .update({ name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, sage_contact_person_id })
+                  .update({ name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, cc_emails: contactForm.cc_emails, sage_contact_person_id })
                   .eq('id', editingContact.id);
                 if (error) throw error;
                 setContacts(contacts.map(c => c.id === editingContact.id ? { ...c, ...contactForm, sage_contact_person_id } : c));
@@ -17534,7 +17536,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 // Insert new
                 const { data, error } = await window.supabase
                   .from('customer_contacts')
-                  .insert([{ customer_id: customer.id, name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, sage_contact_person_id }])
+                  .insert([{ customer_id: customer.id, name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, cc_emails: contactForm.cc_emails, sage_contact_person_id }])
                   .select()
                   .single();
                 if (error) throw error;
@@ -17963,8 +17965,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
                                 </div>
                               </div>
                               <label className="flex items-center gap-2 text-sm">
-                                <input type="checkbox" checked={contactForm.is_primary} onChange={e => setContactForm({...contactForm, is_primary: e.target.checked})} />
-                                <span>Main contact for this customer <span className="text-xs text-gray-400">(shown first in lists)</span></span>
+                                <input type="checkbox" checked={contactForm.cc_emails} onChange={e => setContactForm({...contactForm, cc_emails: e.target.checked})} />
+                                <span>CC into Sage emails <span className="text-xs text-gray-400">(invoices, statements, etc.)</span></span>
                               </label>
                               <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 space-y-1">
                                 <p className="font-medium">How roles work:</p>
@@ -18135,7 +18137,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const [contacts, setContacts] = useState([]);
           const [contactsLoaded, setContactsLoaded] = useState(false);
           const [editingContact, setEditingContact] = useState(null);
-          const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', role: 'General', is_primary: false });
+          const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', role: 'General', is_primary: false, cc_emails: true });
           const [syncingContacts, setSyncingContacts] = useState(false);
 
           const isExistingSupplier = !!(supplier && supplier.id);
@@ -18215,12 +18217,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
           };
 
           const openNewContact = () => {
-            setContactForm({ name: '', email: '', phone: '', role: 'General', is_primary: false });
+            setContactForm({ name: '', email: '', phone: '', role: 'General', is_primary: false, cc_emails: true });
             setEditingContact({});
           };
 
           const openEditContact = (contact) => {
-            setContactForm({ name: contact.name, email: contact.email || '', phone: contact.phone || '', role: contact.role || 'General', is_primary: contact.is_primary || false });
+            setContactForm({ name: contact.name, email: contact.email || '', phone: contact.phone || '', role: contact.role || 'General', is_primary: contact.is_primary || false, cc_emails: contact.cc_emails !== false });
             setEditingContact(contact);
           };
 
@@ -18233,11 +18235,11 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   if (sage_contact_person_id) {
                     await fetch('/api/sage-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ action: 'manageContactPerson', operation: 'update', sageContactId: formData.sage_id, sageContactPersonId: sage_contact_person_id,
-                        contactPerson: { name: contactForm.name, email: contactForm.email || '', telephone: contactForm.phone || '' } }) });
+                        contactPerson: { name: contactForm.name, email: contactForm.email || '', telephone: contactForm.phone || '', cc_emails: contactForm.cc_emails } }) });
                   } else {
                     const sageRes = await fetch('/api/sage-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ action: 'manageContactPerson', operation: 'create', sageContactId: formData.sage_id,
-                        contactPerson: { name: contactForm.name, email: contactForm.email || '', telephone: contactForm.phone || '' } }) });
+                        contactPerson: { name: contactForm.name, email: contactForm.email || '', telephone: contactForm.phone || '', cc_emails: contactForm.cc_emails } }) });
                     const sageResult = await sageRes.json();
                     if (sageRes.ok && sageResult.sage_contact_person_id) sage_contact_person_id = sageResult.sage_contact_person_id;
                   }
@@ -18245,13 +18247,13 @@ window.location.href = '/#sage-integration';  // Keep this line!
               }
               if (editingContact.id) {
                 const { error } = await window.supabase.from('supplier_contacts')
-                  .update({ name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, sage_contact_person_id })
+                  .update({ name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, cc_emails: contactForm.cc_emails, sage_contact_person_id })
                   .eq('id', editingContact.id);
                 if (error) throw error;
                 setContacts(contacts.map(c => c.id === editingContact.id ? { ...c, ...contactForm, sage_contact_person_id } : c));
               } else {
                 const { data, error } = await window.supabase.from('supplier_contacts')
-                  .insert([{ supplier_id: supplier.id, name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, sage_contact_person_id }])
+                  .insert([{ supplier_id: supplier.id, name: contactForm.name, email: contactForm.email, phone: contactForm.phone, role: contactForm.role, is_primary: contactForm.is_primary, cc_emails: contactForm.cc_emails, sage_contact_person_id }])
                   .select().single();
                 if (error) throw error;
                 setContacts([...contacts, data]);
@@ -18875,8 +18877,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
                                 </div>
                               </div>
                               <label className="flex items-center gap-2 text-sm">
-                                <input type="checkbox" checked={contactForm.is_primary} onChange={e => setContactForm({...contactForm, is_primary: e.target.checked})} />
-                                <span>Main contact for this supplier <span className="text-xs text-gray-400">(shown first in lists)</span></span>
+                                <input type="checkbox" checked={contactForm.cc_emails} onChange={e => setContactForm({...contactForm, cc_emails: e.target.checked})} />
+                                <span>CC into Sage emails <span className="text-xs text-gray-400">(invoices, statements, etc.)</span></span>
                               </label>
                               <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 space-y-1">
                                 <p className="font-medium">How roles work:</p>
