@@ -335,6 +335,7 @@ export default async function handler(req, res) {
       const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
       const hasAddress = !!(address || postcode || city);
       const cleanVat = normaliseTaxNumber(vatNumber);
+      const isCustomer = contactType !== 'SUPPLIER';
       console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress, cleanVat });
       
       const contactTypeId = contactType === 'SUPPLIER' ? 'VENDOR' : 'CUSTOMER';
@@ -490,7 +491,6 @@ export default async function handler(req, res) {
       console.log('[Sage Proxy] Step 3 — creating contact person, address_id:', address_id);
       console.log('[Sage Proxy] Step 3 — mainContact data:', JSON.stringify(mainContact));
       console.log('[Sage Proxy] Step 3 — email from request:', email);
-      const isCustomer = contactType !== 'SUPPLIER';
       const contactPersonObj = {
         contact_person: {
           contact_id: sage_id,
