@@ -17542,14 +17542,10 @@ window.location.href = '/#sage-integration';  // Keep this line!
               }
 
               // If set as primary, tell Sage to make this the main contact person
+              // This does NOT unset other contacts — Sage supports one "main" plus
+              // many others who are CC'd based on their roles (WTN, Invoices, etc.)
               if (contactForm.is_primary && sage_contact_person_id && formData.sage_id) {
                 try {
-                  // Also unset other contacts' is_primary in Supabase
-                  const othersToUnset = contacts.filter(c => c.id !== editingContact.id && c.is_primary);
-                  for (const other of othersToUnset) {
-                    await window.supabase.from('customer_contacts').update({ is_primary: false }).eq('id', other.id);
-                  }
-                  // Tell Sage
                   await fetch('/api/sage-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -17562,8 +17558,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     })
                   });
                   console.log('[Contacts] Set as main contact in Sage:', sage_contact_person_id);
-                  // Update local state to reflect only this one is primary
-                  setContacts(prev => prev.map(c => ({ ...c, is_primary: c.sage_contact_person_id === sage_contact_person_id ? true : false })));
                 } catch (e) {
                   console.warn('[Contacts] Failed to set main in Sage (saved locally):', e.message);
                 }
@@ -18266,12 +18260,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
               // If set as primary, tell Sage to make this the main contact person
               if (contactForm.is_primary && sage_contact_person_id && formData.sage_id) {
                 try {
-                  // Unset other contacts' is_primary in Supabase
-                  const othersToUnset = contacts.filter(c => c.id !== editingContact.id && c.is_primary);
-                  for (const other of othersToUnset) {
-                    await window.supabase.from('supplier_contacts').update({ is_primary: false }).eq('id', other.id);
-                  }
-                  // Tell Sage
                   await fetch('/api/sage-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -18284,7 +18272,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     })
                   });
                   console.log('[SupplierContacts] Set as main contact in Sage:', sage_contact_person_id);
-                  setContacts(prev => prev.map(c => ({ ...c, is_primary: c.sage_contact_person_id === sage_contact_person_id ? true : false })));
                 } catch (e) {
                   console.warn('[SupplierContacts] Failed to set main in Sage (saved locally):', e.message);
                 }
