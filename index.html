@@ -18,6 +18,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
       // Initialise EmailJS
       (function() { emailjs.init({ publicKey: 'cuDDcDM5WamVtpebZ' }); })();
@@ -270,6 +272,7 @@
                 ChevronUp: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="18 15 12 9 6 15"></polyline></svg>,
                 ChevronUp: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="18 15 12 9 6 15"></polyline></svg>,
                 Menu: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>,  
+                MapPin: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>,
                 Repeat: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>,
                 Maximize2: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>,
                 Package: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>,
@@ -771,6 +774,7 @@ return (
         const BarChart3 = (props) => <LucideIcon icon="BarChart3" {...props} />;
         const Grid = (props) => <LucideIcon icon="Grid" {...props} />;
         const Settings = (props) => <LucideIcon icon="Settings" {...props} />;
+        const MapPin = (props) => <LucideIcon icon="MapPin" {...props} />;
         const Activity = (props) => <LucideIcon icon="Activity" {...props} />;
         const DollarSign = (props) => <LucideIcon icon="DollarSign" {...props} />;
         const TrendingUp = (props) => <LucideIcon icon="TrendingUp" {...props} />;
@@ -13340,7 +13344,9 @@ useEffect(() => {
     try {
       const { data, error } = await window.supabase
         .from('suppliers')
-        .select('*');
+        .select('*')
+        .order('name')
+        .limit(2000);
       
       if (error) throw error;
       
@@ -13352,6 +13358,19 @@ useEffect(() => {
           wasteCarrierLicense: s.wasteCarrierLicense || s.waste_carrier_license || '',
           vatNumber: s.vatNumber || s.vat_number || '',
           primaryContact: s.primaryContact || s.primary_contact || '',
+          postcode: s.postcode || '',
+          primaryServices: (() => {
+            const raw = s.primary_services || s.primaryServices;
+            if (!raw) return [];
+            if (Array.isArray(raw)) return raw;
+            try { return JSON.parse(raw); } catch { return []; }
+          })(),
+          serviceAreas: (() => {
+            const raw = s.service_areas || s.serviceAreas;
+            if (!raw) return [];
+            if (Array.isArray(raw)) return raw;
+            try { return JSON.parse(raw); } catch { return []; }
+          })(),
           siteAddresses: (() => {
             const raw = s.siteAddresses || s.site_addresses;
             if (!raw) return [];
@@ -14140,6 +14159,7 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
             { id: 'jobs', name: 'Jobs', icon: 'Grid' },
             { id: 'customers', name: 'Customers', icon: 'Users' },
             { id: 'suppliers', name: 'Suppliers', icon: 'Truck' },
+            { id: 'supplierMap', name: 'Supplier Map', icon: 'MapPin' },
             { id: 'quotes', name: 'Quotes', icon: 'FileText' },
             { id: 'dashboard', name: 'Dashboard', icon: 'BarChart3' },
             { id: 'documents', name: 'Documents', icon: 'FileText' },
@@ -15291,6 +15311,9 @@ siteNotes: job.site_notes || job.siteNotes || '',
       creditLimit: saved.credit_limit,
       paymentTerms: saved.credit_days,
       companyNumber: newSupplier.companyNumber || '',
+      primaryServices: newSupplier.primaryServices || [],
+      serviceAreas: newSupplier.serviceAreas || [],
+      postcode: newSupplier.postcode || '',
     }]);
     setShowSupplierForm(false);
   } catch (error) {
@@ -15304,7 +15327,10 @@ const saveSupplierToDatabase = async (supplier) => {
     sage_id: supplier.sage_id || null,
     email: supplier.email || '',
     phone: supplier.phone || '',
-    address: [supplier.address, supplier.city, supplier.postcode].filter(Boolean).join(', '),
+    address: supplier.address || '',
+    city: supplier.city || '',
+    postcode: supplier.postcode || '',
+    county: supplier.county || '',
     vat_number: supplier.vatNumber || '',
     contact_person: supplier.primaryContact || '',
     accountstatus: supplier.accountStatus || 'Active',
@@ -15315,6 +15341,8 @@ const saveSupplierToDatabase = async (supplier) => {
     credit_limit: parseFloat(supplier.creditLimit) || 0,
     credit_days: parseInt(supplier.paymentTerms) || 30,
     site_addresses: JSON.stringify(supplier.siteAddresses || []),
+    primary_services: JSON.stringify(supplier.primaryServices || []),
+    service_areas: JSON.stringify(supplier.serviceAreas || []),
   };
 
   const { data, error } = await window.supabase
@@ -15337,7 +15365,10 @@ const saveSupplierToDatabase = async (supplier) => {
                 sage_id: updatedSupplier.sage_id || null,
                 email: updatedSupplier.email || '',
                 phone: updatedSupplier.phone || '',
-                address: [updatedSupplier.address, updatedSupplier.city, updatedSupplier.postcode].filter(Boolean).join(', '),
+                address: updatedSupplier.address || '',
+                city: updatedSupplier.city || '',
+                postcode: updatedSupplier.postcode || '',
+                county: updatedSupplier.county || '',
                 vat_number: updatedSupplier.vatNumber || '',
                 contact_person: updatedSupplier.primaryContact || '',
                 accountstatus: updatedSupplier.accountStatus || 'Active',
@@ -15348,6 +15379,8 @@ const saveSupplierToDatabase = async (supplier) => {
                 credit_limit: parseFloat(updatedSupplier.creditLimit) || 0,
                 credit_days: parseInt(updatedSupplier.paymentTerms) || 30,
                 site_addresses: JSON.stringify(updatedSupplier.siteAddresses || []),
+                primary_services: JSON.stringify(updatedSupplier.primaryServices || []),
+                service_areas: JSON.stringify(updatedSupplier.serviceAreas || []),
               };
               const { error } = await window.supabase
                 .from('suppliers')
@@ -15370,6 +15403,8 @@ const saveSupplierToDatabase = async (supplier) => {
                 creditLimit: supplierData.credit_limit,
                 paymentTerms: supplierData.credit_days,
                 siteAddresses: updatedSupplier.siteAddresses || [],
+                primaryServices: updatedSupplier.primaryServices || [],
+                serviceAreas: updatedSupplier.serviceAreas || [],
               } : s));
             } catch(err) {
               console.error('Error updating supplier:', err);
@@ -15948,6 +15983,7 @@ const CollectionCalendarModal = () => {
                      tab.icon === 'Grid' ? Grid :
                      tab.icon === 'Users' ? Users :
                      tab.icon === 'Truck' ? Truck :
+                     tab.icon === 'MapPin' ? MapPin :
                      tab.icon === 'FileText' ? FileText : Settings;
         return (
           <button
@@ -15981,6 +16017,7 @@ onClick={() => {
                      tab.icon === 'Grid' ? Grid :
                      tab.icon === 'Users' ? Users :
                      tab.icon === 'Truck' ? Truck :
+                     tab.icon === 'MapPin' ? MapPin :
                      tab.icon === 'FileText' ? FileText : Settings;
         return (
           <button
@@ -16125,6 +16162,9 @@ onClick={() => {
                     user={user}
                   />
                   
+                )}
+                {activeTab === 'supplierMap' && (
+                  <SupplierMap suppliers={suppliers} />
                 )}
                 {activeTab === 'quotes' && (
   <QuotesView 
@@ -18226,6 +18266,282 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   </button>
                 </div>
               </div>
+            </div>
+          );
+        };
+
+        // Supplier Map Component
+        const SupplierMap = ({ suppliers }) => {
+          const mapRef = React.useRef(null);
+          const mapInstanceRef = React.useRef(null);
+          const markersRef = React.useRef([]);
+          const [activeFilters, setActiveFilters] = React.useState([]);
+          const [activeAreaFilters, setActiveAreaFilters] = React.useState([]);
+          const [searchQuery, setSearchQuery] = React.useState('');
+          const [geocodeCache, setGeocodeCache] = React.useState(() => {
+            try { return JSON.parse(localStorage.getItem('supplierGeoCache') || '{}'); } catch { return {}; }
+          });
+          const [selectedSupplier, setSelectedSupplier] = React.useState(null);
+          const [mapReady, setMapReady] = React.useState(false);
+          const [geocodingProgress, setGeocodingProgress] = React.useState('');
+
+          const serviceColors = {
+            'Skip Hire': '#2563eb',
+            'Aggregates Supply': '#d97706',
+            'Hazardous Waste': '#dc2626',
+            'Muck Away': '#7c3aed',
+            'Grab Hire': '#0891b2',
+            'Roll-on Roll-off': '#4f46e5',
+            'Plant Hire': '#059669',
+            'Haulage': '#ea580c',
+            'Transport': '#6b7280',
+          };
+
+          const allServices = Object.keys(serviceColors);
+          const allAreas = ['London', 'South East', 'South West', 'Midlands', 'North West', 'North East', 'Scotland', 'Wales', 'Northern Ireland', 'National Coverage'];
+
+          // Geocode a postcode using postcodes.io (free, no API key)
+          const geocodePostcode = React.useCallback(async (postcode) => {
+            if (!postcode) return null;
+            const clean = postcode.replace(/\s+/g, '').toUpperCase();
+            if (geocodeCache[clean]) return geocodeCache[clean];
+            try {
+              const res = await fetch('https://api.postcodes.io/postcodes/' + encodeURIComponent(clean));
+              const data = await res.json();
+              if (data.status === 200 && data.result) {
+                const coords = { lat: data.result.latitude, lng: data.result.longitude };
+                setGeocodeCache(prev => {
+                  const updated = { ...prev, [clean]: coords };
+                  try { localStorage.setItem('supplierGeoCache', JSON.stringify(updated)); } catch {}
+                  return updated;
+                });
+                return coords;
+              }
+            } catch (e) { console.warn('Geocode failed for', postcode, e); }
+            return null;
+          }, [geocodeCache]);
+
+          // Init map
+          React.useEffect(() => {
+            if (!mapRef.current || mapInstanceRef.current) return;
+            const map = L.map(mapRef.current, { zoomControl: true }).setView([52.5, -1.5], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '© OpenStreetMap',
+              maxZoom: 18,
+            }).addTo(map);
+            mapInstanceRef.current = map;
+            setMapReady(true);
+            return () => { map.remove(); mapInstanceRef.current = null; };
+          }, []);
+
+          // Filter suppliers — only show those with services/areas data entered
+          const filteredSuppliers = React.useMemo(() => {
+            return (suppliers || []).filter(s => {
+              const services = s.primaryServices || [];
+              const areas = s.serviceAreas || [];
+              // Only include suppliers with at least one service or coverage area ticked
+              if (services.length === 0 && areas.length === 0) return false;
+              const name = s.name || s.companyName || '';
+              const postcode = s.postcode || '';
+              const addressStr = s.address || '';
+              const extractedPostcode = postcode || (() => {
+                const match = addressStr.match(/\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b/i);
+                return match ? match[1] : '';
+              })();
+              if (activeFilters.length > 0 && !activeFilters.some(f => services.includes(f))) return false;
+              if (activeAreaFilters.length > 0 && !activeAreaFilters.some(a => areas.includes(a) || areas.includes('National Coverage'))) return false;
+              if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                if (!name.toLowerCase().includes(q) && !extractedPostcode.toLowerCase().includes(q) && !(s.city||'').toLowerCase().includes(q) && !addressStr.toLowerCase().includes(q)) return false;
+              }
+              return !!extractedPostcode;
+            });
+          }, [suppliers, activeFilters, activeAreaFilters, searchQuery]);
+
+          // Batch geocode postcodes using postcodes.io (up to 100 per request)
+          const batchGeocode = React.useCallback(async (postcodes) => {
+            const results = {};
+            const uncached = [];
+            // Check cache first
+            for (const pc of postcodes) {
+              const clean = pc.replace(/\s+/g, '').toUpperCase();
+              if (geocodeCache[clean]) {
+                results[clean] = geocodeCache[clean];
+              } else {
+                uncached.push(clean);
+              }
+            }
+            if (uncached.length === 0) return results;
+            // Batch in chunks of 100
+            for (let i = 0; i < uncached.length; i += 100) {
+              const chunk = uncached.slice(i, i + 100);
+              try {
+                const res = await fetch('https://api.postcodes.io/postcodes', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ postcodes: chunk })
+                });
+                const data = await res.json();
+                if (data.status === 200 && data.result) {
+                  for (const item of data.result) {
+                    if (item.result) {
+                      const clean = item.query.replace(/\s+/g, '').toUpperCase();
+                      results[clean] = { lat: item.result.latitude, lng: item.result.longitude };
+                    }
+                  }
+                }
+              } catch (e) { console.warn('Batch geocode failed:', e); }
+            }
+            // Update cache
+            setGeocodeCache(prev => {
+              const updated = { ...prev, ...results };
+              try { localStorage.setItem('supplierGeoCache', JSON.stringify(updated)); } catch {}
+              return updated;
+            });
+            return results;
+          }, [geocodeCache]);
+
+          // Helper: extract postcode from supplier
+          const getSupplierPostcode = (supplier) => {
+            if (supplier.postcode) return supplier.postcode;
+            const match = (supplier.address || '').match(/\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b/i);
+            return match ? match[1] : '';
+          };
+
+          // Update markers when filters change
+          React.useEffect(() => {
+            if (!mapReady || !mapInstanceRef.current) return;
+            const map = mapInstanceRef.current;
+
+            // Clear existing markers
+            markersRef.current.forEach(m => map.removeLayer(m));
+            markersRef.current = [];
+
+            if (filteredSuppliers.length === 0) { setGeocodingProgress(''); return; }
+            setGeocodingProgress(`Mapping ${filteredSuppliers.length} suppliers...`);
+
+            const addMarkers = async () => {
+              // Collect all postcodes and batch geocode
+              const postcodes = filteredSuppliers.map(s => getSupplierPostcode(s)).filter(Boolean);
+              const coords = await batchGeocode(postcodes);
+              
+              for (const supplier of filteredSuppliers) {
+                const postcode = getSupplierPostcode(supplier);
+                if (!postcode) continue;
+                const clean = postcode.replace(/\s+/g, '').toUpperCase();
+                const ll = coords[clean];
+                if (!ll) continue;
+
+                const parsedServices = supplier.primaryServices || [];
+                const primaryService = activeFilters.length > 0 ? activeFilters.find(f => parsedServices.includes(f)) : parsedServices[0];
+                const color = serviceColors[primaryService] || '#6b7280';
+                const name = supplier.name || supplier.companyName || 'Unknown';
+
+                const icon = L.divIcon({
+                  className: '',
+                  html: '<div style="width:28px;height:28px;border-radius:50%;background:' + color + ';border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3" fill="' + color + '"/></svg></div>',
+                  iconSize: [28, 28],
+                  iconAnchor: [14, 14],
+                });
+
+                const parsedAreas = supplier.serviceAreas || [];
+                const phone = supplier.phone || supplier.mobile || '';
+                const email = supplier.email || '';
+
+                const popupHtml = '<div style="min-width:220px;font-family:system-ui,sans-serif">' +
+                  '<div style="font-weight:700;font-size:14px;margin-bottom:4px">' + name + '</div>' +
+                  '<div style="font-size:12px;color:#555;margin-bottom:6px">' + [supplier.address, supplier.city, supplier.county, postcode].filter(Boolean).join(', ') + '</div>' +
+                  (parsedServices.length > 0 ? '<div style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:3px">' + parsedServices.map(s => '<span style="display:inline-block;padding:2px 6px;border-radius:9px;font-size:10px;font-weight:600;color:white;background:' + (serviceColors[s]||'#6b7280') + '">' + s + '</span>').join('') + '</div>' : '') +
+                  (parsedAreas.length > 0 ? '<div style="font-size:11px;color:#777;margin-bottom:4px"><strong>Coverage:</strong> ' + parsedAreas.join(', ') + '</div>' : '') +
+                  (phone ? '<div style="font-size:11px"><strong>📞</strong> ' + phone + '</div>' : '') +
+                  (email ? '<div style="font-size:11px"><strong>✉</strong> ' + email + '</div>' : '') +
+                  '</div>';
+
+                const marker = L.marker([ll.lat, ll.lng], { icon }).addTo(map);
+                marker.bindPopup(popupHtml, { maxWidth: 300 });
+                markersRef.current.push(marker);
+              }
+              setGeocodingProgress('');
+              if (markersRef.current.length > 1) {
+                const group = L.featureGroup(markersRef.current);
+                map.fitBounds(group.getBounds().pad(0.1));
+              } else if (markersRef.current.length === 1) {
+                const ll = markersRef.current[0].getLatLng();
+                map.setView(ll, 10);
+              }
+            };
+            addMarkers();
+          }, [filteredSuppliers, mapReady, batchGeocode, activeFilters]);
+
+          const toggleFilter = (service) => {
+            setActiveFilters(prev => prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]);
+          };
+          const toggleAreaFilter = (area) => {
+            setActiveAreaFilters(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]);
+          };
+
+          const totalWithData = (suppliers || []).filter(s => (s.primaryServices||[]).length > 0 || (s.serviceAreas||[]).length > 0).length;
+          const totalSuppliers = (suppliers || []).length;
+
+          return (
+            <div className="space-y-0">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Supplier Coverage Map</h2>
+                  <p className="text-sm text-gray-500">{filteredSuppliers.length} of {totalWithData} configured suppliers shown <span className="text-gray-400">({totalSuppliers} total)</span> {geocodingProgress && <span className="text-blue-600">• {geocodingProgress}</span>}</p>
+                </div>
+                <div className="relative">
+                  <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search suppliers..." className="pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-full sm:w-64" />
+                  <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
+                </div>
+              </div>
+
+              {/* Service Filters */}
+              <div className="mb-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Services</span>
+                  {activeFilters.length > 0 && <button onClick={() => setActiveFilters([])} className="text-xs text-blue-600 hover:underline">Clear</button>}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {allServices.map(service => {
+                    const isActive = activeFilters.includes(service);
+                    const count = (suppliers||[]).filter(s => {
+                      const svcs = s.primaryServices || [];
+                      return svcs.includes(service);
+                    }).length;
+                    return (
+                      <button key={service} onClick={() => toggleFilter(service)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${isActive ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
+                        style={isActive ? { background: serviceColors[service], borderColor: serviceColors[service] } : {}}>
+                        {service} <span className={`ml-1 ${isActive ? 'opacity-80' : 'text-gray-400'}`}>({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Area Filters */}
+              <div className="mb-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Coverage Area</span>
+                  {activeAreaFilters.length > 0 && <button onClick={() => setActiveAreaFilters([])} className="text-xs text-blue-600 hover:underline">Clear</button>}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {allAreas.map(area => {
+                    const isActive = activeAreaFilters.includes(area);
+                    return (
+                      <button key={area} onClick={() => toggleAreaFilter(area)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}>
+                        {area}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Map */}
+              <div ref={mapRef} style={{ height: 'calc(100vh - 340px)', minHeight: '400px', borderRadius: '12px', border: '1px solid #e5e7eb' }}></div>
             </div>
           );
         };
