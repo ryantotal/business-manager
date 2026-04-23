@@ -496,7 +496,7 @@ export default async function handler(req, res) {
           contact_id: sage_id,
           name: mainContact?.name || name,
           is_main_contact: true,
-          ...(isCustomer && { is_preferred_contact: true }),
+          is_preferred_contact: true,
           contact_person_type_ids: ['ACCOUNTS'],
         }
       };
@@ -756,7 +756,7 @@ export default async function handler(req, res) {
             name: contactPerson.name,
             contact_person_type_ids: ['ACCOUNTS'],
             is_main_contact: false,
-            is_preferred_contact: false,
+            is_preferred_contact: contactPerson.cc_emails !== false,
           }
         };
         if (address_id) cpObj.contact_person.address_id = address_id;
@@ -771,6 +771,8 @@ export default async function handler(req, res) {
       if (operation === 'update' && sageContactPersonId) {
         console.log('[Sage Proxy] Updating contact person:', sageContactPersonId);
         const cpObj = { contact_person: {} };
+        // Set CC into emails based on flag (defaults to true if not specified)
+        cpObj.contact_person.is_preferred_contact = contactPerson.cc_emails !== false;
         if (contactPerson.name) cpObj.contact_person.name = contactPerson.name;
         if (contactPerson.email && isValidEmail(contactPerson.email)) cpObj.contact_person.email = contactPerson.email;
         else if (contactPerson.email === '') cpObj.contact_person.email = '';
@@ -798,7 +800,7 @@ export default async function handler(req, res) {
           await sageFetch(`contact_persons/${sageContactPersonId}`, 'PUT', {
             contact_person: {
               is_main_contact: true,
-              ...(isCust && { is_preferred_contact: true }),
+              is_preferred_contact: true,
             }
           });
           console.log('[Sage Proxy] Set is_main_contact on contact_person');
