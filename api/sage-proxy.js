@@ -785,7 +785,53 @@ export default async function handler(req, res) {
         await sageFetch(`contact_persons/${sageContactPersonId}`, 'DELETE');
         return res.status(200).json({ deleted: true });
       }
-      return res.status(400).json({ error: 'Invalid operation. Use: list, create, update, delete' });
+      // ── SET MAIN ─────────────────────────────────────────────────────────
+      // Sets a contact person as the main (and preferred for customers) on the contact.
+      // Also sets is_main_contact on the contact_person itself.
+      if (operation === 'setMain' && sageContactPersonId) {
+        const { contactType: cpContactType } = req.body;
+        const isCust = cpContactType !== 'SUPPLIER';
+        console.log('[Sage Proxy] Setting main contact person:', sageContactPersonId, 'on contact:', sageContactId, '| isCustomer:', isCust);
+
+        // 1. Update the contact_person to is_main_contact: true
+        try {
+          await sageFetch(`contact_persons/${sageContactPersonId}`, 'PUT', {
+            contact_person: {
+              is_main_contact: true,
+              ...(isCust && { is_preferred_contact: true }),
+            }
+          });
+          console.log('[Sage Proxy] Set is_main_contact on contact_person');
+        } catch (e) {
+          console.warn('[Sage Proxy] Could not set is_main_contact on person:', e?.data?.[0]?.$message || e?.message);
+        }
+
+        // 2. Update the contact to point main_contact_person (and preferred for customers)
+        try {
+          const contactUpdate = {
+            main_contact_person: { id: sageContactPersonId },
+          };
+          if (isCust) {
+            contactUpdate.preferred_contact_person = { id: sageContactPersonId };
+          }
+          await sageFetch(`contacts/${sageContactId}`, 'PUT', { contact: contactUpdate });
+          console.log('[Sage Proxy] Set main_contact_person on contact');
+        } catch (e) {
+          console.warn('[Sage Proxy] Could not set main_contact_person:', e?.data?.[0]?.$message || e?.message);
+          // Fallback with _id fields
+          try {
+            const fallback = { main_contact_person_id: sageContactPersonId };
+            if (isCust) fallback.preferred_contact_person_id = sageContactPersonId;
+            await sageFetch(`contacts/${sageContactId}`, 'PUT', { contact: fallback });
+            console.log('[Sage Proxy] Set main_contact_person (fallback)');
+          } catch (e2) {
+            console.warn('[Sage Proxy] Fallback also failed:', e2?.data?.[0]?.$message || e2?.message);
+          }
+        }
+
+        return res.status(200).json({ success: true });
+      }
+      return res.status(400).json({ error: 'Invalid operation. Use: list, create, update, delete, setMain' });
     } catch (err) {
       console.error('[Sage Proxy] manageContactPerson error:', err);
       if (err.data) return res.status(err.status || 500).json({ error: 'Sage error', details: err.data });
