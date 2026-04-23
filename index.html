@@ -17828,7 +17828,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 
                 {/* Tab Navigation */}
                 <div className="flex border-b border-gray-200 overflow-x-auto">
-                  {['company', 'contact', 'financial', 'documents'].map(tab => (
+                  {['company', 'contact', 'financial', 'compliance', 'notes'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => handleTabChange(tab)}
@@ -17836,8 +17836,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     >
                       {tab === 'company' && 'Company Details'}
                       {tab === 'contact' && 'Contact Information'}
-                      {tab === 'financial' && 'Financial & Compliance'}
-                      {tab === 'documents' && 'Documents'}
+                      {tab === 'financial' && 'Financial'}
+                      {tab === 'compliance' && 'Compliance & Licensing'}
+                      {tab === 'notes' && 'Notes'}
                     </button>
                   ))}
                 </div>
@@ -17942,25 +17943,6 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <p className="text-xs text-gray-400">This is the main email for this customer. Add extra CC contacts below.</p>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Contact Method</label>
-                          <select value={formData.preferredContactMethod} onChange={(e) => setFormData({...formData, preferredContactMethod: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                            <option value="Email">Email</option>
-                            <option value="Phone">Phone</option>
-                            <option value="Mobile">Mobile</option>
-                            <option value="WhatsApp">WhatsApp</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Account Manager</label>
-                          <input type="text" value={formData.accountManager} onChange={(e) => setFormData({...formData, accountManager: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Internal account manager" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Special Requirements / Notes</label>
-                        <textarea value={formData.specialRequirements} onChange={(e) => setFormData({...formData, specialRequirements: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={3} placeholder="Any special delivery instructions, site access requirements, etc." />
-                      </div>
 
                       {/* Additional Contacts — inline in Contact tab */}
                       <div className="pt-4 border-t">
@@ -18053,7 +18035,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     </div>
                   )}
 
-                  {/* Financial & Compliance Tab */}
+                  {/* Financial Tab */}
                   {activeTab === 'financial' && (
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -18090,10 +18072,16 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <input type="date" value={formData.dateRegistered} onChange={(e) => setFormData({...formData, dateRegistered: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Compliance & Licensing Tab */}
+                  {activeTab === 'compliance' && (
+                    <div className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Waste Carrier License</label>
-                          <input type="text" value={formData.wasteCarrierLicense} onChange={(e) => setFormData({...formData, wasteCarrierLicense: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="If applicable" />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Policy No.</label>
+                          <input type="text" value={formData.wasteCarrierLicense} onChange={(e) => setFormData({...formData, wasteCarrierLicense: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Policy number" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Expiry Date</label>
@@ -18199,10 +18187,33 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     </div>
                   )}
 
-
-                  {/* Documents Tab */}
-                  {activeTab === 'documents' && (
-                    <div className="py-8 text-center text-gray-400 text-sm">Documents feature coming soon.</div>
+                  {/* Notes Tab */}
+                  {activeTab === 'notes' && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Account Manager</label>
+                          <input type="text" value={formData.accountManager || ''} onChange={(e) => setFormData({...formData, accountManager: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Assigned account manager" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Contact Method</label>
+                          <select value={formData.preferredContactMethod || 'Email'} onChange={(e) => setFormData({...formData, preferredContactMethod: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="Email">Email</option>
+                            <option value="Phone">Phone</option>
+                            <option value="WhatsApp">WhatsApp</option>
+                            <option value="Post">Post</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Special Requirements</label>
+                        <textarea value={formData.specialRequirements || ''} onChange={(e) => setFormData({...formData, specialRequirements: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={3} placeholder="Any special requirements, access restrictions, site rules, etc." />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Internal Notes</label>
+                        <textarea value={formData.notes || ''} onChange={(e) => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={4} placeholder="General internal notes about this customer..." />
+                      </div>
+                    </div>
                   )}
                 </div>
 
