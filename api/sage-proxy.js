@@ -1,10 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
-
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
-
 // Token cache to reduce database calls
 let tokenCache = {
   accessToken: null,
@@ -13,14 +11,12 @@ let tokenCache = {
   companyId: null,
   lastFetched: null
 };
-
 // Helper function to check if token is expired
 function isTokenExpired(expiresAt) {
   if (!expiresAt) return true;
   // Add 30 second buffer before expiry
   return new Date().getTime() > (new Date(expiresAt).getTime() - 30000);
 }
-
 // ── FIX: Helper to normalise VAT number for Sage ──────────────────────────
 // Sage expects the numeric-only portion for UK VAT numbers.
 // Users may enter "GB117223643" but Sage wants "117223643".
@@ -33,7 +29,6 @@ function normaliseTaxNumber(vatNumber) {
   v = v.replace(/[\s\-]/g, '');
   return v;
 }
-
 // Helper function to refresh the access token
 async function refreshAccessToken(refreshToken) {
   console.log('[Sage Proxy] Attempting to refresh access token...');
@@ -46,7 +41,6 @@ async function refreshAccessToken(refreshToken) {
     if (!clientId || !clientSecret) {
       throw new Error('Missing Sage client credentials in environment variables');
     }
-
     // Make refresh token request
     const response = await fetch('https://oauth.accounting.sage.com/token', {
       method: 'POST',
@@ -61,14 +55,12 @@ async function refreshAccessToken(refreshToken) {
         refresh_token: refreshToken
       })
     });
-
     const data = await response.json();
     
     if (!response.ok) {
       console.error('[Sage Proxy] Token refresh failed:', data);
       throw new Error(data.error || 'Failed to refresh token');
     }
-
     console.log('[Sage Proxy] Token refreshed successfully');
     
     // Calculate expiry time
@@ -94,12 +86,10 @@ async function refreshAccessToken(refreshToken) {
           updated_at: new Date().toISOString()
         }
       ], { onConflict: 'setting_name' });
-
     if (updateError) {
       console.error('[Sage Proxy] Failed to update tokens in database:', updateError);
       throw updateError;
     }
-
     // Update cache
     tokenCache = {
       accessToken: data.access_token,
@@ -107,11 +97,53 @@ async function refreshAccessToken(refreshToken) {
       expiresAt: expiresAt,
       lastFetched: Date.now()
     };
-
     return data.access_token;
   } catch (error) {
     console.error('[Sage Proxy] Error refreshing token:', error);
     throw error;
+  }
+}
+
+// ── Cache for GB country_group_id lookup ───────────────────────────────────
+let gbCountryGroupCache = null;
+
+// Helper: discover the correct country_group_id for GB from Sage's API
+// Sage uses different values across accounts — common ones are 'GBIE', 'UK',
+// or a UUID.  We look up the /country_groups endpoint once and cache it.
+async function getGBCountryGroupId(sageRequest) {
+  if (gbCountryGroupCache) return gbCountryGroupCache;
+  try {
+    const groups = await sageRequest('country_groups?items_per_page=200', null, 'GET');
+    const items = groups?.$items || groups?.items || (Array.isArray(groups) ? groups : []);
+    console.log('[Sage Proxy] country_groups returned', items.length, 'items');
+    // Find a group whose countries include GB
+    for (const g of items) {
+      const countries = g.countries || g.$items || [];
+      const hasGB = countries.some(c =>
+        (c.id === 'GB' || c.code === 'GB' || c.displayed_as === 'United Kingdom (GB)')
+      );
+      if (hasGB) {
+        console.log('[Sage Proxy] Found GB country_group:', g.id, g.displayed_as);
+        gbCountryGroupCache = g.id;
+        return g.id;
+      }
+    }
+    // If the list doesn't embed countries, try matching by name
+    for (const g of items) {
+      const name = (g.displayed_as || g.name || '').toLowerCase();
+      if (name.includes('united kingdom') || name.includes('uk') || name === 'gb' || name === 'gbie') {
+        console.log('[Sage Proxy] Found GB country_group by name:', g.id, g.displayed_as);
+        gbCountryGroupCache = g.id;
+        return g.id;
+      }
+    }
+    // Last resort — log them all so the developer can spot the right one
+    console.warn('[Sage Proxy] Could not auto-detect GB country_group.  Available groups:',
+      items.map(g => `${g.id} (${g.displayed_as})`).join(', '));
+    return null;
+  } catch (e) {
+    console.warn('[Sage Proxy] country_groups lookup failed:', e?.data || e?.message);
+    return null;
   }
 }
 
@@ -122,30 +154,23 @@ export default async function handler(req, res) {
     endpoint: req.body?.endpoint,
     hasBody: !!req.body?.body
   });
-
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Business');
-
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
-
   const { endpoint, method = 'GET', body, businessId, action } = req.body || {};
-
   // ── createContact action ──────────────────────────────────────────────────
   if (action === 'createContact') {
     const { contactType, name, email, address, city, postcode, vatNumber, creditLimit, creditDays, mainContact } = req.body;
-
     if (!name) {
       return res.status(400).json({ error: 'Contact name is required' });
     }
-
     try {
       // ── Step 0: Get valid access token ───────────────────────────────────
       let accessToken = null;
-
       if (
         tokenCache.accessToken &&
         tokenCache.lastFetched &&
@@ -158,13 +183,10 @@ export default async function handler(req, res) {
           .from('company_settings')
           .select('setting_name, setting_value')
           .in('setting_name', ['sage_access_token', 'sage_refresh_token', 'sage_token_expires_at']);
-
         if (tokenError || !tokenData || tokenData.length === 0) {
           return res.status(401).json({ error: 'No Sage connection found. Please connect to Sage.', code: 'NO_TOKENS' });
         }
-
         const tokens = tokenData.reduce((acc, row) => { acc[row.setting_name] = row.setting_value; return acc; }, {});
-
         if (isTokenExpired(tokens.sage_token_expires_at)) {
           if (!tokens.sage_refresh_token) {
             return res.status(401).json({ error: 'Sage session expired. Please reconnect.', code: 'NO_REFRESH_TOKEN' });
@@ -180,21 +202,18 @@ export default async function handler(req, res) {
           };
         }
       }
-
       // Fetch business ID
       const { data: bizData } = await supabase
         .from('company_settings')
         .select('setting_value')
         .eq('setting_name', 'sage_business_id')
         .single();
-
       const sageHeaders = {
         'Authorization': `Bearer ${accessToken}`,
         'Accept': 'application/json',
         'Content-Type': 'application/json',
         ...(bizData?.setting_value && { 'X-Business': bizData.setting_value })
       };
-
       const sageRequest = async (endpoint, payload, method = 'POST') => {
         const fetchOpts = {
           method,
@@ -212,40 +231,36 @@ export default async function handler(req, res) {
         console.log(`[Sage Proxy] ${method} ${endpoint} response:`, JSON.stringify(data).substring(0, 500));
         return data;
       };
-
       // ── Step 1: Create the contact (WITHOUT tax_number) ────────────────
-      // Sage validates tax_number against the contact's main_address.
-      // We create the contact first, then the address, then apply tax_number
-      // via PUT once the address exists.
-      //
-      // UK VAT numbers must be exactly 9 digits, no "GB" prefix.
-      // If no address is provided we omit tax_number entirely (Sage would
-      // reject it with "does not match the main address").
       const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
       const hasAddress = !!(address || postcode || city);
       const cleanVat = normaliseTaxNumber(vatNumber);
       console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress, cleanVat });
       
-      // Use the documented contact_type_id values directly.
-      // Sage v3.1 docs confirm these are "CUSTOMER" and "VENDOR".
       const contactTypeId = contactType === 'SUPPLIER' ? 'VENDOR' : 'CUSTOMER';
       console.log('[Sage Proxy] Using contact type:', contactTypeId);
-
       const contactObj = {
         name,
         contact_type_ids: [contactTypeId],
       };
       if (email && isValidEmail(email))                     contactObj.email        = email;
-      // NOTE: tax_number deliberately omitted — added via PUT in Step 2b
       if (creditLimit && parseFloat(creditLimit) > 0)       contactObj.credit_limit = parseFloat(creditLimit);
       if (creditDays  && parseInt(creditDays)   > 0)        contactObj.credit_days  = parseInt(creditDays);
       
       console.log('[Sage Proxy] Step 1 — contact payload:', JSON.stringify({ contact: contactObj }));
-
       const contactData = await sageRequest('contacts', { contact: contactObj });
       const sage_id = contactData?.id;
       if (!sage_id) throw { status: 500, data: { message: 'Sage did not return a contact ID', response: contactData } };
       console.log('[Sage Proxy] Step 1 complete — sage_id:', sage_id);
+
+      // ── Step 1b: Discover GB country_group_id for address & VAT ────────
+      // We do this early so it's ready for Step 2.  The result is cached
+      // so subsequent calls don't hit the API again.
+      let gbGroupId = null;
+      if (hasAddress || cleanVat) {
+        gbGroupId = await getGBCountryGroupId(sageRequest);
+        console.log('[Sage Proxy] Step 1b — GB country_group_id:', gbGroupId);
+      }
 
       // ── Step 2: Create the address linked to the contact ─────────────────
       let address_id = null;
@@ -258,17 +273,18 @@ export default async function handler(req, res) {
             address_type_id: 'ACCOUNTS',
             is_main_address: true,
             country_id: 'GB',
-            country_group_id: 'ALL',
           }
         };
+        // FIX: Use the looked-up GB country_group_id instead of hardcoded 'ALL'
+        if (gbGroupId) {
+          addressObj.address.country_group_id = gbGroupId;
+        }
         if (address)  addressObj.address.address_line_1 = address;
         if (city)     addressObj.address.city           = city;
         if (postcode) addressObj.address.postal_code    = postcode;
-
         try {
           const addrData = await sageRequest('addresses', addressObj);
           address_id = addrData?.id;
-          // Log what Sage actually stored so we can see the country/country_group
           console.log('[Sage Proxy] Step 2 complete — address created:', JSON.stringify({
             id: addrData?.id,
             country: addrData?.country,
@@ -277,7 +293,7 @@ export default async function handler(req, res) {
           }));
         } catch (addrErr) {
           console.warn('[Sage Proxy] Step 2 — address creation failed:', JSON.stringify(addrErr?.data));
-          // If country_group_id: 'ALL' failed, retry without it
+          // Retry without country_group_id — Sage will use its default
           try {
             delete addressObj.address.country_group_id;
             const addrData2 = await sageRequest('addresses', addressObj);
@@ -292,7 +308,6 @@ export default async function handler(req, res) {
           }
         }
       }
-
       // If we didn't create an address, try to fetch the default one Sage auto-created
       if (!address_id) {
         try {
@@ -306,7 +321,6 @@ export default async function handler(req, res) {
           console.warn('[Sage Proxy] Could not fetch addresses for contact:', e?.data || e?.message);
         }
       }
-
       // ── Step 3: Create a main contact person ─────────────────────────────
       console.log('[Sage Proxy] Step 3 — creating contact person, address_id:', address_id);
       console.log('[Sage Proxy] Step 3 — mainContact data:', JSON.stringify(mainContact));
@@ -317,7 +331,6 @@ export default async function handler(req, res) {
           contact_id: sage_id,
           name: mainContact?.name || name,
           is_main_contact: true,
-          // is_preferred_contact is only allowed for CUSTOMER contacts, not VENDOR/Supplier
           ...(isCustomer && { is_preferred_contact: true }),
           contact_person_type_ids: ['ACCOUNTS'],
         }
@@ -330,19 +343,14 @@ export default async function handler(req, res) {
       console.log('[Sage Proxy] Step 3 — contact person payload:', JSON.stringify(contactPersonObj));
       try {
         const cpData = await sageRequest('contact_persons', contactPersonObj);
-        // Sage returns the contact_person object directly with id at top level
         const contact_person_id = cpData?.id;
         console.log('[Sage Proxy] Step 3 complete — contact person created, id:', contact_person_id);
-
         // ── Step 4: Set main/preferred contact_person on the contact ────────
-        // preferred_contact_person is only valid for CUSTOMER contacts.
-        // For VENDOR/Supplier, only set main_contact_person.
         if (contact_person_id) {
           const cpDisplayName = mainContact?.name || name;
           const contactUpdate = {
             main_contact_person: { id: contact_person_id, displayed_as: cpDisplayName },
           };
-          // Only add preferred_contact_person for customers
           if (isCustomer) {
             contactUpdate.preferred_contact_person = { id: contact_person_id, displayed_as: cpDisplayName };
           }
@@ -352,7 +360,6 @@ export default async function handler(req, res) {
             console.log('[Sage Proxy] Step 4 complete — main_contact_person set');
           } catch (pcErr) {
             console.warn('[Sage Proxy] Step 4 failed:', pcErr?.data);
-            // Fallback: try with just the _id field
             try {
               const fallback = { main_contact_person_id: contact_person_id };
               if (isCustomer) fallback.preferred_contact_person_id = contact_person_id;
@@ -364,63 +371,96 @@ export default async function handler(req, res) {
           }
         }
       } catch (cpErr) {
-        // Non-fatal — contact and address already created successfully
         console.warn('[Sage Proxy] Step 3 — contact person creation failed:', cpErr?.data);
       }
 
       // ── Step 5: Now apply tax_number via PUT ─────────────────────────────
-      // Sage requires BOTH a main_address AND a main_contact_person before
-      // it will accept a tax_number. That's why this runs last.
+      // Sage requires the contact's main_address to have the correct
+      // country + country_group before it will accept a UK tax_number.
       //
-      // Important: A bare PUT with just { tax_number } can reset relationships
-      // on the contact. We fetch the contact first and re-send key fields
-      // alongside tax_number to avoid breaking the main_address link.
+      // FIX (v101): Three-phase approach —
+      //   5a. Ensure the address has the correct country_group_id for GB
+      //   5b. Re-fetch the contact to get its current main_address link
+      //   5c. PUT tax_number while re-asserting main_address.id
       if (cleanVat && address_id) {
-        // Diagnostic: fetch the address to see what country Sage has stored
-        try {
-          const addrCheck = await sageRequest(`addresses/${address_id}`, null, 'GET');
-          console.log('[Sage Proxy] Step 5 — address check:', JSON.stringify({
-            country: addrCheck?.country,
-            country_group: addrCheck?.country_group,
-            is_main_address: addrCheck?.is_main_address
-          }));
-        } catch (e) {
-          console.log('[Sage Proxy] Step 5 — could not fetch address for diagnostic');
+        console.log('[Sage Proxy] Step 5 — setting tax_number:', cleanVat);
+
+        // ── 5a. Patch the address to ensure country_group is correct ───────
+        // Even if Step 2 set it, it may have been cleared by Step 4's PUT.
+        // Force it to the GB group so Sage's tax validation passes.
+        if (gbGroupId) {
+          try {
+            await sageRequest(`addresses/${address_id}`, {
+              address: {
+                country_id: 'GB',
+                country_group_id: gbGroupId,
+              }
+            }, 'PUT');
+            console.log('[Sage Proxy] Step 5a — address country_group confirmed as:', gbGroupId);
+          } catch (e) {
+            console.warn('[Sage Proxy] Step 5a — could not patch address country_group:', e?.data || e?.message);
+          }
         }
 
-        console.log('[Sage Proxy] Step 5 — setting tax_number on contact:', cleanVat);
-        
-        // Fetch the full contact so we can merge tax_number without losing data
+        // ── 5b. Re-fetch the contact to get current main_address ───────────
+        let mainAddressId = null;
         try {
           const currentContact = await sageRequest(`contacts/${sage_id}`, null, 'GET');
-          console.log('[Sage Proxy] Step 5 — current contact main_address:', JSON.stringify(currentContact?.main_address?.id));
-          
-          // Build a PUT payload that preserves the existing main_address
+          mainAddressId = currentContact?.main_address?.id;
+          console.log('[Sage Proxy] Step 5b — contact main_address.id:', mainAddressId);
+
+          // Diagnostic: also log what the address looks like now
+          if (mainAddressId) {
+            try {
+              const addrCheck = await sageRequest(`addresses/${mainAddressId}`, null, 'GET');
+              console.log('[Sage Proxy] Step 5b — address state:', JSON.stringify({
+                country: addrCheck?.country,
+                country_group: addrCheck?.country_group,
+                is_main_address: addrCheck?.is_main_address
+              }));
+            } catch (_) { /* non-fatal */ }
+          }
+        } catch (e) {
+          console.warn('[Sage Proxy] Step 5b — could not fetch contact:', e?.data || e?.message);
+          mainAddressId = address_id; // fall back to the one we created
+        }
+
+        // ── 5c. PUT tax_number with main_address assertion ─────────────────
+        try {
           const updatePayload = {
             contact: {
               tax_number: cleanVat,
             }
           };
-          // If the contact has a main_address, reference it to prevent Sage from
-          // thinking we're trying to clear it
-          if (currentContact?.main_address?.id) {
-            updatePayload.contact.main_address = { id: currentContact.main_address.id };
+          // Re-assert main_address so Sage doesn't think we're clearing it
+          if (mainAddressId) {
+            updatePayload.contact.main_address = { id: mainAddressId };
           }
-          
+          console.log('[Sage Proxy] Step 5c — PUT payload:', JSON.stringify(updatePayload));
           await sageRequest(`contacts/${sage_id}`, updatePayload, 'PUT');
-          console.log('[Sage Proxy] Step 5 complete — tax_number set');
+          console.log('[Sage Proxy] Step 5 complete — tax_number set successfully');
         } catch (vatErr) {
-          console.warn('[Sage Proxy] Step 5 — failed to set tax_number:', JSON.stringify(vatErr?.data));
-          console.warn('[Sage Proxy] VAT number will be stored in portal only');
+          console.warn('[Sage Proxy] Step 5c — tax_number PUT failed:', JSON.stringify(vatErr?.data));
+
+          // ── 5d. Fallback: try setting tax_number without main_address ────
+          // Some Sage instances accept it without the address reference
+          try {
+            console.log('[Sage Proxy] Step 5d — retrying without main_address assertion');
+            await sageRequest(`contacts/${sage_id}`, {
+              contact: { tax_number: cleanVat }
+            }, 'PUT');
+            console.log('[Sage Proxy] Step 5d complete — tax_number set on retry');
+          } catch (vatErr2) {
+            console.warn('[Sage Proxy] Step 5d — retry also failed:', JSON.stringify(vatErr2?.data));
+            console.warn('[Sage Proxy] VAT number will be stored in portal only (not in Sage)');
+          }
         }
       } else if (cleanVat && !address_id) {
         console.warn('[Sage Proxy] Skipping tax_number — no address to validate against. Stored in portal only.');
       } else if (!cleanVat) {
         console.log('[Sage Proxy] Step 5 — no VAT number provided (raw vatNumber was:', JSON.stringify(vatNumber), ')');
       }
-
       return res.status(200).json({ sage_id, contactData });
-
     } catch (err) {
       console.error('[Sage Proxy] createContact error:', err);
       if (err.data) {
@@ -433,20 +473,13 @@ export default async function handler(req, res) {
     }
   }
   // ── end createContact ─────────────────────────────────────────────────────
-
   // ── manageContactPerson action ────────────────────────────────────────────
-  // CRUD for individual contact persons on an existing Sage contact.
-  // Called from the Named Contacts tab in the portal.
   if (action === 'manageContactPerson') {
     const { sageContactId, sageContactPersonId, operation, contactPerson } = req.body;
-    // operation: 'create' | 'update' | 'delete' | 'list'
-
     if (!sageContactId && operation !== 'delete') {
       return res.status(400).json({ error: 'sageContactId is required (customer must be linked to Sage first)' });
     }
-
     try {
-      // ── Get valid access token (reuse same pattern) ──────────────────────
       let accessToken = null;
       if (
         tokenCache.accessToken &&
@@ -472,7 +505,6 @@ export default async function handler(req, res) {
           tokenCache = { accessToken: tokens.sage_access_token, refreshToken: tokens.sage_refresh_token, expiresAt: tokens.sage_token_expires_at, lastFetched: Date.now() };
         }
       }
-
       const { data: bizData } = await supabase.from('company_settings').select('setting_value').eq('setting_name', 'sage_business_id').single();
       const sageHeaders = {
         'Authorization': `Bearer ${accessToken}`,
@@ -480,7 +512,6 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         ...(bizData?.setting_value && { 'X-Business': bizData.setting_value })
       };
-
       const sageFetch = async (endpoint, method = 'GET', payload = null) => {
         const opts = { method, headers: sageHeaders };
         if (payload && method !== 'GET') opts.body = JSON.stringify(payload);
@@ -490,22 +521,18 @@ export default async function handler(req, res) {
         if (!r.ok) { console.error(`[Sage Proxy] ${method} ${endpoint} failed:`, JSON.stringify(data)); throw { status: r.status, data }; }
         return data;
       };
-
       const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-
       // ── LIST ─────────────────────────────────────────────────────────────
       if (operation === 'list') {
         console.log('[Sage Proxy] Listing contact persons for:', sageContactId);
         const result = await sageFetch(`contact_persons?contact_id=${sageContactId}`);
         const items = result?.$items || result?.items || (Array.isArray(result) ? result : []);
         
-        // Deduplicate by id — Sage can return the same person under multiple addresses
         const seen = new Set();
         const uniqueItems = [];
         for (const item of items) {
           if (!item?.id || seen.has(item.id)) continue;
           seen.add(item.id);
-          // Fetch full details for each contact person (list endpoint only returns summary)
           try {
             const full = await sageFetch(`contact_persons/${item.id}`, 'GET');
             uniqueItems.push({
@@ -519,7 +546,6 @@ export default async function handler(req, res) {
               displayed_as: full.displayed_as || item.displayed_as || '',
             });
           } catch (e) {
-            // Fallback to summary data
             uniqueItems.push({
               id: item.id,
               name: item.name || item.displayed_as || 'Unknown',
@@ -534,12 +560,9 @@ export default async function handler(req, res) {
         console.log('[Sage Proxy] Returning', uniqueItems.length, 'unique contact persons');
         return res.status(200).json({ contact_persons: uniqueItems });
       }
-
       // ── CREATE ───────────────────────────────────────────────────────────
       if (operation === 'create') {
         console.log('[Sage Proxy] Creating contact person on:', sageContactId);
-
-        // Get an address_id — Sage requires it
         let address_id = null;
         try {
           const addrList = await sageFetch(`addresses?contact_id=${sageContactId}`);
@@ -548,7 +571,6 @@ export default async function handler(req, res) {
         } catch (e) {
           console.warn('[Sage Proxy] Could not fetch addresses:', e?.data || e?.message);
         }
-
         const cpObj = {
           contact_person: {
             contact_id: sageContactId,
@@ -562,12 +584,10 @@ export default async function handler(req, res) {
         if (contactPerson.email && isValidEmail(contactPerson.email)) cpObj.contact_person.email = contactPerson.email;
         if (contactPerson.telephone) cpObj.contact_person.telephone = contactPerson.telephone;
         if (contactPerson.mobile) cpObj.contact_person.mobile = contactPerson.mobile;
-
         const created = await sageFetch('contact_persons', 'POST', cpObj);
         console.log('[Sage Proxy] Contact person created:', created?.id);
         return res.status(200).json({ sage_contact_person_id: created?.id, data: created });
       }
-
       // ── UPDATE ───────────────────────────────────────────────────────────
       if (operation === 'update' && sageContactPersonId) {
         console.log('[Sage Proxy] Updating contact person:', sageContactPersonId);
@@ -577,20 +597,16 @@ export default async function handler(req, res) {
         else if (contactPerson.email === '') cpObj.contact_person.email = '';
         if (contactPerson.telephone !== undefined) cpObj.contact_person.telephone = contactPerson.telephone;
         if (contactPerson.mobile !== undefined) cpObj.contact_person.mobile = contactPerson.mobile;
-
         const updated = await sageFetch(`contact_persons/${sageContactPersonId}`, 'PUT', cpObj);
         return res.status(200).json({ data: updated });
       }
-
       // ── DELETE ───────────────────────────────────────────────────────────
       if (operation === 'delete' && sageContactPersonId) {
         console.log('[Sage Proxy] Deleting contact person:', sageContactPersonId);
         await sageFetch(`contact_persons/${sageContactPersonId}`, 'DELETE');
         return res.status(200).json({ deleted: true });
       }
-
       return res.status(400).json({ error: 'Invalid operation. Use: list, create, update, delete' });
-
     } catch (err) {
       console.error('[Sage Proxy] manageContactPerson error:', err);
       if (err.data) return res.status(err.status || 500).json({ error: 'Sage error', details: err.data });
@@ -598,16 +614,12 @@ export default async function handler(req, res) {
     }
   }
   // ── end manageContactPerson ───────────────────────────────────────────────
-
   if (!endpoint) {
     console.error('[Sage Proxy] No endpoint provided');
     return res.status(400).json({ error: 'Endpoint is required' });
   }
-
   try {
     let accessToken = null;
-
-    // Check cache first (5 minute cache)
     if (tokenCache.accessToken && 
         tokenCache.lastFetched && 
         (Date.now() - tokenCache.lastFetched) < 300000 &&
@@ -621,12 +633,10 @@ export default async function handler(req, res) {
         .from('company_settings')
         .select('setting_name, setting_value')
         .in('setting_name', ['sage_access_token', 'sage_refresh_token', 'sage_token_expires_at']);
-
       if (tokenError) {
         console.error('[Sage Proxy] Database error:', tokenError);
         return res.status(500).json({ error: 'Failed to fetch tokens from database' });
       }
-
       if (!tokenData || tokenData.length === 0) {
         console.error('[Sage Proxy] No tokens found in database');
         return res.status(401).json({ 
@@ -634,19 +644,16 @@ export default async function handler(req, res) {
           code: 'NO_TOKENS'
         });
       }
-
       const tokens = tokenData.reduce((acc, row) => {
         acc[row.setting_name] = row.setting_value;
         return acc;
       }, {});
-
       console.log('[Sage Proxy] Tokens found:', {
         hasAccessToken: !!tokens.sage_access_token,
         hasRefreshToken: !!tokens.sage_refresh_token,
         hasExpiresAt: !!tokens.sage_token_expires_at,
         expiresAt: tokens.sage_token_expires_at
       });
-
       if (isTokenExpired(tokens.sage_token_expires_at)) {
         console.log('[Sage Proxy] Token is expired, refreshing...');
         
@@ -657,7 +664,6 @@ export default async function handler(req, res) {
             code: 'NO_REFRESH_TOKEN'
           });
         }
-
         try {
           accessToken = await refreshAccessToken(tokens.sage_refresh_token);
         } catch (refreshError) {
@@ -679,7 +685,6 @@ export default async function handler(req, res) {
         };
       }
     }
-
     if (!accessToken) {
       console.error('[Sage Proxy] No access token available after all attempts');
       return res.status(401).json({ 
@@ -687,29 +692,24 @@ export default async function handler(req, res) {
         code: 'NO_ACCESS_TOKEN'
       });
     }
-
     console.log('[Sage Proxy] Making request to Sage API:', {
       url: `https://api.accounting.sage.com/v3.1/${endpoint}`,
       method: method,
       hasBusinessId: !!businessId
     });
-
     const headers = {
       'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/json',
       'Content-Type': 'application/json'
     };
-
     if (businessId) {
       headers['X-Business'] = businessId;
     }
-
     const sageResponse = await fetch(`https://api.accounting.sage.com/v3.1/${endpoint}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined
     });
-
     const responseText = await sageResponse.text();
     let data;
     
@@ -719,7 +719,6 @@ export default async function handler(req, res) {
       console.error('[Sage Proxy] Failed to parse response as JSON:', responseText);
       data = { error: 'Invalid response from Sage API', response: responseText };
     }
-
     console.log('[Sage Proxy] Sage API response:', {
       status: sageResponse.status,
       ok: sageResponse.ok,
@@ -727,7 +726,6 @@ export default async function handler(req, res) {
       errorMessage: data?.error || data?.message
     });
     
-    // Handle 401 Unauthorized - token might be expired despite our checks
     if (sageResponse.status === 401) {
       console.log('[Sage Proxy] Received 401, attempting token refresh...');
       
@@ -754,7 +752,6 @@ export default async function handler(req, res) {
         details: data 
       });
     }
-
     res.status(sageResponse.status).json(data);
     
   } catch (error) {
