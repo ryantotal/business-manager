@@ -5026,6 +5026,41 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             </button>
                           </div>
                           <p className="text-xs text-gray-400 text-center">WTN details save automatically when you click <strong>Update Job</strong></p>
+                          <button type="button" onClick={() => {
+                            if (!confirm('Reset all WTN fields from current job data? This will overwrite any manual edits.')) return;
+                            // Rebuild WTN fields from scratch using current job/line item data
+                            const resetLineItems = (() => {
+                              const candidates = [formData?.lineItems, formData?.line_items, formData?.sageLineItems, formData?.sage_line_items, job?.lineItems, job?.line_items, job?.sageLineItems, job?.sage_line_items];
+                              for (const raw of candidates) {
+                                if (!raw) continue;
+                                if (Array.isArray(raw) && raw.length > 0) return raw;
+                                if (typeof raw === 'string' && raw.length > 2) {
+                                  try { const p = JSON.parse(raw); if (Array.isArray(p) && p.length > 0) return p; } catch {}
+                                }
+                              }
+                              return [];
+                            })();
+                            const rli = resetLineItems[0] || {};
+                            const rProduct = rli.product_name || rli.productName || '';
+                            const rDesc = rli.description || '';
+                            const rQty = rli.quantity || formData?.quantity || job?.quantity || 1;
+                            const descParts = [rProduct];
+                            if (rDesc && rDesc !== rProduct) descParts.push(rDesc);
+                            const wt = formData?.wasteType || job?.wasteType || job?.waste_type || '';
+                            if (wt && !descParts.includes(wt)) descParts.push(wt);
+                            const resetDesc = descParts.filter(Boolean).join(' — ') || formData?.jobType || job?.jobType || job?.job_type || '';
+                            setWtnFields(prev => ({
+                              ...prev,
+                              wasteDescription: resetDesc,
+                              skipSize: rProduct || formData?.skipSize || job?.skipSize || job?.skip_size || '',
+                              quantity: rQty,
+                              transferorName: formData?.customerName || job?.customerName || job?.customer_name || prev.transferorName,
+                              transferorAddress: [formData?.siteAddress1 || job?.siteAddress1 || job?.site_address1, formData?.siteCity || job?.siteCity || job?.site_city, formData?.sitePostcode || job?.sitePostcode || job?.site_postcode].filter(Boolean).join(', ') || prev.transferorAddress,
+                            }));
+                            alert('✅ WTN fields reset from current job data');
+                          }} className="w-full py-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-dashed border-gray-300 transition-colors">
+                            🔄 Reset WTN fields from job data
+                          </button>
                         </div>
                       );
                     })()}
@@ -17684,12 +17719,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       vatNumber: formData.vatNumber || '',
                       creditLimit: formData.creditLimit || 0,
                       creditDays: formData.paymentTerms || 30,
-                      mainContact: formData.primaryContact ? {
-                        name: formData.primaryContact,
+                      mainContact: {
+                        name: formData.primaryContact || formData.companyName,
                         email: formData.email || '',
                         telephone: formData.phone || '',
                         mobile: formData.mobile || '',
-                      } : undefined,
+                      },
                     })
                   });
                   const result = await response.json();
@@ -17707,6 +17742,59 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     '\n\nSave to portal only and retry Sage later?'
                   );
                   if (!continueAnyway) { setSaving(false); return; }
+                }
+              } else {
+                // Update existing Sage contact — push address, email, credit terms
+                try {
+                  console.log('[CustomerForm] Updating Sage contact:', sage_id);
+                  await fetch('/api/sage-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      endpoint: `contacts/${sage_id}`,
+                      method: 'PUT',
+                      body: {
+                        contact: {
+                          name: formData.companyName,
+                          email: formData.email || undefined,
+                          credit_limit: parseFloat(formData.creditLimit) || undefined,
+                          credit_days: parseInt(formData.paymentTerms) || 30,
+                        }
+                      }
+                    })
+                  });
+                  // Update the main address
+                  const addrRes = await fetch('/api/sage-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      endpoint: `addresses?contact_id=${sage_id}`,
+                      method: 'GET',
+                    })
+                  });
+                  const addrData = await addrRes.json();
+                  const addresses = addrData?.$items || addrData?.items || (Array.isArray(addrData) ? addrData : []);
+                  if (addresses.length > 0) {
+                    await fetch('/api/sage-proxy', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        endpoint: `addresses/${addresses[0].id}`,
+                        method: 'PUT',
+                        body: {
+                          address: {
+                            address_line_1: formData.billingAddress || '',
+                            city: formData.billingCity || '',
+                            postal_code: formData.billingPostcode || '',
+                            country_id: 'GB',
+                          }
+                        }
+                      })
+                    });
+                  }
+                  console.log('[CustomerForm] Sage contact updated successfully');
+                } catch (sageUpdateErr) {
+                  console.warn('[CustomerForm] Sage update failed (saved locally):', sageUpdateErr.message);
                 }
               }
 
@@ -19061,12 +19149,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       vatNumber: formData.vatNumber || '',
                       creditLimit: 0,
                       creditDays: formData.paymentTerms || 30,
-                      mainContact: formData.primaryContact ? {
-                        name: formData.primaryContact,
+                      mainContact: {
+                        name: formData.primaryContact || formData.companyName,
                         email: formData.email || '',
                         telephone: formData.phone || '',
                         mobile: formData.mobile || '',
-                      } : undefined,
+                      },
                     })
                   });
                   const result = await response.json();
@@ -19083,6 +19171,60 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     '\n\nSave to portal only and retry Sage later?'
                   );
                   if (!continueAnyway) { setSaving(false); return; }
+                }
+              } else {
+                // Update existing Sage contact — push address, email, credit terms
+                try {
+                  console.log('[SupplierForm] Updating Sage contact:', sage_id);
+                  // Update the contact itself (name, email, credit)
+                  await fetch('/api/sage-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      endpoint: `contacts/${sage_id}`,
+                      method: 'PUT',
+                      body: {
+                        contact: {
+                          name: formData.companyName,
+                          email: formData.email || undefined,
+                          credit_days: parseInt(formData.paymentTerms) || 30,
+                        }
+                      }
+                    })
+                  });
+                  // Update the main address
+                  const addrRes = await fetch('/api/sage-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      endpoint: `addresses?contact_id=${sage_id}`,
+                      method: 'GET',
+                    })
+                  });
+                  const addrData = await addrRes.json();
+                  const addresses = addrData?.$items || addrData?.items || (Array.isArray(addrData) ? addrData : []);
+                  if (addresses.length > 0) {
+                    const mainAddr = addresses[0];
+                    await fetch('/api/sage-proxy', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        endpoint: `addresses/${mainAddr.id}`,
+                        method: 'PUT',
+                        body: {
+                          address: {
+                            address_line_1: formData.address || '',
+                            city: formData.city || '',
+                            postal_code: formData.postcode || '',
+                            country_id: 'GB',
+                          }
+                        }
+                      })
+                    });
+                  }
+                  console.log('[SupplierForm] Sage contact updated successfully');
+                } catch (sageUpdateErr) {
+                  console.warn('[SupplierForm] Sage update failed (saved locally):', sageUpdateErr.message);
                 }
               }
               onSave({ ...formData, sage_id });
