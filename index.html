@@ -1172,7 +1172,7 @@ return (
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
-                            const hasWtn = !!job.wtn_portal_visible;
+                            const hasWtn = job.wtn_portal_visible || ((job.wtn_sent || job.wtn_sent_at) && done && job.wtn_data);
                             const siNumber = job.sage_si_number || job.invoice_number || null;
                             const isInvoiced = !!siNumber;
 
@@ -1333,7 +1333,7 @@ return (
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
-                            const hasWtn = !!job.wtn_portal_visible;
+                            const hasWtn = job.wtn_portal_visible || ((job.wtn_sent || job.wtn_sent_at) && done && job.wtn_data);
                             const siNumber = job.sage_si_number || job.invoice_number || null;
                             const isInvoiced = !!siNumber;
                             const serviceDetail = job.waste_type || job.aggregate_type || null;
@@ -13264,7 +13264,7 @@ info@totalwasteservicesltd.com`;
                     const cancelled = job.isCancelled || job.status === 'CANCELLED';
                     const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
                     const isExpanded = expandedPreviewId === job.id;
-                    const hasWtn = !!job.wtn_portal_visible;
+                    const hasWtn = job.wtn_portal_visible || ((job.wtnSent || job.wtn_sent) && done && (job.wtn_data || job.wtnData));
                     const siNumber = job.sageSiNumber || job.invoiceNumber || null;
                     const isInvoiced = !!siNumber;
                     const lineItems = (() => { try { return Array.isArray(job.lineItems) ? job.lineItems : (typeof job.lineItems === 'string' ? JSON.parse(job.lineItems) : []); } catch(e) { return []; } })();
