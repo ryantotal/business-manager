@@ -1893,7 +1893,6 @@ const EWCPicker = ({ value, onChange }) => {
           </div>
         </div>
       )}
-      {open && <div className="fixed inset-0 z-[9998]" onClick={() => { setOpen(false); setSearch(''); }} />}
     </div>
   );
 };
@@ -2055,8 +2054,10 @@ const [wtnFields, setWtnFields] = useState(() => {
     wasteDescription: wasteDesc,
     skipSize: firstProduct || skipSize || '',
     listOfWasteCode: '',  // EWC code
-    wasteContainer: job?.jobType === 'Roll-on Roll-off' ? 'Roll-on roll-off container' : 'Skip',
-    quantity: job?.quantity || 1,
+    wasteContainer: job?.jobType === 'Roll-on Roll-off' ? 'Roll-on roll-off container' :
+                    job?.jobType === 'Muck Away' ? 'Loose' :
+                    job?.jobType === 'Grab Hire' ? 'Loose' : 'Skip',
+    quantity: job?.quantity || firstLineItem?.quantity || 1,
     unit: job?.unit || 'tonnes',
     isHazardous: job?.hazardousWaste || false,
     // Section B — Transferor (waste producer / customer)
