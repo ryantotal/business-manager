@@ -9399,19 +9399,38 @@ Please get in touch if you have any questions.
 Kind regards,
 Total Waste Services Ltd`);
                         setSendModalQuoteContacts([]);
-                        // Load named Quotes contacts for this customer
+                        // Collect all available email addresses for this customer
                         const matchedCust = customers?.find(c => (c.name || c.companyName) === quote.customerName);
+                        const allEmails = [];
+                        // Main email
+                        if (matchedCust?.email) allEmails.push({ name: 'Main Email', email: matchedCust.email });
+                        // Accounts email
+                        const acctEmail = matchedCust?.accountsEmail || matchedCust?.additional_emails;
+                        if (acctEmail && acctEmail !== matchedCust?.email) allEmails.push({ name: 'Accounts Email', email: acctEmail });
+                        // Quote-specific email from the quote itself
+                        if (quote.customerEmail && !allEmails.some(e => e.email === quote.customerEmail)) {
+                          allEmails.push({ name: 'Quote Contact', email: quote.customerEmail });
+                        }
+                        // Load ALL named contacts for this customer (not just Quotes role)
                         if (matchedCust?.id) {
                           window.supabase
                             .from('customer_contacts')
-                            .select('name, email')
+                            .select('name, email, role')
                             .eq('customer_id', matchedCust.id)
-                            .eq('role', 'Quotes')
                             .not('email', 'is', null)
                             .then(({ data }) => {
-                              if (data && data.length > 0) setSendModalQuoteContacts(data);
+                              if (data && data.length > 0) {
+                                const contactEmails = data
+                                  .filter(c => c.email && !allEmails.some(e => e.email === c.email))
+                                  .map(c => ({ name: c.name + (c.role ? ` (${c.role})` : ''), email: c.email }));
+                                setSendModalQuoteContacts([...allEmails, ...contactEmails]);
+                              } else {
+                                setSendModalQuoteContacts(allEmails);
+                              }
                             })
-                            .catch(() => {});
+                            .catch(() => setSendModalQuoteContacts(allEmails));
+                        } else {
+                          setSendModalQuoteContacts(allEmails);
                         }
                         setShowSendModal(true);
                       }}
@@ -9444,7 +9463,7 @@ Total Waste Services Ltd`);
                       />
                       {sendModalQuoteContacts.length > 0 && (
                         <div className="mt-2">
-                          <p className="text-xs text-gray-500 mb-1">Named Quotes contacts — click to use:</p>
+                          <p className="text-xs text-gray-500 mb-1">Select a recipient or type a custom email above:</p>
                           <div className="flex flex-wrap gap-1">
                             {sendModalQuoteContacts.map((c, i) => (
                               <button
