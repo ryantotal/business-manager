@@ -1995,13 +1995,25 @@ const [wtnFields, setWtnFields] = useState(() => {
   }
 
   const jobLineItems = (() => {
-    const raw = job?.lineItems || job?.line_items || job?.sageLineItems || job?.sage_line_items || [];
-    if (Array.isArray(raw)) return raw;
-    try { return JSON.parse(raw); } catch { return []; }
+    // Try every possible field name and format
+    const candidates = [job?.lineItems, job?.line_items, job?.sageLineItems, job?.sage_line_items];
+    for (const raw of candidates) {
+      if (!raw) continue;
+      if (Array.isArray(raw) && raw.length > 0) return raw;
+      if (typeof raw === 'string' && raw.length > 2) {
+        try { 
+          const parsed = JSON.parse(raw); 
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch {}
+      }
+    }
+    return [];
   })();
+  console.log('[WTN Init] lineItems found:', jobLineItems.length, 'items', jobLineItems[0]?.product_name || 'no product');
   const firstLineItem = jobLineItems.length > 0 ? jobLineItems[0] : null;
-  const firstProduct = firstLineItem?.product_name || null;
+  const firstProduct = firstLineItem?.product_name || firstLineItem?.productName || null;
   const firstDescription = firstLineItem?.description || null;
+  const firstQty = firstLineItem?.quantity || null;
   const skipSize = job?.skipSize || null;
   const productDesc = firstProduct || (skipSize ? `${skipSize} Skip` : null) || job?.sageProductName || null;
   // Build waste description: product name — description — waste type
@@ -2057,7 +2069,7 @@ const [wtnFields, setWtnFields] = useState(() => {
     wasteContainer: job?.jobType === 'Roll-on Roll-off' ? 'Roll-on roll-off container' :
                     job?.jobType === 'Muck Away' ? 'Loose' :
                     job?.jobType === 'Grab Hire' ? 'Loose' : 'Skip',
-    quantity: job?.quantity || firstLineItem?.quantity || 1,
+    quantity: firstQty || job?.quantity || 1,
     unit: job?.unit || 'tonnes',
     isHazardous: job?.hazardousWaste || false,
     // Section B — Transferor (waste producer / customer)
@@ -4474,48 +4486,77 @@ const [isEvent, setIsEvent] = useState(false);
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Send WTN to *</label>
                       {(() => {
-                        // Build list of all available emails
-                        const allEmails = [
-                          wtnFields.recipientEmail,
-                          ...(wtnFields.additionalEmails ? wtnFields.additionalEmails.split(',').map(e => e.trim()) : [])
-                        ].filter(Boolean);
+                        // Build list of all available emails from customer record + contacts
+                        const mc = customers?.find(c => (c.name || c.companyName) === wtnFields.transferorName);
+                        const availableEmails = [];
+                        if (mc?.email) availableEmails.push({ label: 'Main Email', email: mc.email });
+                        const acctEmail = mc?.accountsEmail || mc?.additional_emails;
+                        if (acctEmail && acctEmail !== mc?.email) availableEmails.push({ label: 'Accounts Email', email: acctEmail });
+                        if (wtnFields.recipientEmail && !availableEmails.some(e => e.email === wtnFields.recipientEmail)) {
+                          availableEmails.push({ label: 'Current', email: wtnFields.recipientEmail });
+                        }
+                        // Load named contacts (cached in wtnFields to avoid re-fetching)
+                        if (mc?.id && !wtnFields._contactEmailsLoaded) {
+                          window.supabase.from('customer_contacts').select('name, email, role').eq('customer_id', mc.id).not('email', 'is', null)
+                            .then(({ data }) => {
+                              if (data && data.length > 0) {
+                                const contactEmails = data.filter(c => c.email && !availableEmails.some(e => e.email === c.email))
+                                  .map(c => ({ label: c.name + (c.role ? ` (${c.role})` : ''), email: c.email }));
+                                setWtnFields(prev => ({ ...prev, _contactEmails: contactEmails, _contactEmailsLoaded: true }));
+                              } else {
+                                setWtnFields(prev => ({ ...prev, _contactEmails: [], _contactEmailsLoaded: true }));
+                              }
+                            }).catch(() => setWtnFields(prev => ({ ...prev, _contactEmails: [], _contactEmailsLoaded: true })));
+                        }
+                        const contactEmails = wtnFields._contactEmails || [];
+                        const allOptions = [...availableEmails, ...contactEmails.filter(c => !availableEmails.some(e => e.email === c.email))];
                         const selectedEmails = wtnFields.selectedEmails || (wtnFields.recipientEmail ? [wtnFields.recipientEmail] : []);
 
-                        if (allEmails.length > 1) {
-                          return (
-                            <div className="space-y-1">
-                              {allEmails.map((email, i) => (
-                                <label key={i} className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm cursor-pointer hover:bg-green-50">
-                                  <input type="checkbox"
-                                    checked={selectedEmails.includes(email)}
-                                    onChange={e => {
-                                      const updated = e.target.checked
-                                        ? [...selectedEmails, email]
-                                        : selectedEmails.filter(x => x !== email);
-                                      setWtnFields({...wtnFields, selectedEmails: updated});
-                                    }}
-                                    className="w-4 h-4 text-green-600 rounded"
-                                  />
-                                  <span className="text-gray-800">{email}</span>
-                                  {i === 0 && <span className="text-xs text-green-600 ml-auto">Primary</span>}
-                                </label>
-                              ))}
-                              <p className="text-xs text-green-600 mt-1">✅ Multiple emails from Sage — tick all you want to receive the WTN</p>
-                            </div>
-                          );
-                        }
-                        // Single email — show editable input
                         return (
-                          <div>
+                          <div className="space-y-2">
                             <input type="email" className={`w-full px-3 py-2 border rounded-lg text-sm ${wtnFields.recipientEmailSource==='customer-record' ? 'border-green-300 bg-green-50' : 'border-gray-300'}`}
                               value={wtnFields.recipientEmail}
-                              onChange={e=>setWtnFields({...wtnFields, recipientEmail:e.target.value, selectedEmails:[e.target.value], recipientEmailSource:'manual'})}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setWtnFields({...wtnFields, recipientEmail: val, selectedEmails: [val, ...selectedEmails.filter(x => x !== wtnFields.recipientEmail)], recipientEmailSource: 'manual'});
+                              }}
                               placeholder="customer@company.com" />
-                            {wtnFields.recipientEmailSource==='customer-record' && wtnFields.recipientEmail && (
-                              <p className="text-xs text-green-600 mt-1">✅ Auto-filled from customer record</p>
+                            {allOptions.length > 0 && (
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">Available emails — tick to include:</p>
+                                <div className="space-y-1">
+                                  {allOptions.map((opt, i) => (
+                                    <label key={i} className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm cursor-pointer hover:bg-green-50">
+                                      <input type="checkbox"
+                                        checked={selectedEmails.includes(opt.email)}
+                                        onChange={e => {
+                                          let updated;
+                                          if (e.target.checked) {
+                                            updated = [...selectedEmails, opt.email];
+                                            // Set primary if none selected
+                                            if (!wtnFields.recipientEmail) {
+                                              setWtnFields({...wtnFields, recipientEmail: opt.email, selectedEmails: updated, recipientEmailSource: 'customer-record'});
+                                              return;
+                                            }
+                                          } else {
+                                            updated = selectedEmails.filter(x => x !== opt.email);
+                                          }
+                                          setWtnFields({...wtnFields, selectedEmails: updated});
+                                        }}
+                                        className="w-4 h-4 text-green-600 rounded"
+                                      />
+                                      <span className="text-gray-800">{opt.email}</span>
+                                      <span className="text-xs text-gray-400 ml-auto">{opt.label}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
                             )}
-                            {!wtnFields.recipientEmail && (
+                            {!wtnFields.recipientEmail && allOptions.length === 0 && (
                               <p className="text-xs text-red-500 mt-1">⚠ No email found — please enter manually</p>
+                            )}
+                            {selectedEmails.length > 1 && (
+                              <p className="text-xs text-green-600">✅ WTN will be sent to {selectedEmails.length} recipients</p>
                             )}
                           </div>
                         );
