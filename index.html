@@ -1226,9 +1226,20 @@ return (
                                         </button>
                                       ) : done && isWasteJob ? (
                                         <span className="text-gray-400 text-xs">WTN pending</span>
-                                      ) : !isInvoiced ? (
+                                      ) : !isInvoiced && !((() => { const pa = job.portal_attachments; if (!pa) return false; const p = typeof pa === 'string' ? (() => { try { return JSON.parse(pa); } catch { return []; } })() : (Array.isArray(pa) ? pa : []); return p.length > 0; })()) ? (
                                         <span className="text-gray-300 text-xs">—</span>
                                       ) : null}
+                                      {(() => {
+                                        const pa = job.portal_attachments;
+                                        if (!pa) return null;
+                                        const parsed = typeof pa === 'string' ? (() => { try { return JSON.parse(pa); } catch { return []; } })() : (Array.isArray(pa) ? pa : []);
+                                        return parsed.map((att, i) => (
+                                          <button key={i} onClick={e => { e.stopPropagation(); window.open(att.file_url, '_blank'); }}
+                                            className="text-blue-600 hover:text-blue-800 text-xs font-medium flex items-center gap-1">
+                                            📎 {att.label || 'Document'}
+                                          </button>
+                                        ));
+                                      })()}
                                     </div>
                                   </td>
                                 </tr>
