@@ -1583,7 +1583,11 @@ return (
 // ── EWC Code Picker ───────────────────────────────────────────────────────
 const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp }) => {
   const rawWtn = job.wtn_data || (job.wtnData ? JSON.stringify(job.wtnData) : null);
-  const savedWtn = rawWtn ? (typeof rawWtn === 'string' ? JSON.parse(rawWtn) : rawWtn) : null;
+  const savedWtn = (() => {
+    if (!rawWtn) return null;
+    if (typeof rawWtn === 'object') return rawWtn;
+    try { return JSON.parse(rawWtn); } catch(e) { console.warn('[WtnPortalModal] Failed to parse wtn_data:', e); return null; }
+  })();
   const coName = companyNameProp || localStorage.getItem('companyName') || 'Total Waste Services Ltd';
   const logoSrc = logoUrl || localStorage.getItem('companyLogo');
 
