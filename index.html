@@ -14792,9 +14792,14 @@ const handleCompleteJob = async (job) => {
 
     // For waste jobs, prompt to send WTN — but only if auto-send or auto-portal didn't already handle it
     const jobTypeForCheck = job.jobType || job.job_type || updatedJob.jobType || updatedJob.job_type || '';
-    const isWasteJob = ['Skip Hire','Roll-on Roll-off'].includes(jobTypeForCheck);
+    const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(jobTypeForCheck);
     const autoWtnFired = (hasParent && parentJobData?.wtn_data) || (!hasParent && jobWtnData);
-    if (isWasteJob && !autoWtnFired) {
+    
+    if (isWasteJob && autoWtnFired && jobWtnData) {
+      // WTN was auto-published to portal — let user know
+      alert(`✅ Job ${job.jobNumber || job.job_number} marked as completed!\n\n📄 WTN has been automatically published to the customer portal.`);
+    } else if (isWasteJob && !autoWtnFired) {
+      // No WTN data exists — check if they want to create one
       const sendNow = window.confirm(
         `✅ Job ${job.jobNumber} marked as completed!\n\n📄 Would you like to send a Waste Transfer Note to ${job.customerName} now?\n\nClick OK to open the WTN tab, or Cancel to skip.`
       );
@@ -14807,7 +14812,7 @@ const handleCompleteJob = async (job) => {
         }, 400);
       }
     } else {
-      alert('Job marked as completed!');
+      alert('✅ Job marked as completed!');
     }
     
   } catch (error) {
@@ -17747,12 +17752,15 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 // Update existing Sage contact — push address, email, credit terms
                 try {
                   console.log('[CustomerForm] Updating Sage contact:', sage_id);
+                  const { data: bizData } = await window.supabase.from('company_settings').select('setting_value').eq('setting_name', 'sage_business_id').single();
+                  const businessId = bizData?.setting_value;
                   await fetch('/api/sage-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                       endpoint: `contacts/${sage_id}`,
                       method: 'PUT',
+                      businessId,
                       body: {
                         contact: {
                           name: formData.companyName,
@@ -17770,6 +17778,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     body: JSON.stringify({
                       endpoint: `addresses?contact_id=${sage_id}`,
                       method: 'GET',
+                      businessId,
                     })
                   });
                   const addrData = await addrRes.json();
@@ -17781,6 +17790,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       body: JSON.stringify({
                         endpoint: `addresses/${addresses[0].id}`,
                         method: 'PUT',
+                        businessId,
                         body: {
                           address: {
                             address_line_1: formData.billingAddress || '',
@@ -19176,6 +19186,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 // Update existing Sage contact — push address, email, credit terms
                 try {
                   console.log('[SupplierForm] Updating Sage contact:', sage_id);
+                  // Fetch businessId from Supabase
+                  const { data: bizData } = await window.supabase.from('company_settings').select('setting_value').eq('setting_name', 'sage_business_id').single();
+                  const businessId = bizData?.setting_value;
                   // Update the contact itself (name, email, credit)
                   await fetch('/api/sage-proxy', {
                     method: 'POST',
@@ -19183,6 +19196,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     body: JSON.stringify({
                       endpoint: `contacts/${sage_id}`,
                       method: 'PUT',
+                      businessId,
                       body: {
                         contact: {
                           name: formData.companyName,
@@ -19199,6 +19213,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     body: JSON.stringify({
                       endpoint: `addresses?contact_id=${sage_id}`,
                       method: 'GET',
+                      businessId,
                     })
                   });
                   const addrData = await addrRes.json();
@@ -19211,6 +19226,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       body: JSON.stringify({
                         endpoint: `addresses/${mainAddr.id}`,
                         method: 'PUT',
+                        businessId,
                         body: {
                           address: {
                             address_line_1: formData.address || '',
