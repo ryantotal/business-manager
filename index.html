@@ -1013,6 +1013,20 @@ return (
             }
           };
 
+          const refreshPortalJobs = async () => {
+            if (!portalUser?.customer) return;
+            try {
+              const { data: jobs } = await window.supabase
+                .from('jobs')
+                .select('*')
+                .eq('customer_name', portalUser.customer.company_name || portalUser.customer.name)
+                .order('created_at', { ascending: false });
+              setPortalJobs(jobs || []);
+            } catch (err) {
+              console.error('Portal refresh failed:', err);
+            }
+          };
+
           const [expandedJobId, setExpandedJobId] = React.useState(null);
           const [portalFilter, setPortalFilter] = React.useState('all');
           const [portalSearch, setPortalSearch] = React.useState('');
@@ -1046,8 +1060,14 @@ return (
                       <div className="text-green-200 text-xs truncate">{portalUser.company}</div>
                     </div>
                   </div>
-                  <button onClick={() => { setPortalUser(null); setPortalPin(''); setPortalPasscode(''); }}
-                    className="text-xs sm:text-sm text-green-200 hover:text-white underline flex-shrink-0">Sign Out</button>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <button onClick={refreshPortalJobs}
+                      className="text-xs sm:text-sm text-green-200 hover:text-white flex items-center gap-1" title="Refresh">
+                      🔄
+                    </button>
+                    <button onClick={() => { setPortalUser(null); setPortalPin(''); setPortalPasscode(''); }}
+                      className="text-xs sm:text-sm text-green-200 hover:text-white underline">Sign Out</button>
+                  </div>
                 </div>
 
                 <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
@@ -1224,8 +1244,6 @@ return (
                                           className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
                                           📄 Waste Transfer Note
                                         </button>
-                                      ) : done && isWasteJob ? (
-                                        <span className="text-gray-400 text-xs">WTN pending</span>
                                       ) : !isInvoiced && !((() => { const pa = job.portal_attachments; if (!pa) return false; const p = typeof pa === 'string' ? (() => { try { return JSON.parse(pa); } catch { return []; } })() : (Array.isArray(pa) ? pa : []); return p.length > 0; })()) ? (
                                         <span className="text-gray-300 text-xs">—</span>
                                       ) : null}
@@ -1390,9 +1408,6 @@ return (
                                         className="mt-2 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium">
                                         📄 View WTN
                                       </button>
-                                    )}
-                                    {done && isWasteJob && !hasWtn && (
-                                      <span className="text-gray-400 text-xs mt-1 block">WTN pending</span>
                                     )}
                                   </div>
                                 </button>
@@ -13313,8 +13328,6 @@ info@totalwasteservicesltd.com`;
                                   className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
                                   📄 Waste Transfer Note
                                 </button>
-                              ) : done && isWasteJob ? (
-                                <span className="text-gray-400 text-xs">WTN pending</span>
                               ) : !isInvoiced ? (
                                 <span className="text-gray-300 text-xs">—</span>
                               ) : null}
