@@ -15527,18 +15527,12 @@ const saveSupplierToDatabase = async (supplier) => {
     if (error) throw error;
     if (!data || data.length === 0) throw new Error('No data returned from database');
     
-    // Add to local state with the returned ID from database
-    const savedQuote = {
-      ...newQuote,
-      id: data[0].id  // Use the UUID that Supabase generated
-    };
-    
-    setQuotes(prevQuotes => [savedQuote, ...prevQuotes]);
+    // Reload all quotes from DB to ensure consistent field mapping
+    await loadQuotesFromSupabase();
     setShowQuoteForm(false);
     setEditingQuote(null);
     
     console.log('[Quote] Saved successfully:', data[0].id);
-    alert('✅ Quote ' + quoteForDatabase.quote_number + ' created successfully!');
   } catch (error) {
     console.error('[Quote] Error saving quote:', error);
     alert('❌ Error saving quote: ' + (error.message || JSON.stringify(error)));
@@ -15593,20 +15587,15 @@ const saveSupplierToDatabase = async (supplier) => {
       .eq('id', updatedQuote.id);
 
     if (error) throw error;
-    setQuotes(prevQuotes => 
-  prevQuotes.map(q => 
-    q.id === updatedQuote.id 
-      ? { ...updatedQuote, lineItems: updatedQuote.lineItems }
-      : q
-  )
-);
+    // Reload all quotes from DB for consistent field mapping
+    await loadQuotesFromSupabase();
     setEditingQuote(null);
-setShowQuoteForm(false);
-setShowFullPageQuote({
-  ...updatedQuote,
-  lineItems: updatedQuote.lineItems
-});
-alert('Quote updated successfully!');
+    setShowQuoteForm(false);
+    setShowFullPageQuote({
+      ...updatedQuote,
+      lineItems: updatedQuote.lineItems
+    });
+    alert('Quote updated successfully!');
   } catch (error) {
     console.error('Error updating quote:', error);
     alert('Error updating quote: ' + error.message);
