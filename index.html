@@ -20,6 +20,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script>
       // Initialise EmailJS
       (function() { emailjs.init({ publicKey: 'cuDDcDM5WamVtpebZ' }); })();
@@ -1992,10 +1995,22 @@ const [wtnFields, setWtnFields] = useState(() => {
     };
   }
 
-  const firstProduct = job?.lineItems && job.lineItems.length > 0 ? job.lineItems[0].product_name : null;
+  const jobLineItems = (() => {
+    const raw = job?.lineItems || job?.line_items || job?.sageLineItems || job?.sage_line_items || [];
+    if (Array.isArray(raw)) return raw;
+    try { return JSON.parse(raw); } catch { return []; }
+  })();
+  const firstLineItem = jobLineItems.length > 0 ? jobLineItems[0] : null;
+  const firstProduct = firstLineItem?.product_name || null;
+  const firstDescription = firstLineItem?.description || null;
   const skipSize = job?.skipSize || null;
   const productDesc = firstProduct || (skipSize ? `${skipSize} Skip` : null) || job?.sageProductName || null;
-  const wasteDesc = [productDesc, job?.wasteType].filter(Boolean).join(' — ') || job?.jobType || '';
+  // Build waste description: product name — description — waste type
+  // e.g. "Muck Away — 10 x 8-wheeler loads, soil removal — Soil"
+  const descParts = [productDesc];
+  if (firstDescription && firstDescription !== firstProduct) descParts.push(firstDescription);
+  if (job?.wasteType && !descParts.includes(job.wasteType)) descParts.push(job.wasteType);
+  const wasteDesc = descParts.filter(Boolean).join(' — ') || job?.jobType || '';
 
   // Supplier = the carrier collecting the waste (Section C)
   const matchedSupplier = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
@@ -3258,6 +3273,18 @@ const [isEvent, setIsEvent] = useState(false);
                 displayField="name"
                 valueField="name"
               />
+              {formData.sitePostcode && (
+                <button type="button" onClick={() => {
+                  // Store job context for the map to pick up
+                  window._supplierMapContext = {
+                    postcode: formData.sitePostcode,
+                    jobType: formData.jobType,
+                  };
+                  setActiveTab('supplierMap');
+                }} className="mt-1 text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1">
+                  <MapPin size={12} /> Find suppliers near {formData.sitePostcode}
+                </button>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Reference</label>
@@ -14646,10 +14673,31 @@ const handleCompleteJob = async (job) => {
       }
     }
 
+    // Auto-generate portal WTN for standalone jobs (no parent) that already have wtn_data
+    // This covers existing recurring jobs and any job that had a WTN previously sent
+    const hasParent = !!(job.parentJobId || job.parent_job_id);
+    const jobWtnData = job.wtn_data || job.wtnData;
+    if (!hasParent && jobWtnData && !job.wtn_portal_visible) {
+      try {
+        const existingWtn = typeof jobWtnData === 'string' ? JSON.parse(jobWtnData) : jobWtnData;
+        const autoWtnFields = {
+          ...existingWtn,
+          wtnNumber: existingWtn.wtnNumber || `WTN-${job.jobNumber || job.job_number}`,
+          transferDate: new Date().toISOString().split('T')[0],
+          transferTime: new Date().toTimeString().slice(0,5),
+        };
+        await window.supabase.from('jobs').update({
+          wtn_data: JSON.stringify(autoWtnFields),
+          wtn_portal_visible: true,
+        }).eq('id', job.id);
+        console.log(`📄 Auto-WTN published to portal for completed job ${job.jobNumber || job.job_number}`);
+      } catch(e) { console.error('Auto-portal WTN for standalone job failed:', e); }
+    }
+
     // For waste jobs, prompt to send WTN — but only if auto-send or auto-portal didn't already handle it
     const jobTypeForCheck = job.jobType || job.job_type || updatedJob.jobType || updatedJob.job_type || '';
     const isWasteJob = ['Skip Hire','Roll-on Roll-off'].includes(jobTypeForCheck);
-    const autoWtnFired = (job.parentJobId || job.parent_job_id) && parentJobData?.wtn_data;
+    const autoWtnFired = (hasParent && parentJobData?.wtn_data) || (!hasParent && jobWtnData);
     if (isWasteJob && !autoWtnFired) {
       const sendNow = window.confirm(
         `✅ Job ${job.jobNumber} marked as completed!\n\n📄 Would you like to send a Waste Transfer Note to ${job.customerName} now?\n\nClick OK to open the WTN tab, or Cancel to skip.`
@@ -15195,6 +15243,10 @@ siteNotes: job.site_notes || job.siteNotes || '',
               primary_contact: customer.primaryContact || '',
               company_number: customer.companyNumber || '',
               site_addresses: JSON.stringify(customer.siteAddresses || []),
+              account_manager: customer.accountManager || '',
+              preferred_contact_method: customer.preferredContactMethod || 'Email',
+              special_requirements: customer.specialRequirements || '',
+              notes: customer.notes || '',
             };
             const { data, error } = await window.supabase
               .from('customers')
@@ -15251,6 +15303,10 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 primary_contact: updatedCustomer.primaryContact || '',
                 company_number: updatedCustomer.companyNumber || '',
                 site_addresses: JSON.stringify(updatedCustomer.siteAddresses || []),
+                account_manager: updatedCustomer.accountManager || '',
+                preferred_contact_method: updatedCustomer.preferredContactMethod || 'Email',
+                special_requirements: updatedCustomer.specialRequirements || '',
+                notes: updatedCustomer.notes || '',
               };
               const { error } = await window.supabase
                 .from('customers')
@@ -16169,7 +16225,7 @@ onClick={() => {
                 {activeTab === 'quotes' && (
   <QuotesView 
     quotes={quotes}
-    onAddQuote={() => setShowQuoteForm(true)}
+    onAddQuote={() => { setEditingQuote(null); setShowQuoteForm(true); }}
     onUpdateQuote={handleUpdateQuote}
     onEditQuote={handleEditQuote}
     onConvertToJob={handleConvertQuoteToJob}
@@ -17374,9 +17430,10 @@ window.location.href = '/#sage-integration';  // Keep this line!
               contactPosition: c.contactPosition || '',
               siteAddress: c.siteAddress || '',
               sitePostcode: c.sitePostcode || '',
-              preferredContactMethod: c.preferredContactMethod || 'Email',
-              specialRequirements: c.specialRequirements || '',
-              accountManager: c.accountManager || '',
+              preferredContactMethod: c.preferredContactMethod || c.preferred_contact_method || 'Email',
+              specialRequirements: c.specialRequirements || c.special_requirements || '',
+              accountManager: c.accountManager || c.account_manager || '',
+              notes: c.notes || '',
               dateRegistered: c.dateRegistered || c.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
               siteAddresses: (() => {
                 const raw = c.siteAddresses || c.site_addresses;
@@ -18284,6 +18341,38 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const [selectedSupplier, setSelectedSupplier] = React.useState(null);
           const [mapReady, setMapReady] = React.useState(false);
           const [geocodingProgress, setGeocodingProgress] = React.useState('');
+          const [jobLocationMarker, setJobLocationMarker] = React.useState(null);
+
+          // Pick up context from "Find suppliers near this job" link
+          React.useEffect(() => {
+            const ctx = window._supplierMapContext;
+            if (!ctx) return;
+            window._supplierMapContext = null;
+            // Map job type to service filter
+            const typeMap = { 'Skip Hire': 'Skip Hire', 'Roll-on Roll-off': 'Roll-on Roll-off', 'Grab Hire': 'Grab Hire', 'Muck Away': 'Muck Away', 'Aggregates': 'Aggregates Supply', 'Plant Hire': 'Plant Hire', 'Haulage': 'Haulage' };
+            const mappedService = typeMap[ctx.jobType];
+            if (mappedService) setActiveFilters([mappedService]);
+            // Geocode the job postcode and center map + add a red marker
+            if (ctx.postcode && mapInstanceRef.current) {
+              geocodePostcode(ctx.postcode).then(coords => {
+                if (coords && mapInstanceRef.current) {
+                  mapInstanceRef.current.setView([coords.lat, coords.lng], 10);
+                  // Add a red job location marker
+                  if (jobLocationMarker) mapInstanceRef.current.removeLayer(jobLocationMarker);
+                  const jobIcon = L.divIcon({
+                    className: '',
+                    html: '<div style="width:32px;height:32px;border-radius:50%;background:#dc2626;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3" fill="#dc2626"/></svg></div>',
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16],
+                  });
+                  const m = L.marker([coords.lat, coords.lng], { icon: jobIcon, zIndexOffset: 1000 }).addTo(mapInstanceRef.current);
+                  m.bindPopup('<div style="font-family:system-ui;font-weight:700;font-size:13px">📍 Job Location<br><span style="font-weight:400;color:#555">' + ctx.postcode + '</span></div>');
+                  m.openPopup();
+                  setJobLocationMarker(m);
+                }
+              });
+            }
+          }, [mapReady]);
 
           const serviceColors = {
             'Skip Hire': '#2563eb',
@@ -18295,6 +18384,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
             'Plant Hire': '#059669',
             'Haulage': '#ea580c',
             'Transport': '#6b7280',
+            'Concrete': '#b45309',
           };
 
           const allServices = Object.keys(serviceColors);
@@ -18413,8 +18503,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
             if (!mapReady || !mapInstanceRef.current) return;
             const map = mapInstanceRef.current;
 
-            // Clear existing markers
-            markersRef.current.forEach(m => map.removeLayer(m));
+            // Clear existing cluster group
+            if (map._clusterGroup) { map.removeLayer(map._clusterGroup); }
             markersRef.current = [];
 
             if (filteredSuppliers.length === 0) { setGeocodingProgress(''); return; }
@@ -18425,6 +18515,13 @@ window.location.href = '/#sage-integration';  // Keep this line!
               const postcodes = filteredSuppliers.map(s => getSupplierPostcode(s)).filter(Boolean);
               const coords = await batchGeocode(postcodes);
               
+              const clusterGroup = L.markerClusterGroup({
+                maxClusterRadius: 40,
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: false,
+                zoomToBoundsOnClick: true,
+              });
+
               for (const supplier of filteredSuppliers) {
                 const postcode = getSupplierPostcode(supplier);
                 if (!postcode) continue;
@@ -18457,17 +18554,19 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   (email ? '<div style="font-size:11px"><strong>✉</strong> ' + email + '</div>' : '') +
                   '</div>';
 
-                const marker = L.marker([ll.lat, ll.lng], { icon }).addTo(map);
+                const marker = L.marker([ll.lat, ll.lng], { icon });
                 marker.bindPopup(popupHtml, { maxWidth: 300 });
+                clusterGroup.addLayer(marker);
                 markersRef.current.push(marker);
               }
+              map.addLayer(clusterGroup);
+              map._clusterGroup = clusterGroup;
               setGeocodingProgress('');
               if (markersRef.current.length > 1) {
-                const group = L.featureGroup(markersRef.current);
-                map.fitBounds(group.getBounds().pad(0.1));
+                map.fitBounds(clusterGroup.getBounds().pad(0.1));
               } else if (markersRef.current.length === 1) {
-                const ll = markersRef.current[0].getLatLng();
-                map.setView(ll, 10);
+                const latlng = markersRef.current[0].getLatLng();
+                map.setView(latlng, 10);
               }
             };
             addMarkers();
@@ -19352,7 +19451,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Primary Services</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {['Skip Hire', 'Aggregates Supply', 'Hazardous Waste', 'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Plant Hire', 'Haulage', 'Transport'].map(service => (
+                          {['Skip Hire', 'Aggregates Supply', 'Hazardous Waste', 'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Plant Hire', 'Haulage', 'Transport', 'Concrete'].map(service => (
                             <label key={service} className="flex items-center gap-2 text-sm">
                               <input type="checkbox" checked={formData.primaryServices.includes(service)} onChange={e => handleServiceChange(service, e.target.checked)} />
                               {service}
@@ -19700,23 +19799,30 @@ By approving this quotation and authorising us to commence services, you acknowl
   };
 
   const handleSubmit = () => {
-    const newQuoteNumber = quote?.quoteNumber || generateQuoteNumber();
-    const newQuote = {
-      ...formData,
-      id: quote?.id || undefined,
-      quoteNumber: newQuoteNumber,
-      createdDate: quote?.createdDate || new Date().toISOString().split('T')[0],
-      totalPrice: formData.customerFinalPrice,
-      price: formData.customerUnitPrice,
-      customerEmail: formData.customerEmail || customers.find(c => c.companyName === formData.customerName)?.email || '',
-      customerContact: formData.customerContact || customers.find(c => c.companyName === formData.customerName)?.primaryContact || '',
-      customerPhone: formData.customerPhone || customers.find(c => c.companyName === formData.customerName)?.phone || '',
-      deliveryDate: formData.jobDate,
-      siteAddress: formData.siteAddress1,
-      lineItems: formData.lineItems || [],
-      terms_conditions: formData.terms_conditions || defaultTerms,
-    };
-    onSave(newQuote);
+    try {
+      if (!formData.customerName) { alert('Please select a customer.'); return; }
+      if (!formData.jobType) { alert('Please select a job type.'); return; }
+      const newQuoteNumber = quote?.quoteNumber || generateQuoteNumber();
+      const newQuote = {
+        ...formData,
+        id: quote?.id || undefined,
+        quoteNumber: newQuoteNumber,
+        createdDate: quote?.createdDate || new Date().toISOString().split('T')[0],
+        totalPrice: formData.customerFinalPrice,
+        price: formData.customerUnitPrice,
+        customerEmail: formData.customerEmail || customers?.find(c => c.companyName === formData.customerName)?.email || '',
+        customerContact: formData.customerContact || customers?.find(c => c.companyName === formData.customerName)?.primaryContact || '',
+        customerPhone: formData.customerPhone || customers?.find(c => c.companyName === formData.customerName)?.phone || '',
+        deliveryDate: formData.jobDate,
+        siteAddress: formData.siteAddress1,
+        lineItems: formData.lineItems || [],
+        terms_conditions: formData.terms_conditions || defaultTerms,
+      };
+      onSave(newQuote);
+    } catch (err) {
+      console.error('QuoteForm handleSubmit error:', err);
+      alert('Error creating quote: ' + err.message);
+    }
   };
 
   const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed',
