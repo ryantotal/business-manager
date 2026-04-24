@@ -19783,12 +19783,27 @@ By approving this quotation and authorising us to commence services, you acknowl
     }
   }, [formData.customerUnitPrice, formData.supplierUnitPrice, formData.quantity]);
 
-  const generateQuoteNumber = () => {
+  const generateQuoteNumber = async () => {
     const year = new Date().getFullYear();
-    const lastQuoteNumber = parseInt(localStorage.getItem('lastQuoteNumber') || '0');
-    const newQuoteNumber = lastQuoteNumber + 1;
-    localStorage.setItem('lastQuoteNumber', newQuoteNumber.toString());
-    return `QT-${year}-${String(newQuoteNumber).padStart(4, '0')}`;
+    try {
+      // Get the highest quote number from the database
+      const { data } = await window.supabase
+        .from('quotes')
+        .select('quote_number')
+        .like('quote_number', `QT-${year}-%`)
+        .order('quote_number', { ascending: false })
+        .limit(1);
+      let nextNum = 1;
+      if (data && data.length > 0) {
+        const lastNum = parseInt(data[0].quote_number.split('-').pop()) || 0;
+        nextNum = lastNum + 1;
+      }
+      return `QT-${year}-${String(nextNum).padStart(4, '0')}`;
+    } catch (e) {
+      // Fallback: timestamp-based to avoid collisions
+      const ts = Date.now().toString().slice(-6);
+      return `QT-${year}-${ts}`;
+    }
   };
 
   const [saving, setSaving] = useState(false);
@@ -19798,7 +19813,7 @@ By approving this quotation and authorising us to commence services, you acknowl
       if (!formData.customerName) { alert('Please select a customer.'); return; }
       if (!formData.jobType) { alert('Please select a job type.'); return; }
       setSaving(true);
-      const newQuoteNumber = quote?.quoteNumber || generateQuoteNumber();
+      const newQuoteNumber = quote?.quoteNumber || await generateQuoteNumber();
       const newQuote = {
         ...formData,
         id: quote?.id || undefined,
