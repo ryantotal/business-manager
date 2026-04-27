@@ -1027,10 +1027,215 @@ return (
             }
           };
 
+          const handlePortalBookingSubmit = async (bookingData) => {
+            setPortalBookingSaving(true);
+            try {
+              const custName = portalUser.customer.company_name || portalUser.customer.name;
+              const jobData = {
+                customer_name: custName,
+                job_type: bookingData.jobType,
+                waste_type: bookingData.wasteType || null,
+                skip_size: bookingData.skipSize || null,
+                aggregate_type: bookingData.aggregateType || null,
+                quantity: parseInt(bookingData.quantity) || 1,
+                unit: bookingData.unit || 'skip',
+                site_address1: bookingData.siteAddress1 || '',
+                site_address2: bookingData.siteAddress2 || '',
+                site_city: bookingData.siteCity || '',
+                site_postcode: bookingData.sitePostcode || '',
+                job_date: bookingData.preferredDate || null,
+                delivery_date: bookingData.preferredDate || null,
+                notes: bookingData.notes || '',
+                status: 'REQUESTED',
+                is_completed: false,
+                po_number: bookingData.poNumber || '',
+                created_at: new Date().toISOString(),
+                portal_requested: true,
+                portal_requested_at: new Date().toISOString(),
+                portal_requested_by: portalUser.customer.email || custName,
+              };
+              const { error } = await window.supabase.from('jobs').insert([jobData]);
+              if (error) throw error;
+              await refreshPortalJobs();
+              setShowPortalBooking(false);
+              setPortalBookingData(null);
+              alert('✅ Job request submitted! Our team will review and confirm shortly.');
+            } catch (err) {
+              console.error('Portal booking error:', err);
+              alert('Error submitting request: ' + err.message);
+            } finally {
+              setPortalBookingSaving(false);
+            }
+          };
+
+          // Portal Booking Form Component
+          const PortalBookingForm = ({ reorderJob, onSubmit, onClose, saving }) => {
+            const [form, setForm] = React.useState(() => {
+              if (reorderJob) {
+                return {
+                  jobType: reorderJob.job_type || '',
+                  wasteType: reorderJob.waste_type || '',
+                  skipSize: reorderJob.skip_size || '',
+                  aggregateType: reorderJob.aggregate_type || '',
+                  quantity: reorderJob.quantity || 1,
+                  unit: reorderJob.unit || 'skip',
+                  siteAddress1: reorderJob.site_address1 || '',
+                  siteAddress2: reorderJob.site_address2 || '',
+                  siteCity: reorderJob.site_city || '',
+                  sitePostcode: reorderJob.site_postcode || '',
+                  preferredDate: '',
+                  notes: '',
+                  poNumber: reorderJob.po_number || '',
+                };
+              }
+              return {
+                jobType: '', wasteType: '', skipSize: '', aggregateType: '',
+                quantity: 1, unit: 'skip', siteAddress1: '', siteAddress2: '',
+                siteCity: '', sitePostcode: '', preferredDate: '', notes: '', poNumber: '',
+              };
+            });
+
+            const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '12 yard', '14 yard', '16 yard'];
+            const roroSizes = ['20 yard', '40 yard'];
+            const jobTypes = ['Skip Hire', 'Roll-on Roll-off', 'Grab Hire', 'Muck Away', 'Aggregates Supply', 'Plant Hire', 'Haulage', 'Other'];
+
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  <div className="bg-green-700 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
+                    <div>
+                      <h3 className="text-lg font-bold">{reorderJob ? '🔄 Reorder Job' : '📋 Request a Job'}</h3>
+                      <p className="text-green-200 text-xs mt-0.5">{reorderJob ? `Based on ${reorderJob.job_number}` : 'Our team will review and confirm'}</p>
+                    </div>
+                    <button onClick={onClose} className="text-white hover:text-green-200 text-2xl leading-none">&times;</button>
+                  </div>
+
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Service Type *</label>
+                      <select value={form.jobType} onChange={e => setForm({...form, jobType: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
+                        <option value="">Select a service...</option>
+                        {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+
+                    {form.jobType === 'Skip Hire' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Skip Size</label>
+                        <select value={form.skipSize} onChange={e => setForm({...form, skipSize: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
+                          <option value="">Select size...</option>
+                          {skipSizes.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    {form.jobType === 'Roll-on Roll-off' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Container Size</label>
+                        <select value={form.skipSize} onChange={e => setForm({...form, skipSize: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
+                          <option value="">Select size...</option>
+                          {roroSizes.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    {['Skip Hire', 'Roll-on Roll-off', 'Muck Away', 'Grab Hire'].includes(form.jobType) && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Waste Type</label>
+                        <input type="text" value={form.wasteType} onChange={e => setForm({...form, wasteType: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Mixed construction waste, soil, etc." />
+                      </div>
+                    )}
+
+                    {form.jobType === 'Aggregates Supply' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Material Required</label>
+                        <input type="text" value={form.aggregateType} onChange={e => setForm({...form, aggregateType: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. MOT Type 1, sand, gravel" />
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                        <input type="number" min="1" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                        <select value={form.unit} onChange={e => setForm({...form, unit: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
+                          <option value="skip">Skip(s)</option>
+                          <option value="tonnes">Tonnes</option>
+                          <option value="loads">Load(s)</option>
+                          <option value="bags">Bag(s)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-4">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Site Address *</label>
+                      <div className="space-y-2">
+                        <input type="text" value={form.siteAddress1} onChange={e => setForm({...form, siteAddress1: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 1" />
+                        <input type="text" value={form.siteAddress2} onChange={e => setForm({...form, siteAddress2: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 2 (optional)" />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input type="text" value={form.siteCity} onChange={e => setForm({...form, siteCity: e.target.value})}
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="City / Town" />
+                          <input type="text" value={form.sitePostcode} onChange={e => setForm({...form, sitePostcode: e.target.value})}
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Postcode" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Date</label>
+                        <input type="date" value={form.preferredDate} onChange={e => setForm({...form, preferredDate: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">PO Number</label>
+                        <input type="text" value={form.poNumber} onChange={e => setForm({...form, poNumber: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="If applicable" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Special Requirements</label>
+                      <textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" rows={3}
+                        placeholder="Access restrictions, site contact details, specific instructions..." />
+                    </div>
+                  </div>
+
+                  <div className="px-6 py-4 bg-gray-50 rounded-b-2xl flex justify-end gap-3">
+                    <button onClick={onClose} className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100">Cancel</button>
+                    <button onClick={() => {
+                      if (!form.jobType) { alert('Please select a service type.'); return; }
+                      if (!form.siteAddress1 && !form.sitePostcode) { alert('Please enter a site address.'); return; }
+                      onSubmit(form);
+                    }} disabled={saving}
+                      className="px-6 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                      {saving ? '⏳ Submitting...' : reorderJob ? '🔄 Reorder' : '📋 Submit Request'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
           const [expandedJobId, setExpandedJobId] = React.useState(null);
           const [portalFilter, setPortalFilter] = React.useState('all');
           const [portalSearch, setPortalSearch] = React.useState('');
           const [portalSort, setPortalSort] = React.useState({ field: 'date', dir: 'desc' });
+          const [showPortalBooking, setShowPortalBooking] = React.useState(false);
+          const [portalBookingData, setPortalBookingData] = React.useState(null);
+          const [portalBookingSaving, setPortalBookingSaving] = React.useState(false);
           const [wtnModalJob, setWtnModalJob] = React.useState(null);
 
           // ── Customer Portal view (after successful login) ──
@@ -18867,7 +19072,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
             const addMarkers = async () => {
               // Collect all postcodes and batch geocode
               const postcodes = filteredSuppliers.map(s => getSupplierPostcode(s)).filter(Boolean);
+              console.log('[SupplierMap] Geocoding', postcodes.length, 'postcodes:', postcodes);
               const coords = await batchGeocode(postcodes);
+              console.log('[SupplierMap] Got coords for', Object.keys(coords).length, 'postcodes');
               
               const clusterGroup = L.markerClusterGroup({
                 maxClusterRadius: 40,
@@ -18876,12 +19083,15 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 zoomToBoundsOnClick: true,
               });
 
+              let mapped = 0;
+              let failed = [];
               for (const supplier of filteredSuppliers) {
                 const postcode = getSupplierPostcode(supplier);
-                if (!postcode) continue;
+                if (!postcode) { failed.push((supplier.name || 'Unknown') + ' (no postcode)'); continue; }
                 const clean = postcode.replace(/\s+/g, '').toUpperCase();
                 const ll = coords[clean];
-                if (!ll) continue;
+                if (!ll) { failed.push((supplier.name || 'Unknown') + ' (' + postcode + ')'); continue; }
+                mapped++;
 
                 const parsedServices = supplier.primaryServices || [];
                 const primaryService = activeFilters.length > 0 ? activeFilters.find(f => parsedServices.includes(f)) : parsedServices[0];
@@ -18915,7 +19125,13 @@ window.location.href = '/#sage-integration';  // Keep this line!
               }
               map.addLayer(clusterGroup);
               map._clusterGroup = clusterGroup;
-              setGeocodingProgress('');
+              if (failed.length > 0) {
+                console.warn('[SupplierMap] Failed to map:', failed);
+                setGeocodingProgress(`${mapped} mapped, ${failed.length} couldn't be located`);
+                setTimeout(() => setGeocodingProgress(''), 5000);
+              } else {
+                setGeocodingProgress('');
+              }
               if (markersRef.current.length > 1) {
                 map.fitBounds(clusterGroup.getBounds().pad(0.1));
               } else if (markersRef.current.length === 1) {
