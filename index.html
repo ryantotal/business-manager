@@ -18897,6 +18897,11 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const [geocodeCache, setGeocodeCache] = React.useState(() => {
             try { return JSON.parse(localStorage.getItem('supplierGeoCache') || '{}'); } catch { return {}; }
           });
+          // Ref mirror of geocodeCache so the geocode callbacks can read latest values
+          // without changing their identity every time the cache updates (which would
+          // cause the marker effect to re-run in a loop)
+          const geocodeCacheRef = React.useRef(geocodeCache);
+          React.useEffect(() => { geocodeCacheRef.current = geocodeCache; }, [geocodeCache]);
           const [selectedSupplier, setSelectedSupplier] = React.useState(null);
           const [mapReady, setMapReady] = React.useState(false);
           const [geocodingProgress, setGeocodingProgress] = React.useState('');
@@ -18955,7 +18960,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const geocodePostcode = React.useCallback(async (postcode) => {
             if (!postcode) return null;
             const clean = postcode.replace(/\s+/g, '').toUpperCase();
-            if (geocodeCache[clean]) return geocodeCache[clean];
+            if (geocodeCacheRef.current[clean]) return geocodeCacheRef.current[clean];
             try {
               const res = await fetch('https://api.postcodes.io/postcodes/' + encodeURIComponent(clean));
               const data = await res.json();
@@ -18985,7 +18990,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               }
             } catch (e) { console.warn('Geocode failed for', postcode, e); }
             return null;
-          }, [geocodeCache]);
+          }, []);
 
           // Fallback: geocode a full address using Nominatim (OpenStreetMap, free, no API key)
           // Used when postcodes.io fails — handles new-build postcodes and fuzzy matches
@@ -18997,7 +19002,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
             if (parts.length === 0) return null;
             const query = parts.join(', ') + ', UK';
             const cacheKey = '__addr__' + query.toUpperCase().replace(/\s+/g, '');
-            if (geocodeCache[cacheKey]) return geocodeCache[cacheKey];
+            if (geocodeCacheRef.current[cacheKey]) return geocodeCacheRef.current[cacheKey];
             try {
               const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=gb&q=' + encodeURIComponent(query), {
                 headers: { 'Accept': 'application/json' }
@@ -19014,7 +19019,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               }
             } catch (e) { console.warn('Nominatim geocode failed for', query, e); }
             return null;
-          }, [geocodeCache]);
+          }, []);
 
           // Init map
           React.useEffect(() => {
@@ -19030,8 +19035,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
           }, []);
 
           // Filter suppliers — only show those with services/areas data entered
-          const filteredSuppliers = React.useMemo(() => {
-            return (suppliers || []).filter(s => {
+          // Splits into two groups: those with location data (mappable) and those without (reported as failed)
+          const { filteredSuppliers, noLocationSuppliers } = React.useMemo(() => {
+            const matched = (suppliers || []).filter(s => {
               const services = s.primaryServices || [];
               const areas = s.serviceAreas || [];
               // Only include suppliers with at least one service or coverage area ticked
@@ -19049,10 +19055,26 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 const q = searchQuery.toLowerCase();
                 if (!name.toLowerCase().includes(q) && !extractedPostcode.toLowerCase().includes(q) && !(s.city||'').toLowerCase().includes(q) && !addressStr.toLowerCase().includes(q)) return false;
               }
-              // Allow through if there's a postcode OR a manual lat/lng OR an address (Nominatim can try)
-              const hasManualCoords = (s.latitude ?? s.lat) != null && (s.longitude ?? s.lng) != null;
-              return !!extractedPostcode || hasManualCoords || !!addressStr;
+              return true;
             });
+            // Now split into mappable (has any location data) vs no-location
+            const mappable = [];
+            const noLoc = [];
+            for (const s of matched) {
+              const postcode = s.postcode || '';
+              const addressStr = s.address || '';
+              const extractedPostcode = postcode || (() => {
+                const m = addressStr.match(/\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b/i);
+                return m ? m[1] : '';
+              })();
+              const hasManualCoords = (s.latitude ?? s.lat) != null && (s.longitude ?? s.lng) != null;
+              if (extractedPostcode || hasManualCoords || addressStr) {
+                mappable.push(s);
+              } else {
+                noLoc.push({ name: s.name || s.companyName || 'Unknown', postcode: '(no address or postcode)', id: s.id });
+              }
+            }
+            return { filteredSuppliers: mappable, noLocationSuppliers: noLoc };
           }, [suppliers, activeFilters, activeAreaFilters, searchQuery]);
 
           // Batch geocode postcodes using postcodes.io (up to 100 per request)
@@ -19062,8 +19084,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
             // Check cache first
             for (const pc of postcodes) {
               const clean = pc.replace(/\s+/g, '').toUpperCase();
-              if (geocodeCache[clean]) {
-                results[clean] = geocodeCache[clean];
+              if (geocodeCacheRef.current[clean]) {
+                results[clean] = geocodeCacheRef.current[clean];
               } else {
                 uncached.push(clean);
               }
@@ -19096,7 +19118,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               return updated;
             });
             return results;
-          }, [geocodeCache]);
+          }, []);
 
           // Helper: extract postcode from supplier
           const getSupplierPostcode = (supplier) => {
@@ -19109,27 +19131,181 @@ window.location.href = '/#sage-integration';  // Keep this line!
           React.useEffect(() => {
             if (!mapReady || !mapInstanceRef.current) return;
             const map = mapInstanceRef.current;
+            const abortController = new AbortController();
+            let cancelled = false;
 
             // Clear existing cluster group
             if (map._clusterGroup) { map.removeLayer(map._clusterGroup); }
             markersRef.current = [];
 
-            if (filteredSuppliers.length === 0) { setGeocodingProgress(''); return; }
+            if (filteredSuppliers.length === 0) {
+              setGeocodingProgress('');
+              setFailedSuppliers(noLocationSuppliers);
+              return () => { cancelled = true; abortController.abort(); };
+            }
             setGeocodingProgress(`Mapping ${filteredSuppliers.length} suppliers...`);
 
             const addMarkers = async () => {
-              // Collect all postcodes and batch geocode
-              // Skip suppliers that already have manual lat/lng — those don't need geocoding
-              const needsGeocode = filteredSuppliers.filter(s => {
-                const lat = s.latitude ?? s.lat;
-                const lng = s.longitude ?? s.lng;
-                return !(lat != null && lng != null && !isNaN(parseFloat(lat)) && !isNaN(parseFloat(lng)));
-              });
-              const postcodes = needsGeocode.map(s => getSupplierPostcode(s)).filter(Boolean);
-              console.log('[SupplierMap] Geocoding', postcodes.length, 'postcodes:', postcodes);
-              const coords = await batchGeocode(postcodes);
-              console.log('[SupplierMap] Got coords for', Object.keys(coords).length, 'postcodes');
-              
+              // PHASE 1: resolve coords for every supplier up-front, then build markers synchronously.
+              // This avoids the flicker from sequential awaits inside the marker-build loop —
+              // if the user changes filters mid-flight, we abort all pending fetches at once.
+              const cacheUpdates = {}; // accumulate cache writes, flush once at the end
+              const resolved = new Map(); // supplier.id → { ll, isApprox } | null
+
+              // Tier 1: collect manual-coord and postcode candidates
+              const postcodesToBatch = [];
+              const supplierByPostcode = new Map(); // clean postcode → [suppliers]
+
+              for (const s of filteredSuppliers) {
+                const manualLat = s.latitude ?? s.lat;
+                const manualLng = s.longitude ?? s.lng;
+                if (manualLat != null && manualLng != null && !isNaN(parseFloat(manualLat)) && !isNaN(parseFloat(manualLng))) {
+                  resolved.set(s.id, { ll: { lat: parseFloat(manualLat), lng: parseFloat(manualLng) }, isApprox: false });
+                  continue;
+                }
+                const pc = getSupplierPostcode(s);
+                if (pc) {
+                  const clean = pc.replace(/\s+/g, '').toUpperCase();
+                  // Check cache first
+                  if (geocodeCacheRef.current[clean]) {
+                    resolved.set(s.id, { ll: geocodeCacheRef.current[clean], isApprox: !!geocodeCacheRef.current[clean]._approx });
+                    continue;
+                  }
+                  if (!supplierByPostcode.has(clean)) {
+                    supplierByPostcode.set(clean, []);
+                    postcodesToBatch.push(clean);
+                  }
+                  supplierByPostcode.get(clean).push(s);
+                }
+              }
+
+              // Tier 2: batch geocode all uncached postcodes via postcodes.io
+              if (postcodesToBatch.length > 0) {
+                console.log('[SupplierMap] Batch geocoding', postcodesToBatch.length, 'postcodes');
+                for (let i = 0; i < postcodesToBatch.length; i += 100) {
+                  if (cancelled) return;
+                  const chunk = postcodesToBatch.slice(i, i + 100);
+                  try {
+                    const res = await fetch('https://api.postcodes.io/postcodes', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ postcodes: chunk }),
+                      signal: abortController.signal,
+                    });
+                    const data = await res.json();
+                    if (data.status === 200 && data.result) {
+                      for (const item of data.result) {
+                        if (item.result) {
+                          const clean = item.query.replace(/\s+/g, '').toUpperCase();
+                          const ll = { lat: item.result.latitude, lng: item.result.longitude };
+                          cacheUpdates[clean] = ll;
+                          for (const s of (supplierByPostcode.get(clean) || [])) {
+                            resolved.set(s.id, { ll, isApprox: false });
+                          }
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    if (e.name === 'AbortError') return;
+                    console.warn('Batch geocode failed:', e);
+                  }
+                }
+              }
+
+              if (cancelled) return;
+
+              // Tier 3: outward-code fallback for unresolved suppliers (slower, sequential, but bounded)
+              const stillUnresolved = filteredSuppliers.filter(s => !resolved.has(s.id) && getSupplierPostcode(s));
+              const outwardsToTry = new Map(); // outward → suppliers
+              for (const s of stillUnresolved) {
+                const pc = getSupplierPostcode(s).replace(/\s+/g, '').toUpperCase();
+                const m = pc.match(/^([A-Z]{1,2}\d{1,2}[A-Z]?)/);
+                if (m) {
+                  if (!outwardsToTry.has(m[1])) outwardsToTry.set(m[1], []);
+                  outwardsToTry.get(m[1]).push(s);
+                }
+              }
+
+              for (const [outward, sList] of outwardsToTry) {
+                if (cancelled) return;
+                // Cache hit on outward?
+                const cacheKey = '__out__' + outward;
+                let ll = geocodeCacheRef.current[cacheKey] || cacheUpdates[cacheKey];
+                if (!ll) {
+                  try {
+                    const ores = await fetch('https://api.postcodes.io/outcodes/' + encodeURIComponent(outward), {
+                      signal: abortController.signal,
+                    });
+                    const odata = await ores.json();
+                    if (odata.status === 200 && odata.result) {
+                      ll = { lat: odata.result.latitude, lng: odata.result.longitude, _approx: true };
+                      cacheUpdates[cacheKey] = ll;
+                    }
+                  } catch (e) {
+                    if (e.name === 'AbortError') return;
+                  }
+                }
+                if (ll) {
+                  for (const s of sList) {
+                    resolved.set(s.id, { ll, isApprox: true });
+                    console.log('[SupplierMap] Outward fallback for', s.name || s.companyName, '→', outward);
+                  }
+                }
+              }
+
+              if (cancelled) return;
+
+              // Tier 4: Nominatim address fallback. Limit to avoid hammering the public server.
+              const NOMINATIM_LIMIT = 5; // per render — protects the free Nominatim service
+              const needNominatim = filteredSuppliers.filter(s => !resolved.has(s.id));
+              const nominatimBatch = needNominatim.slice(0, NOMINATIM_LIMIT);
+
+              for (const s of nominatimBatch) {
+                if (cancelled) return;
+                const parts = [s.address, s.city, s.county, s.postcode]
+                  .filter(Boolean)
+                  .map(p => String(p).trim())
+                  .filter(Boolean);
+                if (parts.length === 0) continue;
+                const query = parts.join(', ') + ', UK';
+                const cacheKey = '__addr__' + query.toUpperCase().replace(/\s+/g, '');
+                let ll = geocodeCacheRef.current[cacheKey] || cacheUpdates[cacheKey];
+                if (!ll) {
+                  try {
+                    const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=gb&q=' + encodeURIComponent(query), {
+                      headers: { 'Accept': 'application/json' },
+                      signal: abortController.signal,
+                    });
+                    const data = await res.json();
+                    if (Array.isArray(data) && data.length > 0 && data[0].lat && data[0].lon) {
+                      ll = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), _approx: true };
+                      cacheUpdates[cacheKey] = ll;
+                    }
+                  } catch (e) {
+                    if (e.name === 'AbortError') return;
+                  }
+                  // Be polite to Nominatim — 1 req/sec is their stated limit
+                  await new Promise(r => setTimeout(r, 1100));
+                  if (cancelled) return;
+                }
+                if (ll) {
+                  resolved.set(s.id, { ll, isApprox: true });
+                  console.log('[SupplierMap] Nominatim fallback for', s.name || s.companyName);
+                }
+              }
+
+              if (cancelled) return;
+
+              // Flush all cache updates in one setState — avoids cascading re-renders
+              if (Object.keys(cacheUpdates).length > 0) {
+                setGeocodeCache(prev => {
+                  const updated = { ...prev, ...cacheUpdates };
+                  try { localStorage.setItem('supplierGeoCache', JSON.stringify(updated)); } catch {}
+                  return updated;
+                });
+              }
+
+              // PHASE 2: build markers synchronously
               const clusterGroup = L.markerClusterGroup({
                 maxClusterRadius: 40,
                 spiderfyOnMaxZoom: true,
@@ -19141,61 +19317,20 @@ window.location.href = '/#sage-integration';  // Keep this line!
               let failed = [];
               let approxCount = 0;
               for (const supplier of filteredSuppliers) {
-                let ll = null;
-                let isApprox = false;
-                const name = supplier.name || supplier.companyName || 'Unknown';
-
-                // 1. Manual lat/lng override (highest priority)
-                const manualLat = supplier.latitude ?? supplier.lat;
-                const manualLng = supplier.longitude ?? supplier.lng;
-                if (manualLat != null && manualLng != null && !isNaN(parseFloat(manualLat)) && !isNaN(parseFloat(manualLng))) {
-                  ll = { lat: parseFloat(manualLat), lng: parseFloat(manualLng) };
-                } else {
-                  // 2. postcodes.io batch result
+                const r = resolved.get(supplier.id);
+                if (!r) {
                   const postcode = getSupplierPostcode(supplier);
-                  if (postcode) {
-                    const clean = postcode.replace(/\s+/g, '').toUpperCase();
-                    const batched = coords[clean];
-                    if (batched) {
-                      ll = batched;
-                      if (batched._approx) isApprox = true;
-                    } else {
-                      // 3. Try outward code only (handles new-build postcodes)
-                      const outward = clean.match(/^([A-Z]{1,2}\d{1,2}[A-Z]?)/);
-                      if (outward) {
-                        try {
-                          const ores = await fetch('https://api.postcodes.io/outcodes/' + encodeURIComponent(outward[1]));
-                          const odata = await ores.json();
-                          if (odata.status === 200 && odata.result) {
-                            ll = { lat: odata.result.latitude, lng: odata.result.longitude };
-                            isApprox = true;
-                            console.log('[SupplierMap] Outward fallback for', name, '→', outward[1]);
-                          }
-                        } catch (e) { /* fall through to Nominatim */ }
-                      }
-                    }
-                  }
-                  // 4. Nominatim fallback using full address
-                  if (!ll) {
-                    ll = await geocodeAddress(supplier);
-                    if (ll) {
-                      isApprox = true;
-                      console.log('[SupplierMap] Nominatim fallback for', name);
-                    }
-                  }
-                }
-
-                if (!ll) {
-                  const postcode = getSupplierPostcode(supplier);
-                  failed.push({ name, postcode: postcode || '(no postcode)', id: supplier.id });
+                  failed.push({ name: supplier.name || supplier.companyName || 'Unknown', postcode: postcode || '(no postcode)', id: supplier.id });
                   continue;
                 }
+                const { ll, isApprox } = r;
                 mapped++;
                 if (isApprox) approxCount++;
 
                 const parsedServices = supplier.primaryServices || [];
                 const primaryService = activeFilters.length > 0 ? activeFilters.find(f => parsedServices.includes(f)) : parsedServices[0];
                 const color = serviceColors[primaryService] || '#6b7280';
+                const name = supplier.name || supplier.companyName || 'Unknown';
                 const postcode = getSupplierPostcode(supplier);
 
                 const icon = L.divIcon({
@@ -19213,7 +19348,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   '<div style="font-weight:700;font-size:14px;margin-bottom:4px">' + name + '</div>' +
                   '<div style="font-size:12px;color:#555;margin-bottom:6px">' + [supplier.address, supplier.city, supplier.county, postcode].filter(Boolean).join(', ') + '</div>' +
                   (isApprox ? '<div style="font-size:10px;color:#b45309;margin-bottom:4px;font-style:italic">⚠ Approximate location</div>' : '') +
-                  (parsedServices.length > 0 ? '<div style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:3px">' + parsedServices.map(s => '<span style="display:inline-block;padding:2px 6px;border-radius:9px;font-size:10px;font-weight:600;color:white;background:' + (serviceColors[s]||'#6b7280') + '">' + s + '</span>').join('') + '</div>' : '') +
+                  (parsedServices.length > 0 ? '<div style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:3px">' + parsedServices.map(svc => '<span style="display:inline-block;padding:2px 6px;border-radius:9px;font-size:10px;font-weight:600;color:white;background:' + (serviceColors[svc]||'#6b7280') + '">' + svc + '</span>').join('') + '</div>' : '') +
                   (parsedAreas.length > 0 ? '<div style="font-size:11px;color:#777;margin-bottom:4px"><strong>Coverage:</strong> ' + parsedAreas.join(', ') + '</div>' : '') +
                   (phone ? '<div style="font-size:11px"><strong>📞</strong> ' + phone + '</div>' : '') +
                   (email ? '<div style="font-size:11px"><strong>✉</strong> ' + email + '</div>' : '') +
@@ -19224,17 +19359,22 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 clusterGroup.addLayer(marker);
                 markersRef.current.push(marker);
               }
+
+              if (cancelled) return;
               map.addLayer(clusterGroup);
               map._clusterGroup = clusterGroup;
-              setFailedSuppliers(failed);
-              if (failed.length > 0) {
-                console.warn('[SupplierMap] Failed to map:', failed);
-                const approxNote = approxCount > 0 ? ` (${approxCount} approximate)` : '';
-                setGeocodingProgress(`${mapped} mapped${approxNote}, ${failed.length} couldn't be located`);
+              const allFailed = [...failed, ...noLocationSuppliers];
+              setFailedSuppliers(allFailed);
+              const noteParts = [`${mapped} mapped`];
+              if (approxCount > 0) noteParts[0] += ` (${approxCount} approximate)`;
+              if (allFailed.length > 0) {
+                console.warn('[SupplierMap] Failed to map:', allFailed);
+                noteParts.push(`${allFailed.length} couldn't be located`);
+                setGeocodingProgress(noteParts.join(', '));
+              } else if (approxCount > 0) {
+                setGeocodingProgress(noteParts[0]);
               } else {
-                const approxNote = approxCount > 0 ? `${mapped} mapped (${approxCount} approximate)` : '';
-                setGeocodingProgress(approxNote);
-                if (!approxNote) setTimeout(() => setGeocodingProgress(''), 2000);
+                setGeocodingProgress('');
               }
               if (markersRef.current.length > 1) {
                 map.fitBounds(clusterGroup.getBounds().pad(0.1));
@@ -19244,7 +19384,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
               }
             };
             addMarkers();
-          }, [filteredSuppliers, mapReady, batchGeocode, activeFilters, geocodeAddress]);
+            return () => { cancelled = true; abortController.abort(); };
+          }, [filteredSuppliers, noLocationSuppliers, mapReady, activeFilters]);
 
           const toggleFilter = (service) => {
             setActiveFilters(prev => prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]);
