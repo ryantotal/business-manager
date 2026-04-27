@@ -6443,7 +6443,7 @@ const uploadJobAttachment = async () => {
 
 
           const handleDuplicateJob = (job) => {
-            const duplicatedJob = { ...job, id: null, jobNumber: null };
+            const duplicatedJob = { ...job, id: null, jobNumber: null, wtn_data: null, wtnData: null, wtn_portal_visible: false, wtn_sent: false, wtn_sent_at: null, wtn_recipient: null };
             delete duplicatedJob.id;
             delete duplicatedJob.jobNumber;
             onDuplicateJob(duplicatedJob);
@@ -15197,34 +15197,12 @@ site_notes: fullJob?.site_notes || '',
             sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
             sage_si_number: null,
             collection_date: null,
-            // Carry over WTN template but strip job-specific fields
-            wtn_data: (() => {
-              const src = fullJob?.wtn_data || jobTemplate.wtnData;
-              if (!src) return null;
-              try {
-                const d = typeof src === 'string' ? JSON.parse(src) : src;
-                return JSON.stringify({
-                  ...d,
-                  // Clear job-specific fields — will be rebuilt from new job's data on open
-                  transferDate: '',
-                  transferTime: '',
-                  wtnNumber: '',
-                  // Clear addresses — they'll be refreshed from the new job's site fields
-                  transferorAddress: '',
-                  transferorPostcode: '',
-                  transferorName: '',
-                  transferorRepresenting: '',
-                  transfereeName: '',
-                  transfereeAddress: '',
-                  transfereeRepresenting: '',
-                  transferAddress: '',
-                  // Clear recurring WTN settings — these live on parent only
-                  recurringWtn: false,
-                  recurringWtnFrequency: 'monthly',
-                  recurringWtnNextDate: '',
-                });
-              } catch(e) { return null; }
-            })(),
+            // Do NOT carry over WTN data — duplicated job gets a fresh WTN
+            wtn_data: null,
+            wtn_portal_visible: false,
+            wtn_sent: false,
+            wtn_sent_at: null,
+            wtn_recipient: null,
             // Do NOT copy wtn_recurring to child — schedule stays on parent job only
             wtn_recurring: false,
             wtn_recurring_frequency: null,
