@@ -2006,9 +2006,11 @@ const [wtnSuggestions, setWtnSuggestions] = useState({}); // tracks which fields
 React.useEffect(() => {
   if (!formData) return;
   
-  // Update transferor (customer) fields
+  const updates = {};
+  
+  // Sync transferor (customer) fields
   const custName = formData.customerName;
-  if (custName && custName !== wtnFields.transferorName) {
+  if (custName) {
     const mc = customers?.find(c => (c.name || c.companyName) === custName);
     const custSites = (() => {
       const raw = mc?.siteAddresses || mc?.site_addresses;
@@ -2021,20 +2023,18 @@ React.useEffect(() => {
       ? [autoCustSite.address, autoCustSite.postcode].filter(Boolean).join(', ')
       : [formData.siteAddress1, formData.siteCity, formData.sitePostcode].filter(Boolean).join(', ');
     
-    setWtnFields(prev => ({
-      ...prev,
-      transferorName: custName,
-      transferorAddress: addr,
-      transferorRepresenting: custName,
-      recipientEmail: mc?.email || prev.recipientEmail,
-      recipientEmailSource: mc?.email ? 'customer-record' : prev.recipientEmailSource,
-      selectedTransferorSiteId: autoCustSite ? (autoCustSite.id || autoCustSite.siteName) : '',
-    }));
+    updates.transferorName = custName;
+    updates.transferorAddress = addr;
+    updates.transferorRepresenting = custName;
+    if (mc?.email) {
+      updates.recipientEmail = mc.email;
+      updates.recipientEmailSource = 'customer-record';
+    }
   }
 
-  // Update transferee (supplier) fields
+  // Sync transferee (supplier) fields
   const suppName = formData.supplierName;
-  if (suppName && suppName !== wtnFields.transfereeName) {
+  if (suppName) {
     const ms = suppliers?.find(s => (s.name || s.companyName) === suppName);
     const suppSites = ms?.siteAddresses || [];
     const parsedSites = typeof suppSites === 'string' ? (() => { try { return JSON.parse(suppSites); } catch { return []; } })() : (Array.isArray(suppSites) ? suppSites : []);
@@ -2045,27 +2045,29 @@ React.useEffect(() => {
     const carrierReg = autoSite?.cbduNumber || ms?.wasteCarrierLicense || ms?.waste_carrier_license || '';
     const permitNum = autoSite?.permitNumber || '';
 
-    setWtnFields(prev => ({
-      ...prev,
-      transfereeName: suppName,
-      transfereeAddress: suppAddr,
-      transfereeCarrierReg: carrierReg,
-      transfereePermitNumber: permitNum,
-      transfereeRepresenting: suppName,
-      selectedTransfereeSiteId: autoSite ? (autoSite.id || autoSite.siteName) : '',
-    }));
+    updates.transfereeName = suppName;
+    updates.transfereeAddress = suppAddr;
+    updates.transfereeCarrierReg = carrierReg;
+    updates.transfereePermitNumber = permitNum;
+    updates.transfereeRepresenting = suppName;
   }
 
-  // Update site address (transfer address)
+  // Sync site/transfer address
   const siteAddr = [formData.siteAddress1, formData.siteCity, formData.sitePostcode].filter(Boolean).join(', ');
-  if (siteAddr && siteAddr !== wtnFields.transferAddress) {
-    setWtnFields(prev => ({
-      ...prev,
-      transferAddress: siteAddr,
-      transferorAddress: prev.transferorAddress || siteAddr,
-    }));
+  if (siteAddr) {
+    updates.transferAddress = siteAddr;
   }
-}, [formData?.supplierName, formData?.customerName, formData?.siteAddress1, formData?.sitePostcode]);
+
+  // Sync quantity from line items
+  const li = formData.lineItems;
+  if (Array.isArray(li) && li.length > 0 && li[0].quantity) {
+    updates.quantity = li[0].quantity;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    setWtnFields(prev => ({ ...prev, ...updates }));
+  }
+}, [formData?.supplierName, formData?.customerName, formData?.siteAddress1, formData?.sitePostcode, formData?.lineItems]);
 const [wtnFields, setWtnFields] = useState(() => {
   // If job has saved WTN data, restore it (survives reload)
   const savedWtn = job?.wtnData || (job?.wtn_data ? (typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : job.wtn_data) : null);
@@ -15688,6 +15690,7 @@ const saveSupplierToDatabase = async (supplier) => {
     site_addresses: JSON.stringify(supplier.siteAddresses || []),
     primary_services: JSON.stringify(supplier.primaryServices || []),
     service_areas: JSON.stringify(supplier.serviceAreas || []),
+    waste_carrier_license: supplier.wasteCarrierLicense || '',
   };
 
   const { data, error } = await window.supabase
@@ -15726,6 +15729,7 @@ const saveSupplierToDatabase = async (supplier) => {
                 site_addresses: JSON.stringify(updatedSupplier.siteAddresses || []),
                 primary_services: JSON.stringify(updatedSupplier.primaryServices || []),
                 service_areas: JSON.stringify(updatedSupplier.serviceAreas || []),
+                waste_carrier_license: updatedSupplier.wasteCarrierLicense || '',
               };
               const { error } = await window.supabase
                 .from('suppliers')
