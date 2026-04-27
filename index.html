@@ -2001,6 +2001,71 @@ const [wtnSending, setWtnSending] = useState(false);
 const [wtnSentOk, setWtnSentOk] = useState(false);
 const [wtnTouched, setWtnTouched] = useState(!!(job?.wtn_data || job?.wtnData));
 const [wtnSuggestions, setWtnSuggestions] = useState({}); // tracks which fields were auto-filled from previous WTNs
+
+// Keep WTN supplier/customer fields in sync with form changes
+React.useEffect(() => {
+  if (!formData) return;
+  
+  // Update transferor (customer) fields
+  const custName = formData.customerName;
+  if (custName && custName !== wtnFields.transferorName) {
+    const mc = customers?.find(c => (c.name || c.companyName) === custName);
+    const custSites = (() => {
+      const raw = mc?.siteAddresses || mc?.site_addresses;
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw;
+      try { return JSON.parse(raw); } catch { return []; }
+    })();
+    const autoCustSite = custSites.length === 1 ? custSites[0] : null;
+    const addr = autoCustSite
+      ? [autoCustSite.address, autoCustSite.postcode].filter(Boolean).join(', ')
+      : [formData.siteAddress1, formData.siteCity, formData.sitePostcode].filter(Boolean).join(', ');
+    
+    setWtnFields(prev => ({
+      ...prev,
+      transferorName: custName,
+      transferorAddress: addr,
+      transferorRepresenting: custName,
+      recipientEmail: mc?.email || prev.recipientEmail,
+      recipientEmailSource: mc?.email ? 'customer-record' : prev.recipientEmailSource,
+      selectedTransferorSiteId: autoCustSite ? (autoCustSite.id || autoCustSite.siteName) : '',
+    }));
+  }
+
+  // Update transferee (supplier) fields
+  const suppName = formData.supplierName;
+  if (suppName && suppName !== wtnFields.transfereeName) {
+    const ms = suppliers?.find(s => (s.name || s.companyName) === suppName);
+    const suppSites = ms?.siteAddresses || [];
+    const parsedSites = typeof suppSites === 'string' ? (() => { try { return JSON.parse(suppSites); } catch { return []; } })() : (Array.isArray(suppSites) ? suppSites : []);
+    const autoSite = parsedSites.length === 1 ? parsedSites[0] : null;
+    const suppAddr = autoSite
+      ? [autoSite.address, autoSite.postcode].filter(Boolean).join(', ')
+      : ms ? [ms.address, ms.city, ms.county, ms.postcode].filter(Boolean).join(', ') : '';
+    const carrierReg = autoSite?.cbduNumber || ms?.wasteCarrierLicense || ms?.waste_carrier_license || '';
+    const permitNum = autoSite?.permitNumber || '';
+
+    setWtnFields(prev => ({
+      ...prev,
+      transfereeName: suppName,
+      transfereeAddress: suppAddr,
+      transfereeCarrierReg: carrierReg,
+      transfereePermitNumber: permitNum,
+      transfereeRepresenting: suppName,
+      selectedTransfereeSiteId: autoSite ? (autoSite.id || autoSite.siteName) : '',
+    }));
+  }
+
+  // Update site address (transfer address)
+  const siteAddr = [formData.siteAddress1, formData.siteCity, formData.sitePostcode].filter(Boolean).join(', ');
+  if (siteAddr && siteAddr !== wtnFields.transferAddress) {
+    setWtnFields(prev => ({
+      ...prev,
+      transferAddress: siteAddr,
+      transferorAddress: prev.transferorAddress || siteAddr,
+    }));
+  }
+}, [formData?.supplierName, formData?.customerName, formData?.siteAddress1, formData?.sitePostcode]);
 const [wtnFields, setWtnFields] = useState(() => {
   // If job has saved WTN data, restore it (survives reload)
   const savedWtn = job?.wtnData || (job?.wtn_data ? (typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : job.wtn_data) : null);
