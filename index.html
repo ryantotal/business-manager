@@ -937,6 +937,209 @@ return (
           return context;
         };
 
+        // Portal Booking Form — defined at top level so its identity is stable across
+        // re-renders of the parent (LoginScreen). Without this, the auto-refresh that fires
+        // every 30 seconds would unmount/remount the modal mid-typing and wipe form state.
+        const PortalBookingForm = ({ reorderJob, previousJobs, onSubmit, onClose, saving }) => {
+          const [form, setForm] = React.useState(() => {
+            if (reorderJob) {
+              return {
+                jobType: reorderJob.job_type || '',
+                wasteType: reorderJob.waste_type || '',
+                skipSize: reorderJob.skip_size || '',
+                aggregateType: reorderJob.aggregate_type || '',
+                quantity: reorderJob.quantity || 1,
+                unit: reorderJob.unit || 'skip',
+                siteAddress1: reorderJob.site_address1 || '',
+                siteAddress2: reorderJob.site_address2 || '',
+                siteCity: reorderJob.site_city || '',
+                sitePostcode: reorderJob.site_postcode || '',
+                preferredDate: '',
+                notes: '',
+                poNumber: reorderJob.po_number || '',
+              };
+            }
+            return {
+              jobType: '', wasteType: '', skipSize: '', aggregateType: '',
+              quantity: 1, unit: 'skip', siteAddress1: '', siteAddress2: '',
+              siteCity: '', sitePostcode: '', preferredDate: '', notes: '', poNumber: '',
+            };
+          });
+
+          // Build a deduplicated list of previous addresses for the autofill dropdown
+          const prevAddresses = React.useMemo(() => {
+            if (!Array.isArray(previousJobs) || previousJobs.length === 0) return [];
+            const seen = new Set();
+            const list = [];
+            for (const j of previousJobs) {
+              const a1 = (j.site_address1 || '').trim();
+              const a2 = (j.site_address2 || '').trim();
+              const city = (j.site_city || '').trim();
+              const pc = (j.site_postcode || '').trim();
+              if (!a1 && !pc) continue;
+              const key = `${a1.toLowerCase()}|${pc.toLowerCase()}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              const label = [a1, a2, city, pc].filter(Boolean).join(', ');
+              list.push({ key, label, a1, a2, city, pc });
+              if (list.length >= 15) break; // cap so the dropdown stays usable
+            }
+            return list;
+          }, [previousJobs]);
+
+          const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '12 yard', '14 yard', '16 yard'];
+          const roroSizes = ['20 yard', '40 yard'];
+          const jobTypes = ['Skip Hire', 'Roll-on Roll-off', 'Grab Hire', 'Muck Away', 'Aggregates Supply', 'Plant Hire', 'Haulage', 'Other'];
+
+          return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="bg-green-700 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-bold">{reorderJob ? '🔄 Reorder Job' : '📋 Request a Job'}</h3>
+                    <p className="text-green-200 text-xs mt-0.5">{reorderJob ? `Based on ${reorderJob.job_number}` : 'Our team will review and confirm'}</p>
+                  </div>
+                  <button onClick={onClose} className="text-white hover:text-green-200 text-2xl leading-none">&times;</button>
+                </div>
+
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Type *</label>
+                    <select value={form.jobType} onChange={e => setForm({...form, jobType: e.target.value})}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
+                      <option value="">Select a service...</option>
+                      {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+
+                  {form.jobType === 'Skip Hire' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Skip Size</label>
+                      <select value={form.skipSize} onChange={e => setForm({...form, skipSize: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
+                        <option value="">Select size...</option>
+                        {skipSizes.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {form.jobType === 'Roll-on Roll-off' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Container Size</label>
+                      <select value={form.skipSize} onChange={e => setForm({...form, skipSize: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
+                        <option value="">Select size...</option>
+                        {roroSizes.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {['Skip Hire', 'Roll-on Roll-off', 'Muck Away', 'Grab Hire'].includes(form.jobType) && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Waste Type</label>
+                      <input type="text" value={form.wasteType} onChange={e => setForm({...form, wasteType: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Mixed construction waste, soil, etc." />
+                    </div>
+                  )}
+
+                  {form.jobType === 'Aggregates Supply' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Material Required</label>
+                      <input type="text" value={form.aggregateType} onChange={e => setForm({...form, aggregateType: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. MOT Type 1, sand, gravel" />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                      <input type="number" min="1" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                      <select value={form.unit} onChange={e => setForm({...form, unit: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
+                        <option value="skip">Skip(s)</option>
+                        <option value="tonnes">Tonnes</option>
+                        <option value="loads">Load(s)</option>
+                        <option value="bags">Bag(s)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Site Address *</label>
+                    {prevAddresses.length > 0 && (
+                      <div className="mb-2">
+                        <select
+                          defaultValue=""
+                          onChange={e => {
+                            const picked = prevAddresses.find(a => a.key === e.target.value);
+                            if (picked) {
+                              setForm(prev => ({...prev, siteAddress1: picked.a1, siteAddress2: picked.a2, siteCity: picked.city, sitePostcode: picked.pc}));
+                            }
+                            e.target.value = ''; // reset so the same option can be re-picked
+                          }}
+                          className="w-full px-3 py-2 border border-blue-300 bg-blue-50 rounded-lg text-sm font-medium text-blue-900">
+                          <option value="">📍 Use a previous address...</option>
+                          {prevAddresses.map(a => (
+                            <option key={a.key} value={a.key}>{a.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <input type="text" value={form.siteAddress1} onChange={e => setForm({...form, siteAddress1: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 1" />
+                      <input type="text" value={form.siteAddress2} onChange={e => setForm({...form, siteAddress2: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 2 (optional)" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="text" value={form.siteCity} onChange={e => setForm({...form, siteCity: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="City / Town" />
+                        <input type="text" value={form.sitePostcode} onChange={e => setForm({...form, sitePostcode: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Postcode" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Date</label>
+                      <input type="date" value={form.preferredDate} onChange={e => setForm({...form, preferredDate: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">PO Number</label>
+                      <input type="text" value={form.poNumber} onChange={e => setForm({...form, poNumber: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="If applicable" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Special Requirements</label>
+                    <textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" rows={3}
+                      placeholder="Access restrictions, site contact details, specific instructions..." />
+                  </div>
+                </div>
+
+                <div className="px-6 py-4 bg-gray-50 rounded-b-2xl flex justify-end gap-3">
+                  <button onClick={onClose} className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100">Cancel</button>
+                  <button onClick={() => {
+                    if (!form.jobType) { alert('Please select a service type.'); return; }
+                    if (!form.siteAddress1 && !form.sitePostcode) { alert('Please enter a site address.'); return; }
+                    onSubmit(form);
+                  }} disabled={saving}
+                    className="px-6 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                    {saving ? '⏳ Submitting...' : reorderJob ? '🔄 Reorder' : '📋 Submit Request'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
         // Login Component
         const LoginScreen = () => {
           const [email, setEmail] = useState('');
@@ -1027,6 +1230,40 @@ return (
             }
           };
 
+          // Auto-refresh portal jobs every 30 seconds while logged in.
+          // Without this, customers wouldn't see status changes (Scheduled → Completed,
+          // newly published WTNs, invoice numbers etc.) until they manually hit refresh.
+          // Pauses when the tab is hidden to save battery on mobile, AND while the booking
+          // modal is open so a re-render mid-typing can't disrupt the user.
+          React.useEffect(() => {
+            if (!portalUser?.customer) return;
+            if (showPortalBooking) return; // pause while form is open
+            let interval = null;
+            const start = () => {
+              if (interval) return;
+              interval = setInterval(() => {
+                if (!document.hidden) refreshPortalJobs();
+              }, 30000);
+            };
+            const stop = () => {
+              if (interval) { clearInterval(interval); interval = null; }
+            };
+            const onVisibility = () => {
+              if (document.hidden) {
+                stop();
+              } else {
+                refreshPortalJobs(); // immediate refresh on tab focus
+                start();
+              }
+            };
+            start();
+            document.addEventListener('visibilitychange', onVisibility);
+            return () => {
+              stop();
+              document.removeEventListener('visibilitychange', onVisibility);
+            };
+          }, [portalUser?.customer, showPortalBooking]);
+
           const handlePortalBookingSubmit = async (bookingData) => {
             setPortalBookingSaving(true);
             try {
@@ -1068,166 +1305,9 @@ return (
             }
           };
 
-          // Portal Booking Form Component
-          const PortalBookingForm = ({ reorderJob, onSubmit, onClose, saving }) => {
-            const [form, setForm] = React.useState(() => {
-              if (reorderJob) {
-                return {
-                  jobType: reorderJob.job_type || '',
-                  wasteType: reorderJob.waste_type || '',
-                  skipSize: reorderJob.skip_size || '',
-                  aggregateType: reorderJob.aggregate_type || '',
-                  quantity: reorderJob.quantity || 1,
-                  unit: reorderJob.unit || 'skip',
-                  siteAddress1: reorderJob.site_address1 || '',
-                  siteAddress2: reorderJob.site_address2 || '',
-                  siteCity: reorderJob.site_city || '',
-                  sitePostcode: reorderJob.site_postcode || '',
-                  preferredDate: '',
-                  notes: '',
-                  poNumber: reorderJob.po_number || '',
-                };
-              }
-              return {
-                jobType: '', wasteType: '', skipSize: '', aggregateType: '',
-                quantity: 1, unit: 'skip', siteAddress1: '', siteAddress2: '',
-                siteCity: '', sitePostcode: '', preferredDate: '', notes: '', poNumber: '',
-              };
-            });
-
-            const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '12 yard', '14 yard', '16 yard'];
-            const roroSizes = ['20 yard', '40 yard'];
-            const jobTypes = ['Skip Hire', 'Roll-on Roll-off', 'Grab Hire', 'Muck Away', 'Aggregates Supply', 'Plant Hire', 'Haulage', 'Other'];
-
-            return (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                  <div className="bg-green-700 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
-                    <div>
-                      <h3 className="text-lg font-bold">{reorderJob ? '🔄 Reorder Job' : '📋 Request a Job'}</h3>
-                      <p className="text-green-200 text-xs mt-0.5">{reorderJob ? `Based on ${reorderJob.job_number}` : 'Our team will review and confirm'}</p>
-                    </div>
-                    <button onClick={onClose} className="text-white hover:text-green-200 text-2xl leading-none">&times;</button>
-                  </div>
-
-                  <div className="p-6 space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Service Type *</label>
-                      <select value={form.jobType} onChange={e => setForm({...form, jobType: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
-                        <option value="">Select a service...</option>
-                        {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
-
-                    {form.jobType === 'Skip Hire' && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Skip Size</label>
-                        <select value={form.skipSize} onChange={e => setForm({...form, skipSize: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
-                          <option value="">Select size...</option>
-                          {skipSizes.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </div>
-                    )}
-
-                    {form.jobType === 'Roll-on Roll-off' && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Container Size</label>
-                        <select value={form.skipSize} onChange={e => setForm({...form, skipSize: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
-                          <option value="">Select size...</option>
-                          {roroSizes.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </div>
-                    )}
-
-                    {['Skip Hire', 'Roll-on Roll-off', 'Muck Away', 'Grab Hire'].includes(form.jobType) && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Waste Type</label>
-                        <input type="text" value={form.wasteType} onChange={e => setForm({...form, wasteType: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Mixed construction waste, soil, etc." />
-                      </div>
-                    )}
-
-                    {form.jobType === 'Aggregates Supply' && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Material Required</label>
-                        <input type="text" value={form.aggregateType} onChange={e => setForm({...form, aggregateType: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. MOT Type 1, sand, gravel" />
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                        <input type="number" min="1" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                        <select value={form.unit} onChange={e => setForm({...form, unit: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
-                          <option value="skip">Skip(s)</option>
-                          <option value="tonnes">Tonnes</option>
-                          <option value="loads">Load(s)</option>
-                          <option value="bags">Bag(s)</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="border-t pt-4">
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">Site Address *</label>
-                      <div className="space-y-2">
-                        <input type="text" value={form.siteAddress1} onChange={e => setForm({...form, siteAddress1: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 1" />
-                        <input type="text" value={form.siteAddress2} onChange={e => setForm({...form, siteAddress2: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 2 (optional)" />
-                        <div className="grid grid-cols-2 gap-2">
-                          <input type="text" value={form.siteCity} onChange={e => setForm({...form, siteCity: e.target.value})}
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="City / Town" />
-                          <input type="text" value={form.sitePostcode} onChange={e => setForm({...form, sitePostcode: e.target.value})}
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Postcode" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Date</label>
-                        <input type="date" value={form.preferredDate} onChange={e => setForm({...form, preferredDate: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">PO Number</label>
-                        <input type="text" value={form.poNumber} onChange={e => setForm({...form, poNumber: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="If applicable" />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Special Requirements</label>
-                      <textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" rows={3}
-                        placeholder="Access restrictions, site contact details, specific instructions..." />
-                    </div>
-                  </div>
-
-                  <div className="px-6 py-4 bg-gray-50 rounded-b-2xl flex justify-end gap-3">
-                    <button onClick={onClose} className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100">Cancel</button>
-                    <button onClick={() => {
-                      if (!form.jobType) { alert('Please select a service type.'); return; }
-                      if (!form.siteAddress1 && !form.sitePostcode) { alert('Please enter a site address.'); return; }
-                      onSubmit(form);
-                    }} disabled={saving}
-                      className="px-6 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
-                      {saving ? '⏳ Submitting...' : reorderJob ? '🔄 Reorder' : '📋 Submit Request'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          };
+          // PortalBookingForm is now defined outside LoginScreen so its identity is stable
+          // across re-renders — otherwise the auto-refresh would unmount/remount the modal
+          // and wipe form state every 30 seconds.
 
           const [expandedJobId, setExpandedJobId] = React.useState(null);
           const [portalFilter, setPortalFilter] = React.useState('all');
@@ -1427,7 +1507,7 @@ return (
                             return (
                               <React.Fragment key={job.id}>
                                 <tr
-                                  className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-100' : isInvoiced ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}
+                                  className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-100' : done ? 'bg-green-50 hover:bg-green-100' : cancelled ? 'bg-red-50 hover:bg-red-100' : isInvoiced ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}
                                   onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
                                 >
                                   <td className="px-5 py-3 font-mono font-medium text-blue-700 text-xs flex items-center gap-1">
@@ -1597,7 +1677,7 @@ return (
                             })();
 
                             return (
-                              <div key={job.id} className={`${isExpanded ? 'bg-green-50' : isInvoiced ? 'bg-green-50' : 'bg-white'}`}>
+                              <div key={job.id} className={`${isExpanded ? 'bg-green-50' : done ? 'bg-green-50' : cancelled ? 'bg-red-50' : isInvoiced ? 'bg-green-50' : 'bg-white'}`}>
                                 {/* Card header — always visible */}
                                 <button
                                   className="w-full px-4 py-3 flex items-start gap-3 text-left active:bg-gray-50"
@@ -1706,6 +1786,7 @@ return (
               {showPortalBooking && (
                 <PortalBookingForm
                   reorderJob={portalBookingData}
+                  previousJobs={myJobs}
                   saving={portalBookingSaving}
                   onClose={() => { setShowPortalBooking(false); setPortalBookingData(null); }}
                   onSubmit={handlePortalBookingSubmit}
@@ -6651,14 +6732,22 @@ postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
       }
     }
     if (filters.jobType && job.jobType !== filters.jobType) return false;
-    if (filters.dateRange === 'today') {
+    if (filters.dateRange) {
       // Check both jobDate and snake_case job_date for safety
       const dateStr = job.jobDate || job.job_date;
       if (!dateStr) return false;
-      const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      // Build the target YYYY-MM-DD based on the filter choice (uses local time so
+      // "today" matches the user's wall clock, not UTC)
+      const target = new Date();
+      if (filters.dateRange === 'yesterday') target.setDate(target.getDate() - 1);
+      else if (filters.dateRange === 'tomorrow') target.setDate(target.getDate() + 1);
+      const yyyy = target.getFullYear();
+      const mm = String(target.getMonth() + 1).padStart(2, '0');
+      const dd = String(target.getDate()).padStart(2, '0');
+      const targetStr = `${yyyy}-${mm}-${dd}`;
       // Normalise the job date — could be 'YYYY-MM-DD' or full ISO; take first 10 chars
       const jobDateNorm = String(dateStr).split('T')[0].substring(0, 10);
-      if (jobDateNorm !== todayStr) return false;
+      if (jobDateNorm !== targetStr) return false;
     }
     if (filters.status) {
       if (filters.status === 'ON_STOP' && !job.onStop) return false;
@@ -7123,27 +7212,43 @@ jobs.forEach(job => {
         onChange={(e) => setSearchQuery(e.target.value)}
         className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
       />
-      <button
-        type="button"
-        onClick={() => setFilters({...filters, dateRange: filters.dateRange === 'today' ? '' : 'today'})}
-        className={`w-full sm:w-auto px-3 py-2 rounded-lg border font-medium transition-colors flex items-center justify-center gap-1.5 ${
-          filters.dateRange === 'today'
-            ? 'bg-green-600 text-white border-green-600 hover:bg-green-700'
-            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-        }`}
-        title="Show only today's jobs"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        <span>Today{(() => {
-          const todayStr = new Date().toISOString().split('T')[0];
-          const count = jobs.filter(j => {
-            if (j.isEvent || j.status === 'EVENT') return false;
-            const d = j.jobDate || j.job_date;
-            return d && String(d).split('T')[0].substring(0, 10) === todayStr;
-          }).length;
-          return count > 0 ? ` (${count})` : '';
-        })()}</span>
-      </button>
+      {(() => {
+        // Compute counts for yesterday/today/tomorrow once per render
+        const dayKey = (offset) => {
+          const d = new Date();
+          d.setDate(d.getDate() + offset);
+          return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        };
+        const yKey = dayKey(-1), tKey = dayKey(0), mKey = dayKey(1);
+        let yC = 0, tC = 0, mC = 0;
+        for (const j of jobs) {
+          if (j.isEvent || j.status === 'EVENT') continue;
+          const dRaw = j.jobDate || j.job_date;
+          if (!dRaw) continue;
+          const d = String(dRaw).split('T')[0].substring(0,10);
+          if (d === yKey) yC++;
+          else if (d === tKey) tC++;
+          else if (d === mKey) mC++;
+        }
+        const isActive = !!filters.dateRange;
+        return (
+          <select
+            value={filters.dateRange}
+            onChange={(e) => setFilters({...filters, dateRange: e.target.value})}
+            className={`w-full sm:w-auto px-3 py-2 rounded-lg border font-medium transition-colors ${
+              isActive
+                ? 'bg-green-600 text-white border-green-600 hover:bg-green-700'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+            title="Filter jobs by date"
+          >
+            <option value="">📅 Any Date</option>
+            <option value="yesterday">Yesterday{yC > 0 ? ` (${yC})` : ''}</option>
+            <option value="today">Today{tC > 0 ? ` (${tC})` : ''}</option>
+            <option value="tomorrow">Tomorrow{mC > 0 ? ` (${mC})` : ''}</option>
+          </select>
+        );
+      })()}
       <select
         value={filters.jobType}
         onChange={(e) => setFilters({...filters, jobType: e.target.value})}
