@@ -987,85 +987,54 @@ return (
             return list;
           }, [previousJobs]);
 
-          const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '12 yard', '14 yard', '16 yard'];
-          const roroSizes = ['20 yard', '40 yard'];
-          const jobTypes = ['Skip Hire', 'Roll-on Roll-off', 'Grab Hire', 'Muck Away', 'Aggregates Supply', 'Plant Hire', 'Haulage', 'Other'];
-
           return (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="bg-green-700 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
                   <div>
-                    <h3 className="text-lg font-bold">{reorderJob ? '🔄 Reorder Job' : '📋 Request a Job'}</h3>
-                    <p className="text-green-200 text-xs mt-0.5">{reorderJob ? `Based on ${reorderJob.job_number}` : 'Our team will review and confirm'}</p>
+                    <h3 className="text-lg font-bold">🔄 Reorder Job</h3>
+                    <p className="text-green-200 text-xs mt-0.5">{reorderJob ? `Based on ${reorderJob.job_number} — our team will review and confirm` : 'Our team will review and confirm'}</p>
                   </div>
                   <button onClick={onClose} className="text-white hover:text-green-200 text-2xl leading-none">&times;</button>
                 </div>
 
                 <div className="p-6 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Type *</label>
-                    <select value={form.jobType} onChange={e => setForm({...form, jobType: e.target.value})}
-                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
-                      <option value="">Select a service...</option>
-                      {jobTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-
-                  {form.jobType === 'Skip Hire' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Skip Size</label>
-                      <select value={form.skipSize} onChange={e => setForm({...form, skipSize: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
-                        <option value="">Select size...</option>
-                        {skipSizes.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                  {/* Read-only summary of what's being reordered.
+                      We don't let customers edit the service / size / waste type / quantity
+                      themselves — those should match what was actually supplied last time.
+                      If something needs to change, they tell us in the Notes box and our
+                      team adjusts the new job before confirming. */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="text-xs font-semibold text-blue-900 mb-2 uppercase tracking-wide">Reordering this job</div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                      <div>
+                        <div className="text-gray-500 text-xs">Service</div>
+                        <div className="font-semibold text-gray-900">{reorderJob?.job_type || '—'}</div>
+                      </div>
+                      {reorderJob?.skip_size && (
+                        <div>
+                          <div className="text-gray-500 text-xs">Size</div>
+                          <div className="font-semibold text-gray-900">{reorderJob.skip_size}</div>
+                        </div>
+                      )}
+                      {reorderJob?.waste_type && (
+                        <div>
+                          <div className="text-gray-500 text-xs">Waste Type</div>
+                          <div className="font-semibold text-gray-900">{reorderJob.waste_type}</div>
+                        </div>
+                      )}
+                      {reorderJob?.aggregate_type && (
+                        <div>
+                          <div className="text-gray-500 text-xs">Material</div>
+                          <div className="font-semibold text-gray-900">{reorderJob.aggregate_type}</div>
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-gray-500 text-xs">Quantity</div>
+                        <div className="font-semibold text-gray-900">{reorderJob?.quantity || 1} {reorderJob?.unit || ''}</div>
+                      </div>
                     </div>
-                  )}
-
-                  {form.jobType === 'Roll-on Roll-off' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Container Size</label>
-                      <select value={form.skipSize} onChange={e => setForm({...form, skipSize: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
-                        <option value="">Select size...</option>
-                        {roroSizes.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
-                  )}
-
-                  {['Skip Hire', 'Roll-on Roll-off', 'Muck Away', 'Grab Hire'].includes(form.jobType) && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Waste Type</label>
-                      <input type="text" value={form.wasteType} onChange={e => setForm({...form, wasteType: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Mixed construction waste, soil, etc." />
-                    </div>
-                  )}
-
-                  {form.jobType === 'Aggregates Supply' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Material Required</label>
-                      <input type="text" value={form.aggregateType} onChange={e => setForm({...form, aggregateType: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. MOT Type 1, sand, gravel" />
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                      <input type="number" min="1" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                      <select value={form.unit} onChange={e => setForm({...form, unit: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm">
-                        <option value="skip">Skip(s)</option>
-                        <option value="tonnes">Tonnes</option>
-                        <option value="loads">Load(s)</option>
-                        <option value="bags">Bag(s)</option>
-                      </select>
-                    </div>
+                    <div className="text-xs text-blue-700 mt-3 italic">If anything needs to change (different size, different material etc.), please give us a call or note it below — our team will adjust before confirming.</div>
                   </div>
 
                   <div className="border-t pt-4">
@@ -1127,12 +1096,11 @@ return (
                 <div className="px-6 py-4 bg-gray-50 rounded-b-2xl flex justify-end gap-3">
                   <button onClick={onClose} className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100">Cancel</button>
                   <button onClick={() => {
-                    if (!form.jobType) { alert('Please select a service type.'); return; }
                     if (!form.siteAddress1 && !form.sitePostcode) { alert('Please enter a site address.'); return; }
                     onSubmit(form);
                   }} disabled={saving}
                     className="px-6 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
-                    {saving ? '⏳ Submitting...' : reorderJob ? '🔄 Reorder' : '📋 Submit Request'}
+                    {saving ? '⏳ Submitting...' : '🔄 Submit Reorder'}
                   </button>
                 </div>
               </div>
@@ -1288,6 +1256,14 @@ return (
                 newJobNumber = `TWS-${maxNum + 1}`;
               }
 
+              // Carry through context from the original job so the admin pipeline has
+              // the supplier/line items/etc. the customer actually received last time.
+              // The team will review and adjust before confirming.
+              const origin = portalBookingData; // the job being reordered
+              const reorderNote = origin?.job_number
+                ? `🔄 Reorder of ${origin.job_number}` + (bookingData.notes ? `\n\n${bookingData.notes}` : '')
+                : (bookingData.notes || '');
+
               const jobData = {
                 job_number: newJobNumber,
                 customer_name: custName,
@@ -1303,7 +1279,7 @@ return (
                 site_postcode: bookingData.sitePostcode || '',
                 job_date: bookingData.preferredDate || null,
                 delivery_date: bookingData.preferredDate || null,
-                notes: bookingData.notes || '',
+                notes: reorderNote,
                 status: 'REQUESTED',
                 is_completed: false,
                 customer_po: bookingData.poNumber || '',
@@ -1311,13 +1287,17 @@ return (
                 portal_requested: true,
                 portal_requested_at: new Date().toISOString(),
                 portal_requested_by: portalUser.customer.email || custName,
+                // Pre-populate from the origin job so the team has the supplier/line items
+                // they previously used. They can change anything before confirming.
+                supplier_name: origin?.supplier_name || null,
+                line_items: origin?.line_items || null,
               };
               const { error } = await window.supabase.from('jobs').insert([jobData]);
               if (error) throw error;
               await refreshPortalJobs();
               setShowPortalBooking(false);
               setPortalBookingData(null);
-              alert('✅ Job request submitted! Our team will review and confirm shortly.');
+              alert('✅ Reorder submitted! Our team will review and confirm shortly.');
             } catch (err) {
               console.error('Portal booking error:', err);
               alert('Error submitting request: ' + err.message);
@@ -1371,13 +1351,6 @@ return (
                 </div>
 
                 <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
-                  {/* Request a Job — prominent CTA */}
-                  <button onClick={() => { setPortalBookingData(null); setShowPortalBooking(true); }}
-                    className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold py-3 sm:py-4 px-6 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                    <span>Request a Job</span>
-                  </button>
-
                   {/* Summary cards — clickable filters */}
                   {(()=>{
                     // Apply status filter
@@ -1634,6 +1607,15 @@ return (
                                             </button>
                                           </div>
                                         )}
+                                        {/* Reorder — only for completed jobs (we know what was supplied) */}
+                                        {done && !cancelled && (
+                                          <div className="col-span-2 sm:col-span-3">
+                                            <button onClick={(e) => { e.stopPropagation(); setPortalBookingData(job); setShowPortalBooking(true); }}
+                                              className="mt-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
+                                              🔄 Reorder this job
+                                            </button>
+                                          </div>
+                                        )}
                                         {/* Portal-visible attachments (external WTNs etc.) */}
                                         {(() => {
                                           const portalAttachments = (job.portal_attachments || []);
@@ -1762,6 +1744,12 @@ return (
                                       <button onClick={() => downloadWTN(job)}
                                         className="mt-3 w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
                                         📄 View Waste Transfer Note
+                                      </button>
+                                    )}
+                                    {done && !cancelled && (
+                                      <button onClick={(e) => { e.stopPropagation(); setPortalBookingData(job); setShowPortalBooking(true); }}
+                                        className="mt-3 w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+                                        🔄 Reorder this job
                                       </button>
                                     )}
                                     {/* Portal-visible attachments */}
@@ -8867,6 +8855,67 @@ console.log(JSON.stringify(invoiceData, null, 2));
             <LucideIcon icon="PlayCircle" size={16} />
             Take Off Stop
           </button>
+        </div>
+      )}
+
+      {/* Portal Request Banner — accept or decline a customer-submitted request */}
+      {job.status === 'REQUESTED' && (
+        <div className="bg-amber-50 border-b-2 border-amber-300 px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="text-amber-600 text-xl flex-shrink-0">🔔</span>
+            <div>
+              <p className="font-semibold text-amber-900">Customer portal request — awaiting your review</p>
+              <p className="text-sm text-amber-700">
+                Submitted{job.portalRequestedAt || job.portal_requested_at ? ` ${new Date(job.portalRequestedAt || job.portal_requested_at).toLocaleString('en-GB')}` : ''}
+                {(job.portalRequestedBy || job.portal_requested_by) ? ` by ${job.portalRequestedBy || job.portal_requested_by}` : ''}.
+                Review the details below, edit anything that needs adjusting, then accept or decline.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={async () => {
+                if (!confirm(`Accept this request and confirm job ${job.jobNumber}?`)) return;
+                try {
+                  const { error } = await window.supabase
+                    .from('jobs')
+                    .update({ status: 'CONFIRMED' })
+                    .eq('id', job.id);
+                  if (error) throw error;
+                  if (onRefresh) await onRefresh();
+                } catch (e) {
+                  alert('Failed to accept: ' + e.message);
+                }
+              }}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2"
+            >
+              <LucideIcon icon="CheckCircle" size={16} />
+              Accept Request
+            </button>
+            <button
+              onClick={async () => {
+                const reason = prompt(`Decline this request? Optionally enter a reason — the customer will see this in their portal:`);
+                if (reason === null) return; // cancelled
+                try {
+                  const declineNote = `❌ Declined${reason ? `: ${reason}` : ''}`;
+                  const updatedNotes = job.notes ? `${job.notes}\n\n${declineNote}` : declineNote;
+                  const { error } = await window.supabase
+                    .from('jobs')
+                    .update({ status: 'CANCELLED', is_cancelled: true, notes: updatedNotes })
+                    .eq('id', job.id);
+                  if (error) throw error;
+                  if (onRefresh) await onRefresh();
+                  if (onClose) onClose();
+                } catch (e) {
+                  alert('Failed to decline: ' + e.message);
+                }
+              }}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium flex items-center gap-2"
+            >
+              <LucideIcon icon="XCircle" size={16} />
+              Decline
+            </button>
+          </div>
         </div>
       )}
 
