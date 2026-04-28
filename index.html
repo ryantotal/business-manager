@@ -17,10 +17,57 @@
       // Register the service worker so the portal can be installed as an app on phones.
       // Failures are silent — if it doesn't work (e.g. Safari incognito) the portal still
       // functions normally, just without the offline-cache and install prompt.
+      //
+      // We also watch for new SW versions arriving while the app is open, and show a
+      // small "Update available" toast so users on the home-screen app don't get stuck
+      // on stale code. Without this, deploys take 1-2 launches to land for installed users.
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/service-worker.js')
+            .then(reg => {
+              // Check for updates every time the page becomes visible (e.g. user
+              // reopens the home-screen app after lunch break)
+              document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') reg.update().catch(() => {});
+              });
+
+              // Listen for a new SW being found
+              reg.addEventListener('updatefound', () => {
+                const newSW = reg.installing;
+                if (!newSW) return;
+                newSW.addEventListener('statechange', () => {
+                  // 'installed' + existing controller = there's a new version waiting
+                  if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                    showUpdateToast(newSW);
+                  }
+                });
+              });
+            })
             .catch(err => console.log('SW registration failed:', err));
+
+          // Reload once the new SW takes over so the user sees the new code
+          let reloadingForUpdate = false;
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (reloadingForUpdate) return;
+            reloadingForUpdate = true;
+            window.location.reload();
+          });
+
+          function showUpdateToast(newSW) {
+            // Don't double-show
+            if (document.getElementById('tws-update-toast')) return;
+            const toast = document.createElement('div');
+            toast.id = 'tws-update-toast';
+            toast.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:20px;z-index:99999;background:#15803d;color:white;padding:12px 16px;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,.25);display:flex;align-items:center;gap:12px;font-family:system-ui,-apple-system,sans-serif;font-size:14px;max-width:calc(100vw - 32px);';
+            toast.innerHTML = '<span>✨ New version available</span>' +
+              '<button id="tws-update-btn" style="background:white;color:#15803d;border:none;padding:6px 12px;border-radius:8px;font-weight:bold;font-size:13px;cursor:pointer">Refresh</button>' +
+              '<button id="tws-update-dismiss" style="background:transparent;color:white;border:none;padding:4px 8px;cursor:pointer;font-size:18px;line-height:1" aria-label="Dismiss">×</button>';
+            document.body.appendChild(toast);
+            document.getElementById('tws-update-btn').onclick = () => {
+              newSW.postMessage('SKIP_WAITING'); // SW will activate, controllerchange fires, reload happens
+            };
+            document.getElementById('tws-update-dismiss').onclick = () => toast.remove();
+          }
         });
       }
     </script>
