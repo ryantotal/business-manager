@@ -8882,6 +8882,9 @@ console.log(JSON.stringify(invoiceData, null, 2));
                     .update({ status: 'CONFIRMED' })
                     .eq('id', job.id);
                   if (error) throw error;
+                  // Update the displayed job immediately so the banner disappears without
+                  // needing to navigate away — the prop is what drives the banner condition
+                  if (onUpdateDisplay) onUpdateDisplay({ ...job, status: 'CONFIRMED' });
                   if (onRefresh) await onRefresh();
                 } catch (e) {
                   alert('Failed to accept: ' + e.message);
