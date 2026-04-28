@@ -7265,13 +7265,6 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
 
   // Mobile agenda — which day's jobs are shown in the list below the strip.
   // Defaults to today if today is in the visible month, else day 1.
-  //
-  // FLICKER FIX: parent auto-refreshes every 30s (loadJobsFromSupabase). That re-renders
-  // this component, which previously caused (1) `today` to be re-created on every render
-  // breaking referential equality, (2) the auto-scroll effect to interpret normal renders
-  // as a fresh selection, and (3) `scrollIntoView` to leak vertical scroll to the page.
-  // Three fixes combined: memoise today's date string, only scroll when the user actually
-  // taps a different day, and scroll horizontally inside the strip container only.
   const today = React.useMemo(() => new Date(), []); // stable for the lifetime of this view
   const todayInMonth = today.getFullYear() === year && today.getMonth() === month;
   const [selectedDay, setSelectedDay] = React.useState(todayInMonth ? today.getDate() : 1);
@@ -7284,28 +7277,83 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
-  // Auto-scroll the day chip into view ONLY when the user actively selects one.
-  // The userSelectedRef gate ensures parent re-renders (auto-refresh) never trigger
-  // a scroll, even if the effect somehow re-fires.
+  // Strip scroll management — three jobs:
+  //
+  //   1. On INITIAL MOUNT: scroll the strip to centre today's chip (without animation
+  //      so it's instant on page load — animation here looks weird).
+  //   2. When the USER TAPS a day chip: smooth-scroll to centre it.
+  //   3. ON AUTO-REFRESH (30s parent re-render): preserve the user's current scroll
+  //      position. iOS Safari sometimes resets scrollLeft to 0 when flex children
+  //      re-render, so we capture the position before each re-render and restore it
+  //      after, unless the user just tapped a chip (case 2).
   const stripRef = React.useRef(null);
-  const userSelectedRef = React.useRef(false);
-  const handleSelectDay = React.useCallback((dayNum) => {
-    userSelectedRef.current = true;
-    setSelectedDay(dayNum);
-  }, []);
+  const lastUserScrollLeft = React.useRef(null); // remember the user's scroll position
+  const didInitialScrollRef = React.useRef(false);
+  const userJustSelectedRef = React.useRef(false);
+
+  // Track the strip's scroll position whenever the user scrolls it manually
   React.useEffect(() => {
-    if (!userSelectedRef.current) return; // skip auto-scroll on initial mount + parent re-renders
-    userSelectedRef.current = false;
+    const strip = stripRef.current;
+    if (!strip) return;
+    const onScroll = () => {
+      if (userJustSelectedRef.current) return; // ignore programmatic scrolls
+      lastUserScrollLeft.current = strip.scrollLeft;
+    };
+    strip.addEventListener('scroll', onScroll, { passive: true });
+    return () => strip.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Initial-mount scroll: jump directly to today, no animation
+  React.useLayoutEffect(() => {
+    if (didInitialScrollRef.current) return;
     const strip = stripRef.current;
     if (!strip) return;
     const el = strip.querySelector(`[data-day="${selectedDay}"]`);
     if (!el) return;
-    // Scroll horizontally within the strip only — never touch page scroll.
-    // Manual math instead of scrollIntoView avoids the page-jumping side effect on iOS.
+    didInitialScrollRef.current = true;
     const stripRect = strip.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
     const offset = (elRect.left - stripRect.left) - (stripRect.width / 2) + (elRect.width / 2);
-    strip.scrollTo({ left: strip.scrollLeft + offset, behavior: 'smooth' });
+    strip.scrollLeft = strip.scrollLeft + offset; // instant, no smooth — feels right on first paint
+    lastUserScrollLeft.current = strip.scrollLeft;
+  });
+
+  // After auto-refresh re-renders: if iOS reset our scroll, restore it
+  React.useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    if (lastUserScrollLeft.current == null) return;
+    if (userJustSelectedRef.current) return; // we're doing a programmatic scroll instead
+    if (Math.abs(strip.scrollLeft - lastUserScrollLeft.current) > 2) {
+      strip.scrollLeft = lastUserScrollLeft.current;
+    }
+  });
+
+  // User-tap scroll: smooth-scroll to centre the newly selected chip
+  const handleSelectDay = React.useCallback((dayNum) => {
+    userJustSelectedRef.current = true;
+    setSelectedDay(dayNum);
+  }, []);
+  React.useEffect(() => {
+    if (!userJustSelectedRef.current) return;
+    const strip = stripRef.current;
+    if (!strip) {
+      userJustSelectedRef.current = false;
+      return;
+    }
+    const el = strip.querySelector(`[data-day="${selectedDay}"]`);
+    if (!el) {
+      userJustSelectedRef.current = false;
+      return;
+    }
+    const stripRect = strip.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const offset = (elRect.left - stripRect.left) - (stripRect.width / 2) + (elRect.width / 2);
+    const target = strip.scrollLeft + offset;
+    strip.scrollTo({ left: target, behavior: 'smooth' });
+    lastUserScrollLeft.current = target;
+    // Reset flag after the smooth-scroll has had time to settle
+    setTimeout(() => { userJustSelectedRef.current = false; }, 500);
   }, [selectedDay]);
 
   // Get all days in the month
