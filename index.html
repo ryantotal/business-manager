@@ -7035,23 +7035,32 @@ jobs.forEach(job => {
     'OTHER': '#71717A'         // Zinc
   };
   
+  // Requested jobs (from customer portal, awaiting our acceptance) get a diagonal stripe
+  // pattern so they don't clash with the solid-amber Training events on the calendar.
+  const isRequested = job.status === 'REQUESTED';
+
   return (
     <div
       key={job.id}
       className={`text-xs p-1 rounded cursor-pointer truncate hover:opacity-80 ${
         isOnStop ? 'bg-red-100 border border-red-400' :
+        isRequested ? 'border border-amber-500' :
         isFinished ? 'bg-green-500' : ''
       } ${isEvent ? 'text-white font-medium' : ''}`}
       style={{ 
         backgroundColor: isEvent 
           ? (eventColors[job.job_type] || eventColors['OTHER'])
           : isOnStop ? '#fef2f2' 
+          : isRequested ? undefined  // background image used instead
           : (isFinished ? '' : jobColors[job.jobType] + '20'),
-        color: isEvent ? 'white' : isOnStop ? '#dc2626' : (isFinished ? 'black' : jobColors[job.jobType]),
-        borderLeft: isEvent ? 'none' : isOnStop ? '3px solid #dc2626' : `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
+        backgroundImage: isRequested
+          ? 'repeating-linear-gradient(45deg, #fef3c7 0, #fef3c7 6px, #fde68a 6px, #fde68a 12px)'
+          : undefined,
+        color: isEvent ? 'white' : isOnStop ? '#dc2626' : isRequested ? '#78350f' : (isFinished ? 'black' : jobColors[job.jobType]),
+        borderLeft: isEvent ? 'none' : isOnStop ? '3px solid #dc2626' : isRequested ? '3px solid #d97706' : `3px solid ${isFinished ? 'black' : jobColors[job.jobType]}`
       }}
       onClick={() => handleJobClick(job)}
-      title={`${job.jobNumber} - ${job.customerName}${isOnStop ? ' ⛔ ON STOP' : ''}${isFinished ? ' (Completed)' : ''}${isEvent ? ' (Event)' : ''}`}
+      title={`${job.jobNumber} - ${job.customerName}${isOnStop ? ' ⛔ ON STOP' : ''}${isRequested ? ' 🔔 PORTAL REQUEST — awaiting your review' : ''}${isFinished ? ' (Completed)' : ''}${isEvent ? ' (Event)' : ''}`}
     >
       <div className="truncate font-medium text-xs">
         {isEvent ? (
@@ -7066,7 +7075,7 @@ jobs.forEach(job => {
             {job.customerName || 'No Customer'}
           </>
         ) : (
-          <>{isOnStop ? '⛔ ' : ''}{job.customerName || 'No Customer'}</>
+          <>{isOnStop ? '⛔ ' : isRequested ? '🔔 ' : ''}{job.customerName || 'No Customer'}</>
         )}
       </div>
       {!isEvent && (
@@ -7374,7 +7383,7 @@ jobs.forEach(job => {
                         return (
                           <div
                             key={job.id}
-                            className={`px-4 py-3 active:bg-gray-100 cursor-pointer ${job.onStop ? 'bg-red-50 border-l-4 border-l-red-500' : mIsFinished ? 'bg-green-50 border-l-4 border-l-green-500' : ''}`}
+                            className={`px-4 py-3 active:bg-gray-100 cursor-pointer ${job.onStop ? 'bg-red-50 border-l-4 border-l-red-500' : job.status === 'REQUESTED' ? 'bg-amber-50 border-l-4 border-l-amber-500' : mIsFinished ? 'bg-green-50 border-l-4 border-l-green-500' : ''}`}
                             onClick={() => handleJobClick(job)}
                           >
                             <div className="flex items-start gap-3">
@@ -7438,7 +7447,7 @@ const firstProduct = job.lineItems && job.lineItems.length > 0 ? job.lineItems[0
 return (
 <tr
 key={job.id}
-className={`hover:bg-gray-50 cursor-pointer ${job.onStop ? 'bg-red-50' : isFinished ? 'opacity-75' : ''}`}
+className={`hover:bg-gray-50 cursor-pointer ${job.onStop ? 'bg-red-50' : job.status === 'REQUESTED' ? 'bg-amber-50 hover:bg-amber-100' : isFinished ? 'opacity-75' : ''}`}
 onClick={() => handleJobClick(job)}
 >
 <td className="px-3 py-3 whitespace-nowrap">
