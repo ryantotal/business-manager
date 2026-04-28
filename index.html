@@ -7265,7 +7265,7 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
 
   // Mobile agenda — which day's jobs are shown in the list below the strip.
   // Defaults to today if today is in the visible month, else day 1.
-  const today = React.useMemo(() => new Date(), []); // stable for the lifetime of this view
+  const today = React.useMemo(() => new Date(), []);
   const todayInMonth = today.getFullYear() === year && today.getMonth() === month;
   const [selectedDay, setSelectedDay] = React.useState(todayInMonth ? today.getDate() : 1);
 
@@ -7275,27 +7275,11 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
-  // Strip scroll: ONE rule — on initial mount, instantly jump to centre today.
-  // After that, the strip's scroll position is owned by the user and we never
-  // touch it. No smooth-scroll-to-selection on tap, no scroll restoration on
-  // auto-refresh. Multiple competing scroll effects were causing the strip to
-  // animate back to today every 30 seconds. Doing nothing is the correct
-  // behaviour — like Google Calendar's mobile week strip.
+  // The strip's scroll position is entirely user-controlled. We never programmatically
+  // scroll it — every attempt to be clever about it ended up causing race conditions
+  // with the parent's 30-second auto-refresh. The selected day is highlighted; the
+  // user can swipe to it.
   const stripRef = React.useRef(null);
-  const didInitialScrollRef = React.useRef(false);
-  React.useLayoutEffect(() => {
-    if (didInitialScrollRef.current) return;
-    const strip = stripRef.current;
-    if (!strip) return;
-    const el = strip.querySelector(`[data-day="${selectedDay}"]`);
-    if (!el) return;
-    didInitialScrollRef.current = true;
-    const stripRect = strip.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    const offset = (elRect.left - stripRect.left) - (stripRect.width / 2) + (elRect.width / 2);
-    strip.scrollLeft = strip.scrollLeft + offset;
-  });
-
   const handleSelectDay = React.useCallback((dayNum) => {
     setSelectedDay(dayNum);
   }, []);
@@ -7504,12 +7488,31 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
                       MAINTENANCE: '🔧', DELIVERY: '🚚', INSPECTION: '🔍', OTHER: '📅'
                     };
 
-                    const stripeColour = isEvent
-                      ? (eventColors[job.job_type] || eventColors.OTHER)
-                      : isOnStop ? '#dc2626'
-                      : isRequested ? '#d97706'
-                      : isFinished ? '#15803d'
-                      : (jobColors[job.jobType] || '#6b7280');
+                    // Status-aware card styling — mirror the desktop calendar's colour scheme
+                    // so the whole card is filled with the status colour and you can spot
+                    // ON STOP / REQUESTED / COMPLETED / EVENT at a glance.
+                    const typeColour = jobColors[job.jobType] || '#6b7280';
+                    let cardBg, cardBgImage, borderColour, textColour, secondaryTextColour;
+
+                    if (isOnStop) {
+                      cardBg = '#fef2f2'; cardBgImage = undefined;
+                      borderColour = '#dc2626'; textColour = '#991b1b'; secondaryTextColour = '#b91c1c';
+                    } else if (isRequested) {
+                      cardBg = '#fef3c7';
+                      cardBgImage = 'repeating-linear-gradient(45deg, #fef3c7 0, #fef3c7 8px, #fde68a 8px, #fde68a 16px)';
+                      borderColour = '#d97706'; textColour = '#78350f'; secondaryTextColour = '#92400e';
+                    } else if (isFinished) {
+                      cardBg = '#15803d'; cardBgImage = undefined;
+                      borderColour = '#15803d'; textColour = '#ffffff'; secondaryTextColour = 'rgba(255,255,255,0.85)';
+                    } else if (isEvent) {
+                      cardBg = eventColors[job.job_type] || eventColors.OTHER;
+                      cardBgImage = undefined;
+                      borderColour = cardBg; textColour = '#ffffff'; secondaryTextColour = 'rgba(255,255,255,0.85)';
+                    } else {
+                      cardBg = typeColour + '20'; // 20% opacity tint
+                      cardBgImage = undefined;
+                      borderColour = typeColour; textColour = typeColour; secondaryTextColour = '#374151';
+                    }
 
                     // Parse first item for line items preview
                     let itemPreview = '';
@@ -7530,42 +7533,47 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
                       <button
                         key={job.id}
                         onClick={() => handleJobClick(job)}
-                        className="w-full text-left bg-white border border-gray-200 rounded-lg p-3 flex gap-3 hover:bg-gray-50 active:bg-gray-100 transition-colors"
-                        style={{ borderLeft: `4px solid ${stripeColour}` }}
+                        className="w-full text-left rounded-lg p-3 flex gap-3 active:opacity-80 transition-opacity"
+                        style={{
+                          backgroundColor: cardBg,
+                          backgroundImage: cardBgImage,
+                          border: `1px solid ${borderColour}`,
+                          borderLeft: `4px solid ${borderColour}`
+                        }}
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            {isOnStop && <span className="text-xs font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">⛔ ON STOP</span>}
-                            {isRequested && <span className="text-xs font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">🔔 REQUEST</span>}
-                            {isFinished && !isEvent && <span className="text-xs font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">✓ DONE</span>}
-                            {isEvent && (
-                              <span className="text-xs font-bold text-white px-1.5 py-0.5 rounded" style={{ backgroundColor: stripeColour }}>
-                                {eventEmoji[job.job_type] || '📅'} {(job.job_type || 'EVENT').replace('_', ' ')}
-                              </span>
-                            )}
-                          </div>
-                          <div className="font-semibold text-sm text-gray-900 truncate">
+                          {/* Status label sits above the customer name when the whole card
+                              is colour-coded, replacing the small chip badges */}
+                          {(isOnStop || isRequested || isFinished || isEvent) && (
+                            <div className="text-[10px] uppercase font-bold tracking-wide mb-1" style={{ color: textColour, opacity: 0.85 }}>
+                              {isOnStop && '⛔ ON STOP'}
+                              {isRequested && '🔔 PORTAL REQUEST — AWAITING REVIEW'}
+                              {isFinished && !isEvent && '✓ COMPLETED'}
+                              {isEvent && `${eventEmoji[job.job_type] || '📅'} ${(job.job_type || 'EVENT').replace('_', ' ')}`}
+                            </div>
+                          )}
+                          <div className="font-bold text-sm truncate" style={{ color: textColour }}>
                             {job.customerName || (isEvent ? 'Event' : 'No Customer')}
                           </div>
                           {!isEvent && (
                             <>
                               {itemPreview && (
-                                <div className="text-xs text-gray-700 mt-0.5 truncate">{itemPreview}</div>
+                                <div className="text-xs mt-0.5 truncate font-medium" style={{ color: secondaryTextColour }}>{itemPreview}</div>
                               )}
                               {(job.sitePostcode || job.postcode || job.siteAddress) && (
-                                <div className="text-xs text-gray-500 mt-0.5 truncate">
+                                <div className="text-xs mt-0.5 truncate" style={{ color: secondaryTextColour, opacity: 0.85 }}>
                                   {job.siteAddress ? `${job.siteAddress}` : ''}
                                   {job.siteAddress && (job.sitePostcode || job.postcode) ? ' · ' : ''}
                                   {job.sitePostcode || job.postcode || ''}
                                 </div>
                               )}
                               {job.jobNumber && (
-                                <div className="text-[11px] text-gray-400 mt-1 font-mono">{job.jobNumber}</div>
+                                <div className="text-[11px] mt-1 font-mono" style={{ color: secondaryTextColour, opacity: 0.7 }}>{job.jobNumber}</div>
                               )}
                             </>
                           )}
                         </div>
-                        <div className="flex-shrink-0 text-gray-300 self-center">
+                        <div className="flex-shrink-0 self-center" style={{ color: textColour, opacity: 0.5 }}>
                           <ChevronDown size={18} className="-rotate-90" />
                         </div>
                       </button>
