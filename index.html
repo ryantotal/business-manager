@@ -1419,14 +1419,55 @@ return (
             } catch {}
             return true;
           });
-          // Detect platform once — only iPhone/iPad needs the manual instructions, Chrome
-          // on Android handles install via its own native prompt
+          // Detect platform once — iOS needs manual Add to Home Screen instructions
+          // (Apple blocks beforeinstallprompt). Android Chrome/Edge fires it and we
+          // can trigger a native install dialog with one tap.
           const installPlatform = React.useMemo(() => {
             const ua = navigator.userAgent || '';
             const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
             const isAndroid = /Android/.test(ua);
             return { isIOS, isAndroid, isMobile: isIOS || isAndroid };
           }, []);
+
+          // Capture the Android install prompt when the browser fires it. We stash
+          // the event so a button click later can call .prompt() on it — browsers
+          // require a real user gesture, but the captured event remains valid.
+          const [deferredInstallPrompt, setDeferredInstallPrompt] = React.useState(null);
+          React.useEffect(() => {
+            const handler = (e) => {
+              e.preventDefault(); // stop Chrome's mini-infobar so we control the UX
+              setDeferredInstallPrompt(e);
+            };
+            window.addEventListener('beforeinstallprompt', handler);
+            // Clear the captured prompt once installed — no point holding stale event
+            const installedHandler = () => setDeferredInstallPrompt(null);
+            window.addEventListener('appinstalled', installedHandler);
+            return () => {
+              window.removeEventListener('beforeinstallprompt', handler);
+              window.removeEventListener('appinstalled', installedHandler);
+            };
+          }, []);
+
+          // Single entry point for the Install button — adapts to platform.
+          // Android with captured prompt: triggers native install dialog (one tap).
+          // iOS, or Android without prompt yet: shows the help modal with manual steps.
+          const triggerInstall = React.useCallback(async () => {
+            if (deferredInstallPrompt) {
+              try {
+                deferredInstallPrompt.prompt();
+                const result = await deferredInstallPrompt.userChoice;
+                setDeferredInstallPrompt(null); // event is single-use
+                if (result.outcome === 'accepted') {
+                  setShowInstallBanner(false);
+                }
+                return;
+              } catch (err) {
+                // Fall through to manual instructions if native prompt errors
+                console.warn('Native install prompt failed, falling back to manual:', err);
+              }
+            }
+            setShowInstallHelp(true);
+          }, [deferredInstallPrompt]);
 
           // ── Customer Portal view (after successful login) ──
           if (portalUser) {
@@ -1460,7 +1501,7 @@ return (
                         find install instructions even if they've dismissed the banner.
                         Hidden when already running as installed PWA (no point). */}
                     {installPlatform.isMobile && !(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) && (
-                      <button onClick={() => setShowInstallHelp(true)}
+                      <button onClick={triggerInstall}
                         className="flex items-center gap-1 px-2 sm:px-3 py-1.5 bg-white text-green-700 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-50"
                         title="Install on your phone">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
@@ -1962,9 +2003,9 @@ return (
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => setShowInstallHelp(true)}
+                    <button onClick={triggerInstall}
                       className="px-3 py-2 bg-white text-green-700 rounded-lg text-sm font-bold hover:bg-green-50">
-                      Show me
+                      Install
                     </button>
                     <button onClick={() => { setShowInstallBanner(false); try { localStorage.setItem('twsInstallDismissedAt', String(Date.now())); } catch {} }}
                       className="p-2 text-white hover:bg-green-800 rounded-lg" title="Dismiss">
@@ -2022,28 +2063,39 @@ return (
                         </>
                       ) : (
                         <>
-                          <p className="text-sm text-gray-700">In <strong>Chrome</strong> on Android, tap the menu (three dots, top right).</p>
+                          <p className="text-sm text-gray-700">In <strong>Chrome</strong> on Android, three taps and you're done.</p>
                           <div className="space-y-3">
                             <div className="flex items-start gap-3 bg-gray-50 rounded-lg p-3">
                               <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">1</div>
                               <div className="flex-1">
-                                <div className="text-sm font-semibold text-gray-900">Tap the ⋮ menu</div>
-                                <div className="text-xs text-gray-600 mt-0.5">Three dots, top right of Chrome</div>
+                                <div className="text-sm font-semibold text-gray-900">Tap the menu button</div>
+                                <div className="text-xs text-gray-600 mt-0.5">Three vertical dots ⋮ at the top right of Chrome</div>
+                                <div className="mt-2 inline-flex items-center justify-center bg-white border border-gray-300 rounded-lg px-3 py-2">
+                                  <svg width="22" height="22" viewBox="0 0 24 24" fill="#000" stroke="none"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                                </div>
                               </div>
                             </div>
                             <div className="flex items-start gap-3 bg-gray-50 rounded-lg p-3">
                               <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">2</div>
                               <div className="flex-1">
-                                <div className="text-sm font-semibold text-gray-900">Tap "Install app" or "Add to Home Screen"</div>
-                                <div className="text-xs text-gray-600 mt-0.5">In the menu list</div>
+                                <div className="text-sm font-semibold text-gray-900">Tap "Install app" or "Add to Home screen"</div>
+                                <div className="text-xs text-gray-600 mt-0.5">Wording varies by Chrome version — either one works.</div>
+                                <div className="mt-2 inline-flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-2">
+                                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2" strokeLinecap="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 8v6M9 11h6"/></svg>
+                                  <span className="text-xs font-medium">Install app</span>
+                                </div>
                               </div>
                             </div>
                             <div className="flex items-start gap-3 bg-gray-50 rounded-lg p-3">
                               <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">3</div>
                               <div className="flex-1">
                                 <div className="text-sm font-semibold text-gray-900">Tap "Install" — done!</div>
+                                <div className="text-xs text-gray-600 mt-0.5">The icon will appear on your home screen. Tap it any time to reorder.</div>
                               </div>
                             </div>
+                          </div>
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                            <strong>Don't see "Install app"?</strong> Make sure you're using <strong>Chrome</strong> (or Edge / Samsung Internet) — Firefox and some other browsers don't support installing PWAs the same way.
                           </div>
                         </>
                       )}
