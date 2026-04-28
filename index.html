@@ -7265,24 +7265,47 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
 
   // Mobile agenda — which day's jobs are shown in the list below the strip.
   // Defaults to today if today is in the visible month, else day 1.
-  const today = new Date();
+  //
+  // FLICKER FIX: parent auto-refreshes every 30s (loadJobsFromSupabase). That re-renders
+  // this component, which previously caused (1) `today` to be re-created on every render
+  // breaking referential equality, (2) the auto-scroll effect to interpret normal renders
+  // as a fresh selection, and (3) `scrollIntoView` to leak vertical scroll to the page.
+  // Three fixes combined: memoise today's date string, only scroll when the user actually
+  // taps a different day, and scroll horizontally inside the strip container only.
+  const today = React.useMemo(() => new Date(), []); // stable for the lifetime of this view
   const todayInMonth = today.getFullYear() === year && today.getMonth() === month;
   const [selectedDay, setSelectedDay] = React.useState(todayInMonth ? today.getDate() : 1);
 
-  // When the user navigates months, snap selection to today (if visible) or day 1
+  // When the user navigates months, snap selection to today (if visible) or day 1.
+  // Only fires on actual month change — not on parent re-render — because primitives
+  // in the dep array compare by value.
   React.useEffect(() => {
     setSelectedDay(todayInMonth ? today.getDate() : 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
-  // Auto-scroll the week strip to the selected day on mount and selection change
+  // Auto-scroll the day chip into view ONLY when the user actively selects one.
+  // The userSelectedRef gate ensures parent re-renders (auto-refresh) never trigger
+  // a scroll, even if the effect somehow re-fires.
   const stripRef = React.useRef(null);
+  const userSelectedRef = React.useRef(false);
+  const handleSelectDay = React.useCallback((dayNum) => {
+    userSelectedRef.current = true;
+    setSelectedDay(dayNum);
+  }, []);
   React.useEffect(() => {
-    if (!stripRef.current) return;
-    const el = stripRef.current.querySelector(`[data-day="${selectedDay}"]`);
-    if (el && el.scrollIntoView) {
-      el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    }
+    if (!userSelectedRef.current) return; // skip auto-scroll on initial mount + parent re-renders
+    userSelectedRef.current = false;
+    const strip = stripRef.current;
+    if (!strip) return;
+    const el = strip.querySelector(`[data-day="${selectedDay}"]`);
+    if (!el) return;
+    // Scroll horizontally within the strip only — never touch page scroll.
+    // Manual math instead of scrollIntoView avoids the page-jumping side effect on iOS.
+    const stripRect = strip.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const offset = (elRect.left - stripRect.left) - (stripRect.width / 2) + (elRect.width / 2);
+    strip.scrollTo({ left: strip.scrollLeft + offset, behavior: 'smooth' });
   }, [selectedDay]);
 
   // Get all days in the month
@@ -7290,57 +7313,55 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
     days.push(new Date(year, month, d));
   }
 
-  // Group jobs by date - apply filters to regular jobs but always include events
-const jobsByDate = {};
-jobs.forEach(job => {
-  // Always include events, or include jobs that match the filters
-  const isEvent = job.isEvent || job.status === 'EVENT';
-  
-  if (isEvent) {
-    // Always include events in calendar
-    const jobDate = new Date(job.jobDate);
-    const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
-    if (!jobsByDate[dateKey]) jobsByDate[dateKey] = [];
-    jobsByDate[dateKey].push(job);
-  } else {
-    // Apply filters to regular jobs
-    let includeJob = true;
-    
-    // Apply search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
-      const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
-      const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
-      const matchesPostcode = (job.sitePostcode || '').toLowerCase().includes(query);
-      const matchesAddress = (job.siteAddress || '').toLowerCase().includes(query);
-      if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
-        includeJob = false;
+  // Group jobs by date — apply filters to regular jobs but always include events.
+  // Memoised so the auto-refresh tick doesn't rebuild this identical object on every
+  // parent render (which would cause unnecessary work in the children's reconciliation).
+  const jobsByDate = React.useMemo(() => {
+    const map = {};
+    jobs.forEach(job => {
+      const isEvent = job.isEvent || job.status === 'EVENT';
+
+      if (isEvent) {
+        const jobDate = new Date(job.jobDate);
+        const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
+        if (!map[dateKey]) map[dateKey] = [];
+        map[dateKey].push(job);
+      } else {
+        let includeJob = true;
+
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
+          const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
+          const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
+          const matchesPostcode = (job.sitePostcode || '').toLowerCase().includes(query);
+          const matchesAddress = (job.siteAddress || '').toLowerCase().includes(query);
+          if (!matchesJobNumber && !matchesCustomer && !matchesSupplier && !matchesPostcode && !matchesAddress) {
+            includeJob = false;
+          }
+        }
+
+        if (filters.jobType && job.jobType !== filters.jobType) includeJob = false;
+
+        if (filters.status) {
+          if (filters.status === 'ON_STOP' && !job.onStop) includeJob = false;
+          if (filters.status === 'COMPLETED' && !job.isCompleted) includeJob = false;
+          if (filters.status === 'CANCELLED' && !job.isCancelled) includeJob = false;
+          if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') includeJob = false;
+          if (filters.status !== 'ON_STOP' && filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' &&
+            job.status !== filters.status) includeJob = false;
+        }
+
+        if (includeJob) {
+          const jobDate = new Date(job.jobDate);
+          const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
+          if (!map[dateKey]) map[dateKey] = [];
+          map[dateKey].push(job);
+        }
       }
-    }
-    
-    // Apply type filter
-    if (filters.jobType && job.jobType !== filters.jobType) includeJob = false;
-    
-    // Apply status filter
-    if (filters.status) {
-      if (filters.status === 'ON_STOP' && !job.onStop) includeJob = false;
-      if (filters.status === 'COMPLETED' && !job.isCompleted) includeJob = false;
-      if (filters.status === 'CANCELLED' && !job.isCancelled) includeJob = false;
-      if (filters.status === 'COLLECTED' && job.status !== 'COLLECTED') includeJob = false;
-      if (filters.status !== 'ON_STOP' && filters.status !== 'COMPLETED' && filters.status !== 'CANCELLED' && filters.status !== 'COLLECTED' && 
-        job.status !== filters.status) includeJob = false;
-    }
-    
-    // Add to calendar if it passes filters
-    if (includeJob) {
-      const jobDate = new Date(job.jobDate);
-      const dateKey = `${jobDate.getFullYear()}-${jobDate.getMonth()}-${jobDate.getDate()}`;
-      if (!jobsByDate[dateKey]) jobsByDate[dateKey] = [];
-      jobsByDate[dateKey].push(job);
-    }
-  }
-});
+    });
+    return map;
+  }, [jobs, searchQuery, filters.jobType, filters.status]);
 
   const navigateMonth = (direction) => {
     const newMonth = new Date(currentMonth);
@@ -7405,7 +7426,7 @@ jobs.forEach(job => {
               <button
                 key={dateKey}
                 data-day={day.getDate()}
-                onClick={() => setSelectedDay(day.getDate())}
+                onClick={() => handleSelectDay(day.getDate())}
                 className={`flex-shrink-0 w-14 rounded-xl py-2 px-1 flex flex-col items-center transition-colors ${
                   isSelected
                     ? 'bg-blue-600 text-white'
