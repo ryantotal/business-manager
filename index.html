@@ -956,7 +956,7 @@ return (
                 sitePostcode: reorderJob.site_postcode || '',
                 preferredDate: '',
                 notes: '',
-                poNumber: reorderJob.po_number || '',
+                poNumber: reorderJob.customer_po || reorderJob.customerPO || '',
               };
             }
             return {
@@ -1285,7 +1285,7 @@ return (
                 notes: bookingData.notes || '',
                 status: 'REQUESTED',
                 is_completed: false,
-                po_number: bookingData.poNumber || '',
+                customer_po: bookingData.poNumber || '',
                 created_at: new Date().toISOString(),
                 portal_requested: true,
                 portal_requested_at: new Date().toISOString(),
@@ -7230,19 +7230,14 @@ jobs.forEach(job => {
           else if (d === tKey) tC++;
           else if (d === mKey) mC++;
         }
-        const isActive = !!filters.dateRange;
         return (
           <select
             value={filters.dateRange}
             onChange={(e) => setFilters({...filters, dateRange: e.target.value})}
-            className={`w-full sm:w-auto px-3 py-2 rounded-lg border font-medium transition-colors ${
-              isActive
-                ? 'bg-green-600 text-white border-green-600 hover:bg-green-700'
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-            }`}
+            className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg"
             title="Filter jobs by date"
           >
-            <option value="">📅 Any Date</option>
+            <option value="">All Dates</option>
             <option value="yesterday">Yesterday{yC > 0 ? ` (${yC})` : ''}</option>
             <option value="today">Today{tC > 0 ? ` (${tC})` : ''}</option>
             <option value="tomorrow">Tomorrow{mC > 0 ? ` (${mC})` : ''}</option>
