@@ -1268,7 +1268,28 @@ return (
             setPortalBookingSaving(true);
             try {
               const custName = portalUser.customer.company_name || portalUser.customer.name;
+
+              // Generate job_number — try the canonical RPC first (same as admin), fall back
+              // to the max-and-increment query. job_number is NOT NULL on the jobs table.
+              let newJobNumber;
+              try {
+                const { data: jobNumData, error: jobNumError } = await window.supabase.rpc('get_next_job_number');
+                if (!jobNumError && jobNumData) {
+                  newJobNumber = jobNumData;
+                } else {
+                  throw new Error('RPC failed');
+                }
+              } catch (e) {
+                const { data: allJobs } = await window.supabase.from('jobs').select('job_number');
+                const maxNum = allJobs ? Math.max(...allJobs.map(j => {
+                  const parts = (j.job_number || '').split('-');
+                  return parseInt(parts[parts.length - 1]) || 0;
+                })) : 1000;
+                newJobNumber = `TWS-${maxNum + 1}`;
+              }
+
               const jobData = {
+                job_number: newJobNumber,
                 customer_name: custName,
                 job_type: bookingData.jobType,
                 waste_type: bookingData.wasteType || null,
