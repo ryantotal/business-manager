@@ -174,6 +174,18 @@
         text-align: left !important;
         padding: 4px 0 !important;
       }
+      /* WTN header centre column — long legal phrases must wrap, not overflow */
+      .wtn-modal-body .wtn-header-table td > div {
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        overflow-wrap: anywhere !important;
+        font-size: 11px !important;
+        line-height: 1.35 !important;
+      }
+      /* Title slightly larger on mobile so it doesn't get lost */
+      .wtn-modal-body .wtn-header-table td > div:first-child {
+        font-size: 14px !important;
+      }
       /* Legal warning banner — readable on mobile */
       .wtn-modal-body [style*="background: rgb(255, 248, 197)"],
       .wtn-modal-body [style*="background-color: rgb(255, 248, 197)"] {
