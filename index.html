@@ -7067,6 +7067,35 @@ const [sortOrder, setSortOrder] = React.useState('desc');
 });
           const [creatingInvoice, setCreatingInvoice] = useState(false);
           const [invoiceJobId, setInvoiceJobId] = useState(null);
+
+          // Pause the global 30-second auto-refresh while the user is looking
+          // at the calendar. The auto-refresh's three Supabase loads (jobs,
+          // quotes, customers) trigger enough page activity for iOS Safari
+          // to spontaneously reset the day strip's horizontal scroll position
+          // to 0. Memoising DayStrip and avoiding re-renders didn't stop the
+          // bounce because React isn't the cause — it's a WebKit quirk.
+          // Pausing the refresh while the user is on this view removes the
+          // trigger entirely. The refresh resumes the moment they switch to
+          // list view, navigate away from JobsView, or reopen the tab.
+          //
+          // We pause for ALL devices (not just mobile-detected ones) because
+          // matchMedia isn't always reliable on PWAs and the auto-refresh
+          // catching up via the visibilitychange handler is acceptable on
+          // desktop too.
+          React.useEffect(() => {
+            const shouldPause = viewMode === 'calendar';
+            window.__pauseAutoRefresh = shouldPause;
+            console.log('[AutoRefresh Pause]', { viewMode, shouldPause, flag: window.__pauseAutoRefresh });
+            // When unpausing (e.g. user just switched away from calendar),
+            // do one fresh load immediately so they're not looking at stale data.
+            if (!shouldPause && window.loadJobsFromSupabase) {
+              window.loadJobsFromSupabase();
+            }
+            return () => {
+              window.__pauseAutoRefresh = false;
+              console.log('[AutoRefresh Pause] CLEANUP — flag cleared');
+            };
+          }, [viewMode]);
 const handleCreateInvoice = async (job) => {
   setCreatingInvoice(true);
   setInvoiceJobId(job.id);
@@ -15564,8 +15593,17 @@ useEffect(() => {
   };
   checkRecurringWtnsInline();
 
-  // Auto-refresh jobs every 30 seconds in the background
+  // Auto-refresh jobs every 30 seconds in the background.
+  // Skipped while the mobile calendar view is active — the page activity
+  // from three rapid Supabase loads makes iOS Safari reset the day strip's
+  // scroll position. JobsView sets window.__pauseAutoRefresh while on that
+  // view; an immediate refresh fires when the flag clears.
   const autoRefreshInterval = setInterval(async () => {
+    if (window.__pauseAutoRefresh) {
+      console.log('[AutoRefresh] SKIPPED — pause flag is set');
+      return;
+    }
+    console.log('[AutoRefresh] running');
     try {
       await window.loadJobsFromSupabase();
       await loadQuotesFromSupabase();
