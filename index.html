@@ -7397,6 +7397,15 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
     setSelectedDay(dayNum);
   }, []);
 
+  // DIAGNOSTIC: Log when CalendarView mounts and unmounts. If we see
+  // MOUNTED/UNMOUNTED pairs every ~30 seconds during auto-refresh, it
+  // confirms the whole calendar is being torn down and rebuilt, which
+  // would reset the day strip's scroll position to 0 (= days 1-5).
+  React.useEffect(() => {
+    console.log('[CalendarView] MOUNTED');
+    return () => console.log('[CalendarView] UNMOUNTED');
+  }, []);
+
   // Get all days in the month
   for (let d = 1; d <= lastDay.getDate(); d++) {
     days.push(new Date(year, month, d));
