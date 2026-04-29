@@ -7255,6 +7255,104 @@ const uploadJobAttachment = async () => {
   }
 };
 
+         // DayStrip — extracted as a memoised component so the auto-refresh's identical
+         // job updates can't cause it to re-render. The strip's scroll position is owned
+         // by the user; if React reconciles the chip contents (even to identical values),
+         // iOS Safari sometimes resets the strip's scrollLeft. The fix is to physically
+         // prevent re-renders when nothing visible has changed.
+         //
+         // Custom comparison: compare the rendered SHAPE of each chip, not array references.
+         // For each day in the visible month, build a fingerprint of "how many jobs and what
+         // status mix" — if every day's fingerprint is identical, skip the re-render.
+         const DayStrip = React.memo(({ days, jobsByDate, todayString, selectedDay, jobColors, onSelectDay, stripRef }) => {
+           return (
+             <div
+               ref={stripRef}
+               className="flex gap-2 overflow-x-auto pb-3 -mx-3 px-3 mb-4"
+               style={{ scrollbarWidth: 'thin', WebkitOverflowScrolling: 'touch', overflowAnchor: 'none' }}
+             >
+               {days.map(day => {
+                 const dateKey = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
+                 const dayJobs = jobsByDate[dateKey] || [];
+                 const isToday = todayString === day.toDateString();
+                 const isSelected = selectedDay === day.getDate();
+                 const dayName = day.toLocaleDateString('en-GB', { weekday: 'short' });
+                 const dots = dayJobs.slice(0, 4);
+                 return (
+                   <button
+                     key={dateKey}
+                     data-day={day.getDate()}
+                     onClick={() => onSelectDay(day.getDate())}
+                     className={`flex-shrink-0 w-14 rounded-xl py-2 px-1 flex flex-col items-center transition-colors ${
+                       isSelected
+                         ? 'bg-blue-600 text-white'
+                         : isToday
+                         ? 'bg-blue-50 text-blue-700 border border-blue-300'
+                         : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                     }`}
+                   >
+                     <div className={`text-[10px] uppercase font-medium ${isSelected ? 'text-blue-100' : 'text-gray-500'}`}>
+                       {dayName}
+                     </div>
+                     <div className="text-lg font-bold leading-none mt-0.5">{day.getDate()}</div>
+                     <div className="flex gap-0.5 mt-1.5 h-1.5 items-center">
+                       {dayJobs.length === 0 ? (
+                         <div className="w-1.5 h-1.5" />
+                       ) : dayJobs.length <= 4 ? (
+                         dots.map((j, i) => {
+                           const isEvent = j.is_event || j.status === 'EVENT';
+                           const isOnStop = j.onStop || j.on_stop;
+                           const colour = isOnStop ? '#dc2626'
+                             : isEvent ? '#8b5cf6'
+                             : (jobColors[j.jobType] || '#6b7280');
+                           return (
+                             <div
+                               key={i}
+                               className="w-1.5 h-1.5 rounded-full"
+                               style={{ backgroundColor: isSelected ? '#ffffff' : colour }}
+                             />
+                           );
+                         })
+                       ) : (
+                         <div className={`text-[9px] font-bold leading-none ${isSelected ? 'text-white' : 'text-gray-700'}`}>
+                           {dayJobs.length}
+                         </div>
+                       )}
+                     </div>
+                   </button>
+                 );
+               })}
+             </div>
+           );
+         }, (prev, next) => {
+           // Re-render only if selection changed, days changed, OR a chip's visible content changed
+           if (prev.selectedDay !== next.selectedDay) return false;
+           if (prev.todayString !== next.todayString) return false;
+           if (prev.days.length !== next.days.length) return false;
+           // Compare day fingerprints — count + status mix per visible day
+           for (let i = 0; i < next.days.length; i++) {
+             const day = next.days[i];
+             const k = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
+             const a = prev.jobsByDate[k] || [];
+             const b = next.jobsByDate[k] || [];
+             if (a.length !== b.length) return false;
+             // Cheap fingerprint of the first 4 jobs (those are what render as dots)
+             const limit = Math.min(4, b.length);
+             for (let j = 0; j < limit; j++) {
+               const aj = a[j], bj = b[j];
+               if (!aj || !bj) return false;
+               if ((aj.id !== bj.id) ||
+                   (aj.status !== bj.status) ||
+                   ((aj.onStop || aj.on_stop) !== (bj.onStop || bj.on_stop)) ||
+                   ((aj.is_event || aj.status === 'EVENT') !== (bj.is_event || bj.status === 'EVENT')) ||
+                   (aj.jobType !== bj.jobType)) {
+                 return false;
+               }
+             }
+           }
+           return true; // skip re-render
+         });
+
          // Calendar View Component
 const CalendarView = ({ expandedDays, setExpandedDays }) => {
   const year = currentMonth.getFullYear();
@@ -7385,65 +7483,15 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
         )}
 
         {/* Horizontal scrolling day strip */}
-        <div
-          ref={stripRef}
-          className="flex gap-2 overflow-x-auto pb-3 -mx-3 px-3 mb-4"
-          style={{ scrollbarWidth: 'thin', WebkitOverflowScrolling: 'touch', overflowAnchor: 'none' }}
-        >
-          {days.map(day => {
-            const dateKey = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
-            const dayJobs = jobsByDate[dateKey] || [];
-            const isToday = today.toDateString() === day.toDateString();
-            const isSelected = selectedDay === day.getDate();
-            const dayName = day.toLocaleDateString('en-GB', { weekday: 'short' });
-            // Up to 4 colour dots represent the job mix on that day
-            const dots = dayJobs.slice(0, 4);
-            return (
-              <button
-                key={dateKey}
-                data-day={day.getDate()}
-                onClick={() => handleSelectDay(day.getDate())}
-                className={`flex-shrink-0 w-14 rounded-xl py-2 px-1 flex flex-col items-center transition-colors ${
-                  isSelected
-                    ? 'bg-blue-600 text-white'
-                    : isToday
-                    ? 'bg-blue-50 text-blue-700 border border-blue-300'
-                    : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <div className={`text-[10px] uppercase font-medium ${isSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                  {dayName}
-                </div>
-                <div className="text-lg font-bold leading-none mt-0.5">{day.getDate()}</div>
-                {/* Density indicator — coloured dots, one per job (max 4), or count badge if more */}
-                <div className="flex gap-0.5 mt-1.5 h-1.5 items-center">
-                  {dayJobs.length === 0 ? (
-                    <div className="w-1.5 h-1.5" />
-                  ) : dayJobs.length <= 4 ? (
-                    dots.map((j, i) => {
-                      const isEvent = j.is_event || j.status === 'EVENT';
-                      const isOnStop = j.onStop || j.on_stop;
-                      const colour = isOnStop ? '#dc2626'
-                        : isEvent ? '#8b5cf6'
-                        : (jobColors[j.jobType] || '#6b7280');
-                      return (
-                        <div
-                          key={i}
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: isSelected ? '#ffffff' : colour }}
-                        />
-                      );
-                    })
-                  ) : (
-                    <div className={`text-[9px] font-bold leading-none ${isSelected ? 'text-white' : 'text-gray-700'}`}>
-                      {dayJobs.length}
-                    </div>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <DayStrip
+          days={days}
+          jobsByDate={jobsByDate}
+          todayString={today.toDateString()}
+          selectedDay={selectedDay}
+          jobColors={jobColors}
+          onSelectDay={handleSelectDay}
+          stripRef={stripRef}
+        />
 
         {/* Selected day's job list */}
         {(() => {
