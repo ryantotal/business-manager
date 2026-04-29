@@ -7388,7 +7388,7 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
         <div
           ref={stripRef}
           className="flex gap-2 overflow-x-auto pb-3 -mx-3 px-3 mb-4"
-          style={{ scrollbarWidth: 'thin', WebkitOverflowScrolling: 'touch' }}
+          style={{ scrollbarWidth: 'thin', WebkitOverflowScrolling: 'touch', overflowAnchor: 'none' }}
         >
           {days.map(day => {
             const dateKey = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
