@@ -6036,9 +6036,59 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
 // React.memo can actually do its job and reconcile in place.
 // ─────────────────────────────────────────────────────────────────────────
 const DayStrip = React.memo(({ days, jobsByDate, todayString, selectedDay, jobColors, onSelectDay, stripRef }) => {
-  // Diagnostic: log when this actually re-renders. If the memo is working,
-  // this should NOT log every 30 seconds during auto-refresh.
-  console.log('[DayStrip] rendered', { dayCount: days.length, selectedDay });
+
+  // ─── SCROLL GUARDIAN ───────────────────────────────────────────────────
+  // iOS Safari spontaneously resets scrollLeft on this overflow container
+  // when the rest of the page is busy (the 30s auto-refresh causes three
+  // Supabase loads in quick succession, each triggering re-renders elsewhere
+  // on the page; that's enough for WebKit to panic and reset our scroll).
+  // React isn't doing anything to us — DayStrip's memo is skipping renders
+  // and CalendarView never unmounts — yet the strip still bounces.
+  //
+  // Fix: continuously remember the user's scroll position. If scrollLeft
+  // ever drops to 0 without the user having put it there, restore it
+  // before the next paint. From the user's perspective, the bounce never
+  // happens — even though Safari is technically still doing it, we undo
+  // it within a frame so it's invisible.
+  const userScrollLeft = React.useRef(0);
+  const lastUserInteraction = React.useRef(Date.now());
+
+  React.useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+
+    // Track real user scrolling. We treat any scroll event as "the user
+    // moved the strip" UNLESS the new value is exactly 0 AND we previously
+    // had a non-zero saved position AND the user hasn't touched the strip
+    // in the last 500ms — that's the signature of a Safari-induced reset.
+    const onScroll = () => {
+      const now = Date.now();
+      const timeSinceTouch = now - lastUserInteraction.current;
+      const sl = el.scrollLeft;
+      // If Safari just reset us to 0 but we had a saved non-zero position
+      // and the user hasn't recently interacted, restore it.
+      if (sl === 0 && userScrollLeft.current > 0 && timeSinceTouch > 500) {
+        el.scrollLeft = userScrollLeft.current;
+        return;
+      }
+      userScrollLeft.current = sl;
+    };
+
+    // Mark touchstart/pointerdown so we know when the user is actively
+    // interacting with the strip (and any scroll-to-0 is legitimate).
+    const onTouch = () => { lastUserInteraction.current = Date.now(); };
+
+    el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener('touchstart', onTouch, { passive: true });
+    el.addEventListener('pointerdown', onTouch, { passive: true });
+
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('touchstart', onTouch);
+      el.removeEventListener('pointerdown', onTouch);
+    };
+  }, [stripRef]);
+
   return (
     <div
       ref={stripRef}
@@ -7395,15 +7445,6 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
   const stripRef = React.useRef(null);
   const handleSelectDay = React.useCallback((dayNum) => {
     setSelectedDay(dayNum);
-  }, []);
-
-  // DIAGNOSTIC: Log when CalendarView mounts and unmounts. If we see
-  // MOUNTED/UNMOUNTED pairs every ~30 seconds during auto-refresh, it
-  // confirms the whole calendar is being torn down and rebuilt, which
-  // would reset the day strip's scroll position to 0 (= days 1-5).
-  React.useEffect(() => {
-    console.log('[CalendarView] MOUNTED');
-    return () => console.log('[CalendarView] UNMOUNTED');
   }, []);
 
   // Get all days in the month
