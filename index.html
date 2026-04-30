@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+     <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -16022,6 +16022,56 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
 
  const handleUpdateJob = async (updatedJob) => {
   try {
+    // ─── DEFENSIVE ID VALIDATION ────────────────────────────────────────
+    // The database `id` column is a UUID. Occasionally — especially right
+    // after duplicating a job — some path through the code can leave the
+    // in-memory id set to the human-readable job number (e.g. "TWS-1387")
+    // instead of a real UUID. When that gets sent to Supabase as the
+    // .eq('id', ...) filter, Postgres rejects it with
+    //   "invalid input syntax for type uuid: \"TWS-1387\""
+    // and the user sees an error pop up.
+    //
+    // Re-opening the job clears it because loadJobsFromSupabase re-maps
+    // every job's id from the DB. So the data is fine; only the in-memory
+    // copy is wrong for a few seconds after duplication.
+    //
+    // This guard catches that case: if the id doesn't look like a UUID,
+    // try to find the matching row in the local jobs array by its job
+    // number and use its UUID instead. If we can't find one, refuse the
+    // update with a clear message rather than letting Postgres complain.
+    const looksLikeUuid = (v) => typeof v === 'string'
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
+    if (!looksLikeUuid(updatedJob.id)) {
+      console.warn('[handleUpdateJob] id is not a UUID, attempting recovery', {
+        suspectId: updatedJob.id,
+        jobNumber: updatedJob.jobNumber,
+      });
+      // Try to find the right UUID by job number from local state
+      const match = (jobs || []).find(j =>
+        j.jobNumber === updatedJob.jobNumber ||
+        j.job_number === updatedJob.jobNumber
+      );
+      if (match && looksLikeUuid(match.id)) {
+        console.log('[handleUpdateJob] recovered UUID from local jobs:', match.id);
+        updatedJob = { ...updatedJob, id: match.id };
+      } else {
+        // Last-ditch: query the DB for this job number directly
+        const { data: dbMatch } = await window.supabase
+          .from('jobs')
+          .select('id')
+          .eq('job_number', updatedJob.jobNumber)
+          .single();
+        if (dbMatch && looksLikeUuid(dbMatch.id)) {
+          console.log('[handleUpdateJob] recovered UUID from DB:', dbMatch.id);
+          updatedJob = { ...updatedJob, id: dbMatch.id };
+        } else {
+          alert('Could not save changes — this job\'s identifier is missing. Please close and re-open the job, then try again.');
+          return;
+        }
+      }
+    }
+
     // Convert camelCase to snake_case for database
     const jobForDatabase = {
       customer_name: updatedJob.customerName,
