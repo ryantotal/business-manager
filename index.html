@@ -320,6 +320,12 @@
     <script type="text/babel">
         const { useState, useEffect, createContext, useContext } = React;
 
+        // Phase 3 build marker — type `window.PHASE3_BUILD` in the console
+        // to confirm which version of the file is actually live. If this
+        // is undefined, the deployed HTML is older than fix4.
+        window.PHASE3_BUILD = 'fix4-2026-05-01';
+        console.log('[Phase 3] Build:', window.PHASE3_BUILD);
+
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
         // Sage rejects invalid numbers with the misleading error
@@ -3410,7 +3416,7 @@ useEffect(() => {
               recipient_email_source: 'inherited-parent',
             };
           });
-          await saveWtnsForJob(job.id, childRows, { preserveStateColumns: false });
+          await window.saveWtnsForJob(job.id, childRows, { preserveStateColumns: false });
           console.log(`[WTN] Phase 3: saved ${childRows.length} inherited WTN row(s) to child job:`, job.id);
         }
       } catch (phase3InheritErr) {
@@ -4288,9 +4294,9 @@ const [isEvent, setIsEvent] = useState(false);
       // assumed the save had failed silently.
       if (job?.id) {
         try {
-          const wtnRows = wtnFieldsToRows(wtnFields, job.id);
+          const wtnRows = window.wtnFieldsToRows(wtnFields, job.id);
           if (wtnRows.length > 0) {
-            await saveWtnsForJob(job.id, wtnRows);
+            await window.saveWtnsForJob(job.id, wtnRows);
             console.log(`[Phase 3] Update Job: saved ${wtnRows.length} WTN row(s) for job ${job.id}`);
           }
         } catch (err) {
@@ -6336,8 +6342,8 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             // into the new `wtns` table. saveWtnsForJob also clears
                             // any stale rows for de-selected lines.
                             try {
-                              const wtnRows = wtnFieldsToRows(wtnFields, wtnJobId);
-                              await saveWtnsForJob(wtnJobId, wtnRows);
+                              const wtnRows = window.wtnFieldsToRows(wtnFields, wtnJobId);
+                              await window.saveWtnsForJob(wtnJobId, wtnRows);
                               // Stamp per-WTN state columns (sent / sent_at / recipient /
                               // portal_visible / recurring*) onto every row for this job.
                               const perWtnPatch = {
@@ -6351,7 +6357,7 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                                 perWtnPatch.recurring_frequency = wtnFields.recurringWtnFrequency;
                                 perWtnPatch.recurring_next_date = wtnFields.recurringWtnNextDate;
                               }
-                              await applyPerWtnState(wtnJobId, perWtnPatch);
+                              await window.applyPerWtnState(wtnJobId, perWtnPatch);
                             } catch(wtnsTableErr) {
                               console.error('[Phase 3] wtns table write failed (legacy write will still happen):', wtnsTableErr);
                               alert('Warning: the new multi-WTN write failed (' + (wtnsTableErr.message || wtnsTableErr) + '). The legacy single-WTN record will still be saved.');
@@ -6429,9 +6435,9 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                                   // line into the wtns table, then flip portal_visible
                                   // on every row for this job.
                                   try {
-                                    const wtnRows = wtnFieldsToRows(wtnFields, job.id);
-                                    await saveWtnsForJob(job.id, wtnRows);
-                                    await applyPerWtnState(job.id, { portal_visible: true });
+                                    const wtnRows = window.wtnFieldsToRows(wtnFields, job.id);
+                                    await window.saveWtnsForJob(job.id, wtnRows);
+                                    await window.applyPerWtnState(job.id, { portal_visible: true });
                                   } catch(wtnsTableErr) {
                                     console.error('[Phase 3] wtns table publish failed (legacy write will still happen):', wtnsTableErr);
                                   }
@@ -16121,6 +16127,26 @@ async function applyPerWtnState(jobId, patch) {
   if (error) console.warn('[applyPerWtnState] failed:', error);
 }
 
+// Phase 3 fix4 — also expose the helpers on `window`. Belt-and-braces
+// against scope issues: even if Babel-in-browser fails to hoist these
+// function declarations into the right closure, they're always reachable
+// as `window.wtnFieldsToRows` etc. The call sites below use the bare
+// identifier first (which works when scope is right) and the existing
+// try/catch pattern means a ReferenceError would naturally fall through
+// to fix2's user-visible alert. With these on window, we have a runtime
+// fallback should anyone need it.
+window.wtnFieldsToRows = wtnFieldsToRows;
+window.saveWtnsForJob = saveWtnsForJob;
+window.applyPerWtnState = applyPerWtnState;
+window.mapWtnRowToCamel = mapWtnRowToCamel;
+window.loadWtnsForJobs = loadWtnsForJobs;
+window.enrichJobsWithWtns = enrichJobsWithWtns;
+console.log('[Phase 3] WTN helpers attached to window:', {
+  wtnFieldsToRows: typeof window.wtnFieldsToRows,
+  saveWtnsForJob: typeof window.saveWtnsForJob,
+  applyPerWtnState: typeof window.applyPerWtnState,
+});
+
 // Load jobs from Supabase when app starts <- This is line 6850
 const loadJobsFromSupabase = async () => {
     try {
@@ -17508,9 +17534,9 @@ const handleCompleteJob = async (job) => {
                   recipient_email_source: 'inherited-parent',
                 };
               });
-              await saveWtnsForJob(job.id, childRowsBase, { preserveStateColumns: false });
+              await window.saveWtnsForJob(job.id, childRowsBase, { preserveStateColumns: false });
               // Stamp sent state on every row
-              await applyPerWtnState(job.id, {
+              await window.applyPerWtnState(job.id, {
                 sent: true,
                 sent_at: sentAt,
                 recipient: recipient,
@@ -17671,9 +17697,9 @@ const handleCompleteJob = async (job) => {
                   recipient_email_source: 'inherited-parent',
                 };
               });
-              await saveWtnsForJob(job.id, childRowsBase, { preserveStateColumns: false });
+              await window.saveWtnsForJob(job.id, childRowsBase, { preserveStateColumns: false });
               // Flip portal_visible on every row (no email — just portal save)
-              await applyPerWtnState(job.id, { portal_visible: true });
+              await window.applyPerWtnState(job.id, { portal_visible: true });
             }
           } catch (wtnsTableErr) {
             console.error('[Phase 3] auto-portal wtns table write failed (legacy write will still happen):', wtnsTableErr);
