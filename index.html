@@ -323,7 +323,7 @@
         // Phase 3 build marker — type `window.PHASE3_BUILD` in the console
         // to confirm which version of the file is actually live. If this
         // is undefined, the deployed HTML is older than fix4.
-        window.PHASE3_BUILD = 'fix4-2026-05-01';
+        window.PHASE3_BUILD = 'fix5-2026-05-01';
         console.log('[Phase 3] Build:', window.PHASE3_BUILD);
 
         // ── UK VAT number validation ──────────────────────────────────────
@@ -4294,7 +4294,29 @@ const [isEvent, setIsEvent] = useState(false);
       // assumed the save had failed silently.
       if (job?.id) {
         try {
+          // Diagnostic: dump wtnFields state at submit time so we can see
+          // exactly what's being saved. If `lines` is missing or only has
+          // one included entry when the user thinks they ticked two, we
+          // need to know that.
+          console.log('[Phase 3 DIAG] handleSubmit wtnFields snapshot', {
+            hasLines: Array.isArray(wtnFields.lines),
+            linesCount: (wtnFields.lines || []).length,
+            includedIndexes: (wtnFields.lines || []).filter(l => l.included).map(l => l.lineItemIndex),
+            includedDetails: (wtnFields.lines || []).filter(l => l.included).map(l => ({
+              idx: l.lineItemIndex,
+              ewc: l.listOfWasteCode,
+              qty: l.quantity,
+              unit: l.unit,
+              container: l.wasteContainer,
+            })),
+          });
           const wtnRows = window.wtnFieldsToRows(wtnFields, job.id);
+          console.log('[Phase 3 DIAG] wtnFieldsToRows produced', wtnRows.length, 'row(s):', wtnRows.map(r => ({
+            wtn_number: r.wtn_number,
+            line_item_index: r.line_item_index,
+            suffix_letter: r.suffix_letter,
+            ewc: r.list_of_waste_code,
+          })));
           if (wtnRows.length > 0) {
             await window.saveWtnsForJob(job.id, wtnRows);
             console.log(`[Phase 3] Update Job: saved ${wtnRows.length} WTN row(s) for job ${job.id}`);
@@ -5643,22 +5665,38 @@ const [isEvent, setIsEvent] = useState(false);
                                 checked={!!line.included}
                                 onChange={e => {
                                   const newLines = wtnFields.lines.map((l, i) => i === idx ? { ...l, included: e.target.checked } : l);
+                                  console.log('[Phase 3 DIAG] Line tick changed', {
+                                    lineIdx: idx,
+                                    newCheckedState: e.target.checked,
+                                    linesCountBefore: wtnFields.lines.length,
+                                    linesIncludedBefore: wtnFields.lines.filter(l => l.included).map(l => l.lineItemIndex),
+                                    linesIncludedAfter: newLines.filter(l => l.included).map(l => l.lineItemIndex),
+                                  });
                                   // If turning ON the first ticked line, sync top-level flat
                                   // fields to it. Keeps email/preview/legacy paths in sync.
-                                  const firstIncluded = newLines.find(l => l.included);
-                                  setWtnFields({
-                                    ...wtnFields,
-                                    lines: newLines,
-                                    ...(firstIncluded ? {
-                                      wasteDescription: firstIncluded.wasteDescription,
-                                      listOfWasteCode: firstIncluded.listOfWasteCode,
-                                      wasteContainer: firstIncluded.wasteContainer,
-                                      wasteProcess: firstIncluded.wasteProcess,
-                                      quantity: firstIncluded.quantity,
-                                      unit: firstIncluded.unit,
-                                      isHazardous: firstIncluded.isHazardous,
-                                      skipSize: firstIncluded.skipSize,
-                                    } : {}),
+                                  // Use functional setState (prev => ...) so we don't clobber
+                                  // any concurrent updates from other useEffects (auto-suggest,
+                                  // address sync, etc.) that may have run between this render
+                                  // and this click.
+                                  setWtnFields(prev => {
+                                    // Re-derive newLines from prev to be safe — the user just
+                                    // ticked a specific index, apply that to prev.lines.
+                                    const trulyNewLines = (prev.lines || []).map((l, i) => i === idx ? { ...l, included: e.target.checked } : l);
+                                    const firstIncluded = trulyNewLines.find(l => l.included);
+                                    return {
+                                      ...prev,
+                                      lines: trulyNewLines,
+                                      ...(firstIncluded ? {
+                                        wasteDescription: firstIncluded.wasteDescription,
+                                        listOfWasteCode: firstIncluded.listOfWasteCode,
+                                        wasteContainer: firstIncluded.wasteContainer,
+                                        wasteProcess: firstIncluded.wasteProcess,
+                                        quantity: firstIncluded.quantity,
+                                        unit: firstIncluded.unit,
+                                        isHazardous: firstIncluded.isHazardous,
+                                        skipSize: firstIncluded.skipSize,
+                                      } : {}),
+                                    };
                                   });
                                 }}
                               />
@@ -5684,23 +5722,26 @@ const [isEvent, setIsEvent] = useState(false);
                       const suffix = includedLines.length > 1 ? String.fromCharCode(65 + positionOfThis) : '';
                       const sectionLabel = suffix ? `Section A${suffix} — Description of Waste` : 'Section A — Description of Waste';
                       const updateLine = (patch) => {
-                        const newLines = wtnFields.lines.map((l, i) => i === idx ? { ...l, ...patch } : l);
-                        // Sync top-level flat fields if this is the first included line.
-                        const firstIncluded = newLines.find(l => l.included);
-                        const isFirstIncluded = firstIncluded && firstIncluded.lineItemIndex === line.lineItemIndex;
-                        setWtnFields({
-                          ...wtnFields,
-                          lines: newLines,
-                          ...(isFirstIncluded ? {
-                            wasteDescription: firstIncluded.wasteDescription,
-                            listOfWasteCode: firstIncluded.listOfWasteCode,
-                            wasteContainer: firstIncluded.wasteContainer,
-                            wasteProcess: firstIncluded.wasteProcess,
-                            quantity: firstIncluded.quantity,
-                            unit: firstIncluded.unit,
-                            isHazardous: firstIncluded.isHazardous,
-                            skipSize: firstIncluded.skipSize,
-                          } : {}),
+                        // Use functional setState so concurrent updates from other
+                        // useEffects don't clobber our line edits — and vice versa.
+                        setWtnFields(prev => {
+                          const newLines = (prev.lines || []).map((l, i) => i === idx ? { ...l, ...patch } : l);
+                          const firstIncluded = newLines.find(l => l.included);
+                          const isFirstIncluded = firstIncluded && firstIncluded.lineItemIndex === line.lineItemIndex;
+                          return {
+                            ...prev,
+                            lines: newLines,
+                            ...(isFirstIncluded ? {
+                              wasteDescription: firstIncluded.wasteDescription,
+                              listOfWasteCode: firstIncluded.listOfWasteCode,
+                              wasteContainer: firstIncluded.wasteContainer,
+                              wasteProcess: firstIncluded.wasteProcess,
+                              quantity: firstIncluded.quantity,
+                              unit: firstIncluded.unit,
+                              isHazardous: firstIncluded.isHazardous,
+                              skipSize: firstIncluded.skipSize,
+                            } : {}),
+                          };
                         });
                       };
                       return (
