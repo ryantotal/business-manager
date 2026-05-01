@@ -323,7 +323,7 @@
         // Phase 3 build marker — type `window.PHASE3_BUILD` in the console
         // to confirm which version of the file is actually live. If this
         // is undefined, the deployed HTML is older than fix4.
-        window.PHASE3_BUILD = 'fix6-2026-05-01';
+        window.PHASE3_BUILD = 'fix8-2026-05-01';
         console.log('[Phase 3] Build:', window.PHASE3_BUILD);
 
         // ── UK VAT number validation ──────────────────────────────────────
@@ -3764,16 +3764,26 @@ useEffect(() => {
 
 const wtnTotalPct = wtnFields.recycledPct + wtnFields.recoveredPct + wtnFields.landfillPct;
 
-// Phase 3 DIAG (fix6) — log lines state on every render so we can SEE
-// exactly what the form is displaying and why. Will be noisy; remove
-// after the multi-WTN bug is closed.
-console.log('[Phase 3 DIAG] render — wtnFields.lines =', (wtnFields.lines || []).map(l => ({
-  idx: l.lineItemIndex,
-  product: l.productName,
-  included: l.included,
-  ewc: l.listOfWasteCode,
-  qty: l.quantity,
-})), '| job.wtns count:', Array.isArray(job?.wtns) ? job.wtns.length : 'no wtns array', '| job.wtnData?:', !!job?.wtnData);
+// Phase 3 DIAG (fix7) — log lines state on every render. Use JSON.stringify
+// so Safari shows actual values inline rather than "[Object, Object]" that
+// requires expansion to inspect.
+console.log(
+  '[Phase 3 DIAG] render — wtnFields.lines = ' +
+  JSON.stringify((wtnFields.lines || []).map(l => ({
+    idx: l.lineItemIndex,
+    product: l.productName,
+    included: l.included,
+    ewc: l.listOfWasteCode,
+    qty: l.quantity,
+  }))) +
+  ' | job.wtns count: ' + (Array.isArray(job?.wtns) ? job.wtns.length : 'no wtns array') +
+  ' | job.wtns content: ' + JSON.stringify((job?.wtns || []).map(w => ({
+    idx: w.lineItemIndex,
+    suffix: w.suffixLetter,
+    wtnNum: w.wtnNumber,
+  }))) +
+  ' | job.wtnData?: ' + (!!job?.wtnData)
+);
 
 // Small badge shown next to fields that were auto-filled from a previous WTN
 const WtnSuggestBadge = ({ field }) => {
@@ -16091,15 +16101,24 @@ async function saveWtnsForJob(jobId, rows, opts = {}) {
   const existingByIdx = new Map();
   (existing || []).forEach(r => existingByIdx.set(r.line_item_index, r));
 
-  // Step 2: merge per-row state columns from existing rows where present
+  // Step 2: merge per-row state columns from existing rows where present.
+  //
+  // CRITICAL: do NOT include the existing row's `id` in the upsert payload.
+  // supabase-js v2 takes the union of keys across all rows in a multi-row
+  // upsert; if some rows have `id` set and others don't, the missing ones
+  // get serialized as `id: null`, which PostgREST then INSERTs and trips
+  // the NOT NULL constraint on `id`. Conflict target (job_id, line_item_index)
+  // is enough for upsert to figure out UPDATE vs INSERT — `id` isn't needed.
+  // We stash the existing id on a sidecar `__existingId` property so the
+  // fallback path (per-row UPDATE/INSERT) can still find it.
   const newIdxSet = new Set(rows.map(r => r.line_item_index));
   const merged = rows.map(r => {
     const ex = existingByIdx.get(r.line_item_index);
     if (preserveStateColumns && ex) {
       return {
         ...r,
-        // Carry forward state-only columns; payload doesn't override these
-        ...(ex.id != null ? { id: ex.id } : {}),
+        // NOTE: NO `id` here. See comment above. Use __existingId sidecar.
+        __existingId: ex.id,
         ...(ex.sent != null ? { sent: ex.sent } : {}),
         ...(ex.sent_at != null ? { sent_at: ex.sent_at } : {}),
         ...(ex.recipient != null ? { recipient: ex.recipient } : {}),
@@ -16123,37 +16142,35 @@ async function saveWtnsForJob(jobId, rows, opts = {}) {
   }
 
   // Step 4: upsert the new/updated rows. Conflict target = (job_id, line_item_index).
-  // A unique index on (job_id, line_item_index) is assumed in the schema.
+  // Strip the __existingId sidecar before sending — PostgREST would reject
+  // it as an unknown column.
+  const upsertPayload = merged.map(({ __existingId, ...rest }) => rest);
   const { data, error } = await window.supabase
     .from('wtns')
-    .upsert(merged, { onConflict: 'job_id,line_item_index' })
+    .upsert(upsertPayload, { onConflict: 'job_id,line_item_index' })
     .select();
   if (error) {
-    // Most likely cause: no UNIQUE constraint on (job_id, line_item_index)
-    // in the schema — postgres returns "42P10 there is no unique or
-    // exclusion constraint matching the ON CONFLICT specification".
-    // Phase 1 spec mentions an INDEX on job_id but didn't explicitly call
-    // out a UNIQUE composite. Rather than fail the whole save, fall back
-    // to a per-row UPDATE (where we already have the row id) or INSERT
-    // (for new lines). This keeps Phase 3 working even on slightly off
-    // schemas — at the cost of being a bit chattier.
+    // Fallback: per-row UPDATE (using __existingId sidecar) or INSERT.
+    // Used when the upsert's column-union behaviour or some other PostgREST
+    // quirk rejects the payload. This is chattier (1 round-trip per row)
+    // but works regardless of schema/library quirks.
     console.warn('[saveWtnsForJob] upsert failed, falling back to per-row UPDATE/INSERT:', error.message || error);
-    const updates = merged.filter(r => r.id != null);
-    const inserts = merged.filter(r => r.id == null);
+    const updates = merged.filter(r => r.__existingId != null);
+    const inserts = merged.filter(r => r.__existingId == null);
     const results = [];
     for (const u of updates) {
-      const { id, ...patch } = u;
+      const { __existingId, ...patch } = u;
       const { data: updated, error: updErr } = await window.supabase
-        .from('wtns').update(patch).eq('id', id).select();
+        .from('wtns').update(patch).eq('id', __existingId).select();
       if (updErr) {
-        console.error('[saveWtnsForJob] fallback UPDATE failed for id', id, updErr);
+        console.error('[saveWtnsForJob] fallback UPDATE failed for id', __existingId, updErr);
         throw updErr;
       }
       if (updated && updated[0]) results.push(updated[0]);
     }
     if (inserts.length > 0) {
-      // Strip id field on inserts (DB generates it)
-      const insertPayload = inserts.map(({id, ...rest}) => rest);
+      // Strip the __existingId sidecar; DB generates real id on INSERT.
+      const insertPayload = inserts.map(({ __existingId, ...rest }) => rest);
       const { data: inserted, error: insErr } = await window.supabase
         .from('wtns').insert(insertPayload).select();
       if (insErr) {
