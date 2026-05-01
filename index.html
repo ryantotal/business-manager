@@ -321,10 +321,10 @@
         const { useState, useEffect, createContext, useContext } = React;
 
         // Phase 3 build marker — type `window.PHASE3_BUILD` in the console
-        // to confirm which version of the file is actually live. If this
-        // is undefined, the deployed HTML is older than fix4.
-        window.PHASE3_BUILD = 'fix9-2026-05-01';
-        console.log('[Phase 3] Build:', window.PHASE3_BUILD);
+        // to confirm which version of the file is actually live. Kept as a
+        // silent property (no log) once Phase 3 is stable; the diagnostic
+        // logs added during fix5–fix9 have been removed.
+        window.PHASE3_BUILD = 'fix11-2026-05-01';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -1790,7 +1790,7 @@ return (
                                       {isWasteJob && hasWtn ? (
                                         <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
                                           className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
-                                          📄 Waste Transfer Note
+                                          📄 Waste Transfer Note{Array.isArray(job.wtns) && job.wtns.length > 1 ? `s (${job.wtns.length})` : ''}
                                         </button>
                                       ) : !isInvoiced && !((() => { const pa = job.portal_attachments; if (!pa) return false; const p = typeof pa === 'string' ? (() => { try { return JSON.parse(pa); } catch { return []; } })() : (Array.isArray(pa) ? pa : []); return p.length > 0; })()) ? (
                                         <span className="text-gray-300 text-xs">—</span>
@@ -1859,7 +1859,7 @@ return (
                                           <div className="col-span-2 sm:col-span-3">
                                             <button onClick={() => downloadWTN(job)}
                                               className="mt-1 px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
-                                              📄 View Waste Transfer Note
+                                              📄 View Waste Transfer Note{Array.isArray(job.wtns) && job.wtns.length > 1 ? `s (${job.wtns.length})` : ''}
                                             </button>
                                           </div>
                                         )}
@@ -2002,7 +2002,7 @@ return (
                                     {isWasteJob && hasWtn && (
                                       <button onClick={() => downloadWTN(job)}
                                         className="mt-3 w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
-                                        📄 View Waste Transfer Note
+                                        📄 View Waste Transfer Note{Array.isArray(job.wtns) && job.wtns.length > 1 ? `s (${job.wtns.length})` : ''}
                                       </button>
                                     )}
                                     {done && !cancelled && (
@@ -2437,7 +2437,7 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 wtn-print-hide gap-2">
             <h2 className="font-bold text-gray-900 text-sm sm:text-base truncate">
               WTN — {job.job_number || job.jobNumber}
-              {wtnList.length > 1 && <span className="text-gray-400 font-normal ml-2">({wtnList.length} notes)</span>}
+              {wtnList.length > 1 && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-semibold">{wtnList.length} notes</span>}
             </h2>
             <div className="flex gap-2 flex-shrink-0">
               <button onClick={() => {
@@ -2450,23 +2450,29 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
           </div>
           {/* WTN tab strip — only shown when this job has multiple WTNs */}
           {wtnList.length > 1 && (
-            <div className="flex gap-1 px-4 sm:px-6 py-2 border-b border-gray-200 bg-gray-50 wtn-print-hide overflow-x-auto">
-              {wtnList.map((w, i) => {
-                const label = w.suffixLetter
-                  ? `Note ${w.suffixLetter}`
-                  : (w.wtnNumber || `Note ${i + 1}`);
-                const isActive = i === activeWtnIdx;
-                return (
-                  <button key={w.id || w.wtnNumber || i}
-                    onClick={() => setActiveWtnIdx(i)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${isActive ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'}`}
-                    title={w.wasteDescription || ''}>
-                    {label}
-                    {w.lineItemProductName ? <span className={`ml-1 ${isActive ? 'text-blue-100' : 'text-gray-500'} font-normal`}>· {w.lineItemProductName}</span> : null}
-                  </button>
-                );
-              })}
-            </div>
+            <>
+              <div className="px-4 sm:px-6 py-2 bg-blue-50 border-b border-blue-200 text-xs text-blue-900 font-medium wtn-print-hide flex items-center gap-2">
+                <span className="text-base">📑</span>
+                <span>This job has <strong>{wtnList.length} Waste Transfer Notes</strong> — tap a tab below to switch between them.</span>
+              </div>
+              <div className="flex gap-0 px-4 sm:px-6 pt-2 border-b border-gray-200 bg-white wtn-print-hide overflow-x-auto">
+                {wtnList.map((w, i) => {
+                  const label = w.suffixLetter
+                    ? `Note ${w.suffixLetter}`
+                    : (w.wtnNumber || `Note ${i + 1}`);
+                  const isActive = i === activeWtnIdx;
+                  return (
+                    <button key={w.id || w.wtnNumber || i}
+                      onClick={() => setActiveWtnIdx(i)}
+                      className={`px-4 py-2.5 -mb-px text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${isActive ? 'border-blue-600 text-blue-700 bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+                      title={w.wasteDescription || ''}>
+                      {label}
+                      {w.lineItemProductName ? <span className={`ml-1.5 font-normal ${isActive ? 'text-blue-500' : 'text-gray-400'}`}>· {w.lineItemProductName}</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
           <div className="p-2 sm:p-4 wtn-modal-body" style={{fontFamily:'Arial,sans-serif',fontSize:11}}>
               {isReconstructed && (
@@ -3764,27 +3770,6 @@ useEffect(() => {
 
 const wtnTotalPct = wtnFields.recycledPct + wtnFields.recoveredPct + wtnFields.landfillPct;
 
-// Phase 3 DIAG (fix7) — log lines state on every render. Use JSON.stringify
-// so Safari shows actual values inline rather than "[Object, Object]" that
-// requires expansion to inspect.
-console.log(
-  '[Phase 3 DIAG] render — wtnFields.lines = ' +
-  JSON.stringify((wtnFields.lines || []).map(l => ({
-    idx: l.lineItemIndex,
-    product: l.productName,
-    included: l.included,
-    ewc: l.listOfWasteCode,
-    qty: l.quantity,
-  }))) +
-  ' | job.wtns count: ' + (Array.isArray(job?.wtns) ? job.wtns.length : 'no wtns array') +
-  ' | job.wtns content: ' + JSON.stringify((job?.wtns || []).map(w => ({
-    idx: w.lineItemIndex,
-    suffix: w.suffixLetter,
-    wtnNum: w.wtnNumber,
-  }))) +
-  ' | job.wtnData?: ' + (!!job?.wtnData)
-);
-
 // Small badge shown next to fields that were auto-filled from a previous WTN
 const WtnSuggestBadge = ({ field }) => {
   if (!wtnSuggestions[field]) return null;
@@ -3970,6 +3955,116 @@ ${f.notes?`<div style="padding:10px 10px;font-size:11px;border-top:1px solid #cc
 </div>
 </div></body></html>`;
 };
+
+// Phase 3 — render N WTN pages in a single HTML document, one per ticked
+// line item. Each page reuses buildWtnHtml so styling/layout stays
+// identical to the single-WTN case. The pages are extracted from each
+// generated HTML and concatenated with a CSS page-break between them so
+// printing produces N pages.
+//
+// `wtnFields` is the in-memory form state with `lines: [...]`. If there's
+// only one included line (or no `lines` array at all — legacy/single-WTN
+// callers), this falls through to a single buildWtnHtml call so behaviour
+// matches the previous code path exactly.
+const buildMultiWtnHtml = (wtnFields, job) => {
+  const includedLines = Array.isArray(wtnFields.lines)
+    ? wtnFields.lines.filter(l => l.included)
+    : [];
+
+  // Single-WTN fast path — same as the old preview behaviour.
+  if (includedLines.length <= 1) {
+    return buildWtnHtml(wtnFields, job);
+  }
+
+  // Multi-WTN path: build one HTML per line, then stitch them into one
+  // document with page breaks between them.
+  // Sort by lineItemIndex so the suffix order (A, B, C...) is deterministic
+  // and matches what saveWtnsForJob writes.
+  const sorted = [...includedLines].sort((a, b) => a.lineItemIndex - b.lineItemIndex);
+  const baseWtnNumber = wtnFields.wtnNumber || '';
+
+  // For each ticked line, build a per-line wtnFields snapshot:
+  // shared fields from the form + this line's per-line waste data + a
+  // suffixed wtn_number so each page renders its own ref like WTN-1234-A.
+  const perLineHtmls = sorted.map((line, i) => {
+    const suffix = String.fromCharCode(65 + i); // 'A', 'B', 'C', ...
+    const perLineFields = {
+      ...wtnFields,
+      // Per-line overrides
+      wtnNumber: baseWtnNumber ? `${baseWtnNumber}-${suffix}` : `${suffix}`,
+      wasteDescription: line.wasteDescription || wtnFields.wasteDescription || '',
+      listOfWasteCode: line.listOfWasteCode || '',
+      wasteContainer: line.wasteContainer || 'Skip',
+      wasteProcess: line.wasteProcess || '',
+      quantity: line.quantity || 1,
+      unit: line.unit || 'tonnes',
+      isHazardous: !!line.isHazardous,
+      skipSize: line.skipSize || line.productName || '',
+    };
+    // Strip the `lines` array from the snapshot so buildWtnHtml only sees
+    // the flat shape it was designed for.
+    delete perLineFields.lines;
+    return buildWtnHtml(perLineFields, job);
+  });
+
+  // Extract head + body from each generated doc. We reuse the first doc's
+  // head (styles are identical across all pages so one is enough), then
+  // concatenate every body's inner HTML with a page-break wrapper.
+  const headMatch = perLineHtmls[0].match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+  const headContent = headMatch ? headMatch[1] : '';
+
+  const bodies = perLineHtmls.map(html => {
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    return bodyMatch ? bodyMatch[1] : html;
+  });
+
+  // Page-break CSS: each WTN sits on its own printed page. Between pages
+  // on screen we add visual separation (margin + dashed rule) so the
+  // staff can see they're scrolling through multiple notes.
+  const pageBreakStyle = `
+    @media print {
+      .wtn-page { page-break-after: always; }
+      .wtn-page:last-child { page-break-after: auto; }
+      .wtn-page-divider { display: none; }
+    }
+    .wtn-page-divider {
+      max-width: 740px;
+      margin: 28px auto;
+      border-top: 2px dashed #94a3b8;
+      text-align: center;
+      position: relative;
+    }
+    .wtn-page-divider span {
+      position: relative;
+      top: -10px;
+      background: #f3f4f6;
+      padding: 0 12px;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+    }
+    body { background: #f3f4f6; }
+  `;
+
+  const dividers = sorted.map((line, i) => {
+    const suffix = String.fromCharCode(65 + i);
+    const productLabel = line.productName ? ` · ${line.productName}` : '';
+    return `<div class="wtn-page-divider"><span>End of Note ${suffix}${productLabel}</span></div>`;
+  });
+
+  const stitchedBody = bodies
+    .map((bodyHtml, i) => {
+      // Wrap each in a .wtn-page container; add divider between pages
+      const divider = i < bodies.length - 1 ? dividers[i] : '';
+      return `<div class="wtn-page">${bodyHtml}</div>${divider}`;
+    })
+    .join('\n');
+
+  return `<!DOCTYPE html><html><head>${headContent}<style>${pageBreakStyle}</style></head><body>${stitchedBody}</body></html>`;
+};
+
 const handleDeleteAttachment = async (attachmentId) => {
   if (!window.confirm('Are you sure you want to delete this attachment?')) {
     return;
@@ -4315,29 +4410,7 @@ const [isEvent, setIsEvent] = useState(false);
       // assumed the save had failed silently.
       if (job?.id) {
         try {
-          // Diagnostic: dump wtnFields state at submit time so we can see
-          // exactly what's being saved. If `lines` is missing or only has
-          // one included entry when the user thinks they ticked two, we
-          // need to know that.
-          console.log('[Phase 3 DIAG] handleSubmit wtnFields snapshot', {
-            hasLines: Array.isArray(wtnFields.lines),
-            linesCount: (wtnFields.lines || []).length,
-            includedIndexes: (wtnFields.lines || []).filter(l => l.included).map(l => l.lineItemIndex),
-            includedDetails: (wtnFields.lines || []).filter(l => l.included).map(l => ({
-              idx: l.lineItemIndex,
-              ewc: l.listOfWasteCode,
-              qty: l.quantity,
-              unit: l.unit,
-              container: l.wasteContainer,
-            })),
-          });
           const wtnRows = window.wtnFieldsToRows(wtnFields, job.id);
-          console.log('[Phase 3 DIAG] wtnFieldsToRows produced', wtnRows.length, 'row(s):', wtnRows.map(r => ({
-            wtn_number: r.wtn_number,
-            line_item_index: r.line_item_index,
-            suffix_letter: r.suffix_letter,
-            ewc: r.list_of_waste_code,
-          })));
           if (wtnRows.length > 0) {
             await window.saveWtnsForJob(job.id, wtnRows);
             console.log(`[Phase 3] Update Job: saved ${wtnRows.length} WTN row(s) for job ${job.id}`);
@@ -5685,28 +5758,18 @@ const [isEvent, setIsEvent] = useState(false);
                               <input type="checkbox" className="w-4 h-4 mt-1"
                                 checked={!!line.included}
                                 onChange={e => {
-                                  const newLines = wtnFields.lines.map((l, i) => i === idx ? { ...l, included: e.target.checked } : l);
-                                  console.log('[Phase 3 DIAG] Line tick changed', {
-                                    lineIdx: idx,
-                                    newCheckedState: e.target.checked,
-                                    linesCountBefore: wtnFields.lines.length,
-                                    linesIncludedBefore: wtnFields.lines.filter(l => l.included).map(l => l.lineItemIndex),
-                                    linesIncludedAfter: newLines.filter(l => l.included).map(l => l.lineItemIndex),
-                                  });
-                                  // If turning ON the first ticked line, sync top-level flat
-                                  // fields to it. Keeps email/preview/legacy paths in sync.
-                                  // Use functional setState (prev => ...) so we don't clobber
+                                  // Functional setState (prev => ...) so we don't clobber
                                   // any concurrent updates from other useEffects (auto-suggest,
                                   // address sync, etc.) that may have run between this render
                                   // and this click.
                                   setWtnFields(prev => {
-                                    // Re-derive newLines from prev to be safe — the user just
-                                    // ticked a specific index, apply that to prev.lines.
                                     const trulyNewLines = (prev.lines || []).map((l, i) => i === idx ? { ...l, included: e.target.checked } : l);
                                     const firstIncluded = trulyNewLines.find(l => l.included);
                                     return {
                                       ...prev,
                                       lines: trulyNewLines,
+                                      // If turning ON the first ticked line, sync top-level flat
+                                      // fields to it. Keeps email/preview/legacy paths in sync.
                                       ...(firstIncluded ? {
                                         wasteDescription: firstIncluded.wasteDescription,
                                         listOfWasteCode: firstIncluded.listOfWasteCode,
@@ -6483,9 +6546,9 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                           <div className="flex gap-3">
                             <button type="button" onClick={()=>{
                               const w=window.open('','_blank');
-                              if(w){w.document.write(buildWtnHtml(wtnFields,job));w.document.close();}
+                              if(w){w.document.write(buildMultiWtnHtml(wtnFields,job));w.document.close();}
                             }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
-                              👁 Preview WTN
+                              👁 Preview WTN{Array.isArray(wtnFields.lines) && wtnFields.lines.filter(l=>l.included).length > 1 ? `s (${wtnFields.lines.filter(l=>l.included).length})` : ''}
                             </button>
                             <button type="button"
                               disabled={wtnTotalPct!==100}
@@ -15324,7 +15387,7 @@ info@totalwasteservicesltd.com`;
                               {isWasteJob && hasWtn ? (
                                 <button onClick={e => { e.stopPropagation(); downloadWTN(job); }}
                                   className="text-green-700 hover:text-green-900 text-xs font-medium flex items-center gap-1">
-                                  📄 Waste Transfer Note
+                                  📄 Waste Transfer Note{Array.isArray(job.wtns) && job.wtns.length > 1 ? `s (${job.wtns.length})` : ''}
                                 </button>
                               ) : !isInvoiced ? (
                                 <span className="text-gray-300 text-xs">—</span>
@@ -16210,11 +16273,6 @@ window.applyPerWtnState = applyPerWtnState;
 window.mapWtnRowToCamel = mapWtnRowToCamel;
 window.loadWtnsForJobs = loadWtnsForJobs;
 window.enrichJobsWithWtns = enrichJobsWithWtns;
-console.log('[Phase 3] WTN helpers attached to window:', {
-  wtnFieldsToRows: typeof window.wtnFieldsToRows,
-  saveWtnsForJob: typeof window.saveWtnsForJob,
-  applyPerWtnState: typeof window.applyPerWtnState,
-});
 
 // Load jobs from Supabase when app starts <- This is line 6850
 const loadJobsFromSupabase = async () => {
