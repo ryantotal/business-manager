@@ -4262,9 +4262,31 @@ const [isEvent, setIsEvent] = useState(false);
 
     // Only bundle WTN fields if they were explicitly saved/edited or pre-existed
     // wtnTouched is set when user interacts with the WTN tab
-    const hadExistingWtn = !!(job?.wtn_data || job?.wtnData);
+    const hadExistingWtn = !!(job?.wtn_data || job?.wtnData || (Array.isArray(job?.wtns) && job.wtns.length > 0));
     if (hadExistingWtn || wtnTouched) {
       newJob.wtnData = wtnFields;
+
+      // Phase 3 fix: also write each ticked line to the wtns table so
+      // multi-line WTNs survive Update Job. Without this, the user fills
+      // in the form, hits Update Job, and only the legacy wtn_data column
+      // (first line) gets saved — the second/third WTN rows never persist.
+      // Only fires for existing jobs (need an id); new jobs route through
+      // Send WTN / Publish to Portal which already handles the write.
+      if (job?.id) {
+        try {
+          const wtnRows = wtnFieldsToRows(wtnFields, job.id);
+          if (wtnRows.length > 0) {
+            // Fire-and-forget — don't block the Update Job flow on this.
+            // Errors are logged; the legacy column dual-write upstream
+            // still gives the form-level save a fallback.
+            saveWtnsForJob(job.id, wtnRows)
+              .then(() => console.log(`[Phase 3] Update Job: saved ${wtnRows.length} WTN row(s) for job ${job.id}`))
+              .catch(err => console.error('[Phase 3] Update Job: wtns write failed:', err));
+          }
+        } catch (err) {
+          console.error('[Phase 3] Update Job: wtnFieldsToRows threw:', err);
+        }
+      }
     }
     
     onSave(newJob);
