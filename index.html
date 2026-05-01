@@ -324,7 +324,7 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix11-2026-05-01';
+        window.PHASE3_BUILD = 'fix12-2026-05-01';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -2361,7 +2361,10 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
           ...prev,
           transfereeCarrierReg: prev.transfereeCarrierReg && prev.transfereeCarrierReg !== '—' ? prev.transfereeCarrierReg : (siteCbdu || supp.waste_carrier_license || supp.wasteCarrierLicense || prev.transfereeCarrierReg),
           transfereePermitNumber: prev.transfereePermitNumber && prev.transfereePermitNumber !== '—' ? prev.transfereePermitNumber : (sitePermit || supp.environmental_permit || supp.environmentalPermit || prev.transfereePermitNumber || ''),
-          transfereeAddress: prev.transfereeAddress && prev.transfereeAddress !== '—' ? prev.transfereeAddress : (siteAddr || [supp.address, supp.city, supp.county, supp.postcode].filter(Boolean).join(', ') || prev.transfereeAddress),
+          // Phase 3 (post-fix11) — Section C address sources from the supplier's
+          // MAIN address, never a site address. Site addresses (where the carrier
+          // takes the waste) are now informational fields rendered in Section A.
+          transfereeAddress: prev.transfereeAddress && prev.transfereeAddress !== '—' ? prev.transfereeAddress : ([supp.address, supp.city, supp.county, supp.postcode].filter(Boolean).join(', ') || prev.transfereeAddress),
           transfereeSignature: prev.transfereeSignature && prev.transfereeSignature !== '—' ? prev.transfereeSignature : (supp.contact_name || supp.contactName || prev.transfereeSignature || ''),
         }));
       } catch(e) { console.warn('[WtnPortalModal] Supplier lookup failed:', e); }
@@ -2568,6 +2571,15 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
                         <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Registration No. (CBDU...)</div><div style={{fontWeight:700}}>{wtnData.brokerCarrierReg||'—'}</div></div>
                       </div>
                     </div>
+                    {(wtnData.disposalSiteName||wtnData.disposalSiteAddress)&&(
+                      <div style={{padding:'5px 10px',background:'#f9fafb',borderTop:'1px solid #ccc'}}>
+                        <div style={{fontSize:7,color:'#475569',textTransform:'uppercase',marginBottom:4}}>Intended onward disposal site <span style={{fontWeight:400,color:'#94a3b8',textTransform:'none'}}>(informational — for the customer's records; does not alter the legal transferee in Section C)</span></div>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:4}}>
+                          <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Site name</div><div style={{fontWeight:700}}>{wtnData.disposalSiteName||'—'}</div></div>
+                          <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Address</div><div style={{fontSize:10,fontWeight:600}}>{wtnData.disposalSiteAddress||'—'}</div></div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Waste Hierarchy + Pie Chart */}
@@ -2827,24 +2839,30 @@ React.useEffect(() => {
   }
 
   // Sync transferee (supplier) fields
+  // Phase 3 (post-fix11) — Section C documents the carrier (supplier) as the
+  // legal next holder of the waste. Their address must be the supplier's
+  // REGISTERED/MAIN address, not a "site" sub-record. Site addresses (where
+  // the supplier subsequently takes the waste) are now per-line informational
+  // fields rendered in Section A of the WTN, not Section C.
   const suppName = formData.supplierName;
   if (suppName) {
     const ms = suppliers?.find(s => (s.name || s.companyName) === suppName);
     const suppSites = ms?.siteAddresses || [];
     const parsedSites = typeof suppSites === 'string' ? (() => { try { return JSON.parse(suppSites); } catch { return []; } })() : (Array.isArray(suppSites) ? suppSites : []);
-    const autoSite = parsedSites.length > 0 ? parsedSites[0] : null;
-    const suppAddr = autoSite
-      ? [autoSite.address, autoSite.postcode].filter(Boolean).join(', ')
-      : ms ? [ms.address, ms.city, ms.county, ms.postcode].filter(Boolean).join(', ') : '';
-    const carrierReg = autoSite?.cbduNumber || ms?.wasteCarrierLicense || ms?.waste_carrier_license || '';
-    const permitNum = autoSite?.permitNumber || '';
+    // Always use the supplier's main address for Section C — never a site address.
+    const suppAddr = ms ? [ms.address, ms.city, ms.county, ms.postcode].filter(Boolean).join(', ') : '';
+    // Carrier reg stays as the supplier's registered CBDU. If absent, fall back
+    // to the first site's CBDU (these are usually the same anyway).
+    const firstSite = parsedSites.length > 0 ? parsedSites[0] : null;
+    const carrierReg = ms?.wasteCarrierLicense || ms?.waste_carrier_license || firstSite?.cbduNumber || '';
+    // Permit number on Section C is the supplier's environmental permit, if any.
+    const permitNum = ms?.environmentalPermits || ms?.environmental_permit || '';
 
     updates.transfereeName = suppName;
     updates.transfereeAddress = suppAddr;
     updates.transfereeCarrierReg = carrierReg;
     updates.transfereePermitNumber = permitNum;
     updates.transfereeRepresenting = suppName;
-    if (autoSite) updates.selectedSiteId = autoSite.id || autoSite.siteName;
   }
 
   // Sync site/transfer address
@@ -2912,6 +2930,12 @@ const buildDefaultLines = (jobObj) => {
       unit: jobObj?.unit || 'tonnes',
       isHazardous: !!jobObj?.hazardousWaste,
       skipSize: jobObj?.skipSize || '',
+      // Phase 3 (post-fix11) — informational disposal site shown in
+      // Section D of the WTN. NOT a legal field; Section C transferee
+      // remains the supplier (carrier). Optional: only renders on the
+      // WTN if populated.
+      disposalSiteName: '',
+      disposalSiteAddress: '',
     }];
   }
   return meta.map((m, i) => {
@@ -2934,6 +2958,10 @@ const buildDefaultLines = (jobObj) => {
       unit: jobObj?.unit || 'tonnes',
       isHazardous: !!jobObj?.hazardousWaste,
       skipSize: m.productName || skipSize || '',
+      // Phase 3 (post-fix11) — informational disposal site (see comment
+      // on the synthesised-line case above).
+      disposalSiteName: '',
+      disposalSiteAddress: '',
     };
   });
 };
@@ -2977,6 +3005,9 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns) => {
         unit: saved.unit || 'tonnes',
         isHazardous: !!saved.isHazardous,
         skipSize: saved.skipSize || m.productName || '',
+        // Phase 3 (post-fix11) — informational disposal site
+        disposalSiteName: saved.disposalSiteName || '',
+        disposalSiteAddress: saved.disposalSiteAddress || '',
         // Preserve the saved row id and suffix so we can update in place
         // rather than insert duplicates.
         _savedId: saved.id,
@@ -3004,6 +3035,8 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns) => {
         unit: 'tonnes',
         isHazardous: false,
         skipSize: m.productName || skipSize || '',
+        disposalSiteName: '',
+        disposalSiteAddress: '',
       });
     }
   }
@@ -3932,6 +3965,15 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;background
     <div><div class="lbl">Registration No. (CBDU...)</div><div class="val">${f.brokerCarrierReg||'—'}</div></div>
   </div></div>
 </div>
+${f.disposalSiteName||f.disposalSiteAddress?`<div class="row row1">
+  <div class="cell" style="background:#f9fafb;">
+    <div class="lbl" style="color:#475569;">Intended onward disposal site <span style="font-weight:400;color:#94a3b8;">(informational — for the customer's records; does not alter the legal transferee in Section C)</span></div>
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:4px;margin-top:4px;">
+      <div><div class="lbl">Site name</div><div class="val">${f.disposalSiteName||'—'}</div></div>
+      <div><div class="lbl">Address</div><div style="font-size:10px;font-weight:600;">${f.disposalSiteAddress||'—'}</div></div>
+    </div>
+  </div>
+</div>`:''}
 </div>
 
 <div class="sec">
@@ -4000,6 +4042,9 @@ const buildMultiWtnHtml = (wtnFields, job) => {
       unit: line.unit || 'tonnes',
       isHazardous: !!line.isHazardous,
       skipSize: line.skipSize || line.productName || '',
+      // Phase 3 (post-fix11) — per-line informational disposal site
+      disposalSiteName: line.disposalSiteName || '',
+      disposalSiteAddress: line.disposalSiteAddress || '',
     };
     // Strip the `lines` array from the snapshot so buildWtnHtml only sees
     // the flat shape it was designed for.
@@ -5859,6 +5904,66 @@ const [isEvent, setIsEvent] = useState(false);
                               <input type="checkbox" id={`hazWaste-${idx}`} checked={!!line.isHazardous} onChange={e=>updateLine({isHazardous:e.target.checked})} className="w-4 h-4" />
                               <label htmlFor={`hazWaste-${idx}`} className="text-sm font-medium text-red-700">Hazardous Waste (requires Consignment Note instead)</label>
                             </div>
+                            {/* Phase 3 (post-fix11) — Intended Disposal Site (informational, optional) */}
+                            {/* Sourced from supplier "site addresses". This is NOT a legal */}
+                            {/* WTN field — Section C continues to record the supplier as the */}
+                            {/* legal transferee (carrier). This row is for the customer's */}
+                            {/* records so they can see where the waste is going. */}
+                            <div className="sm:col-span-2 mt-2 pt-3 border-t border-dashed border-gray-300">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Intended Disposal Site <span className="text-gray-400 font-normal">(optional — informational only, shown on the WTN for the customer)</span>
+                              </label>
+                              {(() => {
+                                const ms = suppliers?.find(s => (s.name || s.companyName) === wtnFields.transfereeName);
+                                const sites = (() => {
+                                  const raw = ms?.siteAddresses || ms?.site_addresses;
+                                  if (!raw) return [];
+                                  if (Array.isArray(raw)) return raw;
+                                  try { return JSON.parse(raw); } catch { return []; }
+                                })();
+                                // Build a stable site value for the dropdown — prefer the
+                                // supplier's site list, fall back to free-text the user typed.
+                                const currentValue = line.disposalSiteName || '';
+                                return (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <select
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                                      value={currentValue}
+                                      onChange={e => {
+                                        const siteName = e.target.value;
+                                        if (!siteName) {
+                                          updateLine({ disposalSiteName: '', disposalSiteAddress: '' });
+                                          return;
+                                        }
+                                        const site = sites.find(s => (s.siteName || s.name) === siteName);
+                                        if (site) {
+                                          const addr = [site.address, site.postcode].filter(Boolean).join(', ');
+                                          updateLine({ disposalSiteName: site.siteName || site.name, disposalSiteAddress: addr });
+                                        } else {
+                                          // Free-text fallback (shouldn't normally hit this — value
+                                          // came from the dropdown options below)
+                                          updateLine({ disposalSiteName: siteName });
+                                        }
+                                      }}
+                                    >
+                                      <option value="">— Not specified —</option>
+                                      {sites.map(s => (
+                                        <option key={s.id || s.siteName || s.name} value={s.siteName || s.name}>
+                                          {s.siteName || s.name}{s.postcode ? ` (${s.postcode})` : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      type="text"
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50"
+                                      value={line.disposalSiteAddress || ''}
+                                      onChange={e => updateLine({ disposalSiteAddress: e.target.value })}
+                                      placeholder="Address (auto-filled when site selected)"
+                                    />
+                                  </div>
+                                );
+                              })()}
+                            </div>
                           </div>
                         </div>
                       );
@@ -5929,41 +6034,17 @@ const [isEvent, setIsEvent] = useState(false);
                       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">C1 Full Name / Company *</label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeName} onChange={e=>setWtnFields({...wtnFields,transfereeName:e.target.value})} /></div>
-                        {/* Site selector — only shows if supplier has site addresses */}
-                        {(() => {
-                          const ms = suppliers?.find(s => (s.name || s.companyName) === wtnFields.transfereeName);
-                          const sites = ms?.siteAddresses || [];
-                          if (sites.length === 0) return (
-                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
-                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeAddress} onChange={e=>setWtnFields({...wtnFields,transfereeAddress:e.target.value})} placeholder="Pulled from supplier record" /></div>
-                          );
-                          return (
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Waste Facility Site *</label>
-                              <select className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm bg-blue-50 font-medium" value={wtnFields.selectedSiteId || ''} onChange={e => {
-                                const siteId = e.target.value;
-                                if (siteId === '__main__') {
-                                  setWtnFields({...wtnFields, selectedSiteId: '__main__', transfereeAddress: [ms.address, ms.city, ms.county, ms.postcode].filter(Boolean).join(', '), transfereeCarrierReg: ms.wasteCarrierLicense || ms.waste_carrier_license || wtnFields.transfereeCarrierReg, transfereePermitNumber: ms.environmentalPermits || ms.environmental_permit || wtnFields.transfereePermitNumber});
-                                } else {
-                                  const site = sites.find(s => (s.id || s.siteName) === siteId);
-                                  if (site) {
-                                    setWtnFields({...wtnFields, selectedSiteId: siteId, transfereeAddress: [site.address, site.postcode].filter(Boolean).join(', '), transfereeCarrierReg: site.cbduNumber || wtnFields.transfereeCarrierReg, transfereePermitNumber: site.permitNumber || wtnFields.transfereePermitNumber});
-                                  }
-                                }
-                              }}>
-                                <option value="">— Select site —</option>
-                                <option value="__main__">Main Address ({[ms.address, ms.postcode].filter(Boolean).join(', ').substring(0,40)}…)</option>
-                                {sites.map(site => (
-                                  <option key={site.id || site.siteName} value={site.id || site.siteName}>{site.siteName}{site.postcode ? ` (${site.postcode})` : ''}</option>
-                                ))}
-                              </select>
-                              <div className="mt-2">
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Address *</label>
-                                <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeAddress} onChange={e=>setWtnFields({...wtnFields,transfereeAddress:e.target.value})} placeholder="Auto-filled from site selection" />
-                              </div>
-                            </div>
-                          );
-                        })()}
+                        {/*
+                          Phase 3 (post-fix11) — Section C address sources from the
+                          supplier's MAIN/registered address, not from a "site" sub-record.
+                          Per UK WMC2A: Section C documents the next legal holder of the
+                          waste (the carrier) — that's the supplier's company entity, with
+                          their registered office address. Where the carrier subsequently
+                          takes the waste (the disposal site) is recorded per-line in
+                          Section A as informational, NOT here.
+                        */}
+                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *<span className="text-gray-400 font-normal ml-1">— supplier's registered address</span></label>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeAddress} onChange={e=>setWtnFields({...wtnFields,transfereeAddress:e.target.value})} placeholder="Pulled from supplier record" /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg No. (CBDU...) <span className="text-gray-400 font-normal">— supplier's, not yours</span> <WtnSuggestBadge field="transfereeCarrierReg" /></label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeCarrierReg} onChange={e=>{setWtnFields({...wtnFields,transfereeCarrierReg:e.target.value}); setWtnSuggestions(s=>({...s, transfereeCarrierReg: undefined}));}} placeholder="Supplier's CBDU number" /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Environmental Permit / Exemption No. <WtnSuggestBadge field="transfereePermitNumber" /></label>
@@ -15903,6 +15984,10 @@ function mapWtnRowToCamel(row) { return row ? ({
   quantity: row.quantity,
   unit: row.unit,
   isHazardous: row.is_hazardous,
+  // Phase 3 (post-fix11) — informational disposal site (Section D row).
+  // Stored as plain TEXT columns on the wtns table.
+  disposalSiteName: row.disposal_site_name,
+  disposalSiteAddress: row.disposal_site_address,
   // Section B
   transferorName: row.transferor_name,
   transferorAddress: row.transferor_address,
@@ -16065,6 +16150,9 @@ function wtnFieldsToRows(wtnFields, jobId) {
       unit: wtnFields.unit || 'tonnes',
       isHazardous: !!wtnFields.isHazardous,
       skipSize: wtnFields.skipSize || '',
+      // Phase 3 (post-fix11) — informational disposal site
+      disposalSiteName: wtnFields.disposalSiteName || '',
+      disposalSiteAddress: wtnFields.disposalSiteAddress || '',
     });
   }
   // Sort by lineItemIndex so suffix order is deterministic
@@ -16095,6 +16183,10 @@ function wtnFieldsToRows(wtnFields, jobId) {
       quantity: line.quantity != null && line.quantity !== '' ? Number(line.quantity) : null,
       unit: line.unit || null,
       is_hazardous: !!line.isHazardous,
+      // Phase 3 (post-fix11) — informational disposal site, per-line.
+      // Section C still records the legal transferee (the carrier).
+      disposal_site_name: line.disposalSiteName || null,
+      disposal_site_address: line.disposalSiteAddress || null,
       // Section B — Transferor (shared across all WTNs on this job)
       transferor_name: wtnFields.transferorName || null,
       transferor_address: wtnFields.transferorAddress || null,
