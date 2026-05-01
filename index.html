@@ -3477,8 +3477,17 @@ useEffect(() => {
     };
 
     // Auto-save WTN data whenever the form enriches it — keeps portal in sync
-    // Only save for existing jobs (not drafts), and only if something meaningful changed
-    if (job?.id) {
+    // Only save for existing jobs (not drafts), and only if something meaningful changed.
+    //
+    // Phase 3 fix: also require that the job ALREADY has a WTN record. If it
+    // doesn't (fresh job, fresh duplicate), opening the WTN tab and triggering
+    // this enrichment effect would otherwise silently write an empty/default
+    // wtn_data blob — which then makes the job overview footer show "Sent to:
+    // <something> / Transfer date: <something>" before the user has done
+    // anything. The intended UX is: WTN data only lands in the DB when the
+    // user clicks Update Job / Send WTN / Publish to Portal explicitly.
+    const jobAlreadyHasWtn = !!(job?.wtn_data || job?.wtnData || (Array.isArray(job?.wtns) && job.wtns.length > 0));
+    if (job?.id && jobAlreadyHasWtn) {
       const savedWtn = job?.wtn_data ? (typeof job.wtn_data === 'string' ? (() => { try { return JSON.parse(job.wtn_data); } catch(e) { return {}; } })() : job.wtn_data) : {};
       const needsSave = (
         (updated.transferorAddress && updated.transferorAddress !== (savedWtn.transferorAddress || '')) ||
@@ -4272,19 +4281,26 @@ const [isEvent, setIsEvent] = useState(false);
       // (first line) gets saved — the second/third WTN rows never persist.
       // Only fires for existing jobs (need an id); new jobs route through
       // Send WTN / Publish to Portal which already handles the write.
+      //
+      // CRITICAL: this MUST be awaited. Earlier versions used fire-and-forget
+      // which raced with the parent's loadJobsFromSupabase reload — the
+      // SELECT often beat the upsert WRITE, so the user saw stale state and
+      // assumed the save had failed silently.
       if (job?.id) {
         try {
           const wtnRows = wtnFieldsToRows(wtnFields, job.id);
           if (wtnRows.length > 0) {
-            // Fire-and-forget — don't block the Update Job flow on this.
-            // Errors are logged; the legacy column dual-write upstream
-            // still gives the form-level save a fallback.
-            saveWtnsForJob(job.id, wtnRows)
-              .then(() => console.log(`[Phase 3] Update Job: saved ${wtnRows.length} WTN row(s) for job ${job.id}`))
-              .catch(err => console.error('[Phase 3] Update Job: wtns write failed:', err));
+            await saveWtnsForJob(job.id, wtnRows);
+            console.log(`[Phase 3] Update Job: saved ${wtnRows.length} WTN row(s) for job ${job.id}`);
           }
         } catch (err) {
-          console.error('[Phase 3] Update Job: wtnFieldsToRows threw:', err);
+          console.error('[Phase 3] Update Job: wtns write failed:', err);
+          // Surface this loudly — the user MUST know if their multi-line
+          // WTN data didn't persist, otherwise they'll think it saved and
+          // discover the loss later. The legacy column still got the
+          // first line via newJob.wtnData, so Update Job isn't completely
+          // broken, but for 2+ lines this is a real data loss event.
+          alert('⚠ Multi-WTN save failed: ' + (err.message || err) + '\n\nLine 1 may have saved to the legacy column, but lines 2+ have NOT been recorded. Please screenshot the form and contact support.');
         }
       }
     }
@@ -16042,8 +16058,41 @@ const saveWtnsForJob = async (jobId, rows, opts = {}) => {
     .upsert(merged, { onConflict: 'job_id,line_item_index' })
     .select();
   if (error) {
-    console.error('[saveWtnsForJob] upsert failed:', error);
-    throw error;
+    // Most likely cause: no UNIQUE constraint on (job_id, line_item_index)
+    // in the schema — postgres returns "42P10 there is no unique or
+    // exclusion constraint matching the ON CONFLICT specification".
+    // Phase 1 spec mentions an INDEX on job_id but didn't explicitly call
+    // out a UNIQUE composite. Rather than fail the whole save, fall back
+    // to a per-row UPDATE (where we already have the row id) or INSERT
+    // (for new lines). This keeps Phase 3 working even on slightly off
+    // schemas — at the cost of being a bit chattier.
+    console.warn('[saveWtnsForJob] upsert failed, falling back to per-row UPDATE/INSERT:', error.message || error);
+    const updates = merged.filter(r => r.id != null);
+    const inserts = merged.filter(r => r.id == null);
+    const results = [];
+    for (const u of updates) {
+      const { id, ...patch } = u;
+      const { data: updated, error: updErr } = await window.supabase
+        .from('wtns').update(patch).eq('id', id).select();
+      if (updErr) {
+        console.error('[saveWtnsForJob] fallback UPDATE failed for id', id, updErr);
+        throw updErr;
+      }
+      if (updated && updated[0]) results.push(updated[0]);
+    }
+    if (inserts.length > 0) {
+      // Strip id field on inserts (DB generates it)
+      const insertPayload = inserts.map(({id, ...rest}) => rest);
+      const { data: inserted, error: insErr } = await window.supabase
+        .from('wtns').insert(insertPayload).select();
+      if (insErr) {
+        console.error('[saveWtnsForJob] fallback INSERT failed:', insErr);
+        throw insErr;
+      }
+      if (inserted) results.push(...inserted);
+    }
+    console.log(`[saveWtnsForJob] fallback path saved ${results.length} WTN row(s) for job ${jobId} (${updates.length} updated, ${inserts.length} inserted)`);
+    return results;
   }
   console.log(`[saveWtnsForJob] upserted ${(data||[]).length} WTN row(s) for job ${jobId}`);
   return data || [];
@@ -18043,12 +18092,17 @@ site_notes: fullJob?.site_notes || '',
             wtn_portal_visible: false,
             wtn_sent: false,
             wtn_sent_at: null,
+            // Do NOT copy wtn_recipient — it carries the previous job's email
+            // address into the duplicate's overview footer ("Sent to: X")
+            // even before the new WTN has been sent, which makes staff think
+            // the WTN has already been sent when it hasn't. Forces the
+            // recipient lookup to re-derive from the customer record on
+            // first WTN tab open, which is the correct behaviour.
             wtn_recipient: null,
             // Do NOT copy wtn_recurring to child — schedule stays on parent job only
             wtn_recurring: false,
             wtn_recurring_frequency: null,
             wtn_recurring_next_date: null,
-            wtn_recipient: fullJob?.wtn_recipient || null, // keep recipient for reference
             parent_job_id: null, // duplicates are standalone — parent_job_id is only for exchange/recurring jobs
         };
 
