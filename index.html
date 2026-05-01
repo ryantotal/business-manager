@@ -15298,22 +15298,30 @@ const mapWtnRowToCamel = (row) => row ? ({
 }) : null;
 
 // Bulk-fetch all wtns for an array of job ids. Returns a Map<jobId, WTN[]>.
-// One round-trip for the whole jobs list — avoids the N+1 trap.
+// Chunks the input into batches of 100 because PostgREST has a URL length
+// limit (~8KB). With ~37 chars per UUID + comma, 100 ids ≈ 3.7KB which is
+// safely under the cap. The staff jobs list can have 1000+ jobs, so this
+// chunking is essential for that view; the portal usually has <100 and
+// hits a single batch.
 const loadWtnsForJobs = async (jobIds) => {
   const map = new Map();
   if (!jobIds || jobIds.length === 0) return map;
   try {
-    const { data, error } = await window.supabase
-      .from('wtns')
-      .select('*')
-      .in('job_id', jobIds)
-      .order('suffix_letter', { ascending: true, nullsFirst: true })
-      .order('created_at', { ascending: true });
-    if (error) throw error;
-    for (const row of (data || [])) {
-      const wtn = mapWtnRowToCamel(row);
-      if (!map.has(wtn.jobId)) map.set(wtn.jobId, []);
-      map.get(wtn.jobId).push(wtn);
+    const BATCH = 100;
+    for (let i = 0; i < jobIds.length; i += BATCH) {
+      const batch = jobIds.slice(i, i + BATCH);
+      const { data, error } = await window.supabase
+        .from('wtns')
+        .select('*')
+        .in('job_id', batch)
+        .order('suffix_letter', { ascending: true, nullsFirst: true })
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      for (const row of (data || [])) {
+        const wtn = mapWtnRowToCamel(row);
+        if (!map.has(wtn.jobId)) map.set(wtn.jobId, []);
+        map.get(wtn.jobId).push(wtn);
+      }
     }
   } catch (e) {
     console.warn('[loadWtnsForJobs] failed, falling back to legacy wtn_data:', e);
