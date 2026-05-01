@@ -2851,6 +2851,171 @@ React.useEffect(() => {
     setWtnFields(prev => ({ ...prev, ...updates }));
   }
 }, [formData?.supplierName, formData?.customerName, formData?.siteAddress1, formData?.sitePostcode, formData?.lineItems]);
+// Phase 3 — helper: parse job line items into a normalised array.
+// Returns [{ lineItemIndex, productName, lineDescription, lineQty }, ...].
+// Used to seed the per-line picker on first WTN and to reconcile the
+// `lines` state with the current job whenever the job's line items
+// change underneath us.
+const parseJobLineItems = (jobObj) => {
+  const candidates = [jobObj?.lineItems, jobObj?.line_items, jobObj?.sageLineItems, jobObj?.sage_line_items];
+  let arr = [];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    if (Array.isArray(raw) && raw.length > 0) { arr = raw; break; }
+    if (typeof raw === 'string' && raw.length > 2) {
+      try { const p = JSON.parse(raw); if (Array.isArray(p) && p.length > 0) { arr = p; break; } } catch {}
+    }
+  }
+  return arr.map((li, idx) => ({
+    lineItemIndex: idx,
+    productName: li?.product_name || li?.productName || '',
+    lineDescription: li?.description || '',
+    lineQty: li?.quantity || null,
+  }));
+};
+
+// Phase 3 — build the default `lines` state. One entry per job line item.
+// Each entry holds: meta (line index/product/desc/qty) + the per-line WTN
+// fields (waste description, EWC, container, process, quantity, unit,
+// hazardous, skipSize). The first line is included by default; additional
+// lines are NOT included by default — staff must tick to add a WTN. This
+// matches the historical behaviour where a single WTN was generated from
+// the first line item.
+const buildDefaultLines = (jobObj) => {
+  const meta = parseJobLineItems(jobObj);
+  if (meta.length === 0) {
+    // No line items — synthesise a single placeholder line so the form
+    // still works for legacy jobs without a populated line_items column.
+    return [{
+      lineItemIndex: 0,
+      productName: '',
+      lineDescription: '',
+      lineQty: null,
+      included: true,
+      wasteDescription: '',
+      listOfWasteCode: '',
+      wasteContainer: 'Skip',
+      wasteProcess: '',
+      quantity: jobObj?.quantity || 1,
+      unit: jobObj?.unit || 'tonnes',
+      isHazardous: !!jobObj?.hazardousWaste,
+      skipSize: jobObj?.skipSize || '',
+    }];
+  }
+  return meta.map((m, i) => {
+    const skipSize = jobObj?.skipSize || null;
+    const productDesc = m.productName || (skipSize ? `${skipSize} Skip` : null) || jobObj?.sageProductName || null;
+    const descParts = [productDesc];
+    if (m.lineDescription && m.lineDescription !== m.productName) descParts.push(m.lineDescription);
+    if (jobObj?.wasteType && !descParts.includes(jobObj.wasteType)) descParts.push(jobObj.wasteType);
+    const wasteDesc = descParts.filter(Boolean).join(' — ') || jobObj?.jobType || '';
+    return {
+      ...m,
+      included: i === 0, // only first line ticked by default
+      wasteDescription: wasteDesc,
+      listOfWasteCode: '',
+      wasteContainer: jobObj?.jobType === 'Roll-on Roll-off' ? 'Roll-on roll-off container'
+                    : jobObj?.jobType === 'Muck Away' ? 'Loose'
+                    : jobObj?.jobType === 'Grab Hire' ? 'Loose' : 'Skip',
+      wasteProcess: '',
+      quantity: m.lineQty || jobObj?.quantity || 1,
+      unit: jobObj?.unit || 'tonnes',
+      isHazardous: !!jobObj?.hazardousWaste,
+      skipSize: m.productName || skipSize || '',
+    };
+  });
+};
+
+// Phase 3 — when loading a job that already has saved WTN rows
+// (job.wtns array, populated by Phase 2's enrichJobsWithWtns), rebuild
+// the `lines` state from those rows. Each saved WTN row becomes a line
+// with `included=true`. Any line items on the job that don't have a
+// matching saved WTN are added with `included=false` so staff can tick
+// them to create new WTNs.
+const buildLinesFromSavedWtns = (jobObj, savedWtns) => {
+  if (!Array.isArray(savedWtns) || savedWtns.length === 0) return buildDefaultLines(jobObj);
+  const meta = parseJobLineItems(jobObj);
+  // Map saved WTNs by line_item_index
+  const savedByIdx = new Map();
+  savedWtns.forEach(w => {
+    const idx = (w.lineItemIndex != null) ? w.lineItemIndex : 0;
+    if (!savedByIdx.has(idx)) savedByIdx.set(idx, w);
+  });
+  // Walk the job's line items in order and emit one line per item
+  const lines = [];
+  const maxIdx = Math.max(
+    meta.length - 1,
+    ...savedWtns.map(w => (w.lineItemIndex != null) ? w.lineItemIndex : 0)
+  );
+  for (let i = 0; i <= maxIdx; i++) {
+    const m = meta[i] || { lineItemIndex: i, productName: '', lineDescription: '', lineQty: null };
+    const saved = savedByIdx.get(i);
+    if (saved) {
+      lines.push({
+        lineItemIndex: i,
+        productName: saved.lineItemProductName || m.productName || '',
+        lineDescription: saved.lineItemDescription || m.lineDescription || '',
+        lineQty: saved.lineItemQuantity || m.lineQty,
+        included: true,
+        wasteDescription: saved.wasteDescription || '',
+        listOfWasteCode: saved.listOfWasteCode || '',
+        wasteContainer: saved.wasteContainer || 'Skip',
+        wasteProcess: saved.wasteProcess || '',
+        quantity: saved.quantity || m.lineQty || 1,
+        unit: saved.unit || 'tonnes',
+        isHazardous: !!saved.isHazardous,
+        skipSize: saved.skipSize || m.productName || '',
+        // Preserve the saved row id and suffix so we can update in place
+        // rather than insert duplicates.
+        _savedId: saved.id,
+        _savedSuffix: saved.suffixLetter || null,
+      });
+    } else {
+      // Line item exists on the job but has no saved WTN — render it
+      // unchecked so staff can opt-in.
+      const skipSize = jobObj?.skipSize || null;
+      const productDesc = m.productName || (skipSize ? `${skipSize} Skip` : null);
+      const descParts = [productDesc];
+      if (m.lineDescription && m.lineDescription !== m.productName) descParts.push(m.lineDescription);
+      if (jobObj?.wasteType && !descParts.includes(jobObj.wasteType)) descParts.push(jobObj.wasteType);
+      lines.push({
+        lineItemIndex: i,
+        productName: m.productName,
+        lineDescription: m.lineDescription,
+        lineQty: m.lineQty,
+        included: false,
+        wasteDescription: descParts.filter(Boolean).join(' — ') || '',
+        listOfWasteCode: '',
+        wasteContainer: 'Skip',
+        wasteProcess: '',
+        quantity: m.lineQty || 1,
+        unit: 'tonnes',
+        isHazardous: false,
+        skipSize: m.productName || skipSize || '',
+      });
+    }
+  }
+  return lines;
+};
+
+// Phase 3 — compute suffix letters for the set of included lines.
+// 1 included line → no suffix (matches historical single-WTN format).
+// 2+ included lines → A, B, C... in line-item-index order.
+const computeSuffixLetters = (lines) => {
+  const included = lines.filter(l => l.included);
+  if (included.length <= 1) {
+    return new Map(included.map(l => [l.lineItemIndex, null]));
+  }
+  // Sort by lineItemIndex so suffixes are deterministic regardless of
+  // user click order.
+  const sorted = [...included].sort((a, b) => a.lineItemIndex - b.lineItemIndex);
+  const map = new Map();
+  sorted.forEach((l, i) => {
+    map.set(l.lineItemIndex, String.fromCharCode(65 + i)); // 'A', 'B', ...
+  });
+  return map;
+};
+
 const [wtnFields, setWtnFields] = useState(() => {
   // If job has saved WTN data, restore it (survives reload)
   const savedWtn = job?.wtnData || (job?.wtn_data ? (typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : job.wtn_data) : null);
@@ -2874,6 +3039,47 @@ const [wtnFields, setWtnFields] = useState(() => {
     const freshCarrierReg = matchedSupplierForReg?.wasteCarrierLicense || matchedSupplierForReg?.waste_carrier_license
       || (cbduInPermit ? savedPermitNum : savedCarrierReg) || '';
     const freshPermitNum = cbduInPermit ? '' : savedPermitNum;
+    // Phase 3: build per-line state. If the job has multiple saved WTN
+    // rows (job.wtns from Phase 2 enrichment), reconstruct one line per
+    // saved row. Otherwise fall back to a single-line view derived from
+    // the savedWtn flat object — this is the legacy single-WTN case.
+    const linesFromSaved = (Array.isArray(job?.wtns) && job.wtns.length > 0)
+      ? buildLinesFromSavedWtns(job, job.wtns)
+      : (() => {
+          const meta = parseJobLineItems(job);
+          // Single legacy WTN — map it onto the first line item if any,
+          // otherwise a synthesised line at index 0.
+          const baseLine = {
+            lineItemIndex: 0,
+            productName: meta[0]?.productName || '',
+            lineDescription: meta[0]?.lineDescription || '',
+            lineQty: meta[0]?.lineQty || null,
+            included: true,
+            wasteDescription: savedWtn.wasteDescription || '',
+            listOfWasteCode: savedWtn.listOfWasteCode || '',
+            wasteContainer: savedWtn.wasteContainer || 'Skip',
+            wasteProcess: savedWtn.wasteProcess || '',
+            quantity: savedWtn.quantity || meta[0]?.lineQty || 1,
+            unit: savedWtn.unit || 'tonnes',
+            isHazardous: !!savedWtn.isHazardous,
+            skipSize: savedWtn.skipSize || meta[0]?.productName || '',
+          };
+          // Add other line items as un-included options
+          const others = meta.slice(1).map(m => ({
+            ...m,
+            included: false,
+            wasteDescription: '',
+            listOfWasteCode: '',
+            wasteContainer: 'Skip',
+            wasteProcess: '',
+            quantity: m.lineQty || 1,
+            unit: 'tonnes',
+            isHazardous: false,
+            skipSize: m.productName || '',
+          }));
+          return [baseLine, ...others];
+        })();
+
     return {
       ...savedWtn,
       // Always use current job's identifiers
@@ -2902,6 +3108,8 @@ const [wtnFields, setWtnFields] = useState(() => {
       // Preserve signatures from saved data
       transferorSignature: savedWtn.transferorSignature || '',
       transfereeSignature: savedWtn.transfereeSignature || '',
+      // Phase 3 — per-line state
+      lines: linesFromSaved,
     };
   }
 
@@ -3027,6 +3235,10 @@ const [wtnFields, setWtnFields] = useState(() => {
     recurringWtn: false,
     recurringWtnFrequency: 'monthly',
     recurringWtnNextDate: '',
+    // Phase 3 — per-line state. One entry per job line item; only the
+    // first is included by default. The flat top-level fields above
+    // mirror the first included line for legacy/email rendering.
+    lines: buildDefaultLines(job),
   };
 });
 // If this is a child/recurring job with incomplete WTN data, inherit from parent
@@ -3037,24 +3249,27 @@ useEffect(() => {
   // Check if the child's WTN data is actually complete or just a shell
   const ownWtn = job?.wtn_data ? (typeof job.wtn_data === 'string' ? (() => { try { return JSON.parse(job.wtn_data); } catch(e) { return null; } })() : job.wtn_data) : null;
   const hasCompleteWtn = ownWtn && (ownWtn.listOfWasteCode || ownWtn.transferorSignature || ownWtn.transferorPermitNumber);
-  if (hasCompleteWtn) return; // WTN is already fully populated
+  // Phase 3: also consider the child "complete" if it has saved WTN rows
+  // in the new table — those are the source of truth for multi-line cases.
+  const childHasOwnRows = Array.isArray(job?.wtns) && job.wtns.length > 0;
+  if (hasCompleteWtn || childHasOwnRows) return; // WTN is already populated
 
   (async () => {
     try {
-      // Phase 2: read parent WTN from the new `wtns` table first.
-      // Multi-WTN parents have many rows — pick the first one (suffix A or
-      // unsuffixed) for inheritance purposes. Fall back to legacy wtn_data
-      // if no row exists yet.
-      let parentWtn = null;
+      // Phase 3: read ALL parent WTN rows so multi-line parents propagate
+      // every line to the child. Falls back to legacy wtn_data for parents
+      // that haven't been written through the new path yet.
+      let allParentRows = [];
+      let parentWtn = null; // primary template for the flat fields below
       const { data: parentWtnRows } = await window.supabase
         .from('wtns')
         .select('*')
         .eq('job_id', parentId)
         .order('suffix_letter', { ascending: true, nullsFirst: true })
-        .order('created_at', { ascending: true })
-        .limit(1);
+        .order('created_at', { ascending: true });
       if (parentWtnRows && parentWtnRows.length > 0) {
-        parentWtn = mapWtnRowToCamel(parentWtnRows[0]);
+        allParentRows = parentWtnRows.map(mapWtnRowToCamel);
+        parentWtn = allParentRows[0];
       } else {
         const { data: parent } = await window.supabase
           .from('jobs')
@@ -3068,35 +3283,141 @@ useEffect(() => {
         } catch(e) { return; }
       }
       if (!parentWtn) return;
-      console.log('[WTN] Inheriting WTN data from parent job:', parentId);
+      console.log(`[WTN] Inheriting ${allParentRows.length || 1} WTN line(s) from parent job:`, parentId);
 
-      setWtnFields(prev => ({
-        ...prev,
-        // Inherit waste details from parent
-        wasteDescription: prev.wasteDescription || parentWtn.wasteDescription || '',
-        skipSize: prev.skipSize || parentWtn.skipSize || '',
-        listOfWasteCode: prev.listOfWasteCode || parentWtn.listOfWasteCode || '',
-        wasteContainer: parentWtn.wasteContainer || prev.wasteContainer || 'Skip',
-        quantity: parentWtn.quantity || prev.quantity || 1,
-        unit: parentWtn.unit || prev.unit || 'tonnes',
-        isHazardous: parentWtn.isHazardous || prev.isHazardous || false,
-        processesWasteThrough: parentWtn.processesWasteThrough || prev.processesWasteThrough || '',
-        // Inherit Section B (transferor) details
-        transferorSicCode: parentWtn.transferorSicCode || prev.transferorSicCode || '',
-        transferorIsProducer: parentWtn.transferorIsProducer ?? prev.transferorIsProducer ?? true,
-        transferorPermitNumber: parentWtn.transferorPermitNumber || prev.transferorPermitNumber || '',
-        transferorSignature: parentWtn.transferorSignature || prev.transferorSignature || '',
-        // Inherit Section C (transferee/carrier) details
-        transfereeCarrierReg: parentWtn.transfereeCarrierReg || prev.transfereeCarrierReg || '',
-        transfereePermitNumber: parentWtn.transfereePermitNumber || prev.transfereePermitNumber || '',
-        transfereeSignature: parentWtn.transfereeSignature || prev.transfereeSignature || '',
-        // Inherit recycling breakdown
-        recycledPct: parentWtn.recycledPct ?? prev.recycledPct ?? 50,
-        recoveredPct: parentWtn.recoveredPct ?? prev.recoveredPct ?? 50,
-        landfillPct: parentWtn.landfillPct ?? prev.landfillPct ?? 0,
-      }));
+      setWtnFields(prev => {
+        // Phase 3 — if parent has multiple rows, build a `lines` array
+        // that mirrors them. Otherwise keep the existing flat-only behaviour.
+        let inheritedLines = prev.lines;
+        if (allParentRows.length > 1) {
+          inheritedLines = allParentRows.map(p => ({
+            lineItemIndex: p.lineItemIndex != null ? p.lineItemIndex : 0,
+            productName: p.lineItemProductName || '',
+            lineDescription: p.lineItemDescription || '',
+            lineQty: p.lineItemQuantity || null,
+            included: true,
+            wasteDescription: p.wasteDescription || '',
+            listOfWasteCode: p.listOfWasteCode || '',
+            wasteContainer: p.wasteContainer || 'Skip',
+            wasteProcess: p.wasteProcess || '',
+            quantity: p.quantity || 1,
+            unit: p.unit || 'tonnes',
+            isHazardous: !!p.isHazardous,
+            skipSize: p.skipSize || p.lineItemProductName || '',
+          }));
+        } else if (Array.isArray(prev.lines) && prev.lines.length > 0) {
+          // Single-parent inheritance — keep the prev.lines structure but
+          // refresh per-line fields on the first included line so the
+          // edit form shows the inherited values immediately.
+          const firstIdx = prev.lines.findIndex(l => l.included);
+          if (firstIdx >= 0) {
+            inheritedLines = prev.lines.map((l, i) => i === firstIdx ? {
+              ...l,
+              wasteDescription: l.wasteDescription || parentWtn.wasteDescription || '',
+              listOfWasteCode: l.listOfWasteCode || parentWtn.listOfWasteCode || '',
+              wasteContainer: parentWtn.wasteContainer || l.wasteContainer || 'Skip',
+              wasteProcess: parentWtn.wasteProcess || l.wasteProcess || '',
+              quantity: parentWtn.quantity || l.quantity || 1,
+              unit: parentWtn.unit || l.unit || 'tonnes',
+              isHazardous: parentWtn.isHazardous || l.isHazardous || false,
+              skipSize: l.skipSize || parentWtn.skipSize || '',
+            } : l);
+          }
+        }
+        return {
+          ...prev,
+          // Inherit waste details from parent (flat fields — kept in sync
+          // with the first inherited line for legacy/email rendering).
+          wasteDescription: prev.wasteDescription || parentWtn.wasteDescription || '',
+          skipSize: prev.skipSize || parentWtn.skipSize || '',
+          listOfWasteCode: prev.listOfWasteCode || parentWtn.listOfWasteCode || '',
+          wasteContainer: parentWtn.wasteContainer || prev.wasteContainer || 'Skip',
+          quantity: parentWtn.quantity || prev.quantity || 1,
+          unit: parentWtn.unit || prev.unit || 'tonnes',
+          isHazardous: parentWtn.isHazardous || prev.isHazardous || false,
+          processesWasteThrough: parentWtn.processesWasteThrough || prev.processesWasteThrough || '',
+          // Inherit Section B (transferor) details
+          transferorSicCode: parentWtn.transferorSicCode || prev.transferorSicCode || '',
+          transferorIsProducer: parentWtn.transferorIsProducer ?? prev.transferorIsProducer ?? true,
+          transferorPermitNumber: parentWtn.transferorPermitNumber || prev.transferorPermitNumber || '',
+          transferorSignature: parentWtn.transferorSignature || prev.transferorSignature || '',
+          // Inherit Section C (transferee/carrier) details
+          transfereeCarrierReg: parentWtn.transfereeCarrierReg || prev.transfereeCarrierReg || '',
+          transfereePermitNumber: parentWtn.transfereePermitNumber || prev.transfereePermitNumber || '',
+          transfereeSignature: parentWtn.transfereeSignature || prev.transfereeSignature || '',
+          // Inherit recycling breakdown
+          recycledPct: parentWtn.recycledPct ?? prev.recycledPct ?? 50,
+          recoveredPct: parentWtn.recoveredPct ?? prev.recoveredPct ?? 50,
+          landfillPct: parentWtn.landfillPct ?? prev.landfillPct ?? 0,
+          lines: inheritedLines,
+        };
+      });
 
-      // Also save the inherited data to the child job so it persists
+      // Also save the inherited data to the child job so it persists.
+      // Phase 3: when parent has multiple WTN rows, write N inherited child
+      // rows to the wtns table; always dual-write the legacy single-blob
+      // column for un-migrated readers.
+      try {
+        if (allParentRows.length > 0 && job?.id) {
+          const childRows = allParentRows.map((p, i) => {
+            const useSuffix = allParentRows.length > 1;
+            const suffix = useSuffix ? String.fromCharCode(65 + i) : null;
+            return {
+              job_id: job.id,
+              wtn_number: '', // child gets a number when staff edits / saves
+              suffix_letter: suffix,
+              line_item_index: p.lineItemIndex != null ? p.lineItemIndex : i,
+              line_item_product_name: p.lineItemProductName || null,
+              line_item_description: p.lineItemDescription || null,
+              line_item_quantity: p.lineItemQuantity || null,
+              waste_description: p.wasteDescription || null,
+              skip_size: p.skipSize || null,
+              list_of_waste_code: p.listOfWasteCode || null,
+              waste_container: p.wasteContainer || null,
+              waste_process: p.wasteProcess || null,
+              quantity: p.quantity != null ? Number(p.quantity) : null,
+              unit: p.unit || null,
+              is_hazardous: !!p.isHazardous,
+              transferor_name: p.transferorName || null,
+              transferor_address: p.transferorAddress || null,
+              transferor_postcode: p.transferorPostcode || null,
+              transferor_sic_code: p.transferorSicCode || null,
+              transferor_is_producer: p.transferorIsProducer ?? true,
+              transferor_permit_number: p.transferorPermitNumber || null,
+              transferor_signature: p.transferorSignature || null,
+              transferor_representing: p.transferorRepresenting || null,
+              selected_transferor_site_id: p.selectedTransferorSiteId || null,
+              transferee_name: p.transfereeName || null,
+              transferee_address: p.transfereeAddress || null,
+              transferee_postcode: p.transfereePostcode || null,
+              transferee_carrier_reg: p.transfereeCarrierReg || null,
+              transferee_permit_number: p.transfereePermitNumber || null,
+              selected_site_id: p.selectedSiteId || null,
+              transferee_signature: p.transfereeSignature || null,
+              transferee_representing: p.transfereeRepresenting || null,
+              transfer_address: p.transferAddress || null,
+              transfer_date: null, // child gets a fresh date on edit/save
+              transfer_time: null,
+              broker_name: p.brokerName || null,
+              broker_address: p.brokerAddress || null,
+              broker_carrier_reg: p.brokerCarrierReg || null,
+              recycled_pct: p.recycledPct ?? null,
+              recovered_pct: p.recoveredPct ?? null,
+              landfill_pct: p.landfillPct ?? null,
+              notes: p.notes || null,
+              recipient_email: p.recipientEmail || null,
+              additional_emails: p.additionalEmails || null,
+              recipient_email_source: 'inherited-parent',
+            };
+          });
+          await saveWtnsForJob(job.id, childRows, { preserveStateColumns: false });
+          console.log(`[WTN] Phase 3: saved ${childRows.length} inherited WTN row(s) to child job:`, job.id);
+        }
+      } catch (phase3InheritErr) {
+        console.warn('[WTN] Phase 3 inherited rows write failed (legacy blob will still be saved):', phase3InheritErr.message);
+      }
+
+      // Phase 3 — dual-write to legacy column (first parent's blob) for safety.
       const childWtn = {
         ...parentWtn,
         transferDate: '',
@@ -3168,6 +3489,31 @@ useEffect(() => {
         (updated.transferDate && updated.transferDate !== (savedWtn.transferDate || ''))
       );
       if (needsSave) {
+        // Phase 3 — also patch the shared fields onto every wtns row for
+        // this job, so multi-line WTNs stay in sync when the form re-derives
+        // addresses/emails. Only the shared columns are updated (Section A
+        // per-line content stays untouched). Errors are swallowed — this is
+        // a best-effort sync, not a load-bearing save.
+        const sharedPatch = {
+          transferor_name: updated.transferorName || null,
+          transferor_address: updated.transferorAddress || null,
+          transferor_postcode: updated.transferorPostcode || null,
+          transferor_representing: updated.transferorRepresenting || null,
+          transferee_name: updated.transfereeName || null,
+          transferee_address: updated.transfereeAddress || null,
+          transferee_postcode: updated.transfereePostcode || null,
+          transferee_carrier_reg: updated.transfereeCarrierReg || null,
+          transferee_permit_number: updated.transfereePermitNumber || null,
+          transferee_representing: updated.transfereeRepresenting || null,
+          transfer_address: updated.transferAddress || null,
+          transfer_date: updated.transferDate || null,
+          transfer_time: updated.transferTime || null,
+          recipient_email: updated.recipientEmail || null,
+          additional_emails: updated.additionalEmails || null,
+        };
+        window.supabase.from('wtns').update(sharedPatch).eq('job_id', job.id)
+          .then(({ error }) => { if (error) console.warn('[WTN] auto-sync to wtns table failed:', error.message); });
+        // Phase 3 — dual-write to legacy column.
         window.supabase.from('jobs')
           .update({ wtn_data: JSON.stringify(updated) })
           .eq('id', job.id)
@@ -5224,40 +5570,130 @@ const [isEvent, setIsEvent] = useState(false);
                       <p className="text-sm text-green-700">Compliant with the Waste (England and Wales) Regulations 2011 &amp; Environmental Protection Act 1990 s.34. All mandatory fields must be completed. Both parties must retain a copy for a minimum of 2 years.</p>
                     </div>
 
-                    {/* Section A — Waste Description */}
+                    {/* Phase 3 — Shared header (WTN ref + transfer date apply to all WTNs) */}
                     <div className="border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">Section A — Description of Waste</div>
+                      <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">WTN Header</div>
                       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">WTN Reference *</label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wtnNumber} onChange={e=>setWtnFields({...wtnFields,wtnNumber:e.target.value})} /></div>
+                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wtnNumber} onChange={e=>setWtnFields({...wtnFields,wtnNumber:e.target.value})} />
+                          {Array.isArray(wtnFields.lines) && wtnFields.lines.filter(l=>l.included).length > 1 && (
+                            <p className="mt-1 text-xs text-gray-500">Per line: {wtnFields.lines.filter(l=>l.included).map((l,i)=>`${wtnFields.wtnNumber}-${String.fromCharCode(65+i)}`).join(', ')}</p>
+                          )}
+                        </div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Transfer Date *</label>
                           <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferDate} onChange={e=>setWtnFields({...wtnFields,transferDate:e.target.value})} /></div>
-                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Description of Waste * (be specific — e.g. "mixed construction waste including concrete, timber and plasterboard")</label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteDescription} onChange={e=>setWtnFields({...wtnFields,wasteDescription:e.target.value})} placeholder="e.g. Mixed construction and demolition waste including concrete, brickwork, timber and plasterboard" /></div>
-                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Skip / Container Size <span className="text-gray-400 font-normal">(from job)</span></label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.skipSize} onChange={e=>setWtnFields({...wtnFields,skipSize:e.target.value})} placeholder="e.g. 8 yard skip" /></div>
-                        <div><label className="block text-xs font-medium text-gray-600 mb-1">Processes Waste Has Been Through <WtnSuggestBadge field="wasteProcess" /></label>
-                          <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteProcess} onChange={e=>{setWtnFields({...wtnFields,wasteProcess:e.target.value}); setWtnSuggestions(s=>({...s, wasteProcess: undefined}));}} placeholder="e.g. On-site segregation, crushing" /></div>
-                        <div><label className="block text-xs font-medium text-gray-600 mb-1">How Waste is Contained *</label>
-                          <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wasteContainer} onChange={e=>setWtnFields({...wtnFields,wasteContainer:e.target.value})}>
-                            <option>Skip</option><option>Roll-on Roll-off Container</option><option>Loose</option><option>Bagged</option><option>Drums/Barrels</option><option>IBC</option><option>Other</option>
-                          </select></div>
-                        <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">EWC Code * <span className="text-gray-400 font-normal">(European Waste Catalogue — required by law)</span> <WtnSuggestBadge field="listOfWasteCode" /></label>
-                          <EWCPicker value={wtnFields.listOfWasteCode} onChange={v=>{setWtnFields({...wtnFields,listOfWasteCode:v}); setWtnSuggestions(s=>({...s, listOfWasteCode: undefined}));}} /></div>
-                        <div className="flex gap-2">
-                          <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Quantity *</label>
-                            <input type="number" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.quantity} onChange={e=>setWtnFields({...wtnFields,quantity:e.target.value})} /></div>
-                          <div className="w-28"><label className="block text-xs font-medium text-gray-600 mb-1">Unit * <WtnSuggestBadge field="unit" /></label>
-                            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.unit} onChange={e=>{setWtnFields({...wtnFields,unit:e.target.value}); setWtnSuggestions(s=>({...s, unit: undefined}));}}>
-                              <option>tonnes</option><option>kg</option><option>m³</option><option>loads</option>
-                            </select></div>
-                        </div>
-                        <div className="flex items-center gap-2 pt-4">
-                          <input type="checkbox" id="hazWaste" checked={wtnFields.isHazardous} onChange={e=>setWtnFields({...wtnFields,isHazardous:e.target.checked})} className="w-4 h-4" />
-                          <label htmlFor="hazWaste" className="text-sm font-medium text-red-700">Hazardous Waste (requires Consignment Note instead)</label>
-                        </div>
                       </div>
                     </div>
+
+                    {/* Phase 3 — Line Item Picker */}
+                    {Array.isArray(wtnFields.lines) && wtnFields.lines.length > 0 && (
+                      <div className="border border-blue-200 rounded-lg overflow-hidden">
+                        <div className="bg-blue-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-blue-700 flex justify-between">
+                          <span>Line Items — pick which need a WTN</span>
+                          <span className="text-blue-400 font-normal normal-case">{wtnFields.lines.filter(l=>l.included).length} of {wtnFields.lines.length} ticked</span>
+                        </div>
+                        <div className="p-4 space-y-2">
+                          {wtnFields.lines.map((line, idx) => (
+                            <label key={idx} className={`flex items-start gap-3 p-2 rounded border cursor-pointer ${line.included ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                              <input type="checkbox" className="w-4 h-4 mt-1"
+                                checked={!!line.included}
+                                onChange={e => {
+                                  const newLines = wtnFields.lines.map((l, i) => i === idx ? { ...l, included: e.target.checked } : l);
+                                  // If turning ON the first ticked line, sync top-level flat
+                                  // fields to it. Keeps email/preview/legacy paths in sync.
+                                  const firstIncluded = newLines.find(l => l.included);
+                                  setWtnFields({
+                                    ...wtnFields,
+                                    lines: newLines,
+                                    ...(firstIncluded ? {
+                                      wasteDescription: firstIncluded.wasteDescription,
+                                      listOfWasteCode: firstIncluded.listOfWasteCode,
+                                      wasteContainer: firstIncluded.wasteContainer,
+                                      wasteProcess: firstIncluded.wasteProcess,
+                                      quantity: firstIncluded.quantity,
+                                      unit: firstIncluded.unit,
+                                      isHazardous: firstIncluded.isHazardous,
+                                      skipSize: firstIncluded.skipSize,
+                                    } : {}),
+                                  });
+                                }}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-800 truncate">{line.productName || `Line ${idx + 1}`}</div>
+                                {line.lineDescription && <div className="text-xs text-gray-500 truncate">{line.lineDescription}</div>}
+                                {line.lineQty != null && <div className="text-xs text-gray-400">Qty: {line.lineQty}</div>}
+                              </div>
+                            </label>
+                          ))}
+                          {wtnFields.lines.filter(l=>l.included).length === 0 && (
+                            <div className="text-xs text-red-600 mt-2">⚠ Tick at least one line to create a WTN.</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Phase 3 — Per-line Section A (waste description, EWC, container, qty, hazard) */}
+                    {Array.isArray(wtnFields.lines) && wtnFields.lines.map((line, idx) => {
+                      if (!line.included) return null;
+                      const includedLines = wtnFields.lines.filter(l => l.included);
+                      const positionOfThis = includedLines.findIndex(l => l.lineItemIndex === line.lineItemIndex);
+                      const suffix = includedLines.length > 1 ? String.fromCharCode(65 + positionOfThis) : '';
+                      const sectionLabel = suffix ? `Section A${suffix} — Description of Waste` : 'Section A — Description of Waste';
+                      const updateLine = (patch) => {
+                        const newLines = wtnFields.lines.map((l, i) => i === idx ? { ...l, ...patch } : l);
+                        // Sync top-level flat fields if this is the first included line.
+                        const firstIncluded = newLines.find(l => l.included);
+                        const isFirstIncluded = firstIncluded && firstIncluded.lineItemIndex === line.lineItemIndex;
+                        setWtnFields({
+                          ...wtnFields,
+                          lines: newLines,
+                          ...(isFirstIncluded ? {
+                            wasteDescription: firstIncluded.wasteDescription,
+                            listOfWasteCode: firstIncluded.listOfWasteCode,
+                            wasteContainer: firstIncluded.wasteContainer,
+                            wasteProcess: firstIncluded.wasteProcess,
+                            quantity: firstIncluded.quantity,
+                            unit: firstIncluded.unit,
+                            isHazardous: firstIncluded.isHazardous,
+                            skipSize: firstIncluded.skipSize,
+                          } : {}),
+                        });
+                      };
+                      return (
+                        <div key={`line-${idx}`} className="border border-gray-200 rounded-lg overflow-hidden">
+                          <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600 flex justify-between">
+                            <span>{sectionLabel}</span>
+                            <span className="text-gray-400 font-normal normal-case">{line.productName || `Line ${idx + 1}`}</span>
+                          </div>
+                          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Description of Waste * (be specific — e.g. "mixed construction waste including concrete, timber and plasterboard")</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={line.wasteDescription} onChange={e=>updateLine({wasteDescription:e.target.value})} placeholder="e.g. Mixed construction and demolition waste including concrete, brickwork, timber and plasterboard" /></div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Skip / Container Size <span className="text-gray-400 font-normal">(from job)</span></label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={line.skipSize} onChange={e=>updateLine({skipSize:e.target.value})} placeholder="e.g. 8 yard skip" /></div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Processes Waste Has Been Through {idx===0 && <WtnSuggestBadge field="wasteProcess" />}</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={line.wasteProcess} onChange={e=>{updateLine({wasteProcess:e.target.value}); if(idx===0) setWtnSuggestions(s=>({...s, wasteProcess: undefined}));}} placeholder="e.g. On-site segregation, crushing" /></div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">How Waste is Contained *</label>
+                              <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={line.wasteContainer} onChange={e=>updateLine({wasteContainer:e.target.value})}>
+                                <option>Skip</option><option>Roll-on Roll-off Container</option><option>Loose</option><option>Bagged</option><option>Drums/Barrels</option><option>IBC</option><option>Other</option>
+                              </select></div>
+                            <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">EWC Code * <span className="text-gray-400 font-normal">(European Waste Catalogue — required by law)</span> {idx===0 && <WtnSuggestBadge field="listOfWasteCode" />}</label>
+                              <EWCPicker value={line.listOfWasteCode} onChange={v=>{updateLine({listOfWasteCode:v}); if(idx===0) setWtnSuggestions(s=>({...s, listOfWasteCode: undefined}));}} /></div>
+                            <div className="flex gap-2">
+                              <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Quantity *</label>
+                                <input type="number" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={line.quantity} onChange={e=>updateLine({quantity:e.target.value})} /></div>
+                              <div className="w-28"><label className="block text-xs font-medium text-gray-600 mb-1">Unit * {idx===0 && <WtnSuggestBadge field="unit" />}</label>
+                                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={line.unit} onChange={e=>{updateLine({unit:e.target.value}); if(idx===0) setWtnSuggestions(s=>({...s, unit: undefined}));}}>
+                                  <option>tonnes</option><option>kg</option><option>m³</option><option>loads</option>
+                                </select></div>
+                            </div>
+                            <div className="flex items-center gap-2 pt-4">
+                              <input type="checkbox" id={`hazWaste-${idx}`} checked={!!line.isHazardous} onChange={e=>updateLine({isHazardous:e.target.checked})} className="w-4 h-4" />
+                              <label htmlFor={`hazWaste-${idx}`} className="text-sm font-medium text-red-700">Hazardous Waste (requires Consignment Note instead)</label>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
 
                     {/* Section B — Transferor */}
                     <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -5842,6 +6278,9 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             wtn_sent: true,
                             wtn_sent_at: new Date().toISOString(),
                             wtn_recipient: emailsToSend.join(', '),
+                            // Phase 3: dual-write — keep populating the legacy column with
+                            // the FIRST included line's data so any un-migrated reader
+                            // keeps rendering. Phase 5 retires this column.
                             wtn_data: JSON.stringify({...wtnFields, htmlContent: htmlBody}),
                             wtn_portal_visible: true,
                           };
@@ -5855,6 +6294,32 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             console.error('WTN save: no job ID available');
                             alert('Warning: WTN sent but could not be recorded — no job ID. Please note the WTN number manually.');
                           } else {
+                            // Phase 3 — primary write: upsert one row per ticked line
+                            // into the new `wtns` table. saveWtnsForJob also clears
+                            // any stale rows for de-selected lines.
+                            try {
+                              const wtnRows = wtnFieldsToRows(wtnFields, wtnJobId);
+                              await saveWtnsForJob(wtnJobId, wtnRows);
+                              // Stamp per-WTN state columns (sent / sent_at / recipient /
+                              // portal_visible / recurring*) onto every row for this job.
+                              const perWtnPatch = {
+                                sent: true,
+                                sent_at: wtnSaveData.wtn_sent_at,
+                                recipient: emailsToSend.join(', '),
+                                portal_visible: true,
+                              };
+                              if (wtnFields.recurringWtn && wtnFields.recurringWtnNextDate) {
+                                perWtnPatch.recurring = true;
+                                perWtnPatch.recurring_frequency = wtnFields.recurringWtnFrequency;
+                                perWtnPatch.recurring_next_date = wtnFields.recurringWtnNextDate;
+                              }
+                              await applyPerWtnState(wtnJobId, perWtnPatch);
+                            } catch(wtnsTableErr) {
+                              console.error('[Phase 3] wtns table write failed (legacy write will still happen):', wtnsTableErr);
+                              alert('Warning: the new multi-WTN write failed (' + (wtnsTableErr.message || wtnsTableErr) + '). The legacy single-WTN record will still be saved.');
+                            }
+                            // Phase 3 — dual-write to the legacy jobs.wtn_data column.
+                            // Keep doing this until Phase 5 retires the column.
                             const { error: wtnSaveError } = await window.supabase.from('jobs').update(wtnSaveData).eq('id', wtnJobId);
                             if (wtnSaveError) {
                               console.error('WTN save to Supabase failed:', wtnSaveError);
@@ -5922,6 +6387,17 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                                 try {
                                   const wtnPayload = {};
                                   Object.keys(wtnFields).forEach(k => { if (wtnFields[k] !== undefined) wtnPayload[k] = wtnFields[k]; });
+                                  // Phase 3 — primary write: upsert one row per ticked
+                                  // line into the wtns table, then flip portal_visible
+                                  // on every row for this job.
+                                  try {
+                                    const wtnRows = wtnFieldsToRows(wtnFields, job.id);
+                                    await saveWtnsForJob(job.id, wtnRows);
+                                    await applyPerWtnState(job.id, { portal_visible: true });
+                                  } catch(wtnsTableErr) {
+                                    console.error('[Phase 3] wtns table publish failed (legacy write will still happen):', wtnsTableErr);
+                                  }
+                                  // Phase 3 — dual-write to legacy column for safety.
                                   await window.supabase.from('jobs').update({
                                     wtn_data: JSON.stringify(wtnPayload),
                                     wtn_portal_visible: true
@@ -7521,7 +7997,13 @@ const uploadJobAttachment = async () => {
 
 
           const handleDuplicateJob = (job) => {
-            const duplicatedJob = { ...job, id: null, jobNumber: null, wtn_data: null, wtnData: null, wtn_portal_visible: false, wtn_sent: false, wtn_sent_at: null, wtn_recipient: null };
+            // Phase 3: clear in-memory WTN state on the duplicated copy.
+            // The new row's `id` will be regenerated by the upstream insert,
+            // so the wtns table FK (job_id → jobs.id ON DELETE CASCADE) means
+            // there are no orphan WTN rows to delete: the duplicate starts
+            // with a fresh, empty wtns set. Also clear `wtns` array if any
+            // enrichment carried it through.
+            const duplicatedJob = { ...job, id: null, jobNumber: null, wtn_data: null, wtnData: null, wtns: [], wtn_portal_visible: false, wtn_sent: false, wtn_sent_at: null, wtn_recipient: null };
             delete duplicatedJob.id;
             delete duplicatedJob.jobNumber;
             onDuplicateJob(duplicatedJob);
@@ -15337,6 +15819,19 @@ const enrichJobsWithWtns = async (jobs) => {
   if (!jobs || jobs.length === 0) return jobs;
   const ids = jobs.map(j => j.id || j.jobId).filter(Boolean);
   const map = await loadWtnsForJobs(ids);
+  // Phase 3 — emit a single console.warn summarising any jobs that still
+  // rely on the legacy jobs.wtn_data column rather than the new wtns table.
+  // This helps surface reader paths during the dual-write window before
+  // Phase 5 retires the legacy column.
+  let legacyOnlyCount = 0;
+  jobs.forEach(j => {
+    const id = j.id || j.jobId;
+    const hasNewRows = (map.get(id) || []).length > 0;
+    if (!hasNewRows && (j.wtn_data || j.wtnData)) legacyOnlyCount++;
+  });
+  if (legacyOnlyCount > 0) {
+    console.warn(`[Phase 3] ${legacyOnlyCount} job(s) still rely on legacy wtn_data — readers should use job.wtns where available.`);
+  }
   return jobs.map(job => {
     const id = job.id || job.jobId;
     const wtns = map.get(id) || [];
@@ -15345,9 +15840,200 @@ const enrichJobsWithWtns = async (jobs) => {
       wtns,
       // Legacy shim: keep wtnData populated from the FIRST WTN so any
       // un-migrated reader keeps rendering. New code should prefer job.wtns.
+      // Phase 5 will retire wtnData entirely.
       wtnData: wtns[0] || job.wtnData || null,
     };
   });
+};
+
+// =====================================================================
+// Phase 3 — WTN write helpers
+// =====================================================================
+// `wtnFieldsToRows(wtnFields, jobId)` takes the in-memory wtnFields state
+// (flat shared fields + a `lines` array, one entry per job line item)
+// and returns one snake_case row per included line, ready to upsert into
+// the `wtns` table.
+//
+// Suffix letters: 1 included line → no suffix (matches historical
+// single-WTN format); 2+ included → A, B, C... assigned in
+// lineItemIndex order so they're deterministic across re-saves.
+//
+// The shared/header fields (transferor, transferee, broker, signatures,
+// recycling pcts, etc.) are stamped onto every row. Line-specific fields
+// (waste description, EWC, container, qty, hazardous) come from the
+// line itself.
+const wtnFieldsToRows = (wtnFields, jobId) => {
+  if (!jobId) {
+    console.error('[wtnFieldsToRows] jobId is required');
+    return [];
+  }
+  const lines = Array.isArray(wtnFields.lines) ? wtnFields.lines.filter(l => l.included) : [];
+  if (lines.length === 0) {
+    console.warn('[wtnFieldsToRows] no included lines — falling back to a single row from flat fields');
+    // Synthesise one line from the flat fields. Used when older code
+    // calls into this without having migrated to the lines model.
+    lines.push({
+      lineItemIndex: 0,
+      productName: '',
+      lineDescription: '',
+      lineQty: null,
+      wasteDescription: wtnFields.wasteDescription || '',
+      listOfWasteCode: wtnFields.listOfWasteCode || '',
+      wasteContainer: wtnFields.wasteContainer || 'Skip',
+      wasteProcess: wtnFields.wasteProcess || '',
+      quantity: wtnFields.quantity || 1,
+      unit: wtnFields.unit || 'tonnes',
+      isHazardous: !!wtnFields.isHazardous,
+      skipSize: wtnFields.skipSize || '',
+    });
+  }
+  // Sort by lineItemIndex so suffix order is deterministic
+  const sorted = [...lines].sort((a, b) => a.lineItemIndex - b.lineItemIndex);
+  const useSuffix = sorted.length > 1;
+  const baseWtnNumber = wtnFields.wtnNumber || '';
+
+  return sorted.map((line, i) => {
+    const suffix = useSuffix ? String.fromCharCode(65 + i) : null;
+    // WTN number per row: append -A / -B / etc. when more than one line.
+    // Single-line case: keep the original wtnNumber unchanged.
+    const wtnNum = useSuffix && baseWtnNumber ? `${baseWtnNumber}-${suffix}` : baseWtnNumber;
+    return {
+      job_id: jobId,
+      wtn_number: wtnNum,
+      suffix_letter: suffix,
+      // Line item context
+      line_item_index: line.lineItemIndex,
+      line_item_product_name: line.productName || null,
+      line_item_description: line.lineDescription || null,
+      line_item_quantity: line.lineQty != null ? Number(line.lineQty) : null,
+      // Section A — per-line waste description
+      waste_description: line.wasteDescription || null,
+      skip_size: line.skipSize || null,
+      list_of_waste_code: line.listOfWasteCode || null,
+      waste_container: line.wasteContainer || null,
+      waste_process: line.wasteProcess || null,
+      quantity: line.quantity != null && line.quantity !== '' ? Number(line.quantity) : null,
+      unit: line.unit || null,
+      is_hazardous: !!line.isHazardous,
+      // Section B — Transferor (shared across all WTNs on this job)
+      transferor_name: wtnFields.transferorName || null,
+      transferor_address: wtnFields.transferorAddress || null,
+      transferor_postcode: wtnFields.transferorPostcode || null,
+      transferor_sic_code: wtnFields.transferorSicCode || null,
+      transferor_is_producer: wtnFields.transferorIsProducer ?? true,
+      transferor_permit_number: wtnFields.transferorPermitNumber || null,
+      transferor_signature: wtnFields.transferorSignature || null,
+      transferor_representing: wtnFields.transferorRepresenting || null,
+      selected_transferor_site_id: wtnFields.selectedTransferorSiteId || null,
+      // Section C — Transferee (shared)
+      transferee_name: wtnFields.transfereeName || null,
+      transferee_address: wtnFields.transfereeAddress || null,
+      transferee_postcode: wtnFields.transfereePostcode || null,
+      transferee_carrier_reg: wtnFields.transfereeCarrierReg || null,
+      transferee_permit_number: wtnFields.transfereePermitNumber || null,
+      selected_site_id: wtnFields.selectedSiteId || null,
+      transferee_signature: wtnFields.transfereeSignature || null,
+      transferee_representing: wtnFields.transfereeRepresenting || null,
+      // Section D — Transfer & broker (shared)
+      transfer_address: wtnFields.transferAddress || null,
+      transfer_date: wtnFields.transferDate || null,
+      transfer_time: wtnFields.transferTime || null,
+      broker_name: wtnFields.brokerName || null,
+      broker_address: wtnFields.brokerAddress || null,
+      broker_carrier_reg: wtnFields.brokerCarrierReg || null,
+      // Recycling breakdown (shared)
+      recycled_pct: wtnFields.recycledPct ?? null,
+      recovered_pct: wtnFields.recoveredPct ?? null,
+      landfill_pct: wtnFields.landfillPct ?? null,
+      // Misc (shared)
+      notes: wtnFields.notes || null,
+      recipient_email: wtnFields.recipientEmail || null,
+      additional_emails: wtnFields.additionalEmails || null,
+      recipient_email_source: wtnFields.recipientEmailSource || null,
+    };
+  });
+};
+
+// `saveWtnsForJob(jobId, rows, opts)` — upserts rows into the `wtns`
+// table keyed on (job_id, line_item_index). Also deletes any existing
+// rows for this job whose line_item_index isn't in the new set, so
+// removing a tick from a previously-included line cleans up the row.
+//
+// `opts.preserveStateColumns` (default true): when re-saving (e.g.
+// publish-to-portal), don't trample sent/sent_at/recipient/portal_visible
+// /recurring* if the upsert row doesn't include them. We achieve this by
+// reading existing rows first and merging the per-row state forward.
+const saveWtnsForJob = async (jobId, rows, opts = {}) => {
+  if (!jobId) throw new Error('saveWtnsForJob: jobId required');
+  if (!Array.isArray(rows)) throw new Error('saveWtnsForJob: rows must be array');
+  const preserveStateColumns = opts.preserveStateColumns !== false;
+
+  // Step 1: read existing rows for this job so we can preserve per-WTN
+  // state columns (sent, sent_at, recipient, portal_visible, recurring*)
+  // that aren't in the new row payload, and so we can collect ids of
+  // rows whose line_item_index has been deselected.
+  const { data: existing, error: readErr } = await window.supabase
+    .from('wtns')
+    .select('id, line_item_index, sent, sent_at, recipient, portal_visible, recurring, recurring_frequency, recurring_next_date')
+    .eq('job_id', jobId);
+  if (readErr) {
+    console.warn('[saveWtnsForJob] read failed, attempting blind upsert:', readErr);
+  }
+  const existingByIdx = new Map();
+  (existing || []).forEach(r => existingByIdx.set(r.line_item_index, r));
+
+  // Step 2: merge per-row state columns from existing rows where present
+  const newIdxSet = new Set(rows.map(r => r.line_item_index));
+  const merged = rows.map(r => {
+    const ex = existingByIdx.get(r.line_item_index);
+    if (preserveStateColumns && ex) {
+      return {
+        ...r,
+        // Carry forward state-only columns; payload doesn't override these
+        ...(ex.id != null ? { id: ex.id } : {}),
+        ...(ex.sent != null ? { sent: ex.sent } : {}),
+        ...(ex.sent_at != null ? { sent_at: ex.sent_at } : {}),
+        ...(ex.recipient != null ? { recipient: ex.recipient } : {}),
+        ...(ex.portal_visible != null ? { portal_visible: ex.portal_visible } : {}),
+        ...(ex.recurring != null ? { recurring: ex.recurring } : {}),
+        ...(ex.recurring_frequency != null ? { recurring_frequency: ex.recurring_frequency } : {}),
+        ...(ex.recurring_next_date != null ? { recurring_next_date: ex.recurring_next_date } : {}),
+      };
+    }
+    return r;
+  });
+
+  // Step 3: delete rows whose line_item_index is no longer in the new set.
+  // This handles the case where staff un-tick a line that previously had a WTN.
+  const toDelete = (existing || []).filter(r => !newIdxSet.has(r.line_item_index));
+  if (toDelete.length > 0) {
+    const idsToDelete = toDelete.map(r => r.id);
+    const { error: delErr } = await window.supabase.from('wtns').delete().in('id', idsToDelete);
+    if (delErr) console.warn('[saveWtnsForJob] delete of removed lines failed:', delErr);
+    else console.log(`[saveWtnsForJob] cleared ${idsToDelete.length} removed line WTN(s) for job ${jobId}`);
+  }
+
+  // Step 4: upsert the new/updated rows. Conflict target = (job_id, line_item_index).
+  // A unique index on (job_id, line_item_index) is assumed in the schema.
+  const { data, error } = await window.supabase
+    .from('wtns')
+    .upsert(merged, { onConflict: 'job_id,line_item_index' })
+    .select();
+  if (error) {
+    console.error('[saveWtnsForJob] upsert failed:', error);
+    throw error;
+  }
+  console.log(`[saveWtnsForJob] upserted ${(data||[]).length} WTN row(s) for job ${jobId}`);
+  return data || [];
+};
+
+// `applyPerWtnState(jobId, patch)` — set per-WTN state columns
+// (sent, sent_at, recipient, portal_visible, recurring*) on ALL WTN rows
+// for the job. Used by the email-send and publish-to-portal flows.
+const applyPerWtnState = async (jobId, patch) => {
+  if (!jobId || !patch) return;
+  const { error } = await window.supabase.from('wtns').update(patch).eq('job_id', jobId);
+  if (error) console.warn('[applyPerWtnState] failed:', error);
 };
 
 // Load jobs from Supabase when app starts <- This is line 6850
@@ -16594,7 +17280,8 @@ const handleCompleteJob = async (job) => {
 
     // Check if parent job has per-job recurring WTN enabled
     let parentJobData = null;
-    let parentWtnFromTable = null; // First WTN from the new wtns table, if any
+    let parentWtnFromTable = null; // First WTN row (kept for legacy fallback merging)
+    let allParentWtns = []; // Phase 3: ALL parent WTN rows, in suffix order
     if (job.parentJobId || job.parent_job_id) {
       const parentId = job.parentJobId || job.parent_job_id;
       const { data: parentJob } = await window.supabase
@@ -16603,23 +17290,22 @@ const handleCompleteJob = async (job) => {
         .eq('id', parentId)
         .single();
       parentJobData = parentJob;
-      // Phase 2: also fetch parent's WTN from the new table.
-      // Multi-WTN parents → take the first (suffix A or unsuffixed) as the
-      // template for child auto-creation. Phase 3 will refresh ALL parent
-      // WTNs onto the child instead of just the first.
+      // Phase 3: fetch ALL parent WTN rows so multi-WTN parents propagate
+      // every line to the child, not just the first one. Ordered by suffix
+      // (A, B, C...) with nulls first for unsuffixed legacy single-WTN rows.
       try {
         const { data: parentWtnRows } = await window.supabase
           .from('wtns')
           .select('*')
           .eq('job_id', parentId)
           .order('suffix_letter', { ascending: true, nullsFirst: true })
-          .order('created_at', { ascending: true })
-          .limit(1);
+          .order('created_at', { ascending: true });
         if (parentWtnRows && parentWtnRows.length > 0) {
-          parentWtnFromTable = mapWtnRowToCamel(parentWtnRows[0]);
+          allParentWtns = parentWtnRows.map(mapWtnRowToCamel);
+          parentWtnFromTable = allParentWtns[0]; // first one for legacy code paths
         }
       } catch (e) {
-        console.warn('[handleCompleteJob] failed to fetch parent WTN from table:', e);
+        console.warn('[handleCompleteJob] failed to fetch parent WTNs from table:', e);
       }
 
       // Only trigger per-job WTN from the PARENT job's settings, never the child's own fields
@@ -16628,7 +17314,9 @@ const handleCompleteJob = async (job) => {
         const customerName = job.customerName || parentJobData.customer_name;
         const recipient = parentJobData.wtn_recipient;
         try {
-          // Phase 2: prefer the new table; fall back to the legacy column.
+          // Phase 3: prefer the new table (use the FIRST parent row as the
+          // template for the email body); fall back to the legacy column.
+          // The DB rows themselves will be written from ALL parent rows below.
           const parentWtnData = parentWtnFromTable || (() => {
             if (!parentJobData.wtn_data) return {};
             try {
@@ -16666,10 +17354,92 @@ const handleCompleteJob = async (job) => {
             message: htmlBody,
           });
 
-          // Mark this job as WTN sent in Supabase
+          // Phase 3 — primary write: stamp ONE row per parent WTN line onto
+          // the child. Each row inherits the parent's per-line fields
+          // (waste description, EWC, container, qty) but with the child's
+          // job-specific bits (wtn number, date, transferor address, etc.)
+          // overriding. Suffix letters are recomputed from scratch.
+          const sentAt = new Date().toISOString();
+          try {
+            if (allParentWtns.length > 0) {
+              const childRowsBase = allParentWtns.map((p, i) => {
+                const useSuffix = allParentWtns.length > 1;
+                const suffix = useSuffix ? String.fromCharCode(65 + i) : null;
+                const childWtnNumber = useSuffix
+                  ? `WTN-${job.jobNumber || job.job_number}-${suffix}`
+                  : `WTN-${job.jobNumber || job.job_number}`;
+                return {
+                  job_id: job.id,
+                  wtn_number: childWtnNumber,
+                  suffix_letter: suffix,
+                  // Carry parent's line item context through
+                  line_item_index: p.lineItemIndex != null ? p.lineItemIndex : i,
+                  line_item_product_name: p.lineItemProductName || null,
+                  line_item_description: p.lineItemDescription || null,
+                  line_item_quantity: p.lineItemQuantity || null,
+                  // Section A — per-line, from parent
+                  waste_description: p.wasteDescription || null,
+                  skip_size: p.skipSize || null,
+                  list_of_waste_code: p.listOfWasteCode || null,
+                  waste_container: p.wasteContainer || null,
+                  waste_process: p.wasteProcess || null,
+                  quantity: p.quantity != null ? Number(p.quantity) : null,
+                  unit: p.unit || null,
+                  is_hazardous: !!p.isHazardous,
+                  // Section B — Transferor: child's job-specific addresses
+                  transferor_name: customerName,
+                  transferor_address: wtnFields.transferorAddress || null,
+                  transferor_postcode: job.sitePostcode || job.site_postcode || p.transferorPostcode || null,
+                  transferor_sic_code: p.transferorSicCode || null,
+                  transferor_is_producer: p.transferorIsProducer ?? true,
+                  transferor_permit_number: p.transferorPermitNumber || null,
+                  transferor_signature: p.transferorSignature || null,
+                  transferor_representing: customerName,
+                  selected_transferor_site_id: p.selectedTransferorSiteId || null,
+                  // Section C — Transferee: from parent
+                  transferee_name: p.transfereeName || null,
+                  transferee_address: p.transfereeAddress || null,
+                  transferee_postcode: p.transfereePostcode || null,
+                  transferee_carrier_reg: p.transfereeCarrierReg || null,
+                  transferee_permit_number: p.transfereePermitNumber || null,
+                  selected_site_id: p.selectedSiteId || null,
+                  transferee_signature: p.transfereeSignature || null,
+                  transferee_representing: p.transfereeRepresenting || null,
+                  // Section D — Transfer & broker: child-specific date, parent broker
+                  transfer_address: wtnFields.transferAddress || null,
+                  transfer_date: wtnFields.transferDate || null,
+                  transfer_time: wtnFields.transferTime || null,
+                  broker_name: p.brokerName || null,
+                  broker_address: p.brokerAddress || null,
+                  broker_carrier_reg: p.brokerCarrierReg || null,
+                  // Recycling pcts — from parent
+                  recycled_pct: p.recycledPct ?? null,
+                  recovered_pct: p.recoveredPct ?? null,
+                  landfill_pct: p.landfillPct ?? null,
+                  // Misc
+                  notes: p.notes || null,
+                  recipient_email: recipient,
+                  additional_emails: p.additionalEmails || null,
+                  recipient_email_source: 'inherited-parent',
+                };
+              });
+              await saveWtnsForJob(job.id, childRowsBase, { preserveStateColumns: false });
+              // Stamp sent state on every row
+              await applyPerWtnState(job.id, {
+                sent: true,
+                sent_at: sentAt,
+                recipient: recipient,
+                portal_visible: true,
+              });
+            }
+          } catch (wtnsTableErr) {
+            console.error('[Phase 3] per-job auto-WTN wtns table write failed (legacy write will still happen):', wtnsTableErr);
+          }
+
+          // Phase 3 — dual-write to legacy column (first WTN's data, for safety).
           await window.supabase.from('jobs').update({
             wtn_sent: true,
-            wtn_sent_at: new Date().toISOString(),
+            wtn_sent_at: sentAt,
             wtn_recipient: recipient,
             wtn_data: JSON.stringify(wtnFields),
           }).eq('id', job.id);
@@ -16729,7 +17499,102 @@ const handleCompleteJob = async (job) => {
             skipSize: childSkipSize,
             wasteDescription: childWasteDescription,
           };
-          // Save WTN to portal only — no email
+
+          // Phase 3 — primary write: stamp N rows on the child, one per
+          // parent WTN line. The first row's Section A fields get refreshed
+          // from the child's own line items (qty/product/description) since
+          // the child's job often has different quantities than the parent
+          // template. Sections B/C/D and recycling pcts are inherited.
+          try {
+            if (allParentWtns.length > 0) {
+              // Map child line items by index for per-line refresh
+              const childMetaByIdx = new Map();
+              childLineItems.forEach((li, idx) => {
+                childMetaByIdx.set(idx, li);
+              });
+              const childRowsBase = allParentWtns.map((p, i) => {
+                const useSuffix = allParentWtns.length > 1;
+                const suffix = useSuffix ? String.fromCharCode(65 + i) : null;
+                const childWtnNumber = useSuffix
+                  ? `WTN-${job.jobNumber || job.job_number}-${suffix}`
+                  : `WTN-${job.jobNumber || job.job_number}`;
+                // Try to refresh per-line bits from the matching child line item
+                const parentLineIdx = p.lineItemIndex != null ? p.lineItemIndex : i;
+                const childLI = childMetaByIdx.get(parentLineIdx) || null;
+                const refreshedQty = childLI?.quantity || p.quantity || null;
+                const refreshedProduct = childLI?.product_name || childLI?.productName || p.lineItemProductName || null;
+                const refreshedDesc = childLI?.description || p.lineItemDescription || null;
+                // Recompute waste description with child's product/desc
+                let refreshedWasteDesc = p.wasteDescription || '';
+                if (refreshedProduct || refreshedDesc) {
+                  const parts = [];
+                  if (refreshedProduct) parts.push(refreshedProduct);
+                  if (refreshedDesc && refreshedDesc !== refreshedProduct) parts.push(refreshedDesc);
+                  if (childWasteType && !parts.includes(childWasteType)) parts.push(childWasteType);
+                  refreshedWasteDesc = parts.filter(Boolean).join(' — ') || refreshedWasteDesc;
+                }
+                return {
+                  job_id: job.id,
+                  wtn_number: childWtnNumber,
+                  suffix_letter: suffix,
+                  // Line item context — refreshed from child where possible
+                  line_item_index: parentLineIdx,
+                  line_item_product_name: refreshedProduct,
+                  line_item_description: refreshedDesc,
+                  line_item_quantity: refreshedQty != null ? Number(refreshedQty) : null,
+                  // Section A — refreshed
+                  waste_description: refreshedWasteDesc || null,
+                  skip_size: refreshedProduct || p.skipSize || null,
+                  list_of_waste_code: p.listOfWasteCode || null,
+                  waste_container: p.wasteContainer || null,
+                  waste_process: p.wasteProcess || null,
+                  quantity: refreshedQty != null ? Number(refreshedQty) : null,
+                  unit: p.unit || null,
+                  is_hazardous: !!p.isHazardous,
+                  // Section B — child's transferor address, inherited rest
+                  transferor_name: autoWtnFields.transferorName || null,
+                  transferor_address: autoWtnFields.transferorAddress || null,
+                  transferor_postcode: job.sitePostcode || job.site_postcode || p.transferorPostcode || null,
+                  transferor_sic_code: p.transferorSicCode || null,
+                  transferor_is_producer: p.transferorIsProducer ?? true,
+                  transferor_permit_number: p.transferorPermitNumber || null,
+                  transferor_signature: p.transferorSignature || null,
+                  transferor_representing: autoWtnFields.transferorName || null,
+                  selected_transferor_site_id: p.selectedTransferorSiteId || null,
+                  // Section C — inherited
+                  transferee_name: p.transfereeName || null,
+                  transferee_address: p.transfereeAddress || null,
+                  transferee_postcode: p.transfereePostcode || null,
+                  transferee_carrier_reg: p.transfereeCarrierReg || null,
+                  transferee_permit_number: p.transfereePermitNumber || null,
+                  selected_site_id: p.selectedSiteId || null,
+                  transferee_signature: p.transfereeSignature || null,
+                  transferee_representing: p.transfereeRepresenting || null,
+                  // Section D — child date/address, parent broker
+                  transfer_address: autoWtnFields.transferAddress || null,
+                  transfer_date: autoWtnFields.transferDate || null,
+                  transfer_time: autoWtnFields.transferTime || null,
+                  broker_name: p.brokerName || null,
+                  broker_address: p.brokerAddress || null,
+                  broker_carrier_reg: p.brokerCarrierReg || null,
+                  recycled_pct: p.recycledPct ?? null,
+                  recovered_pct: p.recoveredPct ?? null,
+                  landfill_pct: p.landfillPct ?? null,
+                  notes: p.notes || null,
+                  recipient_email: p.recipientEmail || null,
+                  additional_emails: p.additionalEmails || null,
+                  recipient_email_source: 'inherited-parent',
+                };
+              });
+              await saveWtnsForJob(job.id, childRowsBase, { preserveStateColumns: false });
+              // Flip portal_visible on every row (no email — just portal save)
+              await applyPerWtnState(job.id, { portal_visible: true });
+            }
+          } catch (wtnsTableErr) {
+            console.error('[Phase 3] auto-portal wtns table write failed (legacy write will still happen):', wtnsTableErr);
+          }
+
+          // Phase 3 — dual-write to legacy column (first WTN's data, for safety).
           await window.supabase.from('jobs').update({
             wtn_data: JSON.stringify(autoWtnFields),
             wtn_portal_visible: true,
@@ -16757,9 +17622,9 @@ const handleCompleteJob = async (job) => {
     // job state. Without this, if the job's line items / quantity / address were edited after the
     // WTN was first saved, the portal would show stale numbers. Manually-edited WTN fields
     // (signatures, percentages, EWC, permits, notes) are preserved.
-    if (!hasParent && jobWtnData && !job.wtn_portal_visible) {
+    if (!hasParent && (hasNewWtns || jobWtnData) && !job.wtn_portal_visible) {
       try {
-        // Parse existing WTN
+        // Parse existing WTN (legacy column — used as fallback template only)
         const existingWtn = (() => {
           if (!jobWtnData) return {};
           if (typeof jobWtnData === 'object') return jobWtnData;
@@ -16797,22 +17662,85 @@ const handleCompleteJob = async (job) => {
           updatedJob.sitePostcode || updatedJob.site_postcode || job.sitePostcode || job.site_postcode,
         ].filter(Boolean).join(', ') || existingWtn.transferAddress || '';
 
-        // Merge: existing fields take precedence except for the job-derived ones we want fresh
-        const refreshedWtn = {
-          ...existingWtn,
-          quantity: freshQty,
-          skipSize: freshSkipSize || existingWtn.skipSize,
-          wasteDescription: freshWasteDesc,
-          transferAddress: freshTransferAddress,
-          // Refresh transferor address too in case site address changed
-          transferorAddress: freshTransferAddress || existingWtn.transferorAddress,
-        };
+        // Phase 3 — refresh ALL existing WTN rows for this job, not just the
+        // first. Re-read from the table (job.wtns may be stale by now), then
+        // for each row patch the line-derived bits using the matching child
+        // line item, plus the shared transfer addresses, then upsert the row
+        // back. Skips the wtns-table path entirely if the row read fails or
+        // returns nothing (legacy single-row jobs).
+        let updatedAnyWtnsRow = false;
+        try {
+          const { data: existingRows } = await window.supabase
+            .from('wtns').select('*').eq('job_id', job.id);
+          if (existingRows && existingRows.length > 0) {
+            // Build a map of child line items by index for per-row refresh
+            const liByIdx = new Map();
+            lineItems.forEach((li, idx) => liByIdx.set(idx, li));
+            const refreshedRows = existingRows.map(r => {
+              const liIdx = r.line_item_index != null ? r.line_item_index : 0;
+              const li = liByIdx.get(liIdx);
+              const rowProduct = li?.product_name || li?.productName || r.line_item_product_name;
+              const rowDesc = li?.description || r.line_item_description;
+              const rowQty = li?.quantity || r.quantity || r.line_item_quantity;
+              // Recompute waste description for this line if we can
+              let rowWasteDesc = r.waste_description;
+              if (rowProduct || rowDesc) {
+                const parts = [];
+                if (rowProduct) parts.push(rowProduct);
+                if (rowDesc && rowDesc !== rowProduct) parts.push(rowDesc);
+                if (freshWasteType && !parts.includes(freshWasteType)) parts.push(freshWasteType);
+                rowWasteDesc = parts.filter(Boolean).join(' — ') || rowWasteDesc;
+              }
+              return {
+                ...r,
+                line_item_product_name: rowProduct || r.line_item_product_name,
+                line_item_description: rowDesc || r.line_item_description,
+                line_item_quantity: rowQty != null ? Number(rowQty) : r.line_item_quantity,
+                waste_description: rowWasteDesc,
+                quantity: rowQty != null ? Number(rowQty) : r.quantity,
+                skip_size: rowProduct || freshSkipSize || r.skip_size,
+                // Shared transfer addresses refreshed from current job state
+                transfer_address: freshTransferAddress || r.transfer_address,
+                transferor_address: freshTransferAddress || r.transferor_address,
+                // Flip portal visible
+                portal_visible: true,
+              };
+            });
+            const { error: upErr } = await window.supabase
+              .from('wtns')
+              .upsert(refreshedRows, { onConflict: 'job_id,line_item_index' });
+            if (upErr) throw upErr;
+            updatedAnyWtnsRow = true;
+            console.log(`📄 Phase 3: refreshed ${refreshedRows.length} WTN row(s) from current job data for ${job.jobNumber || job.job_number}`);
+          }
+        } catch (wtnsRefreshErr) {
+          console.warn('[Phase 3] wtns table refresh failed; legacy column refresh will still happen:', wtnsRefreshErr);
+        }
 
-        await window.supabase.from('jobs').update({
-          wtn_data: JSON.stringify(refreshedWtn),
-          wtn_portal_visible: true,
-        }).eq('id', job.id);
-        console.log(`📄 WTN refreshed from job data and published to portal: ${job.jobNumber || job.job_number}`);
+        // Phase 3 — dual-write to the legacy column. Mirrors the FIRST WTN's
+        // refreshed shape; preserved for un-migrated readers.
+        if (jobWtnData) {
+          // Merge: existing fields take precedence except for the job-derived ones we want fresh
+          const refreshedWtn = {
+            ...existingWtn,
+            quantity: freshQty,
+            skipSize: freshSkipSize || existingWtn.skipSize,
+            wasteDescription: freshWasteDesc,
+            transferAddress: freshTransferAddress,
+            // Refresh transferor address too in case site address changed
+            transferorAddress: freshTransferAddress || existingWtn.transferorAddress,
+          };
+
+          await window.supabase.from('jobs').update({
+            wtn_data: JSON.stringify(refreshedWtn),
+            wtn_portal_visible: true,
+          }).eq('id', job.id);
+          console.log(`📄 WTN refreshed from job data and published to portal: ${job.jobNumber || job.job_number}`);
+        } else if (updatedAnyWtnsRow) {
+          // wtns rows updated but no legacy data to dual-write — just flip the
+          // job's portal-visible flag for any downstream code that reads it.
+          await window.supabase.from('jobs').update({ wtn_portal_visible: true }).eq('id', job.id);
+        }
       } catch(e) {
         console.error('Portal publish failed:', e);
         // Fallback: at least flip the visibility so something gets shown
@@ -16823,8 +17751,8 @@ const handleCompleteJob = async (job) => {
     }
     
     // Recurring child auto-WTN was handled above — check if it fired
-    // Phase 2: parent has a WTN if either source has data
-    const recurringAutoFired = hasParent && (parentWtnFromTable || parentJobData?.wtn_data);
+    // Phase 3: parent has a WTN if either source has data
+    const recurringAutoFired = hasParent && (allParentWtns.length > 0 || parentWtnFromTable || parentJobData?.wtn_data);
 
     if (isWasteJob && (jobHasAnyWtn || recurringAutoFired)) {
       // WTN exists and is now published to portal
@@ -17083,7 +18011,12 @@ site_notes: fullJob?.site_notes || '',
             sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
             sage_si_number: null,
             collection_date: null,
-            // Do NOT carry over WTN data — duplicated job gets a fresh WTN
+            // Do NOT carry over WTN data — duplicated job gets a fresh WTN.
+            // Phase 3: the duplicated row gets a freshly generated id from
+            // Supabase, so no wtns rows reference it yet. The FK on wtns
+            // (job_id → jobs.id ON DELETE CASCADE) means the original's WTN
+            // rows stay attached to the original; the duplicate's wtns set
+            // starts empty. No explicit wtns delete needed.
             wtn_data: null,
             wtn_portal_visible: false,
             wtn_sent: false,
