@@ -15751,7 +15751,9 @@ const _disabled_2am_sync_for_reference = () => {
 // Map a row from the `wtns` table to the legacy camelCase shape that the rest
 // of the app already understands. This lets all the "is there a WTN?" checks
 // keep working without rewriting every consumer.
-const mapWtnRowToCamel = (row) => row ? ({
+// Hoisted (function declaration, not const arrow) so all components in this
+// single-file React app can reach it regardless of source-line position.
+function mapWtnRowToCamel(row) { return row ? ({
   id: row.id,
   jobId: row.job_id,
   wtnNumber: row.wtn_number,
@@ -15815,7 +15817,7 @@ const mapWtnRowToCamel = (row) => row ? ({
   recurringNextDate: row.recurring_next_date,
   // Catch-all for anything not mapped
   extra: row.extra || {},
-}) : null;
+}) : null; }
 
 // Bulk-fetch all wtns for an array of job ids. Returns a Map<jobId, WTN[]>.
 // Chunks the input into batches of 100 because PostgREST has a URL length
@@ -15823,7 +15825,8 @@ const mapWtnRowToCamel = (row) => row ? ({
 // safely under the cap. The staff jobs list can have 1000+ jobs, so this
 // chunking is essential for that view; the portal usually has <100 and
 // hits a single batch.
-const loadWtnsForJobs = async (jobIds) => {
+// Hoisted as a function declaration — same reasoning as above.
+async function loadWtnsForJobs(jobIds) {
   const map = new Map();
   if (!jobIds || jobIds.length === 0) return map;
   try {
@@ -15847,13 +15850,14 @@ const loadWtnsForJobs = async (jobIds) => {
     console.warn('[loadWtnsForJobs] failed, falling back to legacy wtn_data:', e);
   }
   return map;
-};
+}
 
 // Attach a `wtns` array to each job, plus a legacy-shape `wtnData` (= the
 // first WTN). Call right after fetching jobs from Supabase. If the wtns
 // query fails, jobs come back unchanged and downstream code falls back
 // to the legacy job.wtn_data column.
-const enrichJobsWithWtns = async (jobs) => {
+// Hoisted — same reasoning as above.
+async function enrichJobsWithWtns(jobs) {
   if (!jobs || jobs.length === 0) return jobs;
   const ids = jobs.map(j => j.id || j.jobId).filter(Boolean);
   const map = await loadWtnsForJobs(ids);
@@ -15882,7 +15886,7 @@ const enrichJobsWithWtns = async (jobs) => {
       wtnData: wtns[0] || job.wtnData || null,
     };
   });
-};
+}
 
 // =====================================================================
 // Phase 3 — WTN write helpers
@@ -15900,7 +15904,14 @@ const enrichJobsWithWtns = async (jobs) => {
 // recycling pcts, etc.) are stamped onto every row. Line-specific fields
 // (waste description, EWC, container, qty, hazardous) come from the
 // line itself.
-const wtnFieldsToRows = (wtnFields, jobId) => {
+// NOTE: declared as `function` (not const arrow) so it's hoisted to the
+// top of the script block. With `const` here, a few call sites inside
+// the JobForm component were intermittently throwing
+// "Can't find variable: wtnFieldsToRows" — most likely Babel-in-browser's
+// closure capture for handleSubmit grabbing a reference before the const
+// initialiser ran. Hoisted function declarations don't have that TDZ
+// problem.
+function wtnFieldsToRows(wtnFields, jobId) {
   if (!jobId) {
     console.error('[wtnFieldsToRows] jobId is required');
     return [];
@@ -15990,7 +16001,7 @@ const wtnFieldsToRows = (wtnFields, jobId) => {
       recipient_email_source: wtnFields.recipientEmailSource || null,
     };
   });
-};
+}
 
 // `saveWtnsForJob(jobId, rows, opts)` — upserts rows into the `wtns`
 // table keyed on (job_id, line_item_index). Also deletes any existing
@@ -16001,7 +16012,9 @@ const wtnFieldsToRows = (wtnFields, jobId) => {
 // publish-to-portal), don't trample sent/sent_at/recipient/portal_visible
 // /recurring* if the upsert row doesn't include them. We achieve this by
 // reading existing rows first and merging the per-row state forward.
-const saveWtnsForJob = async (jobId, rows, opts = {}) => {
+// Same hoisting reasoning as wtnFieldsToRows above — declared as
+// function so it's available everywhere from script-block start.
+async function saveWtnsForJob(jobId, rows, opts = {}) {
   if (!jobId) throw new Error('saveWtnsForJob: jobId required');
   if (!Array.isArray(rows)) throw new Error('saveWtnsForJob: rows must be array');
   const preserveStateColumns = opts.preserveStateColumns !== false;
@@ -16096,16 +16109,17 @@ const saveWtnsForJob = async (jobId, rows, opts = {}) => {
   }
   console.log(`[saveWtnsForJob] upserted ${(data||[]).length} WTN row(s) for job ${jobId}`);
   return data || [];
-};
+}
 
 // `applyPerWtnState(jobId, patch)` — set per-WTN state columns
 // (sent, sent_at, recipient, portal_visible, recurring*) on ALL WTN rows
 // for the job. Used by the email-send and publish-to-portal flows.
-const applyPerWtnState = async (jobId, patch) => {
+// Same hoisting reasoning — declared as function.
+async function applyPerWtnState(jobId, patch) {
   if (!jobId || !patch) return;
   const { error } = await window.supabase.from('wtns').update(patch).eq('job_id', jobId);
   if (error) console.warn('[applyPerWtnState] failed:', error);
-};
+}
 
 // Load jobs from Supabase when app starts <- This is line 6850
 const loadJobsFromSupabase = async () => {
