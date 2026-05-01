@@ -324,7 +324,7 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix12-2026-05-01';
+        window.PHASE3_BUILD = 'fix13-2026-05-01';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -1329,8 +1329,21 @@ return (
               const logoSetting = settings?.find(s => s.setting_name === 'logo_url')?.setting_value || null;
               const nameSetting = settings?.find(s => s.setting_name === 'company_name')?.setting_value || null;
 
-              setPortalJobs(jobs || []);
               setPortalUser({ company: customer.company_name || customer.name, customer, logoUrl: logoSetting, companyName: nameSetting });
+              // Phase 2 fix: enrich jobs with WTNs from the new wtns table on
+              // INITIAL login too, not just on refresh. Without this, the
+              // portal shows only 1 WTN per job (from legacy wtn_data) until
+              // the customer manually hits refresh or the 30s auto-refresh
+              // ticks. Enrichment must happen before the user lands on the
+              // jobs list otherwise multi-line WTNs don't show their full
+              // count and only the first note renders in the modal.
+              try {
+                const enriched = await enrichJobsWithWtns(jobs || []);
+                setPortalJobs(enriched);
+              } catch (e) {
+                console.warn('[Portal] initial enrichment failed, falling back to un-enriched jobs:', e);
+                setPortalJobs(jobs || []);
+              }
             } catch (err) {
               setPortalError('An error occurred. Please try again.');
             } finally {
