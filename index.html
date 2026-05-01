@@ -323,7 +323,7 @@
         // Phase 3 build marker — type `window.PHASE3_BUILD` in the console
         // to confirm which version of the file is actually live. If this
         // is undefined, the deployed HTML is older than fix4.
-        window.PHASE3_BUILD = 'fix8-2026-05-01';
+        window.PHASE3_BUILD = 'fix9-2026-05-01';
         console.log('[Phase 3] Build:', window.PHASE3_BUILD);
 
         // ── UK VAT number validation ──────────────────────────────────────
@@ -17323,17 +17323,46 @@ collection_date: updatedJob.collectionDate || null,
           } catch(e) { return updatedJob.lineItems || []; }
         })(),
       };
-      setJobs(jobs.map(job => job.id === updatedJob.id ? mappedJob : job));
-      setEditingJob(mappedJob);
+
+      // Phase 3: enrich the post-save job with fresh wtns from the new
+      // `wtns` table BEFORE pushing it to local state. Without this, the
+      // local copy keeps the OLD `wtns` array (or none) plus a stale
+      // `wtnData` blob that includes `lines: [...]`. When the form re-opens
+      // (e.g. user reopens after Update Job), the wtnFields useState init
+      // sees the stale lines and renders accordingly — making it look like
+      // an untick "didn't take" because the form pulls included:true from
+      // the legacy wtn_data blob.
+      let enrichedMappedJob = mappedJob;
+      try {
+        const enriched = await window.enrichJobsWithWtns([mappedJob]);
+        if (Array.isArray(enriched) && enriched[0]) {
+          enrichedMappedJob = enriched[0];
+        }
+      } catch (e) {
+        console.warn('[handleUpdateJob] post-save enrichment failed, using stale state:', e);
+      }
+      setJobs(jobs.map(job => job.id === updatedJob.id ? enrichedMappedJob : job));
+      setEditingJob(enrichedMappedJob);
       setShowJobForm(false);
-      setShowFullPageJob(mappedJob);
+      setShowFullPageJob(enrichedMappedJob);
       // Also reload all jobs to ensure everything is fresh
       setTimeout(() => window.loadJobsFromSupabase(), 300);
     } else {
-      setJobs(jobs.map(job => job.id === updatedJob.id ? updatedJob : job));
-      setEditingJob(updatedJob);
+      // freshJob fetch failed — same enrichment treatment for the fallback
+      // path so the form still gets accurate wtns state.
+      let enrichedFallback = updatedJob;
+      try {
+        const enriched = await window.enrichJobsWithWtns([updatedJob]);
+        if (Array.isArray(enriched) && enriched[0]) {
+          enrichedFallback = enriched[0];
+        }
+      } catch (e) {
+        console.warn('[handleUpdateJob] fallback enrichment failed:', e);
+      }
+      setJobs(jobs.map(job => job.id === updatedJob.id ? enrichedFallback : job));
+      setEditingJob(enrichedFallback);
       setShowJobForm(false);
-      setShowFullPageJob(updatedJob);
+      setShowFullPageJob(enrichedFallback);
       setTimeout(() => window.loadJobsFromSupabase(), 300);
     }
     // If recurring was set/updated, run checker immediately
