@@ -1340,7 +1340,9 @@ return (
                 .select('*')
                 .eq('customer_name', portalUser.customer.company_name || portalUser.customer.name)
                 .order('created_at', { ascending: false });
-              setPortalJobs(jobs || []);
+              // Phase 2: attach WTNs from the new table for the portal too.
+              const enriched = await enrichJobsWithWtns(jobs || []);
+              setPortalJobs(enriched);
             } catch (err) {
               console.error('Portal refresh failed:', err);
             }
@@ -1729,7 +1731,9 @@ return (
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
-                            const hasWtn = job.wtn_portal_visible || ((job.wtn_sent || job.wtn_sent_at) && done && job.wtn_data);
+                            const hasWtn = (Array.isArray(job.wtns) && job.wtns.length > 0)
+                              || job.wtn_portal_visible
+                              || ((job.wtn_sent || job.wtn_sent_at) && done && job.wtn_data);
                             const siNumber = job.sage_si_number || job.invoice_number || null;
                             const isInvoiced = !!siNumber;
 
@@ -1910,7 +1914,9 @@ return (
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
                             const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
-                            const hasWtn = job.wtn_portal_visible || ((job.wtn_sent || job.wtn_sent_at) && done && job.wtn_data);
+                            const hasWtn = (Array.isArray(job.wtns) && job.wtns.length > 0)
+                              || job.wtn_portal_visible
+                              || ((job.wtn_sent || job.wtn_sent_at) && done && job.wtn_data);
                             const siNumber = job.sage_si_number || job.invoice_number || null;
                             const isInvoiced = !!siNumber;
                             const serviceDetail = job.waste_type || job.aggregate_type || null;
@@ -2264,16 +2270,30 @@ return (
         // Job Form Component
 // ── EWC Code Picker ───────────────────────────────────────────────────────
 const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp }) => {
-  const rawWtn = job.wtn_data || (job.wtnData ? JSON.stringify(job.wtnData) : null);
-  const savedWtn = (() => {
-    if (!rawWtn) return null;
-    if (typeof rawWtn === 'object') return rawWtn;
-    try { return JSON.parse(rawWtn); } catch(e) { console.warn('[WtnPortalModal] Failed to parse wtn_data:', e); return null; }
-  })();
+  // Phase 2: prefer job.wtns (array from the new wtns table). Fall back to
+  // legacy job.wtn_data / job.wtnData for any code path that hasn't yet
+  // been migrated.
+  const wtnList = Array.isArray(job.wtns) && job.wtns.length > 0
+    ? job.wtns
+    : (() => {
+        const rawWtn = job.wtn_data || (job.wtnData ? JSON.stringify(job.wtnData) : null);
+        if (!rawWtn) return [];
+        try {
+          const parsed = typeof rawWtn === 'object' ? rawWtn : JSON.parse(rawWtn);
+          return parsed ? [parsed] : [];
+        } catch (e) {
+          console.warn('[WtnPortalModal] Failed to parse legacy wtn_data:', e);
+          return [];
+        }
+      })();
+
+  const [activeWtnIdx, setActiveWtnIdx] = useState(0);
+  const savedWtn = wtnList[activeWtnIdx] || null;
   const coName = companyNameProp || localStorage.getItem('companyName') || 'Total Waste Services Ltd';
   const logoSrc = logoUrl || localStorage.getItem('companyLogo');
 
-  // Live state so we can enrich with supplier lookup
+  // Live state so we can enrich with supplier lookup. Re-keyed when the
+  // customer picks a different WTN tab.
   const [wtnData, setWtnData] = useState(() => savedWtn || {
     wtnNumber: `WTN-${job.job_number || job.jobNumber}`,
     transferDate: job.job_date || job.jobDate || job.collection_date || '',
@@ -2292,6 +2312,11 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
     recycledPct: 0, recoveredPct: 0, landfillPct: 100,
     brokerCarrierReg: localStorage.getItem('carrierReg') || '—',
   });
+
+  // When the customer switches WTN tabs, reset the live wtnData to the new one.
+  useEffect(() => {
+    if (savedWtn) setWtnData(savedWtn);
+  }, [activeWtnIdx]);
 
   // Enrich with supplier details if CBDU/permit/signature/address are missing
   useEffect(() => {
@@ -2345,19 +2370,47 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
     const needsSignature = !wtnData.transferorSignature || wtnData.transferorSignature === '(signed)' || wtnData.transferorSignature === '—';
     if (!needsPermit && !needsSignature) return;
 
-    // Look up from most recent WTN for this customer
+    // Look up the most recent WTN for this customer.
+    // Phase 2: query the new `wtns` table joined to `jobs` so we can match
+    // on customer_name. Falls back to the legacy jobs.wtn_data path on error.
     (async () => {
       try {
-        const { data: prevWtns } = await window.supabase
+        // Find recent jobs for this customer that have a sent WTN
+        const { data: customerJobs } = await window.supabase
           .from('jobs')
-          .select('wtn_data')
+          .select('id')
           .eq('customer_name', customerName)
-          .eq('wtn_sent', true)
-          .not('wtn_data', 'is', null)
-          .order('wtn_sent_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (!customerJobs || customerJobs.length === 0) return;
+        const jobIds = customerJobs.map(j => j.id);
+        const { data: wtnRows } = await window.supabase
+          .from('wtns')
+          .select('*')
+          .in('job_id', jobIds)
+          .eq('sent', true)
+          .order('sent_at', { ascending: false })
           .limit(1);
-        if (!prevWtns || prevWtns.length === 0) return;
-        const prev = typeof prevWtns[0].wtn_data === 'string' ? JSON.parse(prevWtns[0].wtn_data) : prevWtns[0].wtn_data;
+        let prev = null;
+        if (wtnRows && wtnRows.length > 0) {
+          prev = mapWtnRowToCamel(wtnRows[0]);
+        } else {
+          // Legacy fallback — read from jobs.wtn_data exactly as the old code did.
+          const { data: prevWtns } = await window.supabase
+            .from('jobs')
+            .select('wtn_data')
+            .eq('customer_name', customerName)
+            .eq('wtn_sent', true)
+            .not('wtn_data', 'is', null)
+            .order('wtn_sent_at', { ascending: false })
+            .limit(1);
+          if (!prevWtns || prevWtns.length === 0) return;
+          const raw = prevWtns[0].wtn_data;
+          try { prev = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { return; }
+          // Legacy app sometimes stored the blob double-stringified
+          if (typeof prev === 'string') { try { prev = JSON.parse(prev); } catch(e) {} }
+        }
+        if (!prev) return;
         setWtnData(w => ({
           ...w,
           transferorPermitNumber: w.transferorPermitNumber && w.transferorPermitNumber !== '—' ? w.transferorPermitNumber : (prev.transferorPermitNumber || w.transferorPermitNumber || ''),
@@ -2376,15 +2429,39 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
       <div className="min-h-screen flex items-start justify-center p-0 sm:p-4">
         <div id="wtn-print-root" className="bg-white sm:rounded-xl max-w-2xl w-full sm:my-4 shadow-2xl" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 wtn-print-hide gap-2">
-            <h2 className="font-bold text-gray-900 text-sm sm:text-base truncate">WTN — {job.job_number || job.jobNumber}</h2>
+            <h2 className="font-bold text-gray-900 text-sm sm:text-base truncate">
+              WTN — {job.job_number || job.jobNumber}
+              {wtnList.length > 1 && <span className="text-gray-400 font-normal ml-2">({wtnList.length} notes)</span>}
+            </h2>
             <div className="flex gap-2 flex-shrink-0">
               <button onClick={() => {
-                const wtnId = job.wtn_number || ('WTN-' + (job.job_number || job.jobNumber));
+                // Use the active WTN's number if available, fall back to derived
+                const wtnId = (savedWtn && savedWtn.wtnNumber) || job.wtn_number || ('WTN-' + (job.job_number || job.jobNumber));
                 window.open('https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=' + wtnId, '_blank');
               }} className="px-2 sm:px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">🖨 <span className="hidden sm:inline">Print / Save PDF</span><span className="sm:hidden">Print</span></button>
               <button onClick={onClose} className="px-2 sm:px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">✕</button>
             </div>
           </div>
+          {/* WTN tab strip — only shown when this job has multiple WTNs */}
+          {wtnList.length > 1 && (
+            <div className="flex gap-1 px-4 sm:px-6 py-2 border-b border-gray-200 bg-gray-50 wtn-print-hide overflow-x-auto">
+              {wtnList.map((w, i) => {
+                const label = w.suffixLetter
+                  ? `Note ${w.suffixLetter}`
+                  : (w.wtnNumber || `Note ${i + 1}`);
+                const isActive = i === activeWtnIdx;
+                return (
+                  <button key={w.id || w.wtnNumber || i}
+                    onClick={() => setActiveWtnIdx(i)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${isActive ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'}`}
+                    title={w.wasteDescription || ''}>
+                    {label}
+                    {w.lineItemProductName ? <span className={`ml-1 ${isActive ? 'text-blue-100' : 'text-gray-500'} font-normal`}>· {w.lineItemProductName}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="p-2 sm:p-4 wtn-modal-body" style={{fontFamily:'Arial,sans-serif',fontSize:11}}>
               {isReconstructed && (
                 <div style={{background:'#fef3c7',border:'1px solid #f59e0b',borderRadius:6,padding:'6px 12px',marginBottom:8,fontSize:10,color:'#92400e'}}>
@@ -2699,7 +2776,7 @@ const loadJobAttachments = async (jobId) => {
 const [attachmentType, setAttachmentType] = useState('Waste Transfer Note');
 const [wtnSending, setWtnSending] = useState(false);
 const [wtnSentOk, setWtnSentOk] = useState(false);
-const [wtnTouched, setWtnTouched] = useState(!!(job?.wtn_data || job?.wtnData));
+const [wtnTouched, setWtnTouched] = useState(!!(job?.wtn_data || job?.wtnData || (Array.isArray(job?.wtns) && job.wtns.length > 0)));
 const [wtnSuggestions, setWtnSuggestions] = useState({}); // tracks which fields were auto-filled from previous WTNs
 
 // Keep WTN supplier/customer fields in sync with form changes
@@ -2964,14 +3041,33 @@ useEffect(() => {
 
   (async () => {
     try {
-      const { data: parent } = await window.supabase
-        .from('jobs')
-        .select('wtn_data')
-        .eq('id', parentId)
-        .single();
-      if (!parent?.wtn_data) return;
-
-      const parentWtn = typeof parent.wtn_data === 'string' ? JSON.parse(parent.wtn_data) : parent.wtn_data;
+      // Phase 2: read parent WTN from the new `wtns` table first.
+      // Multi-WTN parents have many rows — pick the first one (suffix A or
+      // unsuffixed) for inheritance purposes. Fall back to legacy wtn_data
+      // if no row exists yet.
+      let parentWtn = null;
+      const { data: parentWtnRows } = await window.supabase
+        .from('wtns')
+        .select('*')
+        .eq('job_id', parentId)
+        .order('suffix_letter', { ascending: true, nullsFirst: true })
+        .order('created_at', { ascending: true })
+        .limit(1);
+      if (parentWtnRows && parentWtnRows.length > 0) {
+        parentWtn = mapWtnRowToCamel(parentWtnRows[0]);
+      } else {
+        const { data: parent } = await window.supabase
+          .from('jobs')
+          .select('wtn_data')
+          .eq('id', parentId)
+          .single();
+        if (!parent?.wtn_data) return;
+        try {
+          parentWtn = typeof parent.wtn_data === 'string' ? JSON.parse(parent.wtn_data) : parent.wtn_data;
+          if (typeof parentWtn === 'string') { try { parentWtn = JSON.parse(parentWtn); } catch(e) {} }
+        } catch(e) { return; }
+      }
+      if (!parentWtn) return;
       console.log('[WTN] Inheriting WTN data from parent job:', parentId);
 
       setWtnFields(prev => ({
@@ -3164,128 +3260,115 @@ useEffect(() => {
         console.log('[WTN AutoSuggest] Looking up previous WTNs for', job.customerName, job.supplierName, job.wasteType);
         const suggestions = {};
 
+        // Phase 2 helper: fetch the most recent N WTN rows from the new
+        // `wtns` table whose parent job matches the given criteria.
+        // Falls back to the legacy jobs.wtn_data query on error so we
+        // never lose suggestions if the new table is briefly unavailable.
+        const fetchRecentWtns = async ({ customerName, supplierName, wasteType, limit }) => {
+          try {
+            // 1. Find matching jobs first (Supabase doesn't support cross-table .eq on joined columns easily here)
+            let q = window.supabase.from('jobs').select('id');
+            if (customerName) q = q.eq('customer_name', customerName);
+            if (supplierName) q = q.eq('supplier_name', supplierName);
+            if (wasteType)    q = q.eq('waste_type', wasteType);
+            const { data: matchedJobs } = await q.order('created_at', { ascending: false }).limit(200);
+            if (!matchedJobs || matchedJobs.length === 0) return [];
+            const ids = matchedJobs.map(j => j.id);
+            // 2. Pull their sent WTNs from the new table
+            const { data: rows } = await window.supabase
+              .from('wtns')
+              .select('*')
+              .in('job_id', ids)
+              .eq('sent', true)
+              .order('sent_at', { ascending: false })
+              .limit(limit);
+            if (rows && rows.length > 0) return rows.map(mapWtnRowToCamel);
+            return [];
+          } catch (e) {
+            console.warn('[WTN AutoSuggest] new-table lookup failed, falling back:', e);
+            // Legacy fallback — query jobs.wtn_data the old way.
+            let q = window.supabase
+              .from('jobs')
+              .select('wtn_data')
+              .eq('wtn_sent', true)
+              .not('wtn_data', 'is', null);
+            if (customerName) q = q.eq('customer_name', customerName);
+            if (supplierName) q = q.eq('supplier_name', supplierName);
+            if (wasteType)    q = q.eq('waste_type', wasteType);
+            const { data } = await q.order('wtn_sent_at', { ascending: false }).limit(limit);
+            return (data || []).map(j => {
+              try {
+                let v = typeof j.wtn_data === 'string' ? JSON.parse(j.wtn_data) : j.wtn_data;
+                if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) {} }
+                return v;
+              } catch(_) { return null; }
+            }).filter(Boolean);
+          }
+        };
+
         // 1. Customer-specific lookup: permit, signature, SIC code, unit preference
-        const { data: custWtns } = await window.supabase
-          .from('jobs')
-          .select('wtn_data')
-          .eq('customer_name', job.customerName)
-          .eq('wtn_sent', true)
-          .not('wtn_data', 'is', null)
-          .order('wtn_sent_at', { ascending: false })
-          .limit(5);
+        const parsedCustWtns = await fetchRecentWtns({ customerName: job.customerName, limit: 5 });
 
-        if (custWtns && custWtns.length > 0) {
-          // Parse WTN data from most recent first
-          const parsedCustWtns = custWtns.map(j => {
-            try { return typeof j.wtn_data === 'string' ? JSON.parse(j.wtn_data) : j.wtn_data; }
-            catch(e) { return null; }
-          }).filter(Boolean);
-
-          if (parsedCustWtns.length > 0) {
-            const latest = parsedCustWtns[0];
-            // Permit number (Section B)
-            if (latest.transferorPermitNumber) {
-              suggestions.transferorPermitNumber = latest.transferorPermitNumber;
-            }
-            // Signature name (Section B)
-            if (latest.transferorSignature) {
-              suggestions.transferorSignature = latest.transferorSignature;
-            }
-            // SIC Code
-            if (latest.transferorSicCode) {
-              suggestions.transferorSicCode = latest.transferorSicCode;
-            }
-            // Unit preference — find most commonly used unit across all this customer's WTNs
-            const unitCounts = {};
-            parsedCustWtns.forEach(w => {
-              if (w.unit) unitCounts[w.unit] = (unitCounts[w.unit] || 0) + 1;
-            });
-            const preferredUnit = Object.entries(unitCounts).sort((a,b) => b[1] - a[1])[0];
-            if (preferredUnit && preferredUnit[1] >= 2) {
-              suggestions.unit = preferredUnit[0];
-            }
+        if (parsedCustWtns.length > 0) {
+          const latest = parsedCustWtns[0];
+          // Permit number (Section B)
+          if (latest.transferorPermitNumber) {
+            suggestions.transferorPermitNumber = latest.transferorPermitNumber;
+          }
+          // Signature name (Section B)
+          if (latest.transferorSignature) {
+            suggestions.transferorSignature = latest.transferorSignature;
+          }
+          // SIC Code
+          if (latest.transferorSicCode) {
+            suggestions.transferorSicCode = latest.transferorSicCode;
+          }
+          // Unit preference — find most commonly used unit across all this customer's WTNs
+          const unitCounts = {};
+          parsedCustWtns.forEach(w => {
+            if (w.unit) unitCounts[w.unit] = (unitCounts[w.unit] || 0) + 1;
+          });
+          const preferredUnit = Object.entries(unitCounts).sort((a,b) => b[1] - a[1])[0];
+          if (preferredUnit && preferredUnit[1] >= 2) {
+            suggestions.unit = preferredUnit[0];
           }
         }
 
         // 2. Supplier-specific lookup: carrier reg, permit, signature (Section C)
         if (job.supplierName) {
-          const { data: suppWtns } = await window.supabase
-            .from('jobs')
-            .select('wtn_data')
-            .eq('supplier_name', job.supplierName)
-            .eq('wtn_sent', true)
-            .not('wtn_data', 'is', null)
-            .order('wtn_sent_at', { ascending: false })
-            .limit(3);
-
-          if (suppWtns && suppWtns.length > 0) {
-            const parsedSuppWtns = suppWtns.map(j => {
-              try { return typeof j.wtn_data === 'string' ? JSON.parse(j.wtn_data) : j.wtn_data; }
-              catch(e) { return null; }
-            }).filter(Boolean);
-
-            if (parsedSuppWtns.length > 0) {
-              const latest = parsedSuppWtns[0];
-              if (latest.transfereeCarrierReg) suggestions.transfereeCarrierReg = latest.transfereeCarrierReg;
-              if (latest.transfereePermitNumber) suggestions.transfereePermitNumber = latest.transfereePermitNumber;
-              if (latest.transfereeSignature) suggestions.transfereeSignature = latest.transfereeSignature;
-            }
+          const parsedSuppWtns = await fetchRecentWtns({ supplierName: job.supplierName, limit: 3 });
+          if (parsedSuppWtns.length > 0) {
+            const latest = parsedSuppWtns[0];
+            if (latest.transfereeCarrierReg) suggestions.transfereeCarrierReg = latest.transfereeCarrierReg;
+            if (latest.transfereePermitNumber) suggestions.transfereePermitNumber = latest.transfereePermitNumber;
+            if (latest.transfereeSignature) suggestions.transfereeSignature = latest.transfereeSignature;
           }
         }
 
         // 3. Customer + Supplier + Waste Type combo lookup: EWC code, processes
         if (job.supplierName && job.wasteType) {
-          const { data: comboWtns } = await window.supabase
-            .from('jobs')
-            .select('wtn_data')
-            .eq('customer_name', job.customerName)
-            .eq('supplier_name', job.supplierName)
-            .eq('waste_type', job.wasteType)
-            .eq('wtn_sent', true)
-            .not('wtn_data', 'is', null)
-            .order('wtn_sent_at', { ascending: false })
-            .limit(3);
-
-          if (comboWtns && comboWtns.length > 0) {
-            const parsedComboWtns = comboWtns.map(j => {
-              try { return typeof j.wtn_data === 'string' ? JSON.parse(j.wtn_data) : j.wtn_data; }
-              catch(e) { return null; }
-            }).filter(Boolean);
-
-            if (parsedComboWtns.length > 0) {
-              const latest = parsedComboWtns[0];
-              if (latest.listOfWasteCode) suggestions.listOfWasteCode = latest.listOfWasteCode;
-              if (latest.wasteProcess || latest.processesWasteThrough) {
-                suggestions.wasteProcess = latest.wasteProcess || latest.processesWasteThrough;
-              }
+          const parsedComboWtns = await fetchRecentWtns({
+            customerName: job.customerName, supplierName: job.supplierName, wasteType: job.wasteType, limit: 3,
+          });
+          if (parsedComboWtns.length > 0) {
+            const latest = parsedComboWtns[0];
+            if (latest.listOfWasteCode) suggestions.listOfWasteCode = latest.listOfWasteCode;
+            if (latest.wasteProcess || latest.processesWasteThrough) {
+              suggestions.wasteProcess = latest.wasteProcess || latest.processesWasteThrough;
             }
           }
         }
 
         // 4. If no combo match for EWC, try broader: just customer + waste type
         if (!suggestions.listOfWasteCode && job.wasteType) {
-          const { data: wasteWtns } = await window.supabase
-            .from('jobs')
-            .select('wtn_data')
-            .eq('customer_name', job.customerName)
-            .eq('waste_type', job.wasteType)
-            .eq('wtn_sent', true)
-            .not('wtn_data', 'is', null)
-            .order('wtn_sent_at', { ascending: false })
-            .limit(3);
-
-          if (wasteWtns && wasteWtns.length > 0) {
-            const parsedWasteWtns = wasteWtns.map(j => {
-              try { return typeof j.wtn_data === 'string' ? JSON.parse(j.wtn_data) : j.wtn_data; }
-              catch(e) { return null; }
-            }).filter(Boolean);
-
-            if (parsedWasteWtns.length > 0) {
-              const latest = parsedWasteWtns[0];
-              if (latest.listOfWasteCode) suggestions.listOfWasteCode = latest.listOfWasteCode;
-              if (!suggestions.wasteProcess && (latest.wasteProcess || latest.processesWasteThrough)) {
-                suggestions.wasteProcess = latest.wasteProcess || latest.processesWasteThrough;
-              }
+          const parsedWasteWtns = await fetchRecentWtns({
+            customerName: job.customerName, wasteType: job.wasteType, limit: 3,
+          });
+          if (parsedWasteWtns.length > 0) {
+            const latest = parsedWasteWtns[0];
+            if (latest.listOfWasteCode) suggestions.listOfWasteCode = latest.listOfWasteCode;
+            if (!suggestions.wasteProcess && (latest.wasteProcess || latest.processesWasteThrough)) {
+              suggestions.wasteProcess = latest.wasteProcess || latest.processesWasteThrough;
             }
           }
         }
@@ -9537,8 +9620,8 @@ console.log(JSON.stringify(invoiceData, null, 2));
         if (wtnTabBtn) wtnTabBtn.click();
       }, 400);
     }}
-    className={`p-2 rounded-lg ${job.wtn_data || job.wtnData ? 'text-green-600 hover:bg-green-100' : 'text-amber-600 hover:bg-amber-100'}`}
-    title={job.wtn_data || job.wtnData ? 'Edit WTN' : 'Create WTN'}
+    className={`p-2 rounded-lg ${(Array.isArray(job.wtns) && job.wtns.length > 0) || job.wtn_data || job.wtnData ? 'text-green-600 hover:bg-green-100' : 'text-amber-600 hover:bg-amber-100'}`}
+    title={(Array.isArray(job.wtns) && job.wtns.length > 0) || job.wtn_data || job.wtnData ? 'Edit WTN' : 'Create WTN'}
   >
     <LucideIcon icon="FileText" size={20} />
   </button>
@@ -10152,12 +10235,15 @@ console.log(JSON.stringify(invoiceData, null, 2));
 
 
               {/* WTN Sent Badge */}
-              {(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at) && (
+              {(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at || (Array.isArray(job.wtns) && job.wtns.length > 0)) && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-green-600 text-lg">✅</span>
-                    <h3 className="font-semibold text-green-800">Waste Transfer Note Sent</h3>
-                    {job.wtnData?.wtnNumber && <span className="text-xs text-green-600 ml-auto font-mono">{job.wtnData.wtnNumber}</span>}
+                    <h3 className="font-semibold text-green-800">Waste Transfer Note{Array.isArray(job.wtns) && job.wtns.length > 1 ? 's' : ''}{(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at) ? ' Sent' : ''}</h3>
+                    {/* Single WTN: show the number. Multi-WTN: show "N WTNs". Legacy fallback: wtnData.wtnNumber. */}
+                    {Array.isArray(job.wtns) && job.wtns.length > 1
+                      ? <span className="text-xs text-green-600 ml-auto font-mono">{job.wtns.length} WTNs</span>
+                      : (job.wtnData?.wtnNumber && <span className="text-xs text-green-600 ml-auto font-mono">{job.wtnData.wtnNumber}</span>)}
                   </div>
                   <div className="text-sm text-green-700 space-y-1">
                     {(job.wtnSentAt || job.wtn_sent_at) && (
@@ -14612,7 +14698,9 @@ info@totalwasteservicesltd.com`;
                     const cancelled = job.isCancelled || job.status === 'CANCELLED';
                     const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType);
                     const isExpanded = expandedPreviewId === job.id;
-                    const hasWtn = job.wtn_portal_visible || ((job.wtnSent || job.wtn_sent) && done && (job.wtn_data || job.wtnData));
+                    const hasWtn = (Array.isArray(job.wtns) && job.wtns.length > 0)
+                      || job.wtn_portal_visible
+                      || ((job.wtnSent || job.wtn_sent) && done && (job.wtn_data || job.wtnData));
                     const siNumber = job.sageSiNumber || job.invoiceNumber || null;
                     const isInvoiced = !!siNumber;
                     const lineItems = (() => { try { return Array.isArray(job.lineItems) ? job.lineItems : (typeof job.lineItems === 'string' ? JSON.parse(job.lineItems) : []); } catch(e) { return []; } })();
@@ -15132,6 +15220,128 @@ const _disabled_2am_sync_for_reference = () => {
 };
 // END of disabled 2am sync — function above is preserved as reference only and is never called.
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 2: Multi-WTN read helpers.
+// One job can now have many WTN rows (one per waste line item). These helpers
+// bulk-fetch wtns for a list of jobs and produce a `wtns` array on each job.
+// They also retain the legacy `wtnData` field (= the first WTN, mapped to the
+// old camelCase shape) so any code that hasn't been migrated yet keeps working.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Map a row from the `wtns` table to the legacy camelCase shape that the rest
+// of the app already understands. This lets all the "is there a WTN?" checks
+// keep working without rewriting every consumer.
+const mapWtnRowToCamel = (row) => row ? ({
+  id: row.id,
+  jobId: row.job_id,
+  wtnNumber: row.wtn_number,
+  suffixLetter: row.suffix_letter,
+  // Line item context (new)
+  lineItemIndex: row.line_item_index,
+  lineItemProductName: row.line_item_product_name,
+  lineItemDescription: row.line_item_description,
+  lineItemQuantity: row.line_item_quantity,
+  // Section A
+  wasteDescription: row.waste_description,
+  skipSize: row.skip_size,
+  listOfWasteCode: row.list_of_waste_code,
+  wasteContainer: row.waste_container,
+  wasteProcess: row.waste_process,
+  quantity: row.quantity,
+  unit: row.unit,
+  isHazardous: row.is_hazardous,
+  // Section B
+  transferorName: row.transferor_name,
+  transferorAddress: row.transferor_address,
+  transferorPostcode: row.transferor_postcode,
+  transferorSicCode: row.transferor_sic_code,
+  transferorIsProducer: row.transferor_is_producer,
+  transferorPermitNumber: row.transferor_permit_number,
+  transferorSignature: row.transferor_signature,
+  transferorRepresenting: row.transferor_representing,
+  selectedTransferorSiteId: row.selected_transferor_site_id,
+  // Section C
+  transfereeName: row.transferee_name,
+  transfereeAddress: row.transferee_address,
+  transfereePostcode: row.transferee_postcode,
+  transfereeCarrierReg: row.transferee_carrier_reg,
+  transfereePermitNumber: row.transferee_permit_number,
+  selectedSiteId: row.selected_site_id,
+  transfereeSignature: row.transferee_signature,
+  transfereeRepresenting: row.transferee_representing,
+  // Section D
+  transferAddress: row.transfer_address,
+  transferDate: row.transfer_date,
+  transferTime: row.transfer_time,
+  brokerName: row.broker_name,
+  brokerAddress: row.broker_address,
+  brokerCarrierReg: row.broker_carrier_reg,
+  // Pcts
+  recycledPct: row.recycled_pct,
+  recoveredPct: row.recovered_pct,
+  landfillPct: row.landfill_pct,
+  // Misc
+  notes: row.notes,
+  recipientEmail: row.recipient_email,
+  additionalEmails: row.additional_emails,
+  recipientEmailSource: row.recipient_email_source,
+  // Per-WTN flags (new — these used to live on the job)
+  sent: row.sent,
+  sentAt: row.sent_at,
+  recipient: row.recipient,
+  portalVisible: row.portal_visible,
+  recurring: row.recurring,
+  recurringFrequency: row.recurring_frequency,
+  recurringNextDate: row.recurring_next_date,
+  // Catch-all for anything not mapped
+  extra: row.extra || {},
+}) : null;
+
+// Bulk-fetch all wtns for an array of job ids. Returns a Map<jobId, WTN[]>.
+// One round-trip for the whole jobs list — avoids the N+1 trap.
+const loadWtnsForJobs = async (jobIds) => {
+  const map = new Map();
+  if (!jobIds || jobIds.length === 0) return map;
+  try {
+    const { data, error } = await window.supabase
+      .from('wtns')
+      .select('*')
+      .in('job_id', jobIds)
+      .order('suffix_letter', { ascending: true, nullsFirst: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    for (const row of (data || [])) {
+      const wtn = mapWtnRowToCamel(row);
+      if (!map.has(wtn.jobId)) map.set(wtn.jobId, []);
+      map.get(wtn.jobId).push(wtn);
+    }
+  } catch (e) {
+    console.warn('[loadWtnsForJobs] failed, falling back to legacy wtn_data:', e);
+  }
+  return map;
+};
+
+// Attach a `wtns` array to each job, plus a legacy-shape `wtnData` (= the
+// first WTN). Call right after fetching jobs from Supabase. If the wtns
+// query fails, jobs come back unchanged and downstream code falls back
+// to the legacy job.wtn_data column.
+const enrichJobsWithWtns = async (jobs) => {
+  if (!jobs || jobs.length === 0) return jobs;
+  const ids = jobs.map(j => j.id || j.jobId).filter(Boolean);
+  const map = await loadWtnsForJobs(ids);
+  return jobs.map(job => {
+    const id = job.id || job.jobId;
+    const wtns = map.get(id) || [];
+    return {
+      ...job,
+      wtns,
+      // Legacy shim: keep wtnData populated from the FIRST WTN so any
+      // un-migrated reader keeps rendering. New code should prefer job.wtns.
+      wtnData: wtns[0] || job.wtnData || null,
+    };
+  });
+};
+
 // Load jobs from Supabase when app starts <- This is line 6850
 const loadJobsFromSupabase = async () => {
     try {
@@ -15235,7 +15445,11 @@ collectionDate: job.collection_date,
   })(),
   notes: job.notes
 }));
-  setJobs(jobsWithCamelCase);
+  // Phase 2: bulk-fetch each job's WTNs from the new `wtns` table and
+  // attach them as `job.wtns` (also keeping legacy `job.wtnData` populated
+  // from the first WTN so un-migrated readers keep working).
+  const enriched = await enrichJobsWithWtns(jobsWithCamelCase);
+  setJobs(enriched);
         console.log('Loaded', data.length, 'jobs from Supabase');
       }
     } catch (error) {
@@ -15341,8 +15555,9 @@ const refreshJobs = async () => {
                 })(),
                 notes: job.notes
             }));
-            
-            setJobs(jobsWithCamelCase);
+            // Phase 2: enrich with WTNs from the new table.
+            const enriched = await enrichJobsWithWtns(jobsWithCamelCase);
+            setJobs(enriched);
             console.log('Refreshed', data.length, 'jobs from Supabase');
         }
     } catch (error) {
@@ -16371,6 +16586,7 @@ const handleCompleteJob = async (job) => {
 
     // Check if parent job has per-job recurring WTN enabled
     let parentJobData = null;
+    let parentWtnFromTable = null; // First WTN from the new wtns table, if any
     if (job.parentJobId || job.parent_job_id) {
       const parentId = job.parentJobId || job.parent_job_id;
       const { data: parentJob } = await window.supabase
@@ -16379,6 +16595,24 @@ const handleCompleteJob = async (job) => {
         .eq('id', parentId)
         .single();
       parentJobData = parentJob;
+      // Phase 2: also fetch parent's WTN from the new table.
+      // Multi-WTN parents → take the first (suffix A or unsuffixed) as the
+      // template for child auto-creation. Phase 3 will refresh ALL parent
+      // WTNs onto the child instead of just the first.
+      try {
+        const { data: parentWtnRows } = await window.supabase
+          .from('wtns')
+          .select('*')
+          .eq('job_id', parentId)
+          .order('suffix_letter', { ascending: true, nullsFirst: true })
+          .order('created_at', { ascending: true })
+          .limit(1);
+        if (parentWtnRows && parentWtnRows.length > 0) {
+          parentWtnFromTable = mapWtnRowToCamel(parentWtnRows[0]);
+        }
+      } catch (e) {
+        console.warn('[handleCompleteJob] failed to fetch parent WTN from table:', e);
+      }
 
       // Only trigger per-job WTN from the PARENT job's settings, never the child's own fields
       // This prevents duplicates and ensures the schedule is managed in one place
@@ -16386,9 +16620,15 @@ const handleCompleteJob = async (job) => {
         const customerName = job.customerName || parentJobData.customer_name;
         const recipient = parentJobData.wtn_recipient;
         try {
-          const parentWtnData = parentJobData.wtn_data
-            ? (typeof parentJobData.wtn_data === 'string' ? JSON.parse(parentJobData.wtn_data) : parentJobData.wtn_data)
-            : {};
+          // Phase 2: prefer the new table; fall back to the legacy column.
+          const parentWtnData = parentWtnFromTable || (() => {
+            if (!parentJobData.wtn_data) return {};
+            try {
+              let v = typeof parentJobData.wtn_data === 'string' ? JSON.parse(parentJobData.wtn_data) : parentJobData.wtn_data;
+              if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) {} }
+              return v || {};
+            } catch(_) { return {}; }
+          })();
           const wtnFields = {
             ...parentWtnData,
             // Update job-specific fields for this completion
@@ -16433,9 +16673,18 @@ const handleCompleteJob = async (job) => {
       // Auto-generate portal WTN for recurring child jobs (save only, no email)
       // This runs when: child has parent with wtn_data, and the per-job email WTN didn't already fire
       const perJobEmailFired = parentJobData?.wtn_recurring && parentJobData?.wtn_recurring_frequency === 'per-job' && parentJobData?.wtn_recipient;
-      if (!perJobEmailFired && parentJobData?.wtn_data) {
+      // Phase 2: parent has a WTN if EITHER source has data
+      const parentHasWtn = parentWtnFromTable || parentJobData?.wtn_data;
+      if (!perJobEmailFired && parentHasWtn) {
         try {
-          const parentWtn = typeof parentJobData.wtn_data === 'string' ? JSON.parse(parentJobData.wtn_data) : parentJobData.wtn_data;
+          // Phase 2: prefer the new table.
+          const parentWtn = parentWtnFromTable || (() => {
+            try {
+              let v = typeof parentJobData.wtn_data === 'string' ? JSON.parse(parentJobData.wtn_data) : parentJobData.wtn_data;
+              if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) {} }
+              return v || {};
+            } catch(_) { return {}; }
+          })();
           // Pull quantity/description from the child's own line items, not the parent's
           const childLineItems = (() => {
             const candidates = [job.lineItems, job.line_items, updatedJob.lineItems, updatedJob.line_items];
@@ -16485,7 +16734,13 @@ const handleCompleteJob = async (job) => {
 
     // On completion: publish WTN to portal if it exists, prompt if it doesn't
     const hasParent = !!(job.parentJobId || job.parent_job_id);
+    // Phase 2: a job "has WTN data" if EITHER the new wtns array has rows
+    // OR the legacy column is set. We still pass the legacy blob downstream
+    // because the refresh-on-complete logic below mutates it; Phase 3 will
+    // replace that with proper writes to the wtns table.
+    const hasNewWtns = Array.isArray(job.wtns) && job.wtns.length > 0;
     const jobWtnData = job.wtn_data || job.wtnData;
+    const jobHasAnyWtn = hasNewWtns || !!jobWtnData;
     const jobTypeForCheck = job.jobType || job.job_type || updatedJob.jobType || updatedJob.job_type || '';
     const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(jobTypeForCheck);
     
@@ -16560,12 +16815,13 @@ const handleCompleteJob = async (job) => {
     }
     
     // Recurring child auto-WTN was handled above — check if it fired
-    const recurringAutoFired = hasParent && parentJobData?.wtn_data;
+    // Phase 2: parent has a WTN if either source has data
+    const recurringAutoFired = hasParent && (parentWtnFromTable || parentJobData?.wtn_data);
 
-    if (isWasteJob && (jobWtnData || recurringAutoFired)) {
+    if (isWasteJob && (jobHasAnyWtn || recurringAutoFired)) {
       // WTN exists and is now published to portal
       alert(`✅ Job ${job.jobNumber || job.job_number} marked as completed!\n\n📄 WTN has been published to the customer portal.`);
-    } else if (isWasteJob && !jobWtnData) {
+    } else if (isWasteJob && !jobHasAnyWtn) {
       // No WTN created yet — ask if they want to create one
       const sendNow = window.confirm(
         `✅ Job ${job.jobNumber} marked as completed!\n\n⚠️ No Waste Transfer Note has been created for this job.\n\nWould you like to create one now?\n\nClick OK to open the WTN tab, or Cancel to skip.`
