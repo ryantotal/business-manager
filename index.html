@@ -18,11 +18,29 @@
       // Failures are silent — if it doesn't work (e.g. Safari incognito) the portal still
       // functions normally, just without the offline-cache and install prompt.
       //
-      // We also watch for new SW versions arriving while the app is open, and show a
+      // We watch for new SW versions arriving while the app is open, and show a
       // small "Update available" toast so users on the home-screen app don't get stuck
       // on stale code. Without this, deploys take 1-2 launches to land for installed users.
+      //
+      // Phase 4: the page NEVER force-reloads on its own. Previously a controllerchange
+      // event (which fires whenever a new SW takes control — including silently from
+      // background sync) would call window.location.reload() and dump whatever the user
+      // was typing. Now we only reload when the user explicitly clicks Refresh on the
+      // toast, and the toast comes back every 30 minutes if they hit Later. This keeps
+      // mid-edit work safe while still nagging users off stale builds within a session.
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
+          // Set to true ONLY when the user clicks the Refresh button on the
+          // update toast. controllerchange ignores SW activations that happen
+          // without this flag — so background SW updates can never reload the
+          // page out from under a user who's mid-edit.
+          let userConsentedToReload = false;
+          // Track the pending SW so we can re-prompt (or dismiss) the same one
+          // if multiple updates queue up during a long session.
+          let pendingNewSW = null;
+          // Timer for the 30-minute "Later" re-prompt
+          let reprompTimer = null;
+
           navigator.serviceWorker.register('/service-worker.js')
             .then(reg => {
               // Check for updates every time the page becomes visible (e.g. user
@@ -51,35 +69,69 @@
                 newSW.addEventListener('statechange', () => {
                   // 'installed' + existing controller = there's a new version waiting
                   if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
-                    showUpdateToast(newSW);
+                    pendingNewSW = newSW;
+                    showUpdateToast();
                   }
                 });
               });
             })
             .catch(err => console.log('SW registration failed:', err));
 
-          // Reload once the new SW takes over so the user sees the new code
+          // controllerchange fires whenever a new SW takes control. We ONLY
+          // act on it if the user explicitly consented via the toast. If a
+          // background SW activates without consent (e.g. all tabs closed and
+          // the waiting SW promotes itself), we deliberately do nothing and
+          // the user keeps the build they had until they reload manually.
           let reloadingForUpdate = false;
           navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!userConsentedToReload) {
+              // Background activation — do not interrupt the user.
+              return;
+            }
             if (reloadingForUpdate) return;
             reloadingForUpdate = true;
             window.location.reload();
           });
 
-          function showUpdateToast(newSW) {
-            // Don't double-show
+          function showUpdateToast() {
+            // Don't double-show if the toast is already visible
             if (document.getElementById('tws-update-toast')) return;
+            // Clear any pending re-prompt timer — the toast is now visible again
+            if (reprompTimer) { clearTimeout(reprompTimer); reprompTimer = null; }
+
             const toast = document.createElement('div');
             toast.id = 'tws-update-toast';
             toast.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:20px;z-index:99999;background:#15803d;color:white;padding:12px 16px;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,.25);display:flex;align-items:center;gap:12px;font-family:system-ui,-apple-system,sans-serif;font-size:14px;max-width:calc(100vw - 32px);';
-            toast.innerHTML = '<span>✨ New version available</span>' +
-              '<button id="tws-update-btn" style="background:white;color:#15803d;border:none;padding:6px 12px;border-radius:8px;font-weight:bold;font-size:13px;cursor:pointer">Refresh</button>' +
-              '<button id="tws-update-dismiss" style="background:transparent;color:white;border:none;padding:4px 8px;cursor:pointer;font-size:18px;line-height:1" aria-label="Dismiss">×</button>';
+            toast.innerHTML = '<span>✨ A new version of the app is available</span>' +
+              '<button id="tws-update-btn" style="background:white;color:#15803d;border:none;padding:6px 12px;border-radius:8px;font-weight:bold;font-size:13px;cursor:pointer">Reload now</button>' +
+              '<button id="tws-update-later" style="background:transparent;color:white;border:1px solid rgba(255,255,255,.5);padding:6px 12px;border-radius:8px;font-weight:500;font-size:13px;cursor:pointer">Later</button>';
             document.body.appendChild(toast);
+
             document.getElementById('tws-update-btn').onclick = () => {
-              newSW.postMessage('SKIP_WAITING'); // SW will activate, controllerchange fires, reload happens
+              // Arm the consent flag BEFORE telling the SW to skip waiting,
+              // so the controllerchange listener will reload when the new
+              // SW takes over.
+              userConsentedToReload = true;
+              if (pendingNewSW) {
+                pendingNewSW.postMessage('SKIP_WAITING');
+              } else {
+                // Edge case: SW already activated silently before we wired
+                // pendingNewSW. Just reload directly.
+                window.location.reload();
+              }
             };
-            document.getElementById('tws-update-dismiss').onclick = () => toast.remove();
+
+            document.getElementById('tws-update-later').onclick = () => {
+              toast.remove();
+              // Re-prompt in 30 minutes if the user is still on this page
+              // and the same SW is still waiting (or a newer one has arrived)
+              reprompTimer = setTimeout(() => {
+                // Only re-prompt if there's still a pending SW to install
+                if (pendingNewSW || (navigator.serviceWorker.controller && document.visibilityState !== 'hidden')) {
+                  showUpdateToast();
+                }
+              }, 30 * 60 * 1000);
+            };
           }
         });
       }
@@ -324,7 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix13-2026-05-01';
+        window.PHASE3_BUILD = 'fix14-2026-05-01-phase4';
+        // Phase 4 build timestamp — used by the consent reload checker to
+        // detect when a new version has been deployed. Bump on every push.
+        window.APP_BUILD_TIMESTAMP = '2026-05-01T21:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -6312,228 +6367,43 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                         if (wtnTotalPct !== 100) { alert('Recycling percentages must total 100%.'); return; }
                         setWtnSending(true);
                         try {
-                          // Build the WTN as a self-contained HTML email body
-                          const qty = parseFloat(wtnFields.quantity) || 0;
-                          const toRad = d => d * Math.PI / 180;
-                          const cx=80, cy=80, r=65;
-                          const slices = [
-                            {pct:wtnFields.recycledPct, color:'#16a34a', label:'Recycled/Reused'},
-                            {pct:wtnFields.recoveredPct, color:'#2563eb', label:'Recovered'},
-                            {pct:wtnFields.landfillPct, color:'#ea580c', label:'Disposal'},
-                          ].filter(s=>s.pct>0);
-                          let ang = -90;
-                          const paths = slices.map(s => {
-                            const sw=s.pct/100*360, en=ang+sw;
-                            const x1=cx+r*Math.cos(toRad(ang)), y1=cy+r*Math.sin(toRad(ang));
-                            const x2=cx+r*Math.cos(toRad(en)), y2=cy+r*Math.sin(toRad(en));
-                            const d=`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${sw>180?1:0} 1 ${x2},${y2} Z`;
-                            ang=en;
-                            return `<path d="${d}" fill="${s.color}" stroke="white" stroke-width="2"/>`;
-                          }).join('');
-                          const logo = localStorage.getItem('companyLogo');
-                          const coName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
+                          // Phase 4: build the email body using buildMultiWtnHtml so that multi-line
+                          // jobs send ALL ticked WTN pages stitched together (with page-break CSS)
+                          // instead of just the top-level fields. For single-line jobs buildMultiWtnHtml
+                          // falls through to buildWtnHtml, so the common case is unchanged. EmailJS
+                          // puts the whole HTML doc in the email body — there is no PDF attachment;
+                          // customers see the WTN(s) inline as a formatted message.
+                          const includedLines = Array.isArray(wtnFields.lines)
+                            ? wtnFields.lines.filter(l => l.included)
+                            : [];
+                          const wtnCount = includedLines.length || 1;
+                          const htmlBody = buildMultiWtnHtml(wtnFields, job);
 
-                          const htmlBody = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>${wtnFields.wtnNumber}</title>
-<style>@media print { .wtn-print-btn { display:none !important; } }</style>
-</head>
-<body style="margin:0;padding:20px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1f2937;background:#f5f5f5;">
-<div style="max-width:680px;margin:0 auto;">
-  <div class="wtn-print-btn" style="text-align:center;margin-bottom:14px;">
-    <a href="https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=${wtnFields.wtnNumber}" target="_blank"
-       style="display:inline-block;background:#16a34a;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;padding:12px 28px;border-radius:6px;text-decoration:none;letter-spacing:.3px;">
-      🖨️ View &amp; Print WTN
-    </a>
-    <div style="font-size:11px;color:#666;margin-top:6px;">Click to open the printable version of this Waste Transfer Note</div>
-  </div>
-</div>
-<div style="max-width:680px;margin:0 auto;background:#fff;border:2px solid #000;">
-
-  <!-- Header -->
-  <div style="background:#fff;padding:14px 20px;border-bottom:3px solid #1a5c2a;">
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="width:120px;vertical-align:middle;">
-          ${logo ? `<img src="${logo}" style="height:52px;object-fit:contain;display:block;" alt="logo">` : `<strong style="font-size:13px;color:#1a5c2a;">${coName}</strong>`}
-        </td>
-        <td style="text-align:center;vertical-align:middle;padding:0 12px;">
-          <div style="font-size:17px;font-weight:700;color:#1a5c2a;letter-spacing:.5px;margin-bottom:3px;">WASTE TRANSFER NOTE</div>
-          <div style="font-size:9px;color:#666;">Duty of Care — Environmental Protection Act 1990 s.34</div>
-          <div style="font-size:9px;color:#666;">Waste (England &amp; Wales) Regulations 2011</div>
-        </td>
-        <td style="width:120px;text-align:right;vertical-align:middle;">
-          <div style="font-size:15px;font-weight:700;color:#1a5c2a;">${wtnFields.wtnNumber}</div>
-          <div style="font-size:9px;color:#666;margin-top:3px;">Job: ${job.jobNumber}</div>
-          <div style="font-size:9px;color:#666;">${new Date(wtnFields.transferDate).toLocaleDateString('en-GB')}</div>
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- Legal banner -->
-  <div style="background:#fff8c5;border-bottom:2px solid #000;padding:6px 20px;font-size:9px;font-weight:700;text-align:center;">
-    ⚠ LEGAL DOCUMENT — Both parties must retain a signed copy for a minimum of 2 years and produce on request to the Environment Agency or Local Authority within 7 days.
-  </div>
-
-  <!-- Section A -->
-  <div style="border-bottom:2px solid #000;">
-    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section A — Description of Waste</div>
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">A1 Description of waste</div>
-          <div style="font-weight:700;">${wtnFields.wasteDescription||'—'}</div>
-        </td>
-        <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Container / Skip Size</div>
-          <div style="font-weight:700;">${wtnFields.skipSize||'—'}</div>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">EWC Code (List of Waste Regulations)</div>
-          <div style="font-weight:700;">${wtnFields.listOfWasteCode||'—'}</div>
-        </td>
-        <td style="padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">A3 Quantity</div>
-          <div style="font-weight:700;">${qty} ${wtnFields.unit}</div>
-        </td>
-      </tr>
-      <tr>
-        <td colspan="2" style="padding:6px 12px;border-bottom:1px solid #ccc;font-size:10px;">
-          <strong>A2 How is the waste contained?</strong>&nbsp;&nbsp;
-          ${['Loose','Sacks','Skip','Drum','Roll-on roll-off container','Other'].map(c=>`<span style="margin-right:12px;">${wtnFields.wasteContainer===c?'☑':'☐'} ${c}</span>`).join('')}
-        </td>
-      </tr>
-      <tr>
-        <td colspan="2" style="padding:7px 12px;font-size:10px;">
-          <strong>Hazardous waste?</strong> ${wtnFields.isHazardous ? '<span style="color:red;font-weight:700;">YES — Consignment Note Required</span>' : 'No'}
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- Section B -->
-  <div style="border-bottom:2px solid #000;">
-    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section B — Current Holder of the Waste (Transferor)</div>
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">B1 Name &amp; Address</div>
-          <div style="font-weight:700;">${wtnFields.transferorName||'—'}</div>
-          <div style="font-size:11px;">${wtnFields.transferorAddress||'—'}</div>
-        </td>
-        <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">B2 SIC Code</div>
-          <div style="font-weight:700;margin-bottom:6px;">${wtnFields.transferorSicCode||'—'}</div>
-          <div style="font-size:9px;"><strong>B3 Are you:</strong> ☑ Producer of the waste</div>
-          <div style="font-size:9px;margin-top:3px;">Permit/Carrier Reg: ${wtnFields.transferorPermitNumber||'—'}</div>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:8px 12px;border-right:1px solid #ccc;" colspan="1">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Transferor's Signature</div>
-          <div style="border-bottom:1.5px solid #000;margin:14px 0 3px;width:80%;"></div>
-          <div style="font-weight:700;font-size:11px;">${wtnFields.transferorSignature||'___________________________'}</div>
-        </td>
-        <td style="padding:8px 12px;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Date of Transfer</div>
-          <div style="font-size:14px;font-weight:700;margin-top:8px;">${new Date(wtnFields.transferDate).toLocaleDateString('en-GB')}</div>
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- Section C -->
-  <div style="border-bottom:2px solid #000;">
-    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section C — Person Collecting the Waste (Carrier / Transferee)</div>
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;vertical-align:top;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">C1 Name &amp; Address</div>
-          <div style="font-weight:700;">${wtnFields.transfereeName||'—'}</div>
-          <div style="font-size:11px;">${wtnFields.transfereeAddress||'—'}</div>
-        </td>
-        <td style="width:50%;padding:7px 12px;border-bottom:1px solid #ccc;vertical-align:top;">
-          <div style="font-size:9px;margin-bottom:4px;">☑ Registered waste carrier</div>
-          <div style="font-size:9px;"><strong>EA Carrier Reg No.:</strong> ${wtnFields.transfereeCarrierReg||'—'}</div>
-          <div style="font-size:9px;margin-top:3px;"><strong>Permit/Exemption:</strong> ${wtnFields.transfereePermitNumber||'—'}</div>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:8px 12px;border-right:1px solid #ccc;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Transferee's Signature</div>
-          <div style="border-bottom:1.5px solid #000;margin:14px 0 3px;width:80%;"></div>
-          <div style="font-weight:700;font-size:11px;">${wtnFields.transfereeSignature||'___________________________'}</div>
-        </td>
-        <td style="padding:8px 12px;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">Date</div>
-          <div style="font-size:14px;font-weight:700;margin-top:8px;">${new Date(wtnFields.transferDate).toLocaleDateString('en-GB')}</div>
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- Section D -->
-  <div style="border-bottom:2px solid #000;">
-    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Section D — The Transfer &amp; Broker</div>
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="width:50%;padding:7px 12px;border-right:1px solid #ccc;vertical-align:top;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">D1 Address of collection point</div>
-          <div style="font-weight:700;">${wtnFields.transferAddress||wtnFields.transferorAddress||'—'}</div>
-        </td>
-        <td style="width:50%;padding:7px 12px;vertical-align:top;">
-          <div style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.3px;">D2 Broker who arranged this transfer</div>
-          <div style="font-weight:700;">${wtnFields.brokerName||'—'}</div>
-          <div style="font-size:10px;">${wtnFields.brokerAddress||'—'}</div>
-          <div style="font-size:10px;"><strong>Reg:</strong> ${wtnFields.brokerCarrierReg||'—'}</div>
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- Recycling breakdown -->
-  <div style="border-bottom:2px solid #000;">
-    <div style="background:#d1fae5;padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #000;">Waste Hierarchy &amp; Recycling Breakdown (Regulation 12)</div>
-    <div style="display:flex;align-items:center;gap:20px;padding:12px;flex-wrap:wrap;">
-      <svg viewBox="0 0 160 160" width="120" height="120" xmlns="http://www.w3.org/2000/svg">${paths}</svg>
-      <div>
-        ${slices.map(s=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:11px;">
-          <div style="width:12px;height:12px;border-radius:50%;background:${s.color};flex-shrink:0;"></div>
-          <span><strong>${s.pct}%</strong> ${s.label} (${(qty*s.pct/100).toFixed(2)} ${wtnFields.unit})</span>
-        </div>`).join('')}
-        <div style="font-size:9px;color:#166534;margin-top:8px;max-width:280px;line-height:1.5;">
-          I confirm I have applied the waste hierarchy as required by Regulation 12 of the Waste (England &amp; Wales) Regulations 2011. ✓
-        </div>
-      </div>
-    </div>
-    ${wtnFields.notes ? `<div style="padding:10px 12px;font-size:11px;border-top:1px solid #ccc;line-height:1.5;"><strong>Notes:</strong><div style="margin-top:4px;white-space:pre-wrap;">${wtnFields.notes}</div></div>` : ''}
-    <div style="background:#f0fdf4;border-top:1px solid #ccc;padding:8px 12px;font-size:9px;line-height:1.5;color:#166534;">
-      ⚖️ <strong>Duty of Care:</strong> Both parties confirm they have fulfilled their duty of care obligations under the Environmental Protection Act 1990 s.34. The carrier holds a valid EA waste carrier registration. Both parties must retain a signed copy for a minimum of 2 years and produce on request within 7 days. Failure to produce is a criminal offence.
-    </div>
-  </div>
-
-  <!-- Footer -->
-  <div style="background:#f3f4f6;border-top:2px solid #000;padding:8px 20px;display:flex;justify-content:space-between;font-size:9px;color:#555;">
-    <span>${coName} &bull; Broker Reg: ${wtnFields.brokerCarrierReg||'—'}</span>
-    <span>WMC2A &bull; Issued ${new Date().toLocaleDateString('en-GB')}</span>
-  </div>
-
-</div>
-</body></html>`;
-
-                          // Send via EmailJS to all selected emails
+                          // Send via EmailJS to all selected emails. For multi-line jobs we
+                          // pass a label like "WTN-TWS-1344 (3 notes: A, B, C)" as the
+                          // wtn_number template variable so the email subject pluralises
+                          // naturally — the body itself already contains all N WTN pages
+                          // stitched by buildMultiWtnHtml.
                           const emailsToSend = wtnFields.selectedEmails?.length > 0 ? wtnFields.selectedEmails : [wtnFields.recipientEmail];
+                          let wtnNumberForSubject = wtnFields.wtnNumber;
+                          if (wtnCount > 1) {
+                            const suffixes = includedLines
+                              .slice()
+                              .sort((a, b) => a.lineItemIndex - b.lineItemIndex)
+                              .map((_, i) => String.fromCharCode(65 + i))
+                              .join(', ');
+                            wtnNumberForSubject = `${wtnFields.wtnNumber} (${wtnCount} notes: ${suffixes})`;
+                          }
                           for (const emailAddr of emailsToSend) {
                             await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
-                              wtn_number: wtnFields.wtnNumber,
+                              wtn_number: wtnNumberForSubject,
                               customer_name: wtnFields.transferorName || job.customerName,
                               email: emailAddr,
                               name: wtnFields.transferorName || job.customerName,
                               message: htmlBody,
                             });
                           }
+                          console.log(`[Phase 4] sent ${wtnCount} WTN${wtnCount === 1 ? '' : 's'} to ${emailsToSend.length} recipient${emailsToSend.length === 1 ? '' : 's'} for ${wtnFields.wtnNumber}`);
 
                           // Save ALL WTN fields to Supabase so they survive reload
                           const wtnUrl = `https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=${wtnFields.wtnNumber}`;
@@ -6626,7 +6496,7 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                           if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
                           setWtnSentOk(true);
                           setTimeout(()=>setWtnSentOk(false), 4000);
-                          alert(`✅ WTN sent to ${wtnFields.recipientEmail}\n\nThe full WTN has been sent as an HTML email — it will display as a formatted document in their inbox.`);
+                          alert(`✅ ${wtnCount === 1 ? 'WTN' : `${wtnCount} WTNs`} sent to ${emailsToSend.join(', ')}\n\nThe full ${wtnCount === 1 ? 'WTN has' : 'WTNs have'} been sent as an HTML email — ${wtnCount === 1 ? 'it' : 'they'} will display as a formatted document in their inbox.`);
                         } catch(err) {
                           console.error('WTN send error:', err);
                           alert('Failed to send WTN.\n\nError: ' + (err.text || err.message || JSON.stringify(err)));
@@ -6743,6 +6613,111 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     {job ? 'Update Job' : 'Create Job'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        // ── Phase 4 — Completion Prompt Modal ────────────────────────────
+        // Shown when staff click Complete on a waste job that has WTN data
+        // (or inherits one from a recurring parent). Asks how to deliver the
+        // WTN: portal-only, email-only, both, or skip. Email options are
+        // disabled when there's no customer email on file. Recurring child
+        // jobs default to portal-only with an explanatory note. The chosen
+        // option is remembered in localStorage as the default for next time
+        // (excluding recurring-child cases — they're a special path that
+        // shouldn't poison the default).
+        const CompletionPromptModal = ({ prompt, onClose, onConfirm }) => {
+          const { job, customerEmail, hasDraftedWtn, parentRecurring, defaultChoice } = prompt;
+          const [choice, setChoice] = React.useState(defaultChoice || 'portal');
+
+          // Email is offered when there's an email address AND a WTN to send.
+          const emailAvailable = !!customerEmail && hasDraftedWtn;
+          let emailDisabledReason = '';
+          if (!hasDraftedWtn) emailDisabledReason = 'No WTN drafted for this job — open the WTN tab to fill one in first.';
+          else if (!customerEmail) emailDisabledReason = 'No customer email on file. Add one to the customer record or save a recipient on the WTN tab to enable.';
+
+          // If the current selection became unavailable (e.g. remembered
+          // 'email' but customer has no email), drop to portal-only.
+          React.useEffect(() => {
+            if ((choice === 'email' || choice === 'both') && !emailAvailable) {
+              setChoice('portal');
+            }
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+          }, []);
+
+          const options = [
+            { id: 'portal', emoji: '📤', title: 'Publish to portal only',
+              sub: 'Customer can view the WTN by logging into their portal.', disabled: false },
+            { id: 'email', emoji: '📧', title: customerEmail ? `Email to ${customerEmail}` : 'Email to customer',
+              sub: 'Send the WTN by email — does NOT publish to the portal.', disabled: !emailAvailable, reason: emailDisabledReason },
+            { id: 'both', emoji: '📤📧', title: customerEmail ? `Both — portal + email to ${customerEmail}` : 'Both — portal + email',
+              sub: 'Publish to portal AND send by email.', disabled: !emailAvailable, reason: emailDisabledReason },
+            { id: 'skip', emoji: '⏭️', title: 'Skip — complete without sending',
+              sub: 'Mark the job complete. You can send the WTN manually later from the WTN tab.', disabled: false },
+          ];
+
+          return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="px-6 py-4 border-b border-gray-200 bg-green-50">
+                  <h2 className="text-lg font-semibold text-gray-800">Complete job {job.jobNumber || job.job_number} — send WTN?</h2>
+                  <p className="text-sm text-gray-600 mt-1">How would you like the customer to receive their Waste Transfer Note?</p>
+                  {parentRecurring && (
+                    <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-800">
+                      🔁 This is a recurring job. Defaulting to portal-only — the recurring schedule, if any, sends emails on its own cadence.
+                    </div>
+                  )}
+                </div>
+                <div className="px-6 py-4 overflow-y-auto flex-1 space-y-2">
+                  {options.map(opt => (
+                    <label
+                      key={opt.id}
+                      title={opt.disabled ? opt.reason : ''}
+                      className={`flex items-start gap-3 p-3 rounded-lg border-2 transition-colors ${
+                        opt.disabled
+                          ? 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-60'
+                          : choice === opt.id
+                            ? 'border-green-500 bg-green-50 cursor-pointer'
+                            : 'border-gray-200 hover:border-gray-300 cursor-pointer'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="completion-choice"
+                        value={opt.id}
+                        checked={choice === opt.id}
+                        disabled={opt.disabled}
+                        onChange={() => !opt.disabled && setChoice(opt.id)}
+                        className="mt-1 cursor-pointer disabled:cursor-not-allowed"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-800 flex items-center gap-2">
+                          <span>{opt.emoji}</span>
+                          <span>{opt.title}</span>
+                        </div>
+                        <div className="text-xs text-gray-600 mt-1">{opt.sub}</div>
+                        {opt.disabled && opt.reason && (
+                          <div className="text-xs text-amber-700 mt-1 italic">⚠️ {opt.reason}</div>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
+                  <button
+                    onClick={onClose}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => onConfirm(choice)}
+                    className="px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                  >
+                    Confirm
                   </button>
                 </div>
               </div>
@@ -17165,6 +17140,12 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
           const [editingQuote, setEditingQuote] = useState(null);
           const [sageProducts, setSageProducts] = useState([]);
           const [isSubmitting, setIsSubmitting] = useState(false);
+          // Phase 4 — completion prompt modal state. When set to a job object,
+          // the modal renders and asks the staff member how to send the WTN
+          // (portal / email / both / skip) on completion. null = closed.
+          // The modal also stashes the precomputed email-availability info so
+          // the JSX doesn't have to recompute it on every render.
+          const [completionPrompt, setCompletionPrompt] = useState(null);
           if (!user) {
             return <LoginScreen />;
           }
@@ -17601,7 +17582,76 @@ collection_date: updatedJob.collectionDate || null,
     alert('Error updating job: ' + error.message);
   }
 };
-const handleCompleteJob = async (job) => {
+const handleCompleteJob = async (job, sendChoice) => {
+  // Phase 4: completion now goes through a modal that asks the staff member
+  // how to deliver the WTN to the customer (portal / email / both / skip).
+  // The modal calls this function back with `sendChoice` set; the first call
+  // (no sendChoice) just opens the modal and returns.
+  //
+  // We skip the modal in three cases:
+  //   1. sendChoice was passed in already (modal callback)
+  //   2. The job is non-waste — there is no WTN to send anyway
+  //   3. There is no WTN drafted AND no WTN data on a parent (recurring child)
+  //      to inherit — the existing "no WTN created" prompt below handles this
+  //
+  // For non-waste jobs and undrafted-WTN cases we fall through with sendChoice
+  // implicitly set to 'skip', preserving the previous behaviour.
+  const jobTypeForCheck = job.jobType || job.job_type || '';
+  const isWasteJobForPrompt = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(jobTypeForCheck);
+  const hasParentForPrompt = !!(job.parentJobId || job.parent_job_id);
+  const hasDraftedWtn = !!(job.wtn_data || job.wtnData || (Array.isArray(job.wtns) && job.wtns.length > 0));
+
+  if (!sendChoice && isWasteJobForPrompt && (hasDraftedWtn || hasParentForPrompt)) {
+    // Look up customer email so the modal can disable Email options when
+    // there's nowhere to send to. Order of preference: existing wtn_recipient,
+    // wtn_data.recipientEmail, then the customer record.
+    let customerEmail = job.wtn_recipient || job.wtnRecipient || '';
+    if (!customerEmail) {
+      try {
+        let wtnData = job.wtnData || job.wtn_data;
+        if (typeof wtnData === 'string') { try { wtnData = JSON.parse(wtnData); } catch(_) { wtnData = null; } }
+        customerEmail = wtnData?.recipientEmail || '';
+      } catch(_) {}
+    }
+    if (!customerEmail) {
+      const cust = (customers || []).find(c =>
+        c.companyName === (job.customerName || job.customer_name) ||
+        c.name === (job.customerName || job.customer_name)
+      );
+      customerEmail = cust?.email || cust?.secondaryEmail || cust?.secondary_email || '';
+    }
+
+    // Recurring children get a special note and pre-select portal-only
+    let parentRecurring = false;
+    if (hasParentForPrompt) {
+      try {
+        const parentId = job.parentJobId || job.parent_job_id;
+        const { data: parentJob } = await window.supabase
+          .from('jobs').select('wtn_recurring,wtn_recurring_frequency').eq('id', parentId).single();
+        parentRecurring = !!parentJob?.wtn_recurring;
+      } catch(_) {}
+    }
+
+    // Read remembered choice from localStorage; clamp to a known value.
+    // Recurring children always default to portal-only regardless of remembered choice.
+    const validChoices = ['portal', 'email', 'both', 'skip'];
+    let defaultChoice = 'portal';
+    try {
+      const saved = localStorage.getItem('tws_completion_default_choice');
+      if (validChoices.includes(saved)) defaultChoice = saved;
+    } catch(_) {}
+    if (parentRecurring) defaultChoice = 'portal';
+
+    setCompletionPrompt({
+      job,
+      customerEmail,
+      hasDraftedWtn,
+      parentRecurring,
+      defaultChoice,
+    });
+    return;
+  }
+
   try {
     const updateData = {
       is_completed: true,
@@ -17680,152 +17730,24 @@ const handleCompleteJob = async (job) => {
         console.warn('[handleCompleteJob] failed to fetch parent WTNs from table:', e);
       }
 
-      // Only trigger per-job WTN from the PARENT job's settings, never the child's own fields
-      // This prevents duplicates and ensures the schedule is managed in one place
-      if (parentJobData?.wtn_recurring && parentJobData?.wtn_recurring_frequency === 'per-job' && parentJobData?.wtn_recipient) {
-        const customerName = job.customerName || parentJobData.customer_name;
-        const recipient = parentJobData.wtn_recipient;
-        try {
-          // Phase 3: prefer the new table (use the FIRST parent row as the
-          // template for the email body); fall back to the legacy column.
-          // The DB rows themselves will be written from ALL parent rows below.
-          const parentWtnData = parentWtnFromTable || (() => {
-            if (!parentJobData.wtn_data) return {};
-            try {
-              let v = typeof parentJobData.wtn_data === 'string' ? JSON.parse(parentJobData.wtn_data) : parentJobData.wtn_data;
-              if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) {} }
-              return v || {};
-            } catch(_) { return {}; }
-          })();
-          const wtnFields = {
-            ...parentWtnData,
-            // Update job-specific fields for this completion
-            wtnNumber: `WTN-${job.jobNumber || job.job_number}`,
-            transferDate: new Date().toISOString().split('T')[0],
-            transferTime: new Date().toTimeString().slice(0,5),
-            transferorName: customerName,
-            transferorAddress: [job.siteAddress1 || job.site_address1, job.siteAddress2 || job.site_address2, job.siteCity || job.site_city, job.sitePostcode || job.site_postcode].filter(Boolean).join(', '),
-            transferAddress: [job.siteAddress1 || job.site_address1, job.siteCity || job.site_city, job.sitePostcode || job.site_postcode].filter(Boolean).join(', '),
-            recipientEmail: recipient,
-            // Keep all other fields (EWC, CBDU, recycling %, carrier details) from parent template
-          };
-
-          const htmlBody = buildWtnHtml(wtnFields, {
-            jobNumber: job.jobNumber || job.job_number,
-            customerName,
-            jobType: job.jobType || job.job_type,
-            siteAddress1: job.siteAddress1 || job.site_address1,
-            sitePostcode: job.sitePostcode || job.site_postcode,
-          });
-
-          await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
-            wtn_number: wtnFields.wtnNumber,
-            customer_name: customerName,
-            email: recipient,
-            name: customerName,
-            message: htmlBody,
-          });
-
-          // Phase 3 — primary write: stamp ONE row per parent WTN line onto
-          // the child. Each row inherits the parent's per-line fields
-          // (waste description, EWC, container, qty) but with the child's
-          // job-specific bits (wtn number, date, transferor address, etc.)
-          // overriding. Suffix letters are recomputed from scratch.
-          const sentAt = new Date().toISOString();
-          try {
-            if (allParentWtns.length > 0) {
-              const childRowsBase = allParentWtns.map((p, i) => {
-                const useSuffix = allParentWtns.length > 1;
-                const suffix = useSuffix ? String.fromCharCode(65 + i) : null;
-                const childWtnNumber = useSuffix
-                  ? `WTN-${job.jobNumber || job.job_number}-${suffix}`
-                  : `WTN-${job.jobNumber || job.job_number}`;
-                return {
-                  job_id: job.id,
-                  wtn_number: childWtnNumber,
-                  suffix_letter: suffix,
-                  // Carry parent's line item context through
-                  line_item_index: p.lineItemIndex != null ? p.lineItemIndex : i,
-                  line_item_product_name: p.lineItemProductName || null,
-                  line_item_description: p.lineItemDescription || null,
-                  line_item_quantity: p.lineItemQuantity || null,
-                  // Section A — per-line, from parent
-                  waste_description: p.wasteDescription || null,
-                  skip_size: p.skipSize || null,
-                  list_of_waste_code: p.listOfWasteCode || null,
-                  waste_container: p.wasteContainer || null,
-                  waste_process: p.wasteProcess || null,
-                  quantity: p.quantity != null ? Number(p.quantity) : null,
-                  unit: p.unit || null,
-                  is_hazardous: !!p.isHazardous,
-                  // Section B — Transferor: child's job-specific addresses
-                  transferor_name: customerName,
-                  transferor_address: wtnFields.transferorAddress || null,
-                  transferor_postcode: job.sitePostcode || job.site_postcode || p.transferorPostcode || null,
-                  transferor_sic_code: p.transferorSicCode || null,
-                  transferor_is_producer: p.transferorIsProducer ?? true,
-                  transferor_permit_number: p.transferorPermitNumber || null,
-                  transferor_signature: p.transferorSignature || null,
-                  transferor_representing: customerName,
-                  selected_transferor_site_id: p.selectedTransferorSiteId || null,
-                  // Section C — Transferee: from parent
-                  transferee_name: p.transfereeName || null,
-                  transferee_address: p.transfereeAddress || null,
-                  transferee_postcode: p.transfereePostcode || null,
-                  transferee_carrier_reg: p.transfereeCarrierReg || null,
-                  transferee_permit_number: p.transfereePermitNumber || null,
-                  selected_site_id: p.selectedSiteId || null,
-                  transferee_signature: p.transfereeSignature || null,
-                  transferee_representing: p.transfereeRepresenting || null,
-                  // Section D — Transfer & broker: child-specific date, parent broker
-                  transfer_address: wtnFields.transferAddress || null,
-                  transfer_date: wtnFields.transferDate || null,
-                  transfer_time: wtnFields.transferTime || null,
-                  broker_name: p.brokerName || null,
-                  broker_address: p.brokerAddress || null,
-                  broker_carrier_reg: p.brokerCarrierReg || null,
-                  // Recycling pcts — from parent
-                  recycled_pct: p.recycledPct ?? null,
-                  recovered_pct: p.recoveredPct ?? null,
-                  landfill_pct: p.landfillPct ?? null,
-                  // Misc
-                  notes: p.notes || null,
-                  recipient_email: recipient,
-                  additional_emails: p.additionalEmails || null,
-                  recipient_email_source: 'inherited-parent',
-                };
-              });
-              await window.saveWtnsForJob(job.id, childRowsBase, { preserveStateColumns: false });
-              // Stamp sent state on every row
-              await window.applyPerWtnState(job.id, {
-                sent: true,
-                sent_at: sentAt,
-                recipient: recipient,
-                portal_visible: true,
-              });
-            }
-          } catch (wtnsTableErr) {
-            console.error('[Phase 3] per-job auto-WTN wtns table write failed (legacy write will still happen):', wtnsTableErr);
-          }
-
-          // Phase 3 — dual-write to legacy column (first WTN's data, for safety).
-          await window.supabase.from('jobs').update({
-            wtn_sent: true,
-            wtn_sent_at: sentAt,
-            wtn_recipient: recipient,
-            wtn_data: JSON.stringify(wtnFields),
-          }).eq('id', job.id);
-
-          setRecurringNotifications(prev => [...prev, `📄 Full WTN auto-sent to ${recipient} on completion of ${job.jobNumber}`]);
-        } catch(e) { console.error('Per-job completion WTN failed:', e); }
-      }
+      // Phase 4: per-job-recurring auto-SEND on completion has been removed.
+      // Previously, child jobs of recurring parents with `wtn_recurring_frequency === 'per-job'`
+      // would auto-email a WTN AND flip `wtn_sent`/`wtn_sent_at` on completion. Customers
+      // started complaining about (a) emails firing without anyone clicking Send, and
+      // (b) the "WTN sent" badge showing for jobs nobody had actually emailed. The
+      // completion flow now offers a modal asking whether to publish-only, email, both,
+      // or skip — so the staff member is always the one deciding when a customer's
+      // inbox gets touched. The recurring monthly/yearly schedule (checkRecurringWtnsInline,
+      // ~line 16850) is unrelated to completion and continues to work as before.
+      //
+      // The auto-portal branch below now handles ALL recurring child jobs uniformly —
+      // it stamps WTN rows on the child and flips portal_visible. No email is sent.
 
       // Auto-generate portal WTN for recurring child jobs (save only, no email)
-      // This runs when: child has parent with wtn_data, and the per-job email WTN didn't already fire
-      const perJobEmailFired = parentJobData?.wtn_recurring && parentJobData?.wtn_recurring_frequency === 'per-job' && parentJobData?.wtn_recipient;
-      // Phase 2: parent has a WTN if EITHER source has data
+      // Runs when: child has parent with wtn_data. Skipped if the staff
+      // member chose "Skip" on the completion modal.
       const parentHasWtn = parentWtnFromTable || parentJobData?.wtn_data;
-      if (!perJobEmailFired && parentHasWtn) {
+      if (sendChoice !== 'skip' && parentHasWtn) {
         try {
           // Phase 2: prefer the new table.
           const parentWtn = parentWtnFromTable || (() => {
@@ -17994,7 +17916,13 @@ const handleCompleteJob = async (job) => {
     // job state. Without this, if the job's line items / quantity / address were edited after the
     // WTN was first saved, the portal would show stale numbers. Manually-edited WTN fields
     // (signatures, percentages, EWC, permits, notes) are preserved.
-    if (!hasParent && (hasNewWtns || jobWtnData) && !job.wtn_portal_visible) {
+    //
+    // Phase 4: when the staff member picked "Skip" on the completion modal,
+    // we do NOT publish to portal — they explicitly opted out. Any other
+    // choice (portal-only, email-only, both) lands here. Non-waste jobs and
+    // waste jobs without a drafted WTN never see the modal so sendChoice
+    // is undefined for them; the original behaviour is preserved.
+    if (sendChoice !== 'skip' && !hasParent && (hasNewWtns || jobWtnData) && !job.wtn_portal_visible) {
       try {
         // Parse existing WTN (legacy column — used as fallback template only)
         const existingWtn = (() => {
@@ -18126,9 +18054,125 @@ const handleCompleteJob = async (job) => {
     // Phase 3: parent has a WTN if either source has data
     const recurringAutoFired = hasParent && (allParentWtns.length > 0 || parentWtnFromTable || parentJobData?.wtn_data);
 
+    // Phase 4 — if the staff member chose to email the WTN at completion,
+    // do it now. Reuses buildMultiWtnHtml so multi-line jobs send all ticked
+    // pages stitched into one email body, exactly like the manual Send WTN
+    // via Gmail button. Skipped silently if there is nothing to email or no
+    // recipient — the modal already validated those, but be defensive.
+    let completionEmailSent = false;
+    let completionEmailRecipient = '';
+    if (sendChoice === 'email' || sendChoice === 'both') {
+      try {
+        // Re-read the freshly-saved WTN data + rows so the email reflects
+        // anything Phase 3's auto-portal block just rewrote (refreshed
+        // quantities, addresses, line items).
+        const { data: refreshedJob } = await window.supabase
+          .from('jobs').select('*').eq('id', job.id).single();
+        const { data: refreshedRows } = await window.supabase
+          .from('wtns').select('*').eq('job_id', job.id)
+          .order('suffix_letter', { ascending: true, nullsFirst: true })
+          .order('created_at', { ascending: true });
+
+        let wtnDataForEmail = {};
+        if (refreshedJob?.wtn_data) {
+          try {
+            let v = typeof refreshedJob.wtn_data === 'string' ? JSON.parse(refreshedJob.wtn_data) : refreshedJob.wtn_data;
+            if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) {} }
+            wtnDataForEmail = v || {};
+          } catch(_) {}
+        }
+        // If we have multi-row WTN data, rebuild the `lines` array from rows
+        // so buildMultiWtnHtml renders all included lines. Each row maps to
+        // one ticked line.
+        if (refreshedRows && refreshedRows.length > 0) {
+          const lines = refreshedRows.map(r => ({
+            included: true,
+            lineItemIndex: r.line_item_index ?? 0,
+            wasteDescription: r.waste_description || '',
+            listOfWasteCode: r.list_of_waste_code || '',
+            wasteContainer: r.waste_container || 'Skip',
+            wasteProcess: r.waste_process || '',
+            quantity: r.quantity != null ? Number(r.quantity) : 1,
+            unit: r.unit || 'tonnes',
+            isHazardous: !!r.is_hazardous,
+            skipSize: r.skip_size || '',
+            productName: r.line_item_product_name || '',
+            disposalSiteName: '',
+            disposalSiteAddress: '',
+          }));
+          wtnDataForEmail = { ...wtnDataForEmail, lines };
+        }
+
+        // Resolve recipient: prefer the modal-reported customerEmail, fall
+        // back to wtnData.recipientEmail / job.wtn_recipient.
+        const recipient = (completionPrompt && completionPrompt.customerEmail)
+          || wtnDataForEmail.recipientEmail
+          || refreshedJob?.wtn_recipient
+          || '';
+        if (!recipient) {
+          console.warn('[Phase 4] completion email skipped — no recipient address');
+        } else {
+          const jobForEmail = {
+            jobNumber: job.jobNumber || job.job_number,
+            customerName: job.customerName || job.customer_name,
+            jobType: job.jobType || job.job_type,
+            siteAddress1: job.siteAddress1 || job.site_address1,
+            sitePostcode: job.sitePostcode || job.site_postcode,
+          };
+          // buildMultiWtnHtml handles the single-line fast path internally.
+          const htmlBody = buildMultiWtnHtml(wtnDataForEmail, jobForEmail);
+          const includedCount = Array.isArray(wtnDataForEmail.lines)
+            ? wtnDataForEmail.lines.filter(l => l.included).length
+            : 1;
+          let wtnNumberForSubject = wtnDataForEmail.wtnNumber || `WTN-${jobForEmail.jobNumber}`;
+          if (includedCount > 1) {
+            const suffixes = Array.from({length: includedCount}, (_, i) => String.fromCharCode(65 + i)).join(', ');
+            wtnNumberForSubject = `${wtnNumberForSubject} (${includedCount} notes: ${suffixes})`;
+          }
+          await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
+            wtn_number: wtnNumberForSubject,
+            customer_name: jobForEmail.customerName,
+            email: recipient,
+            name: jobForEmail.customerName,
+            message: htmlBody,
+          });
+          // Stamp the sent flags — this is a genuine email send.
+          const sentAt = new Date().toISOString();
+          await window.supabase.from('jobs').update({
+            wtn_sent: true,
+            wtn_sent_at: sentAt,
+            wtn_recipient: recipient,
+          }).eq('id', job.id);
+          try {
+            await window.applyPerWtnState(job.id, {
+              sent: true,
+              sent_at: sentAt,
+              recipient,
+              portal_visible: true,
+            });
+          } catch (perErr) { console.warn('[Phase 4] applyPerWtnState failed:', perErr); }
+          completionEmailSent = true;
+          completionEmailRecipient = recipient;
+          console.log(`[Phase 4] sent ${includedCount} WTN${includedCount === 1 ? '' : 's'} to ${recipient} on completion of ${jobForEmail.jobNumber}`);
+        }
+      } catch (emailErr) {
+        console.error('[Phase 4] completion email failed:', emailErr);
+        alert('⚠️ The job has been completed and the WTN published to the portal, but the email could not be sent: ' + (emailErr.text || emailErr.message || 'Unknown error') + '\n\nYou can retry sending from the WTN tab.');
+      }
+    }
+
     if (isWasteJob && (jobHasAnyWtn || recurringAutoFired)) {
-      // WTN exists and is now published to portal
-      alert(`✅ Job ${job.jobNumber || job.job_number} marked as completed!\n\n📄 WTN has been published to the customer portal.`);
+      // WTN exists — message reflects what was actually done.
+      let msg = `✅ Job ${job.jobNumber || job.job_number} marked as completed!`;
+      if (sendChoice === 'skip') {
+        msg += `\n\n⏭️ WTN has not been published or sent. You can do either later from the WTN tab.`;
+      } else {
+        msg += `\n\n📄 WTN has been published to the customer portal.`;
+        if (completionEmailSent) {
+          msg += `\n📧 WTN emailed to ${completionEmailRecipient}.`;
+        }
+      }
+      alert(msg);
     } else if (isWasteJob && !jobHasAnyWtn) {
       // No WTN created yet — ask if they want to create one
       const sendNow = window.confirm(
@@ -19792,6 +19836,30 @@ setShowPhoneSuggestions={setShowPhoneSuggestions}
 handlePhoneSearch={handlePhoneSearch}
     />
 )}
+
+              {/* Phase 4 — completion prompt: asks how to deliver the WTN
+                  to the customer when staff click Complete on a waste job. */}
+              {completionPrompt && (
+                <CompletionPromptModal
+                  prompt={completionPrompt}
+                  onClose={() => setCompletionPrompt(null)}
+                  onConfirm={(choice) => {
+                    const promptedJob = completionPrompt.job;
+                    // Persist the choice as the new default for this user
+                    // (recurring children always default to portal — that's
+                    // baked into the modal — so don't poison the default
+                    // from a recurring-child completion).
+                    try {
+                      if (!completionPrompt.parentRecurring) {
+                        localStorage.setItem('tws_completion_default_choice', choice);
+                      }
+                    } catch(_) {}
+                    setCompletionPrompt(null);
+                    // Re-enter handleCompleteJob with the chosen option.
+                    handleCompleteJob(promptedJob, choice);
+                  }}
+                />
+              )}
 
               {showCustomerForm && (
                 <CustomerForm
