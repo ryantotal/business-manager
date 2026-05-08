@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix15c-2026-05-08-paginate-jobs';
+        window.PHASE3_BUILD = 'fix15d-2026-05-08-paginate-all-tables';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-08T10:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-08T11:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -15743,14 +15743,11 @@ useEffect(() => {
 useEffect(() => {
   const loadSuppliersFromSupabase = async () => {
     try {
-      const { data, error } = await window.supabase
-        .from('suppliers')
-        .select('*')
-        .order('name')
-        .limit(2000);
-      
-      if (error) throw error;
-      
+      // Use the paginating helper so we don't hit Supabase's 1000-row default
+      // response cap. fix15d: previously had a hand-coded `.limit(2000)` cap
+      // which was just a higher fixed ceiling; pagination handles any size.
+      const data = await fetchAllRowsFromTable('suppliers', { orderColumn: 'name', ascending: true });
+
       if (data && data.length > 0) {
         // Map snake_case DB fields to camelCase so lookups work everywhere
         const mapped = data.map(s => ({
@@ -15793,12 +15790,12 @@ useEffect(() => {
           // Load customers from Supabase when app starts
   const loadCustomersFromSupabase = async () => {
     try {
-      const { data, error } = await window.supabase
-        .from('customers')
-        .select('*');
-      
-      if (error) throw error;
-      
+      // Paginated to bypass Supabase's 1000-row default cap. The customers
+      // table is at ~624 rows today, well under the cap, but this is the
+      // same trap that hit the jobs table in fix15c — better to fix it once
+      // for every list-fetch so it can never silently truncate later.
+      const data = await fetchAllRowsFromTable('customers', { orderColumn: null });
+
       if (data && data.length > 0) {
         setCustomers(data);
         console.log('Loaded', data.length, 'customers from Supabase');
@@ -15811,13 +15808,13 @@ useEffect(() => {
 useEffect(() => {
   const loadSageProducts = async () => {
   try {
-    const { data, error } = await window.supabase
-      .from('sage_products')
-      .select('*')
-      .eq('active', true)
-      .order('name');
-    
-    if (error) throw error;
+    // Paginated + filtered by active=true. Same rationale as customers /
+    // suppliers: cheap insurance against the 1000-row default cap.
+    const data = await fetchAllRowsFromTable('sage_products', {
+      orderColumn: 'name',
+      ascending: true,
+      additionalFilters: q => q.eq('active', true),
+    });
     setSageProducts(data || []);
     console.log('Loaded', data.length, 'Sage products from Supabase');
   } catch (error) {
@@ -16359,27 +16356,31 @@ window.enrichJobsWithWtns = enrichJobsWithWtns;
 // Load jobs from Supabase when app starts <- This is line 6850
 //
 // Phase 4 fix15c: Supabase's PostgREST API caps `.select()` responses at
-// 1000 rows by default. Once the jobs table crosses 1000, a single fetch
-// silently truncates the response and the oldest row falls off the bottom.
-// The visible symptom is "create a new job → count flips up by 1, then
-// 30s later flips back down by 1 because the auto-refresh re-fetches the
-// top 1000 and the now-#1001 oldest job is gone." The helper below
-// paginates in chunks of 1000 ordered by created_at DESC until a partial
-// page returns, then stops. Capped at 10 pages (10,000 jobs) defensively;
-// at TWS's growth rate that's about ten years of headroom and worth the
-// safety net in case something goes wrong with the loop condition.
-const fetchAllJobsFromSupabase = async () => {
+// 1000 rows by default. Once a table crosses 1000 rows a single fetch
+// silently truncates the response. The visible symptom on `jobs` was
+// "create a new job → count flips up by 1, then 30s later flips back down
+// by 1 because the auto-refresh re-fetches the top 1000 and the now-#1001
+// oldest job is gone." Same trap is latent on every other table that
+// might cross 1000 rows (customers, suppliers, sage_products, eventually
+// quotes). The helper below paginates in chunks of 1000 until a partial
+// page returns. Capped at 10 pages (10,000 rows) defensively in case the
+// loop condition ever goes wrong; at TWS's growth rate that's about ten
+// years of headroom on every table and worth the safety net.
+//
+// fix15d (2026-05-08): generalised from jobs-only to any table so that
+// customers / suppliers / sage_products can use the same path.
+const fetchAllRowsFromTable = async (tableName, { orderColumn = 'created_at', ascending = false, additionalFilters } = {}) => {
   const PAGE_SIZE = 1000;
   const MAX_PAGES = 10;
   let collected = [];
   for (let page = 0; page < MAX_PAGES; page++) {
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
-    const { data: pageData, error: pageError } = await window.supabase
-      .from('jobs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(from, to);
+    let query = window.supabase.from(tableName).select('*');
+    if (additionalFilters) query = additionalFilters(query);
+    if (orderColumn) query = query.order(orderColumn, { ascending });
+    query = query.range(from, to);
+    const { data: pageData, error: pageError } = await query;
     if (pageError) throw pageError;
     if (!pageData || pageData.length === 0) break;
     collected = collected.concat(pageData);
@@ -16387,6 +16388,10 @@ const fetchAllJobsFromSupabase = async () => {
   }
   return collected;
 };
+
+// Convenience wrapper preserving the previous name. Kept for the jobs
+// table so the existing call sites read naturally.
+const fetchAllJobsFromSupabase = () => fetchAllRowsFromTable('jobs', { orderColumn: 'created_at', ascending: false });
 
 const loadJobsFromSupabase = async () => {
     try {
