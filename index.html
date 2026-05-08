@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix14-2026-05-01-phase4';
+        window.PHASE3_BUILD = 'fix15-2026-05-08-unit-unlock';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-01T21:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-08T08:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -4337,9 +4337,12 @@ const [isEvent, setIsEvent] = useState(false);
 
           const [activeTab, setActiveTab] = useState('details');
 
-          // Auto-set unit to tonnes for Aggregates
+          // Auto-set unit to tonnes for Aggregates — but ONLY when the
+          // current unit is clearly wrong for Aggregates (skip / collections
+          // / days). Tonnes and Loads are both legitimate Aggregates units;
+          // don't overwrite a deliberate Loads choice.
           useEffect(() => {
-            if (formData.jobType === 'Aggregates' && formData.unit !== 'tonnes') {
+            if (formData.jobType === 'Aggregates' && !['tonnes', 'loads'].includes(formData.unit)) {
               setFormData({...formData, unit: 'tonnes'});
             }
           }, [formData.jobType]);
@@ -23693,9 +23696,14 @@ By approving this quotation and authorising us to commence services, you acknowl
 
   const [activeTab, setActiveTab] = useState('details');
 
-  // Auto-set unit to tonnes for Aggregates
+  // Auto-set unit to tonnes for Aggregates — but ONLY when the current
+  // unit is clearly wrong for Aggregates (skip / collections / days).
+  // Tonnes and Loads are both legitimate Aggregates units, so don't
+  // overwrite a deliberate Loads choice. This effect runs when the user
+  // first switches the job type to Aggregates from something else; it
+  // shouldn't fight the user once they've picked an Aggregates-friendly unit.
   useEffect(() => {
-    if (formData.jobType === 'Aggregates' && formData.unit !== 'tonnes') {
+    if (formData.jobType === 'Aggregates' && !['tonnes', 'loads'].includes(formData.unit)) {
       setFormData({...formData, unit: 'tonnes'});
     }
   }, [formData.jobType]);
@@ -24344,7 +24352,6 @@ By approving this quotation and authorising us to commence services, you acknowl
                     value={formData.unit}
                     onChange={(e) => setFormData({...formData, unit: e.target.value})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    disabled={formData.jobType === 'Aggregates'}
                   >
                     <option value="skip">Skip</option>
                     <option value="tonnes">Tonnes</option>
