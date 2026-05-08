@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix15-2026-05-08-unit-unlock';
+        window.PHASE3_BUILD = 'fix15b-2026-05-08-unit-unlock-jobform';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-08T08:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-08T09:15:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -5233,7 +5233,6 @@ const [isEvent, setIsEvent] = useState(false);
                 value={formData.unit}
                 onChange={(e) => setFormData({...formData, unit: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                disabled={formData.jobType === 'Aggregates'}
               >
                 <option value="skip">Skip</option>
                 <option value="tonnes">Tonnes</option>
