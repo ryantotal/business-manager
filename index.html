@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix15b-2026-05-08-unit-unlock-jobform';
+        window.PHASE3_BUILD = 'fix15c-2026-05-08-paginate-jobs';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-08T09:15:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-08T10:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -16357,15 +16357,41 @@ window.loadWtnsForJobs = loadWtnsForJobs;
 window.enrichJobsWithWtns = enrichJobsWithWtns;
 
 // Load jobs from Supabase when app starts <- This is line 6850
+//
+// Phase 4 fix15c: Supabase's PostgREST API caps `.select()` responses at
+// 1000 rows by default. Once the jobs table crosses 1000, a single fetch
+// silently truncates the response and the oldest row falls off the bottom.
+// The visible symptom is "create a new job → count flips up by 1, then
+// 30s later flips back down by 1 because the auto-refresh re-fetches the
+// top 1000 and the now-#1001 oldest job is gone." The helper below
+// paginates in chunks of 1000 ordered by created_at DESC until a partial
+// page returns, then stops. Capped at 10 pages (10,000 jobs) defensively;
+// at TWS's growth rate that's about ten years of headroom and worth the
+// safety net in case something goes wrong with the loop condition.
+const fetchAllJobsFromSupabase = async () => {
+  const PAGE_SIZE = 1000;
+  const MAX_PAGES = 10;
+  let collected = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data: pageData, error: pageError } = await window.supabase
+      .from('jobs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(from, to);
+    if (pageError) throw pageError;
+    if (!pageData || pageData.length === 0) break;
+    collected = collected.concat(pageData);
+    if (pageData.length < PAGE_SIZE) break;
+  }
+  return collected;
+};
+
 const loadJobsFromSupabase = async () => {
     try {
-      const { data, error } = await window.supabase
-        .from('jobs')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
+      const data = await fetchAllJobsFromSupabase();
+
       if (data && data.length > 0) {
   // Convert snake_case from database back to camelCase for React
   const jobsWithCamelCase = data.map(job => ({
@@ -16473,13 +16499,8 @@ collectionDate: job.collection_date,
   // Add refresh function for duplicating jobs
 const refreshJobs = async () => {
     try {
-        const { data, error } = await window.supabase
-            .from('jobs')
-            .select('*')
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
+        const data = await fetchAllJobsFromSupabase();
+
         if (data && data.length > 0) {
             const jobsWithCamelCase = data.map(job => ({
                 id: job.id,
@@ -18482,11 +18503,9 @@ setTimeout(async () => {
   alert('Job duplicated successfully!');
 }, 500);
 
-// Fetch updated jobs list
-const { data: updatedJobs, error: fetchError } = await window.supabase
-    .from('jobs')
-    .select('*')
-    .order('created_at', { ascending: false });
+// Fetch updated jobs list (uses paginating helper to avoid 1000-row truncation)
+const updatedJobs = await fetchAllJobsFromSupabase();
+const fetchError = null;
     console.log('First job from database:', updatedJobs[0]);
 console.log('All field names:', Object.keys(updatedJobs[0]));
  console.log('First job after fetch:', updatedJobs[0]);
