@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix19-2026-05-11-cascade-from-update-job';
+        window.PHASE3_BUILD = 'fix19b-2026-05-11-cascade-preserve-wtn-number';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-11T16:15:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-11T16:25:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -16571,7 +16571,30 @@ async function applyCascadeToChildren(parentJobId, parentRows) {
   let okCount = 0;
   for (const child of children) {
     try {
-      const childRows = templateRows.map(r => ({ ...r, job_id: child.id }));
+      // fix19b — read the child's existing wtn_numbers per line_item_index
+      // and stamp them onto the cascade rows. wtn_number is NOT NULL on the
+      // wtns table, and our exclusion list strips it from the template
+      // (since children have their own number, not the parent's). On the
+      // upsert path PostgREST treats missing keys as NULL and rejects with
+      // 23502. So we must explicitly carry the child's own number forward.
+      const { data: childExisting, error: cExErr } = await window.supabase
+        .from('wtns')
+        .select('line_item_index, wtn_number')
+        .eq('job_id', child.id);
+      if (cExErr) {
+        console.warn(`[cascade] couldn't read existing wtns for child ${child.job_number}:`, cExErr.message);
+      }
+      const wtnNumberByIdx = new Map();
+      (childExisting || []).forEach(r => wtnNumberByIdx.set(r.line_item_index, r.wtn_number));
+      // Default fallback if a child has a brand-new line with no existing
+      // row: synthesize from the job_number ("WTN-TWS-1238").
+      const defaultWtnNumber = 'WTN-' + (child.job_number || child.id);
+
+      const childRows = templateRows.map(r => ({
+        ...r,
+        job_id: child.id,
+        wtn_number: wtnNumberByIdx.get(r.line_item_index) || defaultWtnNumber,
+      }));
       await saveWtnsForJob(child.id, childRows, { cascading: true, preserveStateColumns: true });
       // Also dual-write legacy wtn_data blob for the customer portal.
       try {
