@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix16-2026-05-11-disposal-site-permit';
+        window.PHASE3_BUILD = 'fix16b-2026-05-11-disposal-permit-diagnostic';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-11T12:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-11T13:30:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -16182,7 +16182,21 @@ function wtnFieldsToRows(wtnFields, jobId) {
   const useSuffix = sorted.length > 1;
   const baseWtnNumber = wtnFields.wtnNumber || '';
 
-  return sorted.map((line, i) => {
+  // fix16b diagnostic — stash the disposal-site fields off each input line
+  // so we can see in the console whether the picker's onChange actually
+  // landed the permit/CBDU into state before save fired.
+  try {
+    window.__lastWtnInputLines = sorted.map(l => ({
+      lineItemIndex: l.lineItemIndex,
+      productName: l.productName,
+      disposalSiteName: l.disposalSiteName,
+      disposalSiteAddress: l.disposalSiteAddress,
+      disposalSitePermit: l.disposalSitePermit,
+      disposalSiteCarrierReg: l.disposalSiteCarrierReg,
+    }));
+  } catch(_) {}
+
+  const __rows = sorted.map((line, i) => {
     const suffix = useSuffix ? String.fromCharCode(65 + i) : null;
     // WTN number per row: append -A / -B / etc. when more than one line.
     // Single-line case: keep the original wtnNumber unchanged.
@@ -16253,6 +16267,24 @@ function wtnFieldsToRows(wtnFields, jobId) {
       recipient_email_source: wtnFields.recipientEmailSource || null,
     };
   });
+
+  // fix16b diagnostic — stash the rows we built so we can see what
+  // wtnFieldsToRows actually returned. If __lastWtnInputLines shows the
+  // permit but __lastWtnRows doesn't, the bug is in this function.
+  // If both show the permit but the DB row stays NULL, the bug is in the
+  // network/save path or the upsert payload.
+  try {
+    window.__lastWtnRows = __rows.map(r => ({
+      job_id: r.job_id,
+      wtn_number: r.wtn_number,
+      line_item_index: r.line_item_index,
+      disposal_site_name: r.disposal_site_name,
+      disposal_site_permit: r.disposal_site_permit,
+      disposal_site_carrier_reg: r.disposal_site_carrier_reg,
+    }));
+  } catch(_) {}
+
+  return __rows;
 }
 
 // `saveWtnsForJob(jobId, rows, opts)` — upserts rows into the `wtns`
@@ -16329,10 +16361,50 @@ async function saveWtnsForJob(jobId, rows, opts = {}) {
   // Strip the __existingId sidecar before sending — PostgREST would reject
   // it as an unknown column.
   const upsertPayload = merged.map(({ __existingId, ...rest }) => rest);
+
+  // fix16b diagnostic — stash the exact payload going to Supabase so we can
+  // confirm whether disposal_site_permit / disposal_site_carrier_reg are
+  // actually in the wire request. Also stash existing-row state so we can
+  // see if a stale row (with NULL permit) is being preserved somehow.
+  try {
+    window.__lastWtnUpsert = {
+      jobId,
+      preserveStateColumns,
+      existingRowCount: (existing || []).length,
+      existingIdsByIdx: Object.fromEntries((existing || []).map(r => [r.line_item_index, r.id])),
+      payload: upsertPayload.map(p => ({
+        job_id: p.job_id,
+        wtn_number: p.wtn_number,
+        line_item_index: p.line_item_index,
+        disposal_site_name: p.disposal_site_name,
+        disposal_site_permit: p.disposal_site_permit,
+        disposal_site_carrier_reg: p.disposal_site_carrier_reg,
+        // include the full key list so we can spot missing columns
+        __keys: Object.keys(p),
+      })),
+    };
+  } catch(_) {}
+
   const { data, error } = await window.supabase
     .from('wtns')
     .upsert(upsertPayload, { onConflict: 'job_id,line_item_index' })
     .select();
+  // fix16b diagnostic — stash the response (or error) from the upsert so
+  // we can see exactly what came back, including any silent column drops.
+  try {
+    window.__lastWtnUpsertResult = {
+      error: error ? { message: error.message, details: error.details, hint: error.hint, code: error.code } : null,
+      returnedRowCount: (data || []).length,
+      returnedRows: (data || []).map(r => ({
+        id: r.id,
+        wtn_number: r.wtn_number,
+        line_item_index: r.line_item_index,
+        disposal_site_name: r.disposal_site_name,
+        disposal_site_permit: r.disposal_site_permit,
+        disposal_site_carrier_reg: r.disposal_site_carrier_reg,
+      })),
+    };
+  } catch(_) {}
   if (error) {
     // Fallback: per-row UPDATE (using __existingId sidecar) or INSERT.
     // Used when the upsert's column-union behaviour or some other PostgREST
