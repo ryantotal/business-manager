@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix17-2026-05-11-disposal-permit-hydration';
+        window.PHASE3_BUILD = 'fix18-2026-05-11-recurring-parent-cascade';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-11T13:45:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-11T15:50:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -16489,10 +16489,151 @@ async function saveWtnsForJob(jobId, rows, opts = {}) {
       if (inserted) results.push(...inserted);
     }
     console.log(`[saveWtnsForJob] fallback path saved ${results.length} WTN row(s) for job ${jobId} (${updates.length} updated, ${inserts.length} inserted)`);
+    await cascadeToChildrenIfParent(jobId, upsertPayload, opts);
     return results;
   }
   console.log(`[saveWtnsForJob] upserted ${(data||[]).length} WTN row(s) for job ${jobId}`);
+  await cascadeToChildrenIfParent(jobId, upsertPayload, opts);
   return data || [];
+}
+
+// fix18 — Recurring-parent cascade.
+//
+// When the user saves the parent of a recurring series (Update Job /
+// Publish to Portal / Send WTN), propagate every WTN content field to all
+// children of that parent. The parent is authoritative — fix a typo on the
+// parent and the cascade rewrites the children's wtns rows + legacy
+// wtn_data blob without anyone touching SQL.
+//
+// What cascades: all waste-detail, transferor, transferee, broker, disposal-
+// site, recycling%, notes fields. Basically everything in the row except
+// the explicit exclusion list below.
+//
+// What's excluded (each child keeps its own value):
+//   - id, created_at — row identity
+//   - job_id — overridden to the child's id
+//   - wtn_number — child has its own (WTN-TWS-1238 etc)
+//   - transfer_date, transfer_time — per-collection, not template fields
+//   - sent, sent_at, recipient, portal_visible — lifecycle state
+//   - recurring, recurring_frequency, recurring_next_date — schedule state
+//
+// Guarded against recursion via opts.cascading — the recursive calls set
+// it true so children won't cascade to grand-children (they shouldn't
+// exist, but be safe).
+async function cascadeToChildrenIfParent(jobId, upsertPayload, opts) {
+  if (!jobId || !Array.isArray(upsertPayload) || upsertPayload.length === 0) return;
+  if (opts && opts.cascading) return; // don't recurse
+  try {
+    // Is this job a recurring parent?
+    const { data: parentRow, error: pErr } = await window.supabase
+      .from('jobs')
+      .select('id, is_recurring, parent_job_id')
+      .eq('id', jobId)
+      .maybeSingle();
+    if (pErr) { console.warn('[cascade] parent lookup failed:', pErr.message); return; }
+    if (!parentRow) return;
+    if (!parentRow.is_recurring) return;
+    if (parentRow.parent_job_id) return; // this job is itself a child, not a parent
+
+    // Find all children of this parent.
+    const { data: children, error: cErr } = await window.supabase
+      .from('jobs')
+      .select('id, job_number')
+      .eq('parent_job_id', jobId);
+    if (cErr) { console.warn('[cascade] children lookup failed:', cErr.message); return; }
+    if (!Array.isArray(children) || children.length === 0) return;
+
+    // Fields the child keeps as its own — strip from the cascade payload.
+    const PRESERVE_ON_CHILD = new Set([
+      'wtn_number',
+      'transfer_date', 'transfer_time',
+      'sent', 'sent_at', 'recipient', 'portal_visible',
+      'recurring', 'recurring_frequency', 'recurring_next_date',
+    ]);
+
+    // Build a template row set from the parent's upsert payload.
+    const templateRows = upsertPayload.map(r => {
+      const stripped = {};
+      for (const k of Object.keys(r)) {
+        if (PRESERVE_ON_CHILD.has(k)) continue;
+        stripped[k] = r[k];
+      }
+      return stripped;
+    });
+
+    // For each child: stamp its job_id onto each template row and save.
+    // saveWtnsForJob's preserveStateColumns path will refill the lifecycle
+    // columns from each child's existing row, and the upsert's conflict
+    // target keeps line_item_index alignment.
+    let okCount = 0;
+    for (const child of children) {
+      try {
+        const childRows = templateRows.map(r => ({ ...r, job_id: child.id }));
+        await saveWtnsForJob(child.id, childRows, { cascading: true, preserveStateColumns: true });
+        // Also dual-write legacy wtn_data blob for the customer portal.
+        // We use the first child row as the blob shape (matches existing
+        // dual-write convention at line ~3556).
+        try {
+          const blobSource = childRows[0] || {};
+          // Reconstruct the camelCase shape the legacy portal reader expects.
+          // Pull from the row we just wrote — same content, snake→camel.
+          const legacyBlob = {
+            wtnNumber: '', // child's own number is in its wtns row; legacy reader uses what's here
+            wasteDescription: blobSource.waste_description || '',
+            skipSize: blobSource.skip_size || '',
+            listOfWasteCode: blobSource.list_of_waste_code || '',
+            wasteContainer: blobSource.waste_container || '',
+            wasteProcess: blobSource.waste_process || '',
+            quantity: blobSource.quantity || 1,
+            unit: blobSource.unit || 'tonnes',
+            isHazardous: !!blobSource.is_hazardous,
+            transferorName: blobSource.transferor_name || '',
+            transferorAddress: blobSource.transferor_address || '',
+            transferorPostcode: blobSource.transferor_postcode || '',
+            transferorSicCode: blobSource.transferor_sic_code || '',
+            transferorIsProducer: blobSource.transferor_is_producer,
+            transferorPermitNumber: blobSource.transferor_permit_number || '',
+            transferorSignature: blobSource.transferor_signature || '',
+            transferorRepresenting: blobSource.transferor_representing || '',
+            transfereeName: blobSource.transferee_name || '',
+            transfereeAddress: blobSource.transferee_address || '',
+            transfereePostcode: blobSource.transferee_postcode || '',
+            transfereeCarrierReg: blobSource.transferee_carrier_reg || '',
+            transfereePermitNumber: blobSource.transferee_permit_number || '',
+            transfereeSignature: blobSource.transferee_signature || '',
+            transfereeRepresenting: blobSource.transferee_representing || '',
+            transferAddress: blobSource.transfer_address || '',
+            transferDate: '', // per-child, not cascaded
+            transferTime: '', // per-child, not cascaded
+            brokerName: blobSource.broker_name || '',
+            brokerAddress: blobSource.broker_address || '',
+            brokerCarrierReg: blobSource.broker_carrier_reg || '',
+            recycledPct: blobSource.recycled_pct ?? 0,
+            recoveredPct: blobSource.recovered_pct ?? 0,
+            landfillPct: blobSource.landfill_pct ?? 0,
+            notes: blobSource.notes || '',
+            recipientEmail: blobSource.recipient_email || '',
+            additionalEmails: blobSource.additional_emails || '',
+            disposalSiteName: blobSource.disposal_site_name || '',
+            disposalSiteAddress: blobSource.disposal_site_address || '',
+            disposalSitePermit: blobSource.disposal_site_permit || '',
+            disposalSiteCarrierReg: blobSource.disposal_site_carrier_reg || '',
+          };
+          await window.supabase.from('jobs')
+            .update({ wtn_data: JSON.stringify(legacyBlob) })
+            .eq('id', child.id);
+        } catch (blobErr) {
+          console.warn(`[cascade] legacy wtn_data update failed for child ${child.job_number}:`, blobErr.message);
+        }
+        okCount++;
+      } catch (childErr) {
+        console.warn(`[cascade] save failed for child ${child.job_number}:`, childErr.message);
+      }
+    }
+    console.log(`[cascade] propagated parent ${jobId} → ${okCount}/${children.length} child(ren)`);
+  } catch (err) {
+    console.warn('[cascade] unexpected failure:', err.message);
+  }
 }
 
 // `applyPerWtnState(jobId, patch)` — set per-WTN state columns
