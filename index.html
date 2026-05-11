@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix15d-2026-05-08-paginate-all-tables';
+        window.PHASE3_BUILD = 'fix16-2026-05-11-disposal-site-permit';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-08T11:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-11T12:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -2642,9 +2642,11 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
                     {(wtnData.disposalSiteName||wtnData.disposalSiteAddress)&&(
                       <div style={{padding:'5px 10px',background:'#f9fafb',borderTop:'1px solid #ccc'}}>
                         <div style={{fontSize:7,color:'#475569',textTransform:'uppercase',marginBottom:4}}>Intended onward disposal site <span style={{fontWeight:400,color:'#94a3b8',textTransform:'none'}}>(informational — for the customer's records; does not alter the legal transferee in Section C)</span></div>
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:4}}>
+                        <div style={{display:'grid',gridTemplateColumns:'2fr 3fr 2fr 2fr',gap:4}}>
                           <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Site name</div><div style={{fontWeight:700}}>{wtnData.disposalSiteName||'—'}</div></div>
                           <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Address</div><div style={{fontSize:10,fontWeight:600}}>{wtnData.disposalSiteAddress||'—'}</div></div>
+                          <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Permit / Exemption</div><div style={{fontSize:10,fontWeight:600}}>{wtnData.disposalSitePermit||'—'}</div></div>
+                          <div><div style={{fontSize:7,color:'#555',textTransform:'uppercase',marginBottom:1}}>Carrier Reg (CBDU)</div><div style={{fontSize:10,fontWeight:600}}>{wtnData.disposalSiteCarrierReg||'—'}</div></div>
                         </div>
                       </div>
                     )}
@@ -3004,6 +3006,10 @@ const buildDefaultLines = (jobObj) => {
       // WTN if populated.
       disposalSiteName: '',
       disposalSiteAddress: '',
+      // fix16: site permit & carrier reg — shown alongside name/address in
+      // Section D so the customer can see the onward facility is regulated.
+      disposalSitePermit: '',
+      disposalSiteCarrierReg: '',
     }];
   }
   return meta.map((m, i) => {
@@ -3030,6 +3036,9 @@ const buildDefaultLines = (jobObj) => {
       // on the synthesised-line case above).
       disposalSiteName: '',
       disposalSiteAddress: '',
+      // fix16: see synthesised-line case above
+      disposalSitePermit: '',
+      disposalSiteCarrierReg: '',
     };
   });
 };
@@ -3076,6 +3085,8 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns) => {
         // Phase 3 (post-fix11) — informational disposal site
         disposalSiteName: saved.disposalSiteName || '',
         disposalSiteAddress: saved.disposalSiteAddress || '',
+        disposalSitePermit: saved.disposalSitePermit || '',
+        disposalSiteCarrierReg: saved.disposalSiteCarrierReg || '',
         // Preserve the saved row id and suffix so we can update in place
         // rather than insert duplicates.
         _savedId: saved.id,
@@ -3105,6 +3116,8 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns) => {
         skipSize: m.productName || skipSize || '',
         disposalSiteName: '',
         disposalSiteAddress: '',
+        disposalSitePermit: '',
+        disposalSiteCarrierReg: '',
       });
     }
   }
@@ -4036,9 +4049,11 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;background
 ${f.disposalSiteName||f.disposalSiteAddress?`<div class="row row1">
   <div class="cell" style="background:#f9fafb;">
     <div class="lbl" style="color:#475569;">Intended onward disposal site <span style="font-weight:400;color:#94a3b8;">(informational — for the customer's records; does not alter the legal transferee in Section C)</span></div>
-    <div style="display:grid;grid-template-columns:1fr 2fr;gap:4px;margin-top:4px;">
+    <div style="display:grid;grid-template-columns:2fr 3fr 2fr 2fr;gap:4px;margin-top:4px;">
       <div><div class="lbl">Site name</div><div class="val">${f.disposalSiteName||'—'}</div></div>
       <div><div class="lbl">Address</div><div style="font-size:10px;font-weight:600;">${f.disposalSiteAddress||'—'}</div></div>
+      <div><div class="lbl">Permit / Exemption</div><div style="font-size:10px;font-weight:600;">${f.disposalSitePermit||'—'}</div></div>
+      <div><div class="lbl">Carrier Reg (CBDU)</div><div style="font-size:10px;font-weight:600;">${f.disposalSiteCarrierReg||'—'}</div></div>
     </div>
   </div>
 </div>`:''}
@@ -4113,6 +4128,9 @@ const buildMultiWtnHtml = (wtnFields, job) => {
       // Phase 3 (post-fix11) — per-line informational disposal site
       disposalSiteName: line.disposalSiteName || '',
       disposalSiteAddress: line.disposalSiteAddress || '',
+      // fix16
+      disposalSitePermit: line.disposalSitePermit || '',
+      disposalSiteCarrierReg: line.disposalSiteCarrierReg || '',
     };
     // Strip the `lines` array from the snapshot so buildWtnHtml only sees
     // the flat shape it was designed for.
@@ -6002,13 +6020,23 @@ const [isEvent, setIsEvent] = useState(false);
                                       onChange={e => {
                                         const siteName = e.target.value;
                                         if (!siteName) {
-                                          updateLine({ disposalSiteName: '', disposalSiteAddress: '' });
+                                          updateLine({ disposalSiteName: '', disposalSiteAddress: '', disposalSitePermit: '', disposalSiteCarrierReg: '' });
                                           return;
                                         }
                                         const site = sites.find(s => (s.siteName || s.name) === siteName);
                                         if (site) {
                                           const addr = [site.address, site.postcode].filter(Boolean).join(', ');
-                                          updateLine({ disposalSiteName: site.siteName || site.name, disposalSiteAddress: addr });
+                                          // fix16: also pull the site's permit and carrier registration
+                                          // so they show on the WTN's Section D "Intended Onward Disposal
+                                          // Site" block. The customer wants to see that the onward facility
+                                          // is regulated — even though it's informational (the legal
+                                          // transferee for THIS transfer is still the carrier in Section C).
+                                          updateLine({
+                                            disposalSiteName: site.siteName || site.name,
+                                            disposalSiteAddress: addr,
+                                            disposalSitePermit: site.permitNumber || '',
+                                            disposalSiteCarrierReg: site.cbduNumber || '',
+                                          });
                                         } else {
                                           // Free-text fallback (shouldn't normally hit this — value
                                           // came from the dropdown options below)
@@ -15975,6 +16003,10 @@ function mapWtnRowToCamel(row) { return row ? ({
   // Stored as plain TEXT columns on the wtns table.
   disposalSiteName: row.disposal_site_name,
   disposalSiteAddress: row.disposal_site_address,
+  // fix16: site permit & carrier reg, also TEXT columns. Snapshot at save
+  // time so old WTNs stay accurate if the supplier's details change later.
+  disposalSitePermit: row.disposal_site_permit,
+  disposalSiteCarrierReg: row.disposal_site_carrier_reg,
   // Section B
   transferorName: row.transferor_name,
   transferorAddress: row.transferor_address,
@@ -16140,6 +16172,9 @@ function wtnFieldsToRows(wtnFields, jobId) {
       // Phase 3 (post-fix11) — informational disposal site
       disposalSiteName: wtnFields.disposalSiteName || '',
       disposalSiteAddress: wtnFields.disposalSiteAddress || '',
+      // fix16: see comment in mapWtnRowToCamel
+      disposalSitePermit: wtnFields.disposalSitePermit || '',
+      disposalSiteCarrierReg: wtnFields.disposalSiteCarrierReg || '',
     });
   }
   // Sort by lineItemIndex so suffix order is deterministic
@@ -16174,6 +16209,13 @@ function wtnFieldsToRows(wtnFields, jobId) {
       // Section C still records the legal transferee (the carrier).
       disposal_site_name: line.disposalSiteName || null,
       disposal_site_address: line.disposalSiteAddress || null,
+      // fix16: site permit & carrier reg, snapshotted at save time so the
+      // WTN remains an accurate legal record if the supplier's details
+      // change later. Requires two columns on the wtns table:
+      //   ALTER TABLE wtns ADD COLUMN IF NOT EXISTS disposal_site_permit TEXT;
+      //   ALTER TABLE wtns ADD COLUMN IF NOT EXISTS disposal_site_carrier_reg TEXT;
+      disposal_site_permit: line.disposalSitePermit || null,
+      disposal_site_carrier_reg: line.disposalSiteCarrierReg || null,
       // Section B — Transferor (shared across all WTNs on this job)
       transferor_name: wtnFields.transferorName || null,
       transferor_address: wtnFields.transferorAddress || null,
