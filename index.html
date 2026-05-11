@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix16b-2026-05-11-disposal-permit-diagnostic';
+        window.PHASE3_BUILD = 'fix17-2026-05-11-disposal-permit-hydration';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-11T13:30:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-11T13:45:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -3881,6 +3881,59 @@ useEffect(() => {
     })();
   }
 }, []);
+
+// fix16b — Hydrate disposal-site permit / CBDU from the supplier record.
+//
+// Why this exists: the Intended Disposal Site picker writes permit + CBDU
+// into line state via its onChange handler. But onChange only fires when
+// the dropdown's value actually CHANGES. Re-selecting the already-selected
+// option (the common case when opening an existing WTN to add the permit
+// snapshot for the first time) is a no-op — the onChange never runs, the
+// line's disposalSitePermit stays empty, and save writes NULL.
+//
+// This effect is the backstop: whenever a line has a disposalSiteName that
+// matches a supplier site, and the line's disposalSitePermit is empty, fill
+// it from the supplier. Idempotent — once the line has a permit it stops
+// patching. Also auto-fixes the 178 existing WTNs the moment a user opens
+// any of them, without anyone clicking anything.
+useEffect(() => {
+  if (!Array.isArray(wtnFields.lines) || wtnFields.lines.length === 0) return;
+  if (!Array.isArray(suppliers) || suppliers.length === 0) return;
+
+  // Find the supplier whose site list we should look up against. This is
+  // the same lookup the picker uses (by transferee name).
+  const sup = suppliers.find(s => (s.name || s.companyName) === wtnFields.transfereeName);
+  const rawSites = sup?.siteAddresses || sup?.site_addresses;
+  let sites = [];
+  if (Array.isArray(rawSites)) sites = rawSites;
+  else if (typeof rawSites === 'string') { try { sites = JSON.parse(rawSites); } catch(_) { sites = []; } }
+  if (sites.length === 0) return;
+
+  // For each included line: if disposalSiteName matches a supplier site but
+  // permit/CBDU are empty, patch from the site record. Only patches when
+  // the supplier site actually HAS a non-empty value — avoids writing
+  // empty-strings-over-empty-strings and re-triggering the effect.
+  let anyChanged = false;
+  const nextLines = wtnFields.lines.map(line => {
+    if (!line.disposalSiteName) return line;
+    if (line.disposalSitePermit && line.disposalSiteCarrierReg) return line;
+    const site = sites.find(s => (s.siteName || s.name) === line.disposalSiteName);
+    if (!site) return line;
+    const wantPermit = !line.disposalSitePermit && site.permitNumber;
+    const wantCbdu = !line.disposalSiteCarrierReg && site.cbduNumber;
+    if (!wantPermit && !wantCbdu) return line;
+    anyChanged = true;
+    return {
+      ...line,
+      ...(wantPermit ? { disposalSitePermit: site.permitNumber } : {}),
+      ...(wantCbdu ? { disposalSiteCarrierReg: site.cbduNumber } : {}),
+    };
+  });
+  if (anyChanged) {
+    console.log('[fix16b] Hydrated disposal-site permit/CBDU from supplier record');
+    setWtnFields(prev => ({ ...prev, lines: nextLines }));
+  }
+}, [suppliers, wtnFields.transfereeName, wtnFields.lines]);
 
 const wtnTotalPct = wtnFields.recycledPct + wtnFields.recoveredPct + wtnFields.landfillPct;
 
