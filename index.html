@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix23-diag3-2026-05-12-render-trace';
+        window.PHASE3_BUILD = 'fix24-2026-05-12-section-c-backstop';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:50:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T11:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -3420,21 +3420,6 @@ const [wtnFields, setWtnFields] = useState(() => {
   // even if the legacy wtn_data blob is null. Synthesise a minimal flat
   // object from the first wtns row so the branch has something to read.
   const savedWtn = legacyBlob || (hasNewWtns ? job.wtns[0] : null);
-  // fix23-diag — log what the form sees at open. Want to confirm whether
-  // job.wtns is populated with the freshly-saved values, or whether the
-  // form is reading from a stale legacy blob.
-  try {
-    console.log('[WTN form open DIAG]', {
-      jobNumber: job?.jobNumber || job?.job_number,
-      hasLegacyBlob: !!legacyBlob,
-      legacyBlobCR: legacyBlob?.transfereeCarrierReg,
-      legacyBlobPerm: legacyBlob?.transfereePermitNumber,
-      hasNewWtns,
-      wtnsCount: Array.isArray(job?.wtns) ? job.wtns.length : null,
-      wtns0CR: job?.wtns?.[0]?.transfereeCarrierReg,
-      wtns0Perm: job?.wtns?.[0]?.transfereePermitNumber,
-    });
-  } catch (e) {}
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().slice(0,5);
@@ -4049,6 +4034,34 @@ useEffect(() => {
         }
       } catch(e) {}
     })();
+  }
+
+  // fix24 — Section C hydration backstop.
+  //
+  // Why this exists: the useState init for wtnFields is supposed to load
+  // Section C (transferee carrier reg + permit) from the saved wtns row
+  // and/or the legacy wtn_data blob. But something in the chain of
+  // useEffects that runs on form mount sometimes leaves these fields
+  // empty even when the data is sitting right there in job.wtns[0].
+  // Rather than chase the exact culprit further, this effect is the
+  // safety net: after mount, if Section C is empty AND job.wtns has a
+  // value for it, write it into state. Idempotent — once state has a
+  // value, this leaves it alone. Mirrors the fix17 pattern used for
+  // disposal-site permit.
+  if (job?.id && Array.isArray(job?.wtns) && job.wtns.length > 0) {
+    const w0 = job.wtns[0];
+    const savedCR = w0?.transfereeCarrierReg || '';
+    const savedPerm = w0?.transfereePermitNumber || '';
+    if (savedCR || savedPerm) {
+      setWtnFields(prev => {
+        const patch = {};
+        if (savedCR && !prev.transfereeCarrierReg) patch.transfereeCarrierReg = savedCR;
+        if (savedPerm && !prev.transfereePermitNumber) patch.transfereePermitNumber = savedPerm;
+        if (Object.keys(patch).length === 0) return prev;
+        console.log('[WTN] Section C hydrated from job.wtns[0]:', patch);
+        return { ...prev, ...patch };
+      });
+    }
   }
 
   // ── WTN Autocomplete from previous WTNs ──────────────────────────
@@ -4920,20 +4933,6 @@ const [isEvent, setIsEvent] = useState(false);
       if (job?.id) {
         try {
           const wtnRows = window.wtnFieldsToRows(wtnFields, job.id);
-          // fix23-diag — log Section C state at the moment of save so we can
-          // verify the typing actually reached wtnFields before the upsert.
-          console.log('[Update Job DIAG]', {
-            transfereeCarrierReg: wtnFields.transfereeCarrierReg,
-            transfereePermitNumber: wtnFields.transfereePermitNumber,
-            transfereeName: wtnFields.transfereeName,
-            transferorPermitNumber: wtnFields.transferorPermitNumber,
-            rowsAboutToSave: wtnRows.map(r => ({
-              idx: r.line_item_index,
-              wtn: r.wtn_number,
-              cr: r.transferee_carrier_reg,
-              perm: r.transferee_permit_number,
-            })),
-          });
           if (wtnRows.length > 0) {
             await window.saveWtnsForJob(job.id, wtnRows);
             console.log(`[Phase 3] Update Job: saved ${wtnRows.length} WTN row(s) for job ${job.id}`);
@@ -6533,7 +6532,6 @@ const [isEvent, setIsEvent] = useState(false);
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *<span className="text-gray-400 font-normal ml-1">— supplier's registered address</span></label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeAddress} onChange={e=>setWtnFields({...wtnFields,transfereeAddress:e.target.value})} placeholder="Pulled from supplier record" /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg No. (CBDU...) <span className="text-gray-400 font-normal">— supplier's, not yours</span> <WtnSuggestBadge field="transfereeCarrierReg" /></label>
-                          {(() => { try { console.log('[Section C render DIAG]', { CR: wtnFields.transfereeCarrierReg, Perm: wtnFields.transfereePermitNumber, len: wtnFields?.transfereeCarrierReg?.length }); } catch(e){} return null; })()}
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeCarrierReg} onChange={e=>{setWtnFields({...wtnFields,transfereeCarrierReg:e.target.value}); setWtnSuggestions(s=>({...s, transfereeCarrierReg: undefined}));}} placeholder="Supplier's CBDU number" /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Environmental Permit / Exemption No. <WtnSuggestBadge field="transfereePermitNumber" /></label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transfereePermitNumber} onChange={e=>{setWtnFields({...wtnFields,transfereePermitNumber:e.target.value}); setWtnSuggestions(s=>({...s, transfereePermitNumber: undefined}));}} placeholder="e.g. EPR/AB1234CD" /></div>
