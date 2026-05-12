@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix19b-2026-05-11-cascade-preserve-wtn-number';
+        window.PHASE3_BUILD = 'fix20b-2026-05-11-portal-batch-plus-cleanup';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-11T16:25:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T08:15:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -1542,6 +1542,144 @@ return (
           const [portalBookingData, setPortalBookingData] = React.useState(null);
           const [portalBookingSaving, setPortalBookingSaving] = React.useState(false);
           const [wtnModalJob, setWtnModalJob] = React.useState(null);
+          // fix20 — batch WTN download. Track which jobs the customer has
+          // ticked in the portal list. Selecting a job means "give me all
+          // WTNs attached to it" — multi-line jobs contribute multiple
+          // notes, single-line jobs contribute one.
+          const [selectedJobIds, setSelectedJobIds] = React.useState(() => new Set());
+          const [batchDownloading, setBatchDownloading] = React.useState(false);
+          const toggleJobSelected = React.useCallback((jobId) => {
+            setSelectedJobIds(prev => {
+              const next = new Set(prev);
+              if (next.has(jobId)) next.delete(jobId); else next.add(jobId);
+              return next;
+            });
+          }, []);
+          const clearSelection = React.useCallback(() => setSelectedJobIds(new Set()), []);
+
+          // Stitch the print pages of every WTN on every selected job into
+          // one HTML document and open it in a new tab. Customer hits print
+          // once and gets a single PDF/printout with all notes.
+          //
+          // Mechanism: the existing print endpoint /api/gmail?action=wtn&id=X
+          // returns ready-to-print HTML for a single WTN. We fetch each one,
+          // strip <html>/<body> wrappers, and concatenate the bodies with a
+          // page-break between each. The combined document re-uses each WTN's
+          // own <style> tags so layout is preserved exactly.
+          const downloadSelectedWtns = React.useCallback(async (jobsList) => {
+            if (batchDownloading) return;
+            const selectedJobs = jobsList.filter(j => selectedJobIds.has(j.id));
+            if (selectedJobs.length === 0) {
+              alert('No jobs selected.');
+              return;
+            }
+            // Collect WTN numbers from each selected job. Multi-line jobs
+            // have multiple wtns rows; legacy jobs may have only the single
+            // wtn_number/wtn_data field. Cover both.
+            const wtnIds = [];
+            for (const job of selectedJobs) {
+              if (Array.isArray(job.wtns) && job.wtns.length > 0) {
+                job.wtns.forEach(w => { if (w.wtnNumber) wtnIds.push(w.wtnNumber); });
+              } else if (job.wtn_number) {
+                wtnIds.push(job.wtn_number);
+              } else {
+                // Synthesize from job number for legacy rows that have wtn_data
+                // but no explicit wtn_number column.
+                wtnIds.push('WTN-' + (job.job_number || job.jobNumber));
+              }
+            }
+            if (wtnIds.length === 0) {
+              alert('None of the selected jobs have a Waste Transfer Note available.');
+              return;
+            }
+
+            setBatchDownloading(true);
+            // Open the new tab immediately — most browsers block window.open
+            // when called from a delayed async callback (treats it as a popup).
+            // We open with about:blank first and write into it as data arrives.
+            const printWin = window.open('', '_blank');
+            if (!printWin) {
+              setBatchDownloading(false);
+              alert("Couldn't open a new tab — please check your browser's popup blocker and try again.");
+              return;
+            }
+            printWin.document.write('<!doctype html><html><head><title>Loading WTNs…</title><meta charset="utf-8"><style>body{font-family:system-ui,sans-serif;padding:40px;color:#555;}</style></head><body>Loading ' + wtnIds.length + ' Waste Transfer Note' + (wtnIds.length === 1 ? '' : 's') + '…</body></html>');
+
+            try {
+              const baseUrl = 'https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=';
+              const results = await Promise.all(wtnIds.map(async id => {
+                try {
+                  const r = await fetch(baseUrl + encodeURIComponent(id));
+                  if (!r.ok) return { id, html: null, err: 'HTTP ' + r.status };
+                  const html = await r.text();
+                  return { id, html, err: null };
+                } catch (e) {
+                  return { id, html: null, err: e.message };
+                }
+              }));
+
+              const okResults = results.filter(r => r.html);
+              const failed = results.filter(r => !r.html);
+
+              // Extract <body>...</body> AND <style>...</style> blocks from
+              // each result. We keep all the page's styles together at the
+              // top of the combined doc so all WTNs render correctly.
+              const styles = [];
+              const bodies = [];
+              for (const r of okResults) {
+                const styleMatches = r.html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) || [];
+                styleMatches.forEach(s => { if (!styles.includes(s)) styles.push(s); });
+                const bodyMatch = r.html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+                bodies.push(bodyMatch ? bodyMatch[1] : r.html);
+              }
+
+              const pageBreakCss = `
+                <style>
+                  @media print { .tws-wtn-page-break { page-break-after: always; break-after: page; } }
+                  .tws-wtn-page-break { margin: 60px 0; border-top: 2px dashed #ccc; }
+                  .tws-wtn-batch-banner { background:#15803d; color:#fff; padding:14px 20px; font-family:system-ui,sans-serif; margin-bottom:24px; border-radius:6px; }
+                  .tws-wtn-batch-banner h1 { margin:0 0 4px 0; font-size:16px; }
+                  .tws-wtn-batch-banner p { margin:0; font-size:13px; opacity:0.9; }
+                  @media print { .tws-wtn-batch-banner { display:none; } }
+                </style>`;
+
+              const banner = `
+                <div class="tws-wtn-batch-banner">
+                  <h1>📄 ${okResults.length} Waste Transfer Note${okResults.length === 1 ? '' : 's'} — ready to print</h1>
+                  <p>Press <strong>Cmd+P</strong> (Mac) or <strong>Ctrl+P</strong> (Windows) to print or save all notes as a single PDF.${failed.length > 0 ? ` ${failed.length} note${failed.length === 1 ? '' : 's'} failed to load — see the bottom of this page.` : ''}</p>
+                </div>`;
+
+              const failedSection = failed.length === 0 ? '' : `
+                <div style="margin-top:60px;padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-family:system-ui,sans-serif;">
+                  <strong style="color:#991b1b;">Failed to load:</strong>
+                  <ul style="margin:8px 0 0 20px;color:#7f1d1d;font-size:13px;">
+                    ${failed.map(f => `<li>${f.id} (${f.err})</li>`).join('')}
+                  </ul>
+                </div>`;
+
+              const stitched = bodies.map((b, i) =>
+                `<div class="tws-wtn-single">${b}</div>` + (i < bodies.length - 1 ? '<div class="tws-wtn-page-break"></div>' : '')
+              ).join('\n');
+
+              const finalHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Waste Transfer Notes (${okResults.length})</title>${styles.join('\n')}${pageBreakCss}</head><body>${banner}${stitched}${failedSection}</body></html>`;
+
+              // Replace the loading page with the stitched document.
+              printWin.document.open();
+              printWin.document.write(finalHtml);
+              printWin.document.close();
+              printWin.document.title = `Waste Transfer Notes (${okResults.length})`;
+            } catch (err) {
+              try {
+                printWin.document.open();
+                printWin.document.write('<!doctype html><html><body style="font-family:system-ui;padding:40px;color:#991b1b;">Failed to load WTNs: ' + (err.message || err) + '</body></html>');
+                printWin.document.close();
+              } catch(_) {}
+              console.error('[batch WTN download] failed:', err);
+            } finally {
+              setBatchDownloading(false);
+            }
+          }, [selectedJobIds, batchDownloading]);
+
           const [showInstallHelp, setShowInstallHelp] = React.useState(false);
           const [showInstallBanner, setShowInstallBanner] = React.useState(() => {
             // Don't show if running as installed PWA, or recently dismissed (7 days).
@@ -1788,6 +1926,41 @@ return (
                         </colgroup>
                         <thead className="bg-gray-50 text-xs uppercase border-b">
                           <tr>
+                            <th className="px-3 py-3 text-left w-10">
+                              {/* fix20 — batch select. Header checkbox toggles all visible jobs that have a WTN. */}
+                              {(() => {
+                                const selectableJobs = filteredJobs.filter(j => {
+                                  const done = j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED';
+                                  const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(j.job_type);
+                                  const hasWtn = (Array.isArray(j.wtns) && j.wtns.length > 0)
+                                    || j.wtn_portal_visible
+                                    || ((j.wtn_sent || j.wtn_sent_at) && done && j.wtn_data);
+                                  return isWasteJob && hasWtn;
+                                });
+                                if (selectableJobs.length === 0) return null;
+                                const allSelected = selectableJobs.every(j => selectedJobIds.has(j.id));
+                                const someSelected = !allSelected && selectableJobs.some(j => selectedJobIds.has(j.id));
+                                return (
+                                  <input
+                                    type="checkbox"
+                                    checked={allSelected}
+                                    ref={el => { if (el) el.indeterminate = someSelected; }}
+                                    onChange={e => {
+                                      const next = new Set(selectedJobIds);
+                                      if (allSelected) {
+                                        selectableJobs.forEach(j => next.delete(j.id));
+                                      } else {
+                                        selectableJobs.forEach(j => next.add(j.id));
+                                      }
+                                      setSelectedJobIds(next);
+                                    }}
+                                    onClick={e => e.stopPropagation()}
+                                    title={allSelected ? 'Deselect all' : 'Select all visible WTNs'}
+                                    className="w-4 h-4 cursor-pointer"
+                                  />
+                                );
+                              })()}
+                            </th>
                             <th className="px-5 py-3 text-left"><SortBtn field="jobref" label="Job Ref" /></th>
                             <th className="px-5 py-3 text-left"><SortBtn field="date" label="Date" /></th>
                             <th className="px-5 py-3 text-left"><SortBtn field="type" label="Service" /></th>
@@ -1799,7 +1972,7 @@ return (
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {filteredJobs.length === 0 ? (
-                            <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-400">No jobs found.</td></tr>
+                            <tr><td colSpan={8} className="px-5 py-8 text-center text-gray-400">No jobs found.</td></tr>
                           ) : filteredJobs.map(job => {
                             const done = job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED';
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
@@ -1828,6 +2001,17 @@ return (
                                   className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-100' : done ? 'bg-green-50 hover:bg-green-100' : cancelled ? 'bg-red-50 hover:bg-red-100' : isInvoiced ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}
                                   onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
                                 >
+                                  <td className="px-3 py-3 w-10" onClick={e => e.stopPropagation()}>
+                                    {isWasteJob && hasWtn ? (
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedJobIds.has(job.id)}
+                                        onChange={() => toggleJobSelected(job.id)}
+                                        title="Include in batch download"
+                                        className="w-4 h-4 cursor-pointer"
+                                      />
+                                    ) : null}
+                                  </td>
                                   <td className="px-5 py-3 font-mono font-medium text-blue-700 text-xs flex items-center gap-1">
                                     <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''} inline-block`}>▶</span>
                                     {job.job_number}
@@ -1879,7 +2063,7 @@ return (
                                 </tr>
                                 {isExpanded && (
                                   <tr className="bg-green-50">
-                                    <td colSpan={7} className="px-8 py-4 border-t border-green-100">
+                                    <td colSpan={8} className="px-8 py-4 border-t border-green-100">
                                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs" style={{gridTemplateColumns:"repeat(3,minmax(0,1fr))",overflow:"hidden"}}>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Job Reference</div><div className="font-semibold">{job.job_number}</div></div>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Service</div><div className="font-semibold">{job.job_type}</div></div>
@@ -2007,7 +2191,21 @@ return (
                             })();
 
                             return (
-                              <div key={job.id} className={`${isExpanded ? 'bg-green-50' : done ? 'bg-green-50' : cancelled ? 'bg-red-50' : isInvoiced ? 'bg-green-50' : 'bg-white'}`}>
+                              <div key={job.id} className={`${isExpanded ? 'bg-green-50' : done ? 'bg-green-50' : cancelled ? 'bg-red-50' : isInvoiced ? 'bg-green-50' : 'bg-white'} relative`}>
+                                {/* fix20 — batch select checkbox on mobile card.
+                                    Positioned absolute so it sits visually inside the card header
+                                    without nesting an <input> inside a <button> (invalid HTML). */}
+                                {isWasteJob && hasWtn && (
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedJobIds.has(job.id)}
+                                    onChange={() => toggleJobSelected(job.id)}
+                                    onClick={e => e.stopPropagation()}
+                                    aria-label="Include in batch download"
+                                    className="absolute top-4 right-4 z-10 w-5 h-5 cursor-pointer"
+                                    style={{margin:0}}
+                                  />
+                                )}
                                 {/* Card header — always visible */}
                                 <button
                                   className="w-full px-4 py-3 flex items-start gap-3 text-left active:bg-gray-50"
@@ -2108,6 +2306,57 @@ return (
                   })()}
                 </div>
               </div>
+
+              {/* fix20 — Floating batch-download bar.
+                  Appears when one or more jobs are ticked. Sticks to the bottom
+                  of the viewport so it's always reachable on mobile. Shows
+                  selection count + Download Selected + Clear. */}
+              {selectedJobIds.size > 0 && (
+                <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-green-600 shadow-2xl">
+                  <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold flex-shrink-0">
+                        {selectedJobIds.size}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-gray-900 text-sm sm:text-base">
+                          {selectedJobIds.size} job{selectedJobIds.size === 1 ? '' : 's'} selected
+                        </div>
+                        <div className="text-xs text-gray-500 truncate">
+                          All Waste Transfer Notes will be combined for printing
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={clearSelection}
+                        disabled={batchDownloading}
+                        className="px-3 sm:px-4 py-2 text-xs sm:text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50"
+                      >Clear</button>
+                      <button
+                        onClick={() => downloadSelectedWtns(myJobs)}
+                        disabled={batchDownloading}
+                        className="px-4 sm:px-5 py-2 sm:py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg text-xs sm:text-sm font-bold flex items-center gap-2"
+                      >
+                        {batchDownloading ? (
+                          <>
+                            <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25"/>
+                              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+                            </svg>
+                            <span>Loading…</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>📥</span>
+                            <span>Download Selected</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* WTN Inline Modal */}
               {wtnModalJob && (
@@ -3049,7 +3298,7 @@ const buildDefaultLines = (jobObj) => {
 // with `included=true`. Any line items on the job that don't have a
 // matching saved WTN are added with `included=false` so staff can tick
 // them to create new WTNs.
-const buildLinesFromSavedWtns = (jobObj, savedWtns) => {
+const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
   if (!Array.isArray(savedWtns) || savedWtns.length === 0) return buildDefaultLines(jobObj);
   const meta = parseJobLineItems(jobObj);
   // Map saved WTNs by line_item_index
@@ -3058,6 +3307,25 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns) => {
     const idx = (w.lineItemIndex != null) ? w.lineItemIndex : 0;
     if (!savedByIdx.has(idx)) savedByIdx.set(idx, w);
   });
+  // fix17b — pre-compute supplier site lookup for permit/CBDU hydration.
+  // The picker's onChange fires only on dropdown VALUE changes, so when a
+  // user re-opens an existing WTN the permit/CBDU stay blank in state until
+  // the JobForm's hydration useEffect catches up — which happens after first
+  // render, so Preview WTN on first open showed "—". Hydrating here puts the
+  // permit into the initial state, so the first render is already correct.
+  const sup = Array.isArray(suppliersList)
+    ? suppliersList.find(s => (s.name || s.companyName) === jobObj?.supplierName)
+    : null;
+  const supSites = (() => {
+    const raw = sup?.siteAddresses || sup?.site_addresses;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try { return JSON.parse(raw); } catch { return []; }
+  })();
+  const lookupSite = (name) => {
+    if (!name || supSites.length === 0) return null;
+    return supSites.find(s => (s.siteName || s.name) === name) || null;
+  };
   // Walk the job's line items in order and emit one line per item
   const lines = [];
   const maxIdx = Math.max(
@@ -3068,6 +3336,10 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns) => {
     const m = meta[i] || { lineItemIndex: i, productName: '', lineDescription: '', lineQty: null };
     const saved = savedByIdx.get(i);
     if (saved) {
+      // fix17b — hydrate permit/CBDU from supplier if the saved row is missing them.
+      const site = lookupSite(saved.disposalSiteName);
+      const hydratedPermit = (!saved.disposalSitePermit && site?.permitNumber) ? site.permitNumber : (saved.disposalSitePermit || '');
+      const hydratedCbdu = (!saved.disposalSiteCarrierReg && site?.cbduNumber) ? site.cbduNumber : (saved.disposalSiteCarrierReg || '');
       lines.push({
         lineItemIndex: i,
         productName: saved.lineItemProductName || m.productName || '',
@@ -3085,8 +3357,8 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns) => {
         // Phase 3 (post-fix11) — informational disposal site
         disposalSiteName: saved.disposalSiteName || '',
         disposalSiteAddress: saved.disposalSiteAddress || '',
-        disposalSitePermit: saved.disposalSitePermit || '',
-        disposalSiteCarrierReg: saved.disposalSiteCarrierReg || '',
+        disposalSitePermit: hydratedPermit,
+        disposalSiteCarrierReg: hydratedCbdu,
         // Preserve the saved row id and suffix so we can update in place
         // rather than insert duplicates.
         _savedId: saved.id,
@@ -3170,7 +3442,7 @@ const [wtnFields, setWtnFields] = useState(() => {
     // saved row. Otherwise fall back to a single-line view derived from
     // the savedWtn flat object — this is the legacy single-WTN case.
     const linesFromSaved = (Array.isArray(job?.wtns) && job.wtns.length > 0)
-      ? buildLinesFromSavedWtns(job, job.wtns)
+      ? buildLinesFromSavedWtns(job, job.wtns, suppliers)
       : (() => {
           const meta = parseJobLineItems(job);
           // Single legacy WTN — map it onto the first line item if any,
@@ -16235,21 +16507,7 @@ function wtnFieldsToRows(wtnFields, jobId) {
   const useSuffix = sorted.length > 1;
   const baseWtnNumber = wtnFields.wtnNumber || '';
 
-  // fix16b diagnostic — stash the disposal-site fields off each input line
-  // so we can see in the console whether the picker's onChange actually
-  // landed the permit/CBDU into state before save fired.
-  try {
-    window.__lastWtnInputLines = sorted.map(l => ({
-      lineItemIndex: l.lineItemIndex,
-      productName: l.productName,
-      disposalSiteName: l.disposalSiteName,
-      disposalSiteAddress: l.disposalSiteAddress,
-      disposalSitePermit: l.disposalSitePermit,
-      disposalSiteCarrierReg: l.disposalSiteCarrierReg,
-    }));
-  } catch(_) {}
-
-  const __rows = sorted.map((line, i) => {
+  return sorted.map((line, i) => {
     const suffix = useSuffix ? String.fromCharCode(65 + i) : null;
     // WTN number per row: append -A / -B / etc. when more than one line.
     // Single-line case: keep the original wtnNumber unchanged.
@@ -16320,24 +16578,6 @@ function wtnFieldsToRows(wtnFields, jobId) {
       recipient_email_source: wtnFields.recipientEmailSource || null,
     };
   });
-
-  // fix16b diagnostic — stash the rows we built so we can see what
-  // wtnFieldsToRows actually returned. If __lastWtnInputLines shows the
-  // permit but __lastWtnRows doesn't, the bug is in this function.
-  // If both show the permit but the DB row stays NULL, the bug is in the
-  // network/save path or the upsert payload.
-  try {
-    window.__lastWtnRows = __rows.map(r => ({
-      job_id: r.job_id,
-      wtn_number: r.wtn_number,
-      line_item_index: r.line_item_index,
-      disposal_site_name: r.disposal_site_name,
-      disposal_site_permit: r.disposal_site_permit,
-      disposal_site_carrier_reg: r.disposal_site_carrier_reg,
-    }));
-  } catch(_) {}
-
-  return __rows;
 }
 
 // `saveWtnsForJob(jobId, rows, opts)` — upserts rows into the `wtns`
@@ -16415,49 +16655,10 @@ async function saveWtnsForJob(jobId, rows, opts = {}) {
   // it as an unknown column.
   const upsertPayload = merged.map(({ __existingId, ...rest }) => rest);
 
-  // fix16b diagnostic — stash the exact payload going to Supabase so we can
-  // confirm whether disposal_site_permit / disposal_site_carrier_reg are
-  // actually in the wire request. Also stash existing-row state so we can
-  // see if a stale row (with NULL permit) is being preserved somehow.
-  try {
-    window.__lastWtnUpsert = {
-      jobId,
-      preserveStateColumns,
-      existingRowCount: (existing || []).length,
-      existingIdsByIdx: Object.fromEntries((existing || []).map(r => [r.line_item_index, r.id])),
-      payload: upsertPayload.map(p => ({
-        job_id: p.job_id,
-        wtn_number: p.wtn_number,
-        line_item_index: p.line_item_index,
-        disposal_site_name: p.disposal_site_name,
-        disposal_site_permit: p.disposal_site_permit,
-        disposal_site_carrier_reg: p.disposal_site_carrier_reg,
-        // include the full key list so we can spot missing columns
-        __keys: Object.keys(p),
-      })),
-    };
-  } catch(_) {}
-
   const { data, error } = await window.supabase
     .from('wtns')
     .upsert(upsertPayload, { onConflict: 'job_id,line_item_index' })
     .select();
-  // fix16b diagnostic — stash the response (or error) from the upsert so
-  // we can see exactly what came back, including any silent column drops.
-  try {
-    window.__lastWtnUpsertResult = {
-      error: error ? { message: error.message, details: error.details, hint: error.hint, code: error.code } : null,
-      returnedRowCount: (data || []).length,
-      returnedRows: (data || []).map(r => ({
-        id: r.id,
-        wtn_number: r.wtn_number,
-        line_item_index: r.line_item_index,
-        disposal_site_name: r.disposal_site_name,
-        disposal_site_permit: r.disposal_site_permit,
-        disposal_site_carrier_reg: r.disposal_site_carrier_reg,
-      })),
-    };
-  } catch(_) {}
   if (error) {
     // Fallback: per-row UPDATE (using __existingId sidecar) or INSERT.
     // Used when the upsert's column-union behaviour or some other PostgREST
@@ -16541,6 +16742,26 @@ const CASCADE_PRESERVE_ON_CHILD = new Set([
 // (snake_case, as stored in the DB), pushes those rows to every child.
 async function applyCascadeToChildren(parentJobId, parentRows) {
   if (!parentJobId) return { okCount: 0, totalChildren: 0 };
+  // fix20b — dedup guard. handleUpdateJob can save the parent's wtns via
+  // saveWtnsForJob (which fires cascadeToChildrenIfParent) AND then call
+  // cascadeWtnFromParent at the end of the same flow, doubling the writes.
+  // We track in-flight cascades per parent and no-op duplicates within a
+  // short window. The marker auto-clears after 5s in case of crashes.
+  if (!window.__cascadeInFlight) window.__cascadeInFlight = new Map();
+  const lastAt = window.__cascadeInFlight.get(parentJobId);
+  const now = Date.now();
+  if (lastAt && (now - lastAt) < 5000) {
+    console.log(`[cascade] skipping duplicate cascade for parent ${parentJobId} (last fired ${now - lastAt}ms ago)`);
+    return { okCount: 0, totalChildren: 0, skipped: true };
+  }
+  window.__cascadeInFlight.set(parentJobId, now);
+  // Auto-clear in case the function never reaches its cleanup path.
+  setTimeout(() => {
+    if (window.__cascadeInFlight.get(parentJobId) === now) {
+      window.__cascadeInFlight.delete(parentJobId);
+    }
+  }, 5000);
+
   if (!Array.isArray(parentRows) || parentRows.length === 0) {
     console.log(`[cascade] parent ${parentJobId} has no wtns rows to cascade`);
     return { okCount: 0, totalChildren: 0 };
