@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix20b-2026-05-11-portal-batch-plus-cleanup';
+        window.PHASE3_BUILD = 'fix21b-2026-05-12-saved-wins-supplier-fallback';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T08:15:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T09:55:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -1890,6 +1890,34 @@ return (
                           {(portalFilter !== 'all' || portalSearch) && <span className="text-green-600 font-normal ml-2 text-xs">({filteredJobs.length} of {myJobs.length})</span>}
                         </span>
                         <div className="flex items-center gap-2 flex-shrink-0">
+                          {/* fix20b — select-all-WTNs link. Replaces the per-column
+                              header checkbox so we don't add an extra column. Only
+                              shows when there's at least one downloadable WTN in
+                              the filtered view. */}
+                          {(() => {
+                            const selectableJobs = filteredJobs.filter(j => {
+                              const done = j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED';
+                              const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(j.job_type);
+                              const hasWtn = (Array.isArray(j.wtns) && j.wtns.length > 0)
+                                || j.wtn_portal_visible
+                                || ((j.wtn_sent || j.wtn_sent_at) && done && j.wtn_data);
+                              return isWasteJob && hasWtn;
+                            });
+                            if (selectableJobs.length === 0) return null;
+                            const allSelected = selectableJobs.every(j => selectedJobIds.has(j.id));
+                            return (
+                              <button onClick={() => {
+                                const next = new Set(selectedJobIds);
+                                if (allSelected) selectableJobs.forEach(j => next.delete(j.id));
+                                else selectableJobs.forEach(j => next.add(j.id));
+                                setSelectedJobIds(next);
+                              }}
+                              className="text-xs px-2 py-2 rounded-lg border border-gray-200 text-green-700 hover:bg-green-50 flex-shrink-0 font-medium"
+                              title={allSelected ? 'Deselect all WTNs' : 'Select all WTNs in this view'}>
+                                {allSelected ? '☐ Deselect all' : '☑ Select all'}
+                              </button>
+                            );
+                          })()}
                           <button onClick={async (e) => {
                             const btn = e.currentTarget;
                             btn.style.transform = 'rotate(360deg)';
@@ -1926,41 +1954,6 @@ return (
                         </colgroup>
                         <thead className="bg-gray-50 text-xs uppercase border-b">
                           <tr>
-                            <th className="px-3 py-3 text-left w-10">
-                              {/* fix20 — batch select. Header checkbox toggles all visible jobs that have a WTN. */}
-                              {(() => {
-                                const selectableJobs = filteredJobs.filter(j => {
-                                  const done = j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED';
-                                  const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(j.job_type);
-                                  const hasWtn = (Array.isArray(j.wtns) && j.wtns.length > 0)
-                                    || j.wtn_portal_visible
-                                    || ((j.wtn_sent || j.wtn_sent_at) && done && j.wtn_data);
-                                  return isWasteJob && hasWtn;
-                                });
-                                if (selectableJobs.length === 0) return null;
-                                const allSelected = selectableJobs.every(j => selectedJobIds.has(j.id));
-                                const someSelected = !allSelected && selectableJobs.some(j => selectedJobIds.has(j.id));
-                                return (
-                                  <input
-                                    type="checkbox"
-                                    checked={allSelected}
-                                    ref={el => { if (el) el.indeterminate = someSelected; }}
-                                    onChange={e => {
-                                      const next = new Set(selectedJobIds);
-                                      if (allSelected) {
-                                        selectableJobs.forEach(j => next.delete(j.id));
-                                      } else {
-                                        selectableJobs.forEach(j => next.add(j.id));
-                                      }
-                                      setSelectedJobIds(next);
-                                    }}
-                                    onClick={e => e.stopPropagation()}
-                                    title={allSelected ? 'Deselect all' : 'Select all visible WTNs'}
-                                    className="w-4 h-4 cursor-pointer"
-                                  />
-                                );
-                              })()}
-                            </th>
                             <th className="px-5 py-3 text-left"><SortBtn field="jobref" label="Job Ref" /></th>
                             <th className="px-5 py-3 text-left"><SortBtn field="date" label="Date" /></th>
                             <th className="px-5 py-3 text-left"><SortBtn field="type" label="Service" /></th>
@@ -1972,7 +1965,7 @@ return (
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {filteredJobs.length === 0 ? (
-                            <tr><td colSpan={8} className="px-5 py-8 text-center text-gray-400">No jobs found.</td></tr>
+                            <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-400">No jobs found.</td></tr>
                           ) : filteredJobs.map(job => {
                             const done = job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED';
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
@@ -2001,20 +1994,25 @@ return (
                                   className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-100' : done ? 'bg-green-50 hover:bg-green-100' : cancelled ? 'bg-red-50 hover:bg-red-100' : isInvoiced ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}
                                   onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
                                 >
-                                  <td className="px-3 py-3 w-10" onClick={e => e.stopPropagation()}>
-                                    {isWasteJob && hasWtn ? (
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedJobIds.has(job.id)}
-                                        onChange={() => toggleJobSelected(job.id)}
-                                        title="Include in batch download"
-                                        className="w-4 h-4 cursor-pointer"
-                                      />
-                                    ) : null}
-                                  </td>
-                                  <td className="px-5 py-3 font-mono font-medium text-blue-700 text-xs flex items-center gap-1">
-                                    <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''} inline-block`}>▶</span>
-                                    {job.job_number}
+                                  <td className="px-5 py-3 font-mono font-medium text-blue-700 text-xs">
+                                    <div className="flex items-center gap-2">
+                                      {/* fix20b — inline checkbox sits alongside the chevron so we don't
+                                          consume a whole table column. Only visible on rows with a WTN. */}
+                                      {isWasteJob && hasWtn ? (
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedJobIds.has(job.id)}
+                                          onChange={() => toggleJobSelected(job.id)}
+                                          onClick={e => e.stopPropagation()}
+                                          title="Include in batch download"
+                                          className="w-4 h-4 cursor-pointer flex-shrink-0"
+                                        />
+                                      ) : (
+                                        <span className="w-4 inline-block flex-shrink-0" />
+                                      )}
+                                      <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''} inline-block`}>▶</span>
+                                      <span>{job.job_number}</span>
+                                    </div>
                                   </td>
                                   <td className="px-5 py-3 text-gray-600 text-xs">{job.job_date ? new Date(job.job_date).toLocaleDateString('en-GB') : '—'}</td>
                                   <td className="px-5 py-3 text-gray-800 text-xs">
@@ -2063,7 +2061,7 @@ return (
                                 </tr>
                                 {isExpanded && (
                                   <tr className="bg-green-50">
-                                    <td colSpan={8} className="px-8 py-4 border-t border-green-100">
+                                    <td colSpan={7} className="px-8 py-4 border-t border-green-100">
                                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs" style={{gridTemplateColumns:"repeat(3,minmax(0,1fr))",overflow:"hidden"}}>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Job Reference</div><div className="font-semibold">{job.job_number}</div></div>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Service</div><div className="font-semibold">{job.job_type}</div></div>
@@ -3432,11 +3430,28 @@ const [wtnFields, setWtnFields] = useState(() => {
     const savedCarrierReg = savedWtn.transfereeCarrierReg || '';
     const savedPermitNum = savedWtn.transfereePermitNumber || '';
     const cbduInPermit = /^CBDU/i.test(savedPermitNum) && !savedCarrierReg;
-    // Also always re-derive carrier reg from supplier record (overrides stale saved value)
     const matchedSupplierForReg = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
-    const freshCarrierReg = matchedSupplierForReg?.wasteCarrierLicense || matchedSupplierForReg?.waste_carrier_license
-      || (cbduInPermit ? savedPermitNum : savedCarrierReg) || '';
-    const freshPermitNum = cbduInPermit ? '' : savedPermitNum;
+    // fix21b — carrier reg: saved value wins, supplier is the fallback.
+    // Previously this always re-derived from the supplier record (overriding
+    // any manual override saved per-WTN). The new rule matches the permit
+    // logic below: typed-and-saved values stick, blanks get filled from the
+    // supplier's waste_carrier_license. The cbduInPermit recovery still
+    // applies for legacy rows where the CBDU was mistakenly typed into the
+    // permit field.
+    const supplierCarrierFallback = matchedSupplierForReg?.wasteCarrierLicense
+      || matchedSupplierForReg?.waste_carrier_license
+      || '';
+    const freshCarrierReg = cbduInPermit
+      ? (savedPermitNum || supplierCarrierFallback)
+      : (savedCarrierReg || supplierCarrierFallback);
+    // fix21 — if the saved permit is empty (or held the CBDU by mistake),
+    // pull from the supplier's environmental_permit field. Saved value wins
+    // when present; supplier is the fallback.
+    const supplierPermitFallback = matchedSupplierForReg?.environmentalPermit
+      || matchedSupplierForReg?.environmental_permit
+      || '';
+    const freshPermitNum = cbduInPermit ? supplierPermitFallback
+      : (savedPermitNum || supplierPermitFallback);
     // Phase 3: build per-line state. If the job has multiple saved WTN
     // rows (job.wtns from Phase 2 enrichment), reconstruct one line per
     // saved row. Otherwise fall back to a single-line view derived from
@@ -3554,7 +3569,13 @@ const [wtnFields, setWtnFields] = useState(() => {
       ? [matchedSupplier.address, matchedSupplier.city, matchedSupplier.county, matchedSupplier.postcode].filter(Boolean).join(', ')
       : '';
   const supplierCarrierReg = autoSite?.cbduNumber || matchedSupplier?.wasteCarrierLicense || matchedSupplier?.waste_carrier_license || '';
-  const supplierPermitNumber = autoSite?.permitNumber || '';
+  // fix21 — Section C3 permit: try the auto-picked site's permit first
+  // (most specific), then fall back to the supplier's top-level
+  // environmental_permit field (typed in the supplier compliance form).
+  const supplierPermitNumber = autoSite?.permitNumber
+    || matchedSupplier?.environmentalPermit
+    || matchedSupplier?.environmental_permit
+    || '';
 
   // Auto-fill customer email from customers list
   const matchedCustomer = customers?.find(c => (c.name || c.companyName) === job?.customerName);
@@ -16107,6 +16128,7 @@ useEffect(() => {
           ...s,
           companyName: s.companyName || s.name,
           wasteCarrierLicense: s.wasteCarrierLicense || s.waste_carrier_license || '',
+          environmentalPermit: s.environmentalPermit || s.environmental_permit || '',
           vatNumber: s.vatNumber || s.vat_number || '',
           primaryContact: s.primaryContact || s.primary_contact || '',
           postcode: s.postcode || '',
@@ -19511,6 +19533,7 @@ const saveSupplierToDatabase = async (supplier) => {
     primary_services: JSON.stringify(supplier.primaryServices || []),
     service_areas: JSON.stringify(supplier.serviceAreas || []),
     waste_carrier_license: supplier.wasteCarrierLicense || '',
+    environmental_permit: supplier.environmentalPermit || '',
     is_draft: supplier.is_draft || supplier.isDraft || false,
   };
 
@@ -19551,6 +19574,7 @@ const saveSupplierToDatabase = async (supplier) => {
                 primary_services: JSON.stringify(updatedSupplier.primaryServices || []),
                 service_areas: JSON.stringify(updatedSupplier.serviceAreas || []),
                 waste_carrier_license: updatedSupplier.wasteCarrierLicense || '',
+                environmental_permit: updatedSupplier.environmentalPermit || '',
                 is_draft: updatedSupplier.is_draft || updatedSupplier.isDraft || false,
               };
               const { error } = await window.supabase
@@ -23135,6 +23159,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
               })(),
               isDraft: s.is_draft || s.isDraft || false,
               is_draft: s.is_draft || s.isDraft || false,
+              wasteCarrierLicense: s.wasteCarrierLicense || s.waste_carrier_license || '',
+              environmentalPermit: s.environmentalPermit || s.environmental_permit || '',
             };
           };
 
@@ -23158,6 +23184,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
             primaryServices: [],
             wasteCarrierLicense: '',
             wasteCarrierExpiry: '',
+            environmentalPermit: '',
             environmentalPermits: '',
             publicLiabilityInsurance: '',
             insuranceExpiry: '',
@@ -23837,17 +23864,19 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Waste Carrier License *</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Waste Carrier License (CBDU…) *</label>
                           <input type="text" value={formData.wasteCarrierLicense} onChange={e => setFormData({...formData, wasteCarrierLicense: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="CBDU123456" />
+                          <p className="text-xs text-gray-500 mt-1">Auto-fills Section C of every WTN for this supplier.</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Environmental Permit / Exemption No.</label>
+                          <input type="text" value={formData.environmentalPermit || ''} onChange={e => setFormData({...formData, environmentalPermit: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. EPR/AB1234CD" />
+                          <p className="text-xs text-gray-500 mt-1">Auto-fills Section C of every WTN for this supplier.</p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">License Expiry Date</label>
                           <input type="date" value={formData.wasteCarrierExpiry} onChange={e => setFormData({...formData, wasteCarrierExpiry: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Environmental Permits</label>
-                        <textarea value={formData.environmentalPermits} onChange={e => setFormData({...formData, environmentalPermits: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} placeholder="List any environmental permits held..." />
                       </div>
 
                       {/* Site Addresses Section */}
