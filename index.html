@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix23-diag-2026-05-12-state-at-save';
+        window.PHASE3_BUILD = 'fix23-diag2-2026-05-12-form-open-trace';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:35:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:45:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -3420,6 +3420,21 @@ const [wtnFields, setWtnFields] = useState(() => {
   // even if the legacy wtn_data blob is null. Synthesise a minimal flat
   // object from the first wtns row so the branch has something to read.
   const savedWtn = legacyBlob || (hasNewWtns ? job.wtns[0] : null);
+  // fix23-diag — log what the form sees at open. Want to confirm whether
+  // job.wtns is populated with the freshly-saved values, or whether the
+  // form is reading from a stale legacy blob.
+  try {
+    console.log('[WTN form open DIAG]', {
+      jobNumber: job?.jobNumber || job?.job_number,
+      hasLegacyBlob: !!legacyBlob,
+      legacyBlobCR: legacyBlob?.transfereeCarrierReg,
+      legacyBlobPerm: legacyBlob?.transfereePermitNumber,
+      hasNewWtns,
+      wtnsCount: Array.isArray(job?.wtns) ? job.wtns.length : null,
+      wtns0CR: job?.wtns?.[0]?.transfereeCarrierReg,
+      wtns0Perm: job?.wtns?.[0]?.transfereePermitNumber,
+    });
+  } catch (e) {}
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().slice(0,5);
