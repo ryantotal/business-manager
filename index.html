@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix22-diag-2026-05-12-savewtns-jobid-trace';
+        window.PHASE3_BUILD = 'fix22-2026-05-12-cascade-wtn-number-suffix';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:10:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:20:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -16629,16 +16629,6 @@ async function saveWtnsForJob(jobId, rows, opts = {}) {
   if (readErr) {
     console.warn('[saveWtnsForJob] read failed, attempting blind upsert:', readErr);
   }
-  // fix22 diagnostic — log how new rows match existing rows so we can spot
-  // jobId/line_item_index mismatches that cause INSERTs to collide on
-  // wtns_wtn_number_unique.
-  console.log('[saveWtnsForJob] DIAG', {
-    jobId,
-    newRowCount: rows.length,
-    newRowWtns: rows.map(r => ({ idx: r.line_item_index, wtn: r.wtn_number })),
-    existingCount: (existing || []).length,
-    existingRows: (existing || []).map(r => ({ id: r.id, idx: r.line_item_index })),
-  });
   const existingByIdx = new Map();
   (existing || []).forEach(r => existingByIdx.set(r.line_item_index, r));
 
@@ -16839,14 +16829,38 @@ async function applyCascadeToChildren(parentJobId, parentRows) {
       }
       const wtnNumberByIdx = new Map();
       (childExisting || []).forEach(r => wtnNumberByIdx.set(r.line_item_index, r.wtn_number));
-      // Default fallback if a child has a brand-new line with no existing
-      // row: synthesize from the job_number ("WTN-TWS-1238").
-      const defaultWtnNumber = 'WTN-' + (child.job_number || child.id);
 
-      const childRows = templateRows.map(r => ({
+      // fix22 — Match cascade scope to what the child already has.
+      // If the parent has line_item_index 0 AND 1 (multi-line WTN), but a
+      // child has only ever generated/sent its line 0, don't fabricate a
+      // line 1 row on the child — that's a different occurrence that hasn't
+      // happened. We restrict the cascade to rows where the child already
+      // has a corresponding wtns row.
+      //
+      // Edge case: child has NO existing wtns rows at all (never had a WTN
+      // saved). In that case we cascade the parent's full set, synthesising
+      // suffixed wtn_numbers so they don't collide on the unique constraint.
+      // This handles fresh recurring children gracefully.
+      const childHasAnyExisting = wtnNumberByIdx.size > 0;
+      const baseSyn = 'WTN-' + (child.job_number || child.id);
+      const useSyntheticSuffix = templateRows.length > 1;
+      const synthForIdx = (idx) => useSyntheticSuffix
+        ? `${baseSyn}-${String.fromCharCode(65 + idx)}`
+        : baseSyn;
+
+      const rowsForChild = childHasAnyExisting
+        ? templateRows.filter(r => wtnNumberByIdx.has(r.line_item_index))
+        : templateRows;
+
+      if (rowsForChild.length === 0) {
+        console.log(`[cascade] skipping child ${child.job_number} — no matching line_item rows`);
+        continue;
+      }
+
+      const childRows = rowsForChild.map((r, i) => ({
         ...r,
         job_id: child.id,
-        wtn_number: wtnNumberByIdx.get(r.line_item_index) || defaultWtnNumber,
+        wtn_number: wtnNumberByIdx.get(r.line_item_index) || synthForIdx(i),
       }));
       await saveWtnsForJob(child.id, childRows, { cascading: true, preserveStateColumns: true });
       // Also dual-write legacy wtn_data blob for the customer portal.
