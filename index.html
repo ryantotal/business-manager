@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix23-diag2-2026-05-12-form-open-trace';
+        window.PHASE3_BUILD = 'fix23-diag3-2026-05-12-render-trace';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:45:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:50:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -6533,6 +6533,7 @@ const [isEvent, setIsEvent] = useState(false);
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Address *<span className="text-gray-400 font-normal ml-1">— supplier's registered address</span></label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeAddress} onChange={e=>setWtnFields({...wtnFields,transfereeAddress:e.target.value})} placeholder="Pulled from supplier record" /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">EA Carrier Reg No. (CBDU...) <span className="text-gray-400 font-normal">— supplier's, not yours</span> <WtnSuggestBadge field="transfereeCarrierReg" /></label>
+                          {(() => { try { console.log('[Section C render DIAG]', { CR: wtnFields.transfereeCarrierReg, Perm: wtnFields.transfereePermitNumber, len: wtnFields?.transfereeCarrierReg?.length }); } catch(e){} return null; })()}
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={wtnFields.transfereeCarrierReg} onChange={e=>{setWtnFields({...wtnFields,transfereeCarrierReg:e.target.value}); setWtnSuggestions(s=>({...s, transfereeCarrierReg: undefined}));}} placeholder="Supplier's CBDU number" /></div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Environmental Permit / Exemption No. <WtnSuggestBadge field="transfereePermitNumber" /></label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transfereePermitNumber} onChange={e=>{setWtnFields({...wtnFields,transfereePermitNumber:e.target.value}); setWtnSuggestions(s=>({...s, transfereePermitNumber: undefined}));}} placeholder="e.g. EPR/AB1234CD" /></div>
