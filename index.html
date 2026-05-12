@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix24-2026-05-12-section-c-backstop';
+        window.PHASE3_BUILD = 'fix25-2026-05-12-portal-row-cap-and-jobnum-width';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T11:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T12:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -1371,11 +1371,16 @@ return (
               }
 
               // Load this customer's jobs
+              // fix25 — Supabase's default row cap is 1000. Long-tenure
+              // customers were getting truncated to the first 1000 jobs.
+              // Raise the ceiling well above any realistic per-customer
+              // job count.
               const { data: jobs } = await window.supabase
                 .from('jobs')
                 .select('*')
                 .eq('customer_name', customer.company_name || customer.name)
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: false })
+                .range(0, 49999);
 
               // Fetch company settings for logo etc
               const { data: settings } = await window.supabase
@@ -1413,7 +1418,8 @@ return (
                 .from('jobs')
                 .select('*')
                 .eq('customer_name', portalUser.customer.company_name || portalUser.customer.name)
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: false })
+                .range(0, 49999);
               // Phase 2: attach WTNs from the new table for the portal too.
               const enriched = await enrichJobsWithWtns(jobs || []);
               setPortalJobs(enriched);
@@ -1948,8 +1954,11 @@ return (
                     <div className="hidden sm:block overflow-x-auto">
                       <table className="w-full text-sm" style={{tableLayout:'fixed'}}>
                         <colgroup>
-                          <col style={{width:'11%'}} /><col style={{width:'11%'}} /><col style={{width:'16%'}} />
-                          <col style={{width:'23%'}} /><col style={{width:'13%'}} />
+                          {/* fix25 — Job Ref column widened from 11% to 18% so 4-digit
+                              numbers (TWS-1457 etc.) fit alongside the checkbox + chevron.
+                              Taken from Site Address (23% → 16%). */}
+                          <col style={{width:'18%'}} /><col style={{width:'11%'}} /><col style={{width:'16%'}} />
+                          <col style={{width:'16%'}} /><col style={{width:'13%'}} />
                           <col style={{width:'26%'}} />
                         </colgroup>
                         <thead className="bg-gray-50 text-xs uppercase border-b">
@@ -1994,8 +2003,8 @@ return (
                                   className={`cursor-pointer transition-colors ${isExpanded ? 'bg-green-100' : done ? 'bg-green-50 hover:bg-green-100' : cancelled ? 'bg-red-50 hover:bg-red-100' : isInvoiced ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}
                                   onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
                                 >
-                                  <td className="px-5 py-3 font-mono font-medium text-blue-700 text-xs">
-                                    <div className="flex items-center gap-2">
+                                  <td className="px-3 py-3 font-mono font-medium text-blue-700 text-xs">
+                                    <div className="flex items-center gap-1.5">
                                       {/* fix20b — inline checkbox sits alongside the chevron so we don't
                                           consume a whole table column. Only visible on rows with a WTN. */}
                                       {isWasteJob && hasWtn ? (
@@ -2010,8 +2019,10 @@ return (
                                       ) : (
                                         <span className="w-4 inline-block flex-shrink-0" />
                                       )}
-                                      <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''} inline-block`}>▶</span>
-                                      <span>{job.job_number}</span>
+                                      <span className={`text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''} inline-block`}>▶</span>
+                                      {/* fix25 — flex-shrink-0 + whitespace-nowrap so the job_number
+                                          (e.g. TWS-1457) is never clipped by its flex container. */}
+                                      <span className="flex-shrink-0 whitespace-nowrap">{job.job_number}</span>
                                     </div>
                                   </td>
                                   <td className="px-5 py-3 text-gray-600 text-xs">{job.job_date ? new Date(job.job_date).toLocaleDateString('en-GB') : '—'}</td>
