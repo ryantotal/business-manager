@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix22-2026-05-12-cascade-wtn-number-suffix';
+        window.PHASE3_BUILD = 'fix23-2026-05-12-read-section-c-from-wtns-table';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:20:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:30:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -3414,7 +3414,12 @@ const computeSuffixLetters = (lines) => {
 
 const [wtnFields, setWtnFields] = useState(() => {
   // If job has saved WTN data, restore it (survives reload)
-  const savedWtn = job?.wtnData || (job?.wtn_data ? (typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : job.wtn_data) : null);
+  const legacyBlob = job?.wtnData || (job?.wtn_data ? (typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : job.wtn_data) : null);
+  const hasNewWtns = Array.isArray(job?.wtns) && job.wtns.length > 0;
+  // fix23 — also enter the saved-branch when the new wtns table has rows,
+  // even if the legacy wtn_data blob is null. Synthesise a minimal flat
+  // object from the first wtns row so the branch has something to read.
+  const savedWtn = legacyBlob || (hasNewWtns ? job.wtns[0] : null);
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().slice(0,5);
@@ -3426,9 +3431,18 @@ const [wtnFields, setWtnFields] = useState(() => {
     const matchedCustomerForEmail = customers?.find(c => (c.name || c.companyName) === job?.customerName);
     const freshEmail = matchedCustomerForEmail?.email || savedWtn.recipientEmail || '';
     const freshAdditionalEmails = matchedCustomerForEmail?.additional_emails || '';
+    // fix23 — when the new `wtns` table has a row for this job, prefer ITS
+    // Section C values over the legacy `wtn_data` blob. Otherwise saves to
+    // the new wtns table don't visibly persist on re-open because the form
+    // re-reads from the stale legacy blob (last touched before the migration).
+    // The legacy blob is only the source of truth for pre-Phase-2 jobs that
+    // never got a wtns row.
+    const newestWtnRow = (Array.isArray(job?.wtns) && job.wtns.length > 0)
+      ? job.wtns[0]
+      : null;
     // Normalise CBDU: if it was saved in permitNumber field, move it to carrierReg
-    const savedCarrierReg = savedWtn.transfereeCarrierReg || '';
-    const savedPermitNum = savedWtn.transfereePermitNumber || '';
+    const savedCarrierReg = (newestWtnRow?.transfereeCarrierReg ?? savedWtn.transfereeCarrierReg) || '';
+    const savedPermitNum = (newestWtnRow?.transfereePermitNumber ?? savedWtn.transfereePermitNumber) || '';
     const cbduInPermit = /^CBDU/i.test(savedPermitNum) && !savedCarrierReg;
     const matchedSupplierForReg = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
     // fix21b — carrier reg: saved value wins, supplier is the fallback.
