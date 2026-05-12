@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix21b-2026-05-12-saved-wins-supplier-fallback';
+        window.PHASE3_BUILD = 'fix22-diag-2026-05-12-savewtns-jobid-trace';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T09:55:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:10:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -16629,6 +16629,16 @@ async function saveWtnsForJob(jobId, rows, opts = {}) {
   if (readErr) {
     console.warn('[saveWtnsForJob] read failed, attempting blind upsert:', readErr);
   }
+  // fix22 diagnostic — log how new rows match existing rows so we can spot
+  // jobId/line_item_index mismatches that cause INSERTs to collide on
+  // wtns_wtn_number_unique.
+  console.log('[saveWtnsForJob] DIAG', {
+    jobId,
+    newRowCount: rows.length,
+    newRowWtns: rows.map(r => ({ idx: r.line_item_index, wtn: r.wtn_number })),
+    existingCount: (existing || []).length,
+    existingRows: (existing || []).map(r => ({ id: r.id, idx: r.line_item_index })),
+  });
   const existingByIdx = new Map();
   (existing || []).forEach(r => existingByIdx.set(r.line_item_index, r));
 
