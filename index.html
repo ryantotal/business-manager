@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix23-2026-05-12-read-section-c-from-wtns-table';
+        window.PHASE3_BUILD = 'fix23-diag-2026-05-12-state-at-save';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:30:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T10:35:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -4905,6 +4905,20 @@ const [isEvent, setIsEvent] = useState(false);
       if (job?.id) {
         try {
           const wtnRows = window.wtnFieldsToRows(wtnFields, job.id);
+          // fix23-diag — log Section C state at the moment of save so we can
+          // verify the typing actually reached wtnFields before the upsert.
+          console.log('[Update Job DIAG]', {
+            transfereeCarrierReg: wtnFields.transfereeCarrierReg,
+            transfereePermitNumber: wtnFields.transfereePermitNumber,
+            transfereeName: wtnFields.transfereeName,
+            transferorPermitNumber: wtnFields.transferorPermitNumber,
+            rowsAboutToSave: wtnRows.map(r => ({
+              idx: r.line_item_index,
+              wtn: r.wtn_number,
+              cr: r.transferee_carrier_reg,
+              perm: r.transferee_permit_number,
+            })),
+          });
           if (wtnRows.length > 0) {
             await window.saveWtnsForJob(job.id, wtnRows);
             console.log(`[Phase 3] Update Job: saved ${wtnRows.length} WTN row(s) for job ${job.id}`);
