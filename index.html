@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix25-2026-05-12-portal-row-cap-and-jobnum-width';
+        window.PHASE3_BUILD = 'fix27-2026-05-12-one-off-leak-exchange-duplicate';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T12:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-12T13:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -9202,7 +9202,19 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
       Auto-refreshing every 30s
     </span>
   </div>
-                  <p className="text-gray-600">{filteredJobs.length} jobs found</p>
+                  {/* fix25 — show event count when events are hidden so the
+                      UI count matches `jobs.length` in the console. Without
+                      this, users see "1000 jobs found" while console reports
+                      1045 loaded and assume data is missing. */}
+                  <p className="text-gray-600">
+                    {filteredJobs.length} jobs found
+                    {(() => {
+                      const eventCount = (jobs || []).filter(j => j.isEvent || j.is_event || j.status === 'EVENT').length;
+                      return eventCount > 0
+                        ? <span className="text-gray-400 text-sm"> &middot; {eventCount} event{eventCount === 1 ? '' : 's'} hidden ({(jobs || []).length} total)</span>
+                        : null;
+                    })()}
+                  </p>
                 </div>
                 <button 
   onClick={onAddJob}
@@ -19012,7 +19024,33 @@ const handleExchange = async (job) => {
             time_slot: fullJob?.time_slot,
             description: fullJob?.description || null,
             sage_product_name: fullJob?.sage_product_name || null,
-            sage_line_items: fullJob?.sage_line_items || null,
+            // fix27 — strip one-off line items when creating an exchange job.
+            // One-offs are charges/items that apply ONLY to the originating
+            // job; carrying them forward duplicates the charge on every
+            // exchange and pollutes the child's WTN with disposal/etc. lines
+            // that were specific to the parent. Mirrors the filter already
+            // used in checkRecurringJobs (line ~17448) and the "Create
+            // missed job" flow (line ~11298).
+            sage_line_items: (() => {
+              try {
+                const raw = fullJob?.sage_line_items;
+                if (!raw) return null;
+                const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                if (!Array.isArray(arr)) return raw;
+                const filtered = arr.filter(item => !item.one_off && item.type !== 'one_off');
+                return JSON.stringify(filtered);
+              } catch(e) { return fullJob?.sage_line_items || null; }
+            })(),
+            line_items: (() => {
+              try {
+                const raw = fullJob?.line_items;
+                if (!raw) return null;
+                const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                if (!Array.isArray(arr)) return raw;
+                const filtered = arr.filter(item => !item.one_off && item.type !== 'one_off');
+                return JSON.stringify(filtered);
+              } catch(e) { return fullJob?.line_items || null; }
+            })(),
             status: 'CONFIRMED',
             is_completed: false,
             is_cancelled: false,
@@ -19172,7 +19210,19 @@ site_postcode: fullJob?.site_postcode || '',
 site_contact: fullJob?.site_contact || '',
 site_phone: fullJob?.site_phone || '',
 site_notes: fullJob?.site_notes || '',
-            sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null,
+            // fix27 — strip one-off line items when duplicating a job.
+            // Same reasoning as the exchange flow above: one-offs apply to
+            // the originating job only and must not propagate.
+            sage_line_items: (() => {
+              try {
+                const raw = fullJob?.sage_line_items || jobTemplate.sage_line_items;
+                if (!raw) return null;
+                const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                if (!Array.isArray(arr)) return raw;
+                const filtered = arr.filter(item => !item.one_off && item.type !== 'one_off');
+                return JSON.stringify(filtered);
+              } catch(e) { return fullJob?.sage_line_items || jobTemplate.sage_line_items || null; }
+            })(),
             sage_si_number: null,
             collection_date: null,
             // Do NOT carry over WTN data — duplicated job gets a fresh WTN.
