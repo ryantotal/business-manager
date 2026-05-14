@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix27-2026-05-12-one-off-leak-exchange-duplicate';
+        window.PHASE3_BUILD = 'fix28-2026-05-14-aggregates-wtn-portal-visibility';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-12T13:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-14T08:45:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -1903,7 +1903,7 @@ return (
                           {(() => {
                             const selectableJobs = filteredJobs.filter(j => {
                               const done = j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED';
-                              const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(j.job_type);
+                              const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Aggregates','Other'].includes(j.job_type);
                               const hasWtn = (Array.isArray(j.wtns) && j.wtns.length > 0)
                                 || j.wtn_portal_visible
                                 || ((j.wtn_sent || j.wtn_sent_at) && done && j.wtn_data);
@@ -1978,7 +1978,7 @@ return (
                           ) : filteredJobs.map(job => {
                             const done = job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED';
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
-                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
+                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Aggregates','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
                             const hasWtn = (Array.isArray(job.wtns) && job.wtns.length > 0)
                               || job.wtn_portal_visible
@@ -2179,7 +2179,7 @@ return (
                           {filteredJobs.map(job => {
                             const done = job.is_completed || job.status === 'COMPLETED' || job.status === 'COLLECTED';
                             const cancelled = job.is_cancelled || job.status === 'CANCELLED';
-                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.job_type);
+                            const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Aggregates','Other'].includes(job.job_type);
                             const isExpanded = expandedJobId === job.id;
                             const hasWtn = (Array.isArray(job.wtns) && job.wtns.length > 0)
                               || job.wtn_portal_visible
@@ -11423,7 +11423,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
               )}
 
               {/* Mark WTN as Sent — for historical jobs sent before this was tracked */}
-              {(job.isCompleted || job.is_completed) && ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Other'].includes(job.jobType || job.job_type) && !(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at) && (
+              {(job.isCompleted || job.is_completed) && ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire','Aggregates','Other'].includes(job.jobType || job.job_type) && !(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at) && (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center justify-between gap-3">
                   <p className="text-xs text-gray-500">WTN not recorded — if this was already sent, mark it here.</p>
                   <button
