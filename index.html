@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix29-2026-05-14-section-c-haulier-permit-priority';
+        window.PHASE3_BUILD = 'fix30-2026-05-14-portal-modal-permit-no-site-fallback';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-14T09:30:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-14T09:45:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -2686,10 +2686,14 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
         setWtnData(prev => ({
           ...prev,
           transfereeCarrierReg: prev.transfereeCarrierReg && prev.transfereeCarrierReg !== '—' ? prev.transfereeCarrierReg : (siteCbdu || supp.waste_carrier_license || supp.wasteCarrierLicense || prev.transfereeCarrierReg),
-          // fix29 — see comment near supplierPermitNumber (search "fix29").
-          // C3 is the haulier's permit; prefer the supplier's top-level
-          // environmental_permit, fall back to site permit only if missing.
-          transfereePermitNumber: prev.transfereePermitNumber && prev.transfereePermitNumber !== '—' ? prev.transfereePermitNumber : (supp.environmental_permit || supp.environmentalPermit || sitePermit || prev.transfereePermitNumber || ''),
+          // fix30 — DO NOT fall back to sitePermit in the customer-facing
+          // modal. The WTN is a legal document; if the saved record's
+          // transferee permit is null, the customer should see '—', not
+          // a value inferred from a tipping site permit (that belongs in
+          // Section D, not Section C). The admin form still has the same
+          // change in fix29. Only the supplier's top-level permit is an
+          // acceptable enrichment source for Section C.
+          transfereePermitNumber: prev.transfereePermitNumber && prev.transfereePermitNumber !== '—' ? prev.transfereePermitNumber : (supp.environmental_permit || supp.environmentalPermit || ''),
           // Phase 3 (post-fix11) — Section C address sources from the supplier's
           // MAIN address, never a site address. Site addresses (where the carrier
           // takes the waste) are now informational fields rendered in Section A.
@@ -3600,17 +3604,17 @@ const [wtnFields, setWtnFields] = useState(() => {
       ? [matchedSupplier.address, matchedSupplier.city, matchedSupplier.county, matchedSupplier.postcode].filter(Boolean).join(', ')
       : '';
   const supplierCarrierReg = autoSite?.cbduNumber || matchedSupplier?.wasteCarrierLicense || matchedSupplier?.waste_carrier_license || '';
-  // fix29 — Section C3 is the transferee/haulier's environmental permit, NOT
-  // the tipping/disposal site's permit (that belongs on Section D). Previously
-  // (fix21) the autoSite's permitNumber took priority, which caused the
-  // tipping site permit to be pulled into the haulier permit field on WTNs
-  // where the supplier acts as both haulier and operates multiple tipping
-  // sites. Correct priority: supplier-level environmental_permit (haulier's
-  // own licence) first, autoSite.permitNumber only as a last-resort fallback
-  // for suppliers that haven't filled the top-level field.
+  // fix30 (supersedes fix29 priority swap) — Section C3 is the
+  // transferee/haulier's environmental permit, NOT the tipping/disposal
+  // site's permit (that belongs on Section D). The autoSite fallback
+  // (originally added in fix21, kept as a fallback in fix29) caused the
+  // tipping site permit to be pulled into the haulier permit field on
+  // WTNs for suppliers that act as both haulier and tipping-site
+  // operator. Fallback removed entirely: only the supplier's top-level
+  // environmental_permit field is an acceptable source. If empty, leave
+  // blank — better than fabricating a legally-incorrect permit value.
   const supplierPermitNumber = matchedSupplier?.environmentalPermit
     || matchedSupplier?.environmental_permit
-    || autoSite?.permitNumber
     || '';
 
   // Auto-fill customer email from customers list
