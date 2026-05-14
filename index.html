@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix30-2026-05-14-portal-modal-permit-no-site-fallback';
+        window.PHASE3_BUILD = 'fix31-2026-05-14-customer-po-completion-wipe';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-14T09:45:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-14T10:30:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -4759,6 +4759,15 @@ eventEndDate: '',
     return {
       ...initialData,
       ...job,
+      // fix31 — explicit snake_case fallback for fields the form's submit
+      // path writes back. Without this, a `job` passed in with only the
+      // snake_case form (e.g. straight from a DB re-fetch that didn't go
+      // through the full camelCase remap) would silently leave the form
+      // field at its initialData value ('') and a subsequent Save would
+      // wipe the DB column. PO was the reported case; mirror the same
+      // pattern for the other commonly-typed fields just in case.
+      customerPO: job.customerPO ?? job.customer_po ?? initialData.customerPO,
+      supplierRef: job.supplierRef ?? job.supplier_ref ?? initialData.supplierRef,
       lineItems: job.lineItems || []
     };
   }
@@ -18086,7 +18095,11 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
     // Convert camelCase to snake_case for database
     const jobForDatabase = {
       customer_name: updatedJob.customerName,
-      customer_po: updatedJob.customerPO,
+      // fix31 — defensive fallback. If the camelCase mapping has been
+      // missed by some upstream path (e.g. handleCompleteJob built
+      // updatedJob without customerPO), fall back to the snake_case
+      // value rather than writing undefined → null and wiping the PO.
+      customer_po: updatedJob.customerPO ?? updatedJob.customer_po ?? null,
       supplier_name: updatedJob.supplierName,
       supplier_ref: updatedJob.supplierRef,
       haulier_name: updatedJob.haulierName,
@@ -18450,9 +18463,23 @@ const handleCompleteJob = async (job, sendChoice) => {
       jobNumber: (freshJob || job).job_number || job.jobNumber,
       jobDate: (freshJob || job).job_date || job.jobDate,
       customerName: (freshJob || job).customer_name || job.customerName,
+      // fix31 — customerPO was missing from this remap, so after completion
+      // local state had `customer_po: '...', customerPO: undefined`. The UI
+      // reads camelCase so the PO appeared blank, and any subsequent edit
+      // save would write null and wipe it permanently. Added here alongside
+      // the other commonly-edited camelCase fields.
+      customerPO: (freshJob || job).customer_po ?? job.customerPO,
       supplierName: (freshJob || job).supplier_name || job.supplierName,
+      supplierRef: (freshJob || job).supplier_ref ?? job.supplierRef,
       haulierName: (freshJob || job).haulier_name || job.haulierName,
       jobType: (freshJob || job).job_type || job.jobType,
+      wasteType: (freshJob || job).waste_type ?? job.wasteType,
+      skipSize: (freshJob || job).skip_size ?? job.skipSize,
+      aggregateType: (freshJob || job).aggregate_type ?? job.aggregateType,
+      vatRate: (freshJob || job).vat_rate ?? job.vatRate,
+      customerUnitPrice: (freshJob || job).customer_unit_price ?? job.customerUnitPrice,
+      supplierUnitPrice: (freshJob || job).supplier_unit_price ?? job.supplierUnitPrice,
+      collectionDate: (freshJob || job).collection_date ?? job.collectionDate,
       invoiceNumber: (freshJob || job).invoice_number || job.invoiceNumber,
       invoiceStatus: (freshJob || job).invoice_status || job.invoiceStatus,
       siteAddress1: (freshJob || job).site_address1 || job.siteAddress1,
