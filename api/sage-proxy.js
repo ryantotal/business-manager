@@ -31,7 +31,6 @@ function normaliseTaxNumber(vatNumber) {
   // Return 9-digit number only (no prefix) — Sage API may or may not want prefix
   return digits;
 }
-
 // Return the VAT number formatted for Sage API (with GB prefix)
 function formatVatForSage(vatNumber) {
   if (!vatNumber) return '';
@@ -39,7 +38,6 @@ function formatVatForSage(vatNumber) {
   if (!digits) return '';
   return 'GB' + digits;
 }
-
 // ── UK VAT number validation ──────────────────────────────────────────────
 // HMRC VAT numbers are 9 digits and must pass a modulus check.
 // Sage rejects numbers that fail this check with "The tax number does not
@@ -61,7 +59,6 @@ function isValidUkVatNumber(digits) {
   if ((97 - remainder9755) === check97) return true;
   return false;
 }
-
 // Helper function to refresh the access token
 async function refreshAccessToken(refreshToken) {
   console.log('[Sage Proxy] Attempting to refresh access token...');
@@ -136,10 +133,8 @@ async function refreshAccessToken(refreshToken) {
     throw error;
   }
 }
-
 // ── Cache for GB country_group_id lookup ───────────────────────────────────
 let gbCountryGroupCache = null;
-
 // Helper: discover the correct country_group_id for GB from Sage's API
 // Sage uses different values across accounts — common ones are 'GBIE', 'UK',
 // or a UUID.  We look up the /country_groups endpoint once and cache it.
@@ -179,7 +174,6 @@ async function getGBCountryGroupId(sageRequest) {
     return null;
   }
 }
-
 // Main handler function
 export default async function handler(req, res) {
   console.log('[Sage Proxy] Request received:', {
@@ -195,7 +189,6 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
   const { endpoint, method = 'GET', body, businessId, action } = req.body || {};
-
   // ── diagnoseSageVat action ──────────────────────────────────────────────
   // Diagnostic: inspect a working contact in Sage to see what makes VAT work.
   // Call with: { action: 'diagnoseSageVat', sageContactId: '...' }
@@ -229,15 +222,12 @@ export default async function handler(req, res) {
         const r = await fetch(`https://api.accounting.sage.com/v3.1/${ep}`, { headers: sageHeaders });
         return r.json();
       };
-
       const result = {};
-
       // Dump country_groups
       const groups = await sageFetch('country_groups?items_per_page=200');
       result.country_groups = (groups?.$items || []).map(g => ({
         id: g.id, name: g.displayed_as, countries: (g.countries || []).map(c => c.id || c.displayed_as)
       }));
-
       // If a contact ID is provided, inspect it
       if (sageContactId) {
         result.contact = await sageFetch(`contacts/${sageContactId}`);
@@ -255,16 +245,19 @@ export default async function handler(req, res) {
         result.tax_number = result.contact?.tax_number;
         result.main_address = result.contact?.main_address;
       }
-
       return res.status(200).json(result);
     } catch (err) {
       return res.status(500).json({ error: err.message, data: err.data });
     }
   }
-
   // ── createContact action ──────────────────────────────────────────────────
+  // fix32d — accept `addressLine2` from the frontend so long addresses can be
+  // split across two lines.  Sage's address_line_1 has a hard 50-char limit;
+  // the frontend (CustomerForm + SupplierForm) splits on commas and passes
+  // the overflow here.  Both customer and supplier creation paths use this
+  // single action, so the fix applies to both contact types.
   if (action === 'createContact') {
-    const { contactType, name, email, address, city, postcode, vatNumber, creditLimit, creditDays, mainContact } = req.body;
+    const { contactType, name, email, address, addressLine2, city, postcode, vatNumber, creditLimit, creditDays, mainContact } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'Contact name is required' });
     }
@@ -333,10 +326,10 @@ export default async function handler(req, res) {
       };
       // ── Step 1: Create the contact (WITHOUT tax_number) ────────────────
       const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-      const hasAddress = !!(address || postcode || city);
+      const hasAddress = !!(address || addressLine2 || postcode || city);
       const cleanVat = normaliseTaxNumber(vatNumber);
       const isCustomer = contactType !== 'SUPPLIER';
-      console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress, cleanVat });
+      console.log('[Sage Proxy] Step 1 — creating contact:', { name, contactType, hasAddress, cleanVat, hasLine2: !!addressLine2 });
       
       const contactTypeId = contactType === 'SUPPLIER' ? 'VENDOR' : 'CUSTOMER';
       console.log('[Sage Proxy] Using contact type:', contactTypeId);
@@ -353,7 +346,6 @@ export default async function handler(req, res) {
       const sage_id = contactData?.id;
       if (!sage_id) throw { status: 500, data: { message: 'Sage did not return a contact ID', response: contactData } };
       console.log('[Sage Proxy] Step 1 complete — sage_id:', sage_id);
-
       // ── Step 1b: Discover GB country_group_id for address & VAT ────────
       // We do this early so it's ready for Step 2.  The result is cached
       // so subsequent calls don't hit the API again.
@@ -362,7 +354,6 @@ export default async function handler(req, res) {
         gbGroupId = await getGBCountryGroupId(sageRequest);
         console.log('[Sage Proxy] Step 1b — GB country_group_id:', gbGroupId);
       }
-
       // ── Step 2: Create or update the address linked to the contact ────────
       // IMPORTANT: Sage auto-creates a blank "Delivery" address when a contact
       // is first created (Step 1).  If we blindly POST a second address we end
@@ -374,10 +365,8 @@ export default async function handler(req, res) {
       // UPDATE it with our data.  Only create a new one if none exist.
       let address_id = null;
       let allAddressIds = []; // track every address on this contact
-
       if (hasAddress) {
         console.log('[Sage Proxy] Step 2 — setting up address for contact:', sage_id);
-
         // 2a. Check for auto-created addresses
         let existingAddresses = [];
         try {
@@ -389,7 +378,6 @@ export default async function handler(req, res) {
         } catch (e) {
           console.log('[Sage Proxy] Step 2a — no existing addresses found');
         }
-
         const addressFields = {
           name: isCustomer ? 'Main Address' : 'Invoice Address',
           // FIX: Suppliers need PURCHASING, customers need SALES.
@@ -399,11 +387,14 @@ export default async function handler(req, res) {
           is_main_address: true,
           country_id: 'GB',
         };
-        if (gbGroupId) addressFields.country_group_id = gbGroupId;
-        if (address)   addressFields.address_line_1   = address;
-        if (city)      addressFields.city              = city;
-        if (postcode)  addressFields.postal_code       = postcode;
-
+        if (gbGroupId)    addressFields.country_group_id = gbGroupId;
+        // fix32d — address_line_1 has a 50-char max in Sage.  The frontend
+        // pre-splits long addresses on commas and passes the overflow as
+        // addressLine2 (also 50 chars max).
+        if (address)      addressFields.address_line_1   = address;
+        if (addressLine2) addressFields.address_line_2   = addressLine2;
+        if (city)         addressFields.city             = city;
+        if (postcode)     addressFields.postal_code      = postcode;
         if (existingAddresses.length > 0) {
           // 2b. Update the first existing address (the auto-created Delivery one)
           const existing = existingAddresses[0];
@@ -455,7 +446,6 @@ export default async function handler(req, res) {
             }
           }
         }
-
         // 2d. If there are OTHER addresses (e.g. a second auto-created one),
         // patch them all with correct country_group too — Sage may validate
         // tax_number against ANY address on the contact.
@@ -538,7 +528,6 @@ export default async function handler(req, res) {
       } catch (cpErr) {
         console.warn('[Sage Proxy] Step 3 — contact person creation failed:', cpErr?.data);
       }
-
       // ── Step 5: Now apply tax_number via PUT ─────────────────────────────
       // From comparing working vs broken contacts in Sage:
       //   Working: address_type = "Purchasing", VAT shown as "GB 973631108"
@@ -558,13 +547,11 @@ export default async function handler(req, res) {
       if (cleanVat && address_id) {
         const vatIsValid = isValidUkVatNumber(cleanVat);
         console.log('[Sage Proxy] Step 5 — digits:', cleanVat, '| with prefix:', vatWithPrefix, '| valid:', vatIsValid);
-
         if (!vatIsValid) {
           console.warn('[Sage Proxy] Step 5 — SKIPPING: "' + cleanVat + '" fails the UK VAT modulus check.');
           console.warn('[Sage Proxy] VAT number stored in portal only. It will sync to Sage when corrected.');
         } else {
           let vatSet = false;
-
           // Ensure main_address is set
           try {
             await sageRequest(`contacts/${sage_id}`, {
@@ -572,7 +559,6 @@ export default async function handler(req, res) {
             }, 'PUT');
             console.log('[Sage Proxy] Step 5 — main_address confirmed');
           } catch (_) { /* non-fatal */ }
-
           // Try each format: digits only, then GB-prefixed
           const formatsToTry = [vatWithoutPrefix, vatWithPrefix];
           
@@ -592,7 +578,6 @@ export default async function handler(req, res) {
               console.warn('[Sage Proxy] Step 5 — format', vatFormat, 'failed:', vatErr?.data?.[0]?.$message || 'unknown');
             }
           }
-
           // Fallback: try bare PUT (no main_address) with each format
           if (!vatSet) {
             for (const vatFormat of formatsToTry) {
@@ -606,7 +591,6 @@ export default async function handler(req, res) {
               } catch (_) { /* try next */ }
             }
           }
-
           // Last resort: change address type and retry
           if (!vatSet) {
             const altType = isCustomer ? 'PURCHASING' : 'SALES';
@@ -629,7 +613,6 @@ export default async function handler(req, res) {
               console.warn('[Sage Proxy] Step 5 — could not change address type');
             }
           }
-
           if (!vatSet) {
             console.warn('[Sage Proxy] Step 5 FAILED — all attempts exhausted. VAT stored in portal only.');
           }
@@ -794,7 +777,6 @@ export default async function handler(req, res) {
         const { contactType: cpContactType } = req.body;
         const isCust = cpContactType !== 'SUPPLIER';
         console.log('[Sage Proxy] Setting main contact person:', sageContactPersonId, 'on contact:', sageContactId, '| isCustomer:', isCust);
-
         // 1. Update the contact_person to is_main_contact: true
         try {
           await sageFetch(`contact_persons/${sageContactPersonId}`, 'PUT', {
@@ -807,7 +789,6 @@ export default async function handler(req, res) {
         } catch (e) {
           console.warn('[Sage Proxy] Could not set is_main_contact on person:', e?.data?.[0]?.$message || e?.message);
         }
-
         // 2. Update the contact to point main_contact_person (and preferred for customers)
         try {
           const contactUpdate = {
@@ -830,7 +811,6 @@ export default async function handler(req, res) {
             console.warn('[Sage Proxy] Fallback also failed:', e2?.data?.[0]?.$message || e2?.message);
           }
         }
-
         return res.status(200).json({ success: true });
       }
       return res.status(400).json({ error: 'Invalid operation. Use: list, create, update, delete, setMain' });
