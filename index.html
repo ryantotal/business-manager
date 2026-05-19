@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32d-2026-05-19-sage-address-50char-split';
+        window.PHASE3_BUILD = 'fix32e-2026-05-19-split-address-fields-customer-supplier';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-19T15:30:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-19T17:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -449,6 +449,59 @@
             
             return icons[icon] || null;
         };
+
+// ============================================================================
+// fix32e — address helpers (customer + supplier forms share this)
+// ============================================================================
+// Sage requires address_line_1 and address_line_2 each <= 50 characters.
+// We store user input in four discrete fields (Line 1, Line 2, City, Postcode)
+// to match Sage's structure, but keep a combined string in customers.address
+// (and suppliers.address) for backward compat with anything that reads the
+// single-field address.
+//
+// parseAddressToParts:  reads a legacy single-string address and best-effort
+//   splits it into { line1, line2, city, postcode }.  Last token that looks
+//   like a UK postcode goes to postcode, second-to-last goes to city, the
+//   rest fills line1 + line2.  Splits on either newline or comma.
+//
+// combinePartsToAddress:  joins { line1, line2, city, postcode } back into a
+//   single newline-separated string for the `address` column.
+const UK_POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i;
+function parseAddressToParts(rawAddress, existingCity, existingPostcode) {
+  const out = { line1: '', line2: '', city: existingCity || '', postcode: existingPostcode || '' };
+  if (!rawAddress) return out;
+  const raw = String(rawAddress).trim();
+  if (!raw) return out;
+  // Split on newlines OR commas, trim, drop empties
+  const parts = raw.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return out;
+  // Pull postcode off the end if the last part looks like one and we don't
+  // already have a postcode in the dedicated column.
+  let postcode = out.postcode;
+  let remaining = parts.slice();
+  if (!postcode && remaining.length > 0 && UK_POSTCODE_RE.test(remaining[remaining.length - 1])) {
+    postcode = remaining.pop();
+  }
+  // Pull city off the (new) end if we don't have one and there are >= 2 parts left
+  let city = out.city;
+  if (!city && remaining.length >= 2) {
+    city = remaining.pop();
+  }
+  // Whatever's left goes to line1 / line2
+  let line1 = remaining.shift() || '';
+  let line2 = remaining.join(', ');
+  // Enforce Sage's 50-char ceiling — anything longer gets trimmed; user will
+  // see the truncated value in the form and can adjust before save.
+  out.line1 = line1.slice(0, 50);
+  out.line2 = line2.slice(0, 50);
+  out.city = city;
+  out.postcode = postcode;
+  return out;
+}
+function combinePartsToAddress({ line1, line2, city, postcode }) {
+  return [line1, line2, city, postcode].filter(Boolean).join('\n');
+}
+
 // Searchable Dropdown Component
 const SearchableDropdown = ({ 
   options = [], 
@@ -13647,8 +13700,17 @@ const { error } = await window.supabase
   phone: customer.phone,
   email: customer.email,
   address: customer.address,
-  billingAddress: customer.address || '',
-  billingPostcode: customer.postcode || '',
+  // fix32e — also project the address into the four discrete fields so the
+  // new form sees them pre-filled.
+  ...(() => {
+    const p = parseAddressToParts(customer.address, customer.city, customer.postcode);
+    return {
+      billingAddress: p.line1,
+      billingAddressLine2: p.line2,
+      billingCity: p.city,
+      billingPostcode: p.postcode,
+    };
+  })(),
   customerDeliveryAddress: {
     address_line_1: customer.address || '',
     city: customer.city || '',
@@ -13732,8 +13794,17 @@ const { error } = await window.supabase
   phone: customer.phone,
   email: customer.email,
   address: customer.address,
-  billingAddress: customer.address || '',
-  billingPostcode: customer.postcode || '',
+  // fix32e — also project the address into the four discrete fields so the
+  // new form sees them pre-filled.
+  ...(() => {
+    const p = parseAddressToParts(customer.address, customer.city, customer.postcode);
+    return {
+      billingAddress: p.line1,
+      billingAddressLine2: p.line2,
+      billingCity: p.city,
+      billingPostcode: p.postcode,
+    };
+  })(),
   customerDeliveryAddress: {
     address_line_1: customer.address || '',
     city: customer.city || '',
@@ -19931,7 +20002,15 @@ siteNotes: job.site_notes || job.siteNotes || '',
               phone: customer.phone || '',
               mobile: customer.mobile || '',
               vat_number: customer.vatNumber || '',
-              address: customer.billingAddress || '',
+              // fix32e — combined address string (option 2: full address joined
+              // with newlines kept in `address` for backward compat, plus
+              // dedicated city / postcode columns)
+              address: combinePartsToAddress({
+                line1: customer.billingAddress || '',
+                line2: customer.billingAddressLine2 || '',
+                city:  customer.billingCity || '',
+                postcode: customer.billingPostcode || '',
+              }),
               city: customer.billingCity || '',
               postcode: customer.billingPostcode || '',
               credit_limit: customer.creditLimit || 0,
@@ -19991,7 +20070,13 @@ siteNotes: job.site_notes || job.siteNotes || '',
                 phone: updatedCustomer.phone || '',
                 mobile: updatedCustomer.mobile || '',
                 vat_number: updatedCustomer.vatNumber || '',
-                address: updatedCustomer.billingAddress || '',
+                // fix32e — combined address (see insert path comment)
+                address: combinePartsToAddress({
+                  line1: updatedCustomer.billingAddress || '',
+                  line2: updatedCustomer.billingAddressLine2 || '',
+                  city:  updatedCustomer.billingCity || '',
+                  postcode: updatedCustomer.billingPostcode || '',
+                }),
                 city: updatedCustomer.billingCity || '',
                 postcode: updatedCustomer.billingPostcode || '',
                 credit_limit: updatedCustomer.creditLimit || 0,
@@ -20082,7 +20167,14 @@ const saveSupplierToDatabase = async (supplier) => {
     sage_id: supplier.sage_id || null,
     email: supplier.email || '',
     phone: supplier.phone || '',
-    address: supplier.address || '',
+    // fix32e — combined address (option 2: full address kept in `address`
+    // for backward compat, plus dedicated city/postcode columns)
+    address: combinePartsToAddress({
+      line1: supplier.address || '',
+      line2: supplier.addressLine2 || '',
+      city:  supplier.city || '',
+      postcode: supplier.postcode || '',
+    }),
     city: supplier.city || '',
     postcode: supplier.postcode || '',
     county: supplier.county || '',
@@ -22120,6 +22212,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
             siteAddress: '',
             sitePostcode: '',
             billingAddress: '',
+            billingAddressLine2: '',
+            billingCity: '',
             billingPostcode: '',
             creditRating: 'B',
             paymentTerms: 30,
@@ -22277,49 +22371,11 @@ window.location.href = '/#sage-integration';  // Keep this line!
               if (!sage_id) {
                 try {
                   console.log('[CustomerForm] Pushing to Sage:', formData.companyName);
-                  // fix32d — Sage rejects address_line_1 longer than 50 chars
-                  // ("is too long (maximum is 50 characters)"). Split on commas
-                  // greedily into line_1, line_2 and city. The backend proxy
-                  // also needs to accept addressLine2 — see sage-proxy.js change.
-                  const splitSageAddress = (full) => {
-                    const out = { line1: '', line2: '', city: '' };
-                    if (!full) return out;
-                    const trimmed = String(full).trim();
-                    if (trimmed.length <= 50) { out.line1 = trimmed; return out; }
-                    // Comma split: assign chunks to line1 until next chunk would
-                    // overflow, then line2, with the final chunk going to city
-                    // (Sage expects city as a separate field).
-                    const parts = trimmed.split(',').map(s => s.trim()).filter(Boolean);
-                    if (parts.length >= 2) {
-                      // Last part is most likely the city; reserve it
-                      out.city = parts[parts.length - 1].slice(0, 50);
-                      const rest = parts.slice(0, -1);
-                      // Pack into line1 greedily, overflow into line2
-                      let l1 = '';
-                      let i = 0;
-                      while (i < rest.length) {
-                        const next = (l1 ? l1 + ', ' : '') + rest[i];
-                        if (next.length <= 50) { l1 = next; i++; } else { break; }
-                      }
-                      let l2 = '';
-                      while (i < rest.length) {
-                        const next = (l2 ? l2 + ', ' : '') + rest[i];
-                        if (next.length <= 50) { l2 = next; i++; } else {
-                          // Still too long — hard-truncate
-                          l2 = (l2 ? l2 + ', ' : '') + rest[i].slice(0, 50 - (l2 ? l2.length + 2 : 0));
-                          break;
-                        }
-                      }
-                      out.line1 = l1 || rest[0].slice(0, 50);
-                      out.line2 = l2;
-                    } else {
-                      // No useful commas — hard split
-                      out.line1 = trimmed.slice(0, 50);
-                      out.line2 = trimmed.slice(50, 100);
-                    }
-                    return out;
-                  };
-                  const splitAddr = splitSageAddress(formData.billingAddress);
+                  // fix32e — the form now collects line 1 / line 2 / city / postcode
+                  // as four discrete inputs (each line capped at 50 chars by
+                  // maxLength), so we pass them straight through to Sage without
+                  // any string splitting.  Replaces the splitSageAddress helper
+                  // from fix32d.
                   const response = await fetch('/api/sage-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -22328,9 +22384,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       contactType: 'CUSTOMER',
                       name: formData.companyName,
                       email: formData.email || '',
-                      address: splitAddr.line1 || '',
-                      addressLine2: splitAddr.line2 || '',
-                      city: formData.billingCity || splitAddr.city || '',
+                      address: formData.billingAddress || '',
+                      addressLine2: formData.billingAddressLine2 || '',
+                      city: formData.billingCity || '',
                       postcode: formData.billingPostcode || '',
                       vatNumber: formData.vatNumber || '',
                       creditLimit: formData.creditLimit || 0,
@@ -22412,6 +22468,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                         body: {
                           address: {
                             address_line_1: formData.billingAddress || '',
+                            address_line_2: formData.billingAddressLine2 || '',
                             city: formData.billingCity || '',
                             postal_code: formData.billingPostcode || '',
                             country_id: 'GB',
@@ -22768,10 +22825,24 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           </select>
                         </div>
                       </div>
+                      {/* fix32e — split billing address into four discrete fields
+                          (Line 1, Line 2, City, Postcode) to match Sage's structure.
+                          Line 1 and Line 2 have 50-char maxLength to enforce Sage's
+                          ceiling at the input level rather than rejecting at save. */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Billing Address *</label>
-                          <input type="text" value={formData.billingAddress} onChange={(e) => setFormData({...formData, billingAddress: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.billingAddress ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Billing Address Line 1 *</label>
+                          <input type="text" maxLength={50} value={formData.billingAddress} onChange={(e) => setFormData({...formData, billingAddress: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.billingAddress ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="Street number and name" />
+                          <p className="text-xs text-gray-400 mt-1">{(formData.billingAddress || '').length}/50</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Billing Address Line 2</label>
+                          <input type="text" maxLength={50} value={formData.billingAddressLine2 || ''} onChange={(e) => setFormData({...formData, billingAddressLine2: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Area, district (optional)" />
+                          <p className="text-xs text-gray-400 mt-1">{(formData.billingAddressLine2 || '').length}/50</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">City / Town</label>
+                          <input type="text" value={formData.billingCity || ''} onChange={(e) => setFormData({...formData, billingCity: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Billing Postcode *</label>
@@ -23737,14 +23808,23 @@ window.location.href = '/#sage-integration';  // Keep this line!
           // Normalise DB column names (snake_case) → form field names (camelCase)
           const normaliseSupplier = (s) => {
             if (!s) return null;
+            // fix32e — for legacy suppliers stored with the full address in
+            // `address`, parse into the four discrete fields so the form
+            // pre-fills correctly.  If the supplier already has split fields
+            // (city + postcode populated), parse will respect those.
+            const parsed = parseAddressToParts(s.address, s.city, s.postcode);
             return {
               ...s,
               companyName: s.companyName || s.name || '',
               vatNumber: s.vatNumber || s.vat_number || '',
               primaryContact: s.primaryContact || s.contact_person || s.primary_contact || '',
-              address: s.address || '',
-              city: s.city || '',
-              postcode: s.postcode || '',
+              // Keep the raw single-field address available for anywhere else
+              // that reads it, but ALSO expose the four-field structure for the
+              // form inputs (address still wired to "Line 1" input).
+              address: parsed.line1,
+              addressLine2: parsed.line2,
+              city: parsed.city,
+              postcode: parsed.postcode,
               county: s.county || '',
               phone: s.phone || '',
               mobile: s.mobile || '',
@@ -23786,6 +23866,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
             email: '',
             accountsEmail: '',
             address: '',
+            addressLine2: '',
             city: '',
             postcode: '',
             county: '',
@@ -24088,40 +24169,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
               if (!asDraft && !sage_id) {
                 try {
                   console.log('[SupplierForm] Pushing to Sage:', formData.companyName);
-                  // fix32d — same 50-char address-line cap fix as customer form.
-                  // Defined locally rather than hoisted to avoid an out-of-order
-                  // declaration in the surrounding scope.
-                  const splitSageAddress = (full) => {
-                    const out = { line1: '', line2: '', city: '' };
-                    if (!full) return out;
-                    const trimmed = String(full).trim();
-                    if (trimmed.length <= 50) { out.line1 = trimmed; return out; }
-                    const parts = trimmed.split(',').map(s => s.trim()).filter(Boolean);
-                    if (parts.length >= 2) {
-                      out.city = parts[parts.length - 1].slice(0, 50);
-                      const rest = parts.slice(0, -1);
-                      let l1 = ''; let i = 0;
-                      while (i < rest.length) {
-                        const next = (l1 ? l1 + ', ' : '') + rest[i];
-                        if (next.length <= 50) { l1 = next; i++; } else { break; }
-                      }
-                      let l2 = '';
-                      while (i < rest.length) {
-                        const next = (l2 ? l2 + ', ' : '') + rest[i];
-                        if (next.length <= 50) { l2 = next; i++; } else {
-                          l2 = (l2 ? l2 + ', ' : '') + rest[i].slice(0, 50 - (l2 ? l2.length + 2 : 0));
-                          break;
-                        }
-                      }
-                      out.line1 = l1 || rest[0].slice(0, 50);
-                      out.line2 = l2;
-                    } else {
-                      out.line1 = trimmed.slice(0, 50);
-                      out.line2 = trimmed.slice(50, 100);
-                    }
-                    return out;
-                  };
-                  const splitAddr = splitSageAddress(formData.address);
+                  // fix32e — form now collects line 1 / line 2 / city / postcode
+                  // as four discrete inputs; pass straight through to Sage.
                   const response = await fetch('/api/sage-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -24130,9 +24179,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       contactType: 'SUPPLIER',
                       name: formData.companyName,
                       email: formData.email || '',
-                      address: splitAddr.line1 || '',
-                      addressLine2: splitAddr.line2 || '',
-                      city: formData.city || splitAddr.city || '',
+                      address: formData.address || '',
+                      addressLine2: formData.addressLine2 || '',
+                      city: formData.city || '',
                       postcode: formData.postcode || '',
                       vatNumber: formData.vatNumber || '',
                       creditLimit: 0,
@@ -24215,6 +24264,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                         body: {
                           address: {
                             address_line_1: formData.address || '',
+                            address_line_2: formData.addressLine2 || '',
                             city: formData.city || '',
                             postal_code: formData.postcode || '',
                             country_id: 'GB',
@@ -24348,10 +24398,22 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           </select>
                         </div>
                       </div>
+                      {/* fix32e — split address into four discrete fields, matching
+                          the customer form change. */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Address *</label>
-                          <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.address ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="Street address" />
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 1 *</label>
+                          <input type="text" maxLength={50} value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className={`w-full px-3 py-2 border rounded-lg ${!formData.address ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} placeholder="Street number and name" />
+                          <p className="text-xs text-gray-400 mt-1">{(formData.address || '').length}/50</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 2</label>
+                          <input type="text" maxLength={50} value={formData.addressLine2 || ''} onChange={e => setFormData({...formData, addressLine2: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Area, district (optional)" />
+                          <p className="text-xs text-gray-400 mt-1">{(formData.addressLine2 || '').length}/50</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">City / Town</label>
+                          <input type="text" value={formData.city || ''} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Postcode *</label>
