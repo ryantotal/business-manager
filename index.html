@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix31-2026-05-14-customer-po-completion-wipe';
+        window.PHASE3_BUILD = 'fix32d-2026-05-19-sage-address-50char-split';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-14T10:30:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-19T15:30:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -3700,6 +3700,103 @@ const [wtnFields, setWtnFields] = useState(() => {
     lines: buildDefaultLines(job),
   };
 });
+
+// ============================================================================
+// fix32 — Consignment Note (CN) form state
+// ============================================================================
+// Separate state object for the CN form block. The per-line waste hazmat
+// detail (Part B) is keyed off wtnFields.lines using the line's
+// `lineItemIndex`, so we don't duplicate the line list here — instead we
+// keep a `perLine` map of CN-specific extensions: { [lineItemIndex]: {
+// physicalForm, hazardCodes, unNumber, unClass, packingGroup,
+// properShippingName, route_code (per-line override if needed), containerCount } }
+// The job-level CN fields (Part A producer/holder, Part C carrier overlay,
+// Part D consignor cert, Part E consignee cert) live as flat fields here.
+// Most flat fields seed from the equivalent WTN field at first hazardous
+// tick so the user doesn't re-key the same info — see initial state below.
+// Save wiring (saveConsignmentNotesForJob) lands in fix33; for fix32 this
+// state is form-local only.
+const [cnFields, setCnFields] = useState(() => {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const autoCnNumber = 'CN-' + (job?.jobNumber || job?.id || 'DRAFT');
+  const autoDate = job?.collectionDate || job?.jobDate || todayStr;
+  return {
+    cnNumber: autoCnNumber,
+    transferDate: autoDate,
+    // Part A — Notification
+    routeCode: '',
+    removalAddress: '', // defaults to producer address at first render
+    // Part A also reuses producer/holder fields below
+    // Producer / holder (Parts A + D) — seeded from WTN transferor on open
+    producerName: '',
+    producerAddress: '',
+    producerPostcode: '',
+    producerSicCode: '',
+    producerPermitNumber: '',
+    // Part C — Carrier (= supplier; seeded from WTN transferee on open)
+    carrierName: '',
+    carrierAddress: '',
+    carrierRegNumber: '',
+    carrierVehicleReg: '',
+    carrierSignature: '',
+    carrierSignedDate: autoDate,
+    carrierSignedTime: '',
+    // Part D — Consignor certificate
+    consignorSignature: '',
+    consignorSignedDate: autoDate,
+    consignorSignedTime: '',
+    // Disposal site / "where waste is taken to" (Part A bottom block)
+    disposalSiteName: '',
+    disposalSiteAddress: '',
+    disposalSitePermit: '',
+    // Part E — Consignee certificate (filled by disposal site post-receipt;
+    // editable here as a TWS-staff fill-in until the proper consignee-side
+    // workflow exists). Per-line on a continuation sheet would be nicer but
+    // fix32 keeps it single-block at the job level.
+    consigneeName: '',
+    consigneeEwcAccepted: null,
+    consigneeRejectedReason: '',
+    wasteManagementOperationCode: '',
+    consigneePermitNumber: '',
+    consigneeVehicleReg: '',
+    consigneeQuantityReceived: '',
+    consigneeSignature: '',
+    consigneeSignedDate: '',
+    consigneeSignedTime: '',
+    // Per-line hazmat extensions, keyed by lineItemIndex
+    perLine: {},
+  };
+});
+
+// fix32 — when the first hazardous line is ticked, seed CN producer/holder
+// + carrier fields from the equivalent WTN fields so the user doesn't have
+// to re-key. Safe to re-run: only writes when the CN field is still blank.
+useEffect(() => {
+  const anyHaz = Array.isArray(wtnFields.lines) && wtnFields.lines.some(l => l.included && l.isHazardous);
+  if (!anyHaz) return;
+  setCnFields(prev => {
+    const patch = {};
+    if (!prev.producerName && wtnFields.transferorName) patch.producerName = wtnFields.transferorName;
+    if (!prev.producerAddress && wtnFields.transferorAddress) patch.producerAddress = wtnFields.transferorAddress;
+    if (!prev.producerPostcode && wtnFields.transferorPostcode) patch.producerPostcode = wtnFields.transferorPostcode;
+    if (!prev.producerSicCode && wtnFields.transferorSicCode) patch.producerSicCode = wtnFields.transferorSicCode;
+    if (!prev.producerPermitNumber && wtnFields.transferorPermitNumber) patch.producerPermitNumber = wtnFields.transferorPermitNumber;
+    if (!prev.removalAddress && wtnFields.transferorAddress) patch.removalAddress = wtnFields.transferorAddress;
+    if (!prev.carrierName && wtnFields.transfereeName) patch.carrierName = wtnFields.transfereeName;
+    if (!prev.carrierAddress && wtnFields.transfereeAddress) patch.carrierAddress = wtnFields.transfereeAddress;
+    if (!prev.carrierRegNumber && wtnFields.transfereeCarrierReg) patch.carrierRegNumber = wtnFields.transfereeCarrierReg;
+    if (!prev.consignorSignature && wtnFields.transferorSignature) patch.consignorSignature = wtnFields.transferorSignature;
+    if (Object.keys(patch).length === 0) return prev;
+    return { ...prev, ...patch };
+  });
+}, [
+  wtnFields.lines,
+  wtnFields.transferorName, wtnFields.transferorAddress, wtnFields.transferorPostcode,
+  wtnFields.transferorSicCode, wtnFields.transferorPermitNumber, wtnFields.transferorSignature,
+  wtnFields.transfereeName, wtnFields.transfereeAddress, wtnFields.transfereeCarrierReg,
+]);
+
 // If this is a child/recurring job with incomplete WTN data, inherit from parent
 useEffect(() => {
   const parentId = job?.parentJobId || job?.parent_job_id;
@@ -6281,6 +6378,9 @@ const [isEvent, setIsEvent] = useState(false);
                         <p className="mt-2 text-blue-600">You can still send a manual WTN below if needed — for example if you need to resend or send to a different address.</p>
                       </div>
                     )}
+                    {/* fix32b — WTN banner + header only when at least one non-hazardous included line */}
+                    {Array.isArray(wtnFields.lines) && wtnFields.lines.some(l => l.included && !l.isHazardous) && (
+                    <React.Fragment>
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                       <h3 className="font-semibold text-green-800 mb-1">📄 Waste Transfer Note — Legal Document</h3>
                       <p className="text-sm text-green-700">Compliant with the Waste (England and Wales) Regulations 2011 &amp; Environmental Protection Act 1990 s.34. All mandatory fields must be completed. Both parties must retain a copy for a minimum of 2 years.</p>
@@ -6292,14 +6392,16 @@ const [isEvent, setIsEvent] = useState(false);
                       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">WTN Reference *</label>
                           <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.wtnNumber} onChange={e=>setWtnFields({...wtnFields,wtnNumber:e.target.value})} />
-                          {Array.isArray(wtnFields.lines) && wtnFields.lines.filter(l=>l.included).length > 1 && (
-                            <p className="mt-1 text-xs text-gray-500">Per line: {wtnFields.lines.filter(l=>l.included).map((l,i)=>`${wtnFields.wtnNumber}-${String.fromCharCode(65+i)}`).join(', ')}</p>
+                          {Array.isArray(wtnFields.lines) && wtnFields.lines.filter(l=>l.included && !l.isHazardous).length > 1 && (
+                            <p className="mt-1 text-xs text-gray-500">Per line: {wtnFields.lines.filter(l=>l.included && !l.isHazardous).map((l,i)=>`${wtnFields.wtnNumber}-${String.fromCharCode(65+i)}`).join(', ')}</p>
                           )}
                         </div>
                         <div><label className="block text-xs font-medium text-gray-600 mb-1">Transfer Date *</label>
                           <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={wtnFields.transferDate} onChange={e=>setWtnFields({...wtnFields,transferDate:e.target.value})} /></div>
                       </div>
                     </div>
+                    </React.Fragment>
+                    )}
 
                     {/* Phase 3 — Line Item Picker */}
                     {Array.isArray(wtnFields.lines) && wtnFields.lines.length > 0 && (
@@ -6355,9 +6457,13 @@ const [isEvent, setIsEvent] = useState(false);
                     )}
 
                     {/* Phase 3 — Per-line Section A (waste description, EWC, container, qty, hazard) */}
+                    {/* fix32b — skip hazardous lines; they're covered by the CN form's Part B */}
+                    {/* below. Suffix is computed from non-hazardous included lines only so       */}
+                    {/* the WTN's A/A-A/A-B numbering doesn't have gaps for hazardous siblings.   */}
                     {Array.isArray(wtnFields.lines) && wtnFields.lines.map((line, idx) => {
                       if (!line.included) return null;
-                      const includedLines = wtnFields.lines.filter(l => l.included);
+                      if (line.isHazardous) return null;
+                      const includedLines = wtnFields.lines.filter(l => l.included && !l.isHazardous);
                       const positionOfThis = includedLines.findIndex(l => l.lineItemIndex === line.lineItemIndex);
                       const suffix = includedLines.length > 1 ? String.fromCharCode(65 + positionOfThis) : '';
                       const sectionLabel = suffix ? `Section A${suffix} — Description of Waste` : 'Section A — Description of Waste';
@@ -6490,6 +6596,11 @@ const [isEvent, setIsEvent] = useState(false);
                       );
                     })}
 
+                    {/* fix32b — Sections B/C/D + recycling only render if there's at  */}
+                    {/* least one non-hazardous included line. On all-hazardous jobs    */}
+                    {/* these sections are handled by the CN form's Parts A/C/D below.  */}
+                    {Array.isArray(wtnFields.lines) && wtnFields.lines.some(l => l.included && !l.isHazardous) && (
+                    <React.Fragment>
                     {/* Section B — Transferor */}
                     <div className="border border-gray-200 rounded-lg overflow-hidden">
                       <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">Section B — Transferor (Waste Producer / Current Holder)</div>
@@ -6611,6 +6722,258 @@ const [isEvent, setIsEvent] = useState(false);
                         ))}
                       </div>
                     </div>
+                    </React.Fragment>
+                    )}
+
+                    {/* ============================================================ */}
+                    {/* fix32 — Consignment Note (CN) form block                      */}
+                    {/* Renders below the WTN form when any included line is marked   */}
+                    {/* hazardous. Per the design decision (Option B / stacked        */}
+                    {/* forms), this is a separate visual form block, not a re-skin  */}
+                    {/* of the WTN form. Save wiring lands in fix33.                  */}
+                    {/* ============================================================ */}
+                    {Array.isArray(wtnFields.lines) && wtnFields.lines.some(l => l.included && l.isHazardous) && (
+                      <div className="space-y-4 mt-6 pt-6 border-t-4 border-red-300">
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                          <h3 className="font-semibold text-red-800 mb-1">⚠ Consignment Note — Hazardous Waste</h3>
+                          <p className="text-sm text-red-700">A separate Consignment Note is required for hazardous waste lines under the Hazardous Waste (England &amp; Wales) Regulations 2005. This document is in addition to (or in place of) the WTN above for those lines. Both parties must retain a copy for a minimum of 3 years.</p>
+                          <p className="text-xs text-red-600 mt-2 italic">fix32 — form is fillable but not yet saved to the database. Save wiring lands in the next build.</p>
+                        </div>
+
+                        {/* CN Header — number + transfer date */}
+                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                          <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">Consignment Note Header</div>
+                          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">CN Reference *</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.cnNumber} onChange={e=>setCnFields({...cnFields,cnNumber:e.target.value})} />
+                              {wtnFields.lines.filter(l=>l.included && l.isHazardous).length > 1 && (
+                                <p className="mt-1 text-xs text-gray-500">Per line: {wtnFields.lines.filter(l=>l.included && l.isHazardous).map((l,i)=>`${cnFields.cnNumber}-${String.fromCharCode(65+i)}`).join(', ')}</p>
+                              )}
+                            </div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Transfer Date *</label>
+                              <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.transferDate} onChange={e=>setCnFields({...cnFields,transferDate:e.target.value})} /></div>
+                          </div>
+                        </div>
+
+                        {/* Part A — Notification details (producer/holder + removal address + route + disposal site) */}
+                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                          <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">Part A — Notification</div>
+                          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">A1 Producer / Holder Name *</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.producerName} onChange={e=>setCnFields({...cnFields,producerName:e.target.value})} placeholder="As Section B of WTN" /></div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">SIC Code</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.producerSicCode} onChange={e=>setCnFields({...cnFields,producerSicCode:e.target.value})} placeholder="e.g. 41100" /></div>
+                            <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Producer / Holder Address *</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.producerAddress} onChange={e=>setCnFields({...cnFields,producerAddress:e.target.value})} /></div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Permit / Exemption No.</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.producerPermitNumber} onChange={e=>setCnFields({...cnFields,producerPermitNumber:e.target.value})} /></div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Route Code <span className="text-gray-400 font-normal">(Part A reference)</span></label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.routeCode} onChange={e=>setCnFields({...cnFields,routeCode:e.target.value})} placeholder="e.g. SE-NW-01" /></div>
+                            <div className="sm:col-span-2 mt-2 pt-3 border-t border-dashed border-gray-300">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">A2 Address Waste is Removed From <span className="text-gray-400 font-normal">(if different from producer address)</span></label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.removalAddress} onChange={e=>setCnFields({...cnFields,removalAddress:e.target.value})} placeholder="Defaults to producer address" />
+                            </div>
+                            <div className="sm:col-span-2 mt-2 pt-3 border-t border-dashed border-gray-300">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">A3 Address Waste is Taken To <span className="text-gray-400 font-normal">(disposal / recovery site)</span></label>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.disposalSiteName} onChange={e=>setCnFields({...cnFields,disposalSiteName:e.target.value})} placeholder="Site name" />
+                                <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.disposalSiteAddress} onChange={e=>setCnFields({...cnFields,disposalSiteAddress:e.target.value})} placeholder="Site address" />
+                                <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm sm:col-span-2" value={cnFields.disposalSitePermit} onChange={e=>setCnFields({...cnFields,disposalSitePermit:e.target.value})} placeholder="Site permit number" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Part B — Description of the waste (per-line, only hazardous lines) */}
+                        {wtnFields.lines.map((line, idx) => {
+                          if (!line.included || !line.isHazardous) return null;
+                          const hazardousIncluded = wtnFields.lines.filter(l => l.included && l.isHazardous);
+                          const positionOfThis = hazardousIncluded.findIndex(l => l.lineItemIndex === line.lineItemIndex);
+                          const suffix = hazardousIncluded.length > 1 ? String.fromCharCode(65 + positionOfThis) : '';
+                          const sectionLabel = suffix ? `Part B${suffix} — Description of the Waste` : 'Part B — Description of the Waste';
+                          const per = cnFields.perLine[line.lineItemIndex] || {};
+                          const updatePerLine = (patch) => {
+                            setCnFields(prev => ({
+                              ...prev,
+                              perLine: {
+                                ...prev.perLine,
+                                [line.lineItemIndex]: { ...(prev.perLine[line.lineItemIndex] || {}), ...patch },
+                              },
+                            }));
+                          };
+                          const HAZARD_CODES = ['HP1','HP2','HP3','HP4','HP5','HP6','HP7','HP8','HP9','HP10','HP11','HP12','HP13','HP14','HP15'];
+                          const selectedHazards = Array.isArray(per.hazardCodes) ? per.hazardCodes : [];
+                          const toggleHazard = (code) => {
+                            const next = selectedHazards.includes(code)
+                              ? selectedHazards.filter(c => c !== code)
+                              : [...selectedHazards, code];
+                            updatePerLine({ hazardCodes: next });
+                          };
+                          return (
+                            <div key={`cn-line-${idx}`} className="border border-gray-200 rounded-lg overflow-hidden">
+                              <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600 flex justify-between">
+                                <span>{sectionLabel}</span>
+                                <span className="text-gray-400 font-normal normal-case">{line.productName || `Line ${idx + 1}`}</span>
+                              </div>
+                              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Description of Waste <span className="text-gray-400 font-normal">(from line — edit in the WTN form above)</span></label>
+                                  <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={line.wasteDescription || ''} disabled />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">EWC Code <span className="text-gray-400 font-normal">(from line)</span></label>
+                                  <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={line.listOfWasteCode || ''} disabled />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Quantity <span className="text-gray-400 font-normal">(from line)</span></label>
+                                  <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50" value={`${line.quantity || ''} ${line.unit || ''}`} disabled />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Physical Form *</label>
+                                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={per.physicalForm || ''} onChange={e=>updatePerLine({physicalForm:e.target.value})}>
+                                    <option value="">— Select —</option>
+                                    <option value="gas">Gas</option>
+                                    <option value="liquid">Liquid</option>
+                                    <option value="solid">Solid</option>
+                                    <option value="powder">Powder</option>
+                                    <option value="sludge">Sludge</option>
+                                    <option value="mixed">Mixed</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Container Type</label>
+                                  <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={per.containerType || ''} onChange={e=>updatePerLine({containerType:e.target.value})} placeholder="e.g. IBC, drum, skip" />
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Hazard Codes (HP1–HP15) *</label>
+                                  <div className="flex flex-wrap gap-2">
+                                    {HAZARD_CODES.map(code => (
+                                      <button key={code} type="button" onClick={()=>toggleHazard(code)}
+                                        className={`px-2 py-1 rounded text-xs font-medium border ${selectedHazards.includes(code) ? 'bg-red-600 text-white border-red-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
+                                        {code}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {selectedHazards.length === 0 && (
+                                    <p className="text-xs text-red-600 mt-1">⚠ At least one hazard code required for hazardous waste.</p>
+                                  )}
+                                </div>
+                                <div className="sm:col-span-2 mt-2 pt-3 border-t border-dashed border-gray-300">
+                                  <label className="block text-xs font-medium text-gray-600 mb-2">ADR / Carriage of Dangerous Goods <span className="text-gray-400 font-normal">(if waste is dangerous goods for transport)</span></label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={per.unNumber || ''} onChange={e=>updatePerLine({unNumber:e.target.value})} placeholder="UN Number (e.g. UN1993)" />
+                                    <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={per.unClass || ''} onChange={e=>updatePerLine({unClass:e.target.value})} placeholder="UN Class (e.g. 3)" />
+                                    <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={per.packingGroup || ''} onChange={e=>updatePerLine({packingGroup:e.target.value})} placeholder="Packing Group (I, II, III)" />
+                                    <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={per.properShippingName || ''} onChange={e=>updatePerLine({properShippingName:e.target.value})} placeholder="Proper Shipping Name" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Part C — Carrier's certificate */}
+                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                          <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600 flex justify-between">
+                            <span>Part C — Carrier's Certificate</span>
+                            <span className="text-gray-400 font-normal normal-case">= your supplier</span>
+                          </div>
+                          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Carrier Name / Company *</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.carrierName} onChange={e=>setCnFields({...cnFields,carrierName:e.target.value})} /></div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Carrier Registration No. *</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.carrierRegNumber} onChange={e=>setCnFields({...cnFields,carrierRegNumber:e.target.value})} placeholder="CBDU..." /></div>
+                            <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Carrier Address *</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.carrierAddress} onChange={e=>setCnFields({...cnFields,carrierAddress:e.target.value})} /></div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Vehicle Registration *</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.carrierVehicleReg} onChange={e=>setCnFields({...cnFields,carrierVehicleReg:e.target.value})} placeholder="e.g. AB12 CDE" /></div>
+                            <div className="flex gap-2">
+                              <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Date *</label>
+                                <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.carrierSignedDate} onChange={e=>setCnFields({...cnFields,carrierSignedDate:e.target.value})} /></div>
+                              <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Time *</label>
+                                <input type="time" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.carrierSignedTime} onChange={e=>setCnFields({...cnFields,carrierSignedTime:e.target.value})} /></div>
+                            </div>
+                            <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Carrier Signature / Name *</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.carrierSignature} onChange={e=>setCnFields({...cnFields,carrierSignature:e.target.value})} placeholder="Driver / representative name" /></div>
+                          </div>
+                        </div>
+
+                        {/* Part D — Consignor's certificate */}
+                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                          <div className="bg-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">Part D — Consignor's Certificate</div>
+                          <div className="p-4">
+                            <p className="text-xs text-gray-600 mb-3">I certify that the information in Parts A, B and C above is correct, that the carrier is registered or exempt and was advised of the appropriate precautionary measures, that the waste is packaged and labelled correctly, and that I have applied the waste hierarchy as required by Regulation 12 of the Waste (England and Wales) Regulations 2011.</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Consignor Signature / Name *</label>
+                                <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consignorSignature} onChange={e=>setCnFields({...cnFields,consignorSignature:e.target.value})} placeholder="Full name as signature" /></div>
+                              <div className="flex gap-2">
+                                <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Date *</label>
+                                  <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consignorSignedDate} onChange={e=>setCnFields({...cnFields,consignorSignedDate:e.target.value})} /></div>
+                                <div className="w-24"><label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+                                  <input type="time" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consignorSignedTime} onChange={e=>setCnFields({...cnFields,consignorSignedTime:e.target.value})} /></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Part E — Consignee's certificate (filled by disposal site / TWS staff post-receipt) */}
+                        <div className="border border-yellow-200 rounded-lg overflow-hidden">
+                          <div className="bg-yellow-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-yellow-800 flex justify-between">
+                            <span>Part E — Consignee's Certificate</span>
+                            <span className="text-yellow-600 font-normal normal-case">Filled in after waste is received at the disposal site</span>
+                          </div>
+                          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Consignee Name / Company</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consigneeName} onChange={e=>setCnFields({...cnFields,consigneeName:e.target.value})} placeholder="Disposal site operator" /></div>
+                            <div><label className="block text-xs font-medium text-gray-600 mb-1">Permit Number</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consigneePermitNumber} onChange={e=>setCnFields({...cnFields,consigneePermitNumber:e.target.value})} /></div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">EWC Code Accepted?</label>
+                              <div className="flex gap-3">
+                                <label className="flex items-center gap-2 text-sm">
+                                  <input type="radio" name="consigneeEwcAccepted" checked={cnFields.consigneeEwcAccepted === true} onChange={()=>setCnFields({...cnFields,consigneeEwcAccepted:true,consigneeRejectedReason:''})} />
+                                  Accepted
+                                </label>
+                                <label className="flex items-center gap-2 text-sm">
+                                  <input type="radio" name="consigneeEwcAccepted" checked={cnFields.consigneeEwcAccepted === false} onChange={()=>setCnFields({...cnFields,consigneeEwcAccepted:false})} />
+                                  Rejected
+                                </label>
+                                <label className="flex items-center gap-2 text-sm text-gray-500">
+                                  <input type="radio" name="consigneeEwcAccepted" checked={cnFields.consigneeEwcAccepted === null} onChange={()=>setCnFields({...cnFields,consigneeEwcAccepted:null,consigneeRejectedReason:''})} />
+                                  Not yet received
+                                </label>
+                              </div>
+                            </div>
+                            {cnFields.consigneeEwcAccepted === false && (
+                              <div className="sm:col-span-2">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Reason for Rejection</label>
+                                <input className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm" value={cnFields.consigneeRejectedReason} onChange={e=>setCnFields({...cnFields,consigneeRejectedReason:e.target.value})} />
+                              </div>
+                            )}
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Waste Management Operation Code <span className="text-gray-400 font-normal">(R or D code)</span></label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.wasteManagementOperationCode} onChange={e=>setCnFields({...cnFields,wasteManagementOperationCode:e.target.value})} placeholder="e.g. R13, D15" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Vehicle Registration</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consigneeVehicleReg} onChange={e=>setCnFields({...cnFields,consigneeVehicleReg:e.target.value})} />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Quantity Received</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consigneeQuantityReceived} onChange={e=>setCnFields({...cnFields,consigneeQuantityReceived:e.target.value})} placeholder="In same units as Part B" />
+                            </div>
+                            <div className="sm:col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Consignee Signature / Name</label>
+                              <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consigneeSignature} onChange={e=>setCnFields({...cnFields,consigneeSignature:e.target.value})} /></div>
+                            <div className="flex gap-2 sm:col-span-2">
+                              <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                                <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consigneeSignedDate} onChange={e=>setCnFields({...cnFields,consigneeSignedDate:e.target.value})} /></div>
+                              <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+                                <input type="time" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={cnFields.consigneeSignedTime} onChange={e=>setCnFields({...cnFields,consigneeSignedTime:e.target.value})} /></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Notes & email */}
                     <div><label className="block text-xs font-medium text-gray-600 mb-1">Additional Notes</label>
@@ -8431,8 +8794,25 @@ tax_amount: item.tax_code === 'T1'
  const invoiceData = {
     sales_invoice: {
         contact_id: customer.sage_id,
-        date: new Date().toISOString().split('T')[0],
-        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        // fix32c — date defaults to delivery date (the day waste actually moved),
+        // not the day the user clicks "send to Sage". Falls back through
+        // collectionDate → jobDate → today so an old record without a delivery
+        // date still produces a valid invoice. Due date is 30 days after the
+        // chosen invoice date, not 30 days from today.
+        date: (() => {
+          const d = job.deliveryDate || job.delivery_date
+                 || job.collectionDate || job.collection_date
+                 || job.jobDate || job.job_date
+                 || new Date().toISOString().split('T')[0];
+          return new Date(d).toISOString().split('T')[0];
+        })(),
+        due_date: (() => {
+          const d = job.deliveryDate || job.delivery_date
+                 || job.collectionDate || job.collection_date
+                 || job.jobDate || job.job_date
+                 || new Date().toISOString().split('T')[0];
+          return new Date(new Date(d).getTime() + 30*24*60*60*1000).toISOString().split('T')[0];
+        })(),
 reference: job.customerPO || job.customer_po || '',
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
@@ -10484,8 +10864,25 @@ console.log('Site fields:', {
 const invoiceData = {
     sales_invoice: {
         contact_id: customer.sage_id,
-        date: new Date().toISOString().split('T')[0],
-        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        // fix32c — date defaults to delivery date (the day waste actually moved),
+        // not the day the user clicks "send to Sage". Falls back through
+        // collectionDate → jobDate → today so an old record without a delivery
+        // date still produces a valid invoice. Due date is 30 days after the
+        // chosen invoice date, not 30 days from today.
+        date: (() => {
+          const d = jobToInvoice.deliveryDate || jobToInvoice.delivery_date
+                 || jobToInvoice.collectionDate || jobToInvoice.collection_date
+                 || jobToInvoice.jobDate || jobToInvoice.job_date
+                 || new Date().toISOString().split('T')[0];
+          return new Date(d).toISOString().split('T')[0];
+        })(),
+        due_date: (() => {
+          const d = jobToInvoice.deliveryDate || jobToInvoice.delivery_date
+                 || jobToInvoice.collectionDate || jobToInvoice.collection_date
+                 || jobToInvoice.jobDate || jobToInvoice.job_date
+                 || new Date().toISOString().split('T')[0];
+          return new Date(new Date(d).getTime() + 30*24*60*60*1000).toISOString().split('T')[0];
+        })(),
         reference: jobToInvoice.customerPO || jobToInvoice.customer_po || '',
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
@@ -21880,6 +22277,49 @@ window.location.href = '/#sage-integration';  // Keep this line!
               if (!sage_id) {
                 try {
                   console.log('[CustomerForm] Pushing to Sage:', formData.companyName);
+                  // fix32d — Sage rejects address_line_1 longer than 50 chars
+                  // ("is too long (maximum is 50 characters)"). Split on commas
+                  // greedily into line_1, line_2 and city. The backend proxy
+                  // also needs to accept addressLine2 — see sage-proxy.js change.
+                  const splitSageAddress = (full) => {
+                    const out = { line1: '', line2: '', city: '' };
+                    if (!full) return out;
+                    const trimmed = String(full).trim();
+                    if (trimmed.length <= 50) { out.line1 = trimmed; return out; }
+                    // Comma split: assign chunks to line1 until next chunk would
+                    // overflow, then line2, with the final chunk going to city
+                    // (Sage expects city as a separate field).
+                    const parts = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+                    if (parts.length >= 2) {
+                      // Last part is most likely the city; reserve it
+                      out.city = parts[parts.length - 1].slice(0, 50);
+                      const rest = parts.slice(0, -1);
+                      // Pack into line1 greedily, overflow into line2
+                      let l1 = '';
+                      let i = 0;
+                      while (i < rest.length) {
+                        const next = (l1 ? l1 + ', ' : '') + rest[i];
+                        if (next.length <= 50) { l1 = next; i++; } else { break; }
+                      }
+                      let l2 = '';
+                      while (i < rest.length) {
+                        const next = (l2 ? l2 + ', ' : '') + rest[i];
+                        if (next.length <= 50) { l2 = next; i++; } else {
+                          // Still too long — hard-truncate
+                          l2 = (l2 ? l2 + ', ' : '') + rest[i].slice(0, 50 - (l2 ? l2.length + 2 : 0));
+                          break;
+                        }
+                      }
+                      out.line1 = l1 || rest[0].slice(0, 50);
+                      out.line2 = l2;
+                    } else {
+                      // No useful commas — hard split
+                      out.line1 = trimmed.slice(0, 50);
+                      out.line2 = trimmed.slice(50, 100);
+                    }
+                    return out;
+                  };
+                  const splitAddr = splitSageAddress(formData.billingAddress);
                   const response = await fetch('/api/sage-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -21888,8 +22328,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       contactType: 'CUSTOMER',
                       name: formData.companyName,
                       email: formData.email || '',
-                      address: formData.billingAddress || '',
-                      city: formData.billingCity || '',
+                      address: splitAddr.line1 || '',
+                      addressLine2: splitAddr.line2 || '',
+                      city: formData.billingCity || splitAddr.city || '',
                       postcode: formData.billingPostcode || '',
                       vatNumber: formData.vatNumber || '',
                       creditLimit: formData.creditLimit || 0,
@@ -23647,6 +24088,40 @@ window.location.href = '/#sage-integration';  // Keep this line!
               if (!asDraft && !sage_id) {
                 try {
                   console.log('[SupplierForm] Pushing to Sage:', formData.companyName);
+                  // fix32d — same 50-char address-line cap fix as customer form.
+                  // Defined locally rather than hoisted to avoid an out-of-order
+                  // declaration in the surrounding scope.
+                  const splitSageAddress = (full) => {
+                    const out = { line1: '', line2: '', city: '' };
+                    if (!full) return out;
+                    const trimmed = String(full).trim();
+                    if (trimmed.length <= 50) { out.line1 = trimmed; return out; }
+                    const parts = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+                    if (parts.length >= 2) {
+                      out.city = parts[parts.length - 1].slice(0, 50);
+                      const rest = parts.slice(0, -1);
+                      let l1 = ''; let i = 0;
+                      while (i < rest.length) {
+                        const next = (l1 ? l1 + ', ' : '') + rest[i];
+                        if (next.length <= 50) { l1 = next; i++; } else { break; }
+                      }
+                      let l2 = '';
+                      while (i < rest.length) {
+                        const next = (l2 ? l2 + ', ' : '') + rest[i];
+                        if (next.length <= 50) { l2 = next; i++; } else {
+                          l2 = (l2 ? l2 + ', ' : '') + rest[i].slice(0, 50 - (l2 ? l2.length + 2 : 0));
+                          break;
+                        }
+                      }
+                      out.line1 = l1 || rest[0].slice(0, 50);
+                      out.line2 = l2;
+                    } else {
+                      out.line1 = trimmed.slice(0, 50);
+                      out.line2 = trimmed.slice(50, 100);
+                    }
+                    return out;
+                  };
+                  const splitAddr = splitSageAddress(formData.address);
                   const response = await fetch('/api/sage-proxy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -23655,8 +24130,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       contactType: 'SUPPLIER',
                       name: formData.companyName,
                       email: formData.email || '',
-                      address: formData.address || '',
-                      city: formData.city || '',
+                      address: splitAddr.line1 || '',
+                      addressLine2: splitAddr.line2 || '',
+                      city: formData.city || splitAddr.city || '',
                       postcode: formData.postcode || '',
                       vatNumber: formData.vatNumber || '',
                       creditLimit: 0,
