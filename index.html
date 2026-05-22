@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32e-2026-05-19-split-address-fields-customer-supplier';
+        window.PHASE3_BUILD = 'fix32g-2026-05-19-ewc-picker-position-fix';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-19T17:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-05-19T18:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -3071,7 +3071,26 @@ const EWCPicker = ({ value, onChange }) => {
   const openDropdown = () => {
     if (btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
-      setPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX, width: Math.max(rect.width, 380) });
+      // fix32g — the dropdown is rendered with position:fixed, which is
+      // viewport-relative. getBoundingClientRect() is ALSO viewport-relative,
+      // so we must NOT add window.scrollY/scrollX here — doing so pushed the
+      // dropdown off-screen by however far the page was scrolled. This is why
+      // it worked at the top of the form but vanished when scrolled down
+      // (e.g. on a smaller screen or a longer multi-line WTN).
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const desiredWidth = Math.max(rect.width, 380);
+      // Clamp horizontally so a button near the right edge doesn't overflow
+      let left = rect.left;
+      if (left + desiredWidth > vw - 8) left = Math.max(8, vw - desiredWidth - 8);
+      // If there isn't room below the button, open upward instead
+      const spaceBelow = vh - rect.bottom;
+      const estHeight = 420; // header + ~320 list + footer
+      const openUp = spaceBelow < 220 && rect.top > spaceBelow;
+      const top = openUp
+        ? Math.max(8, rect.top - Math.min(estHeight, rect.top) - 4)
+        : rect.bottom + 4;
+      setPos({ top, left, width: desiredWidth });
     }
     setOpen(true);
   };
@@ -16671,8 +16690,9 @@ useEffect(() => {
   return () => window.removeEventListener('scroll', onScroll);
 }, []);
           // Load suppliers from Supabase when app starts
-useEffect(() => {
-  const loadSuppliersFromSupabase = async () => {
+          // fix32f — hoisted to component scope so the auto-refresh poll below
+          // can reuse it.  Same body as before.
+const loadSuppliersFromSupabase = async () => {
     try {
       // Use the paginating helper so we don't hit Supabase's 1000-row default
       // response cap. fix15d: previously had a hand-coded `.limit(2000)` cap
@@ -16716,7 +16736,8 @@ useEffect(() => {
       console.error('Error loading suppliers:', error);
     }
   };
-  
+
+useEffect(() => {
   loadSuppliersFromSupabase();
 }, []);
           // Load customers from Supabase when app starts
@@ -17822,6 +17843,57 @@ useEffect(() => {
 // Make globally accessible
 window.refreshJobs = refreshJobs;
 window.loadJobsFromSupabase = loadJobsFromSupabase;
+window.loadSuppliersFromSupabase = loadSuppliersFromSupabase;
+window.loadCustomersFromSupabase = loadCustomersFromSupabase;
+
+// ============================================================================
+// fix32f — auto-refresh jobs/customers/suppliers every 30 seconds
+// ============================================================================
+// Catches changes made by other users on the same DB (e.g. a colleague creates
+// a supplier — without this, you wouldn't see it until you reload the tab).
+// The poll is paused when the tab is hidden (Page Visibility API) so background
+// tabs don't keep hitting Supabase.  Each loader is fault-tolerant on its own,
+// so one failing won't block the others.
+useEffect(() => {
+  const REFRESH_MS = 30000;
+  let intervalId = null;
+
+  const runRefresh = () => {
+    if (document.visibilityState !== 'visible') return;
+    try { loadJobsFromSupabase && loadJobsFromSupabase(); } catch (e) { console.warn('[auto-refresh] jobs:', e); }
+    try { loadSuppliersFromSupabase && loadSuppliersFromSupabase(); } catch (e) { console.warn('[auto-refresh] suppliers:', e); }
+    try { loadCustomersFromSupabase && loadCustomersFromSupabase(); } catch (e) { console.warn('[auto-refresh] customers:', e); }
+  };
+
+  const start = () => {
+    if (intervalId) return;
+    intervalId = setInterval(runRefresh, REFRESH_MS);
+  };
+  const stop = () => {
+    if (!intervalId) return;
+    clearInterval(intervalId);
+    intervalId = null;
+  };
+
+  // Run when tab becomes visible (also fires an immediate refresh on focus,
+  // useful when you switch back to a tab that's been idle for a while).
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') {
+      runRefresh();
+      start();
+    } else {
+      stop();
+    }
+  };
+
+  document.addEventListener('visibilitychange', onVisibility);
+  if (document.visibilityState === 'visible') start();
+
+  return () => {
+    document.removeEventListener('visibilitychange', onVisibility);
+    stop();
+  };
+}, []);
 
 useEffect(() => {
   // Load company settings into localStorage on startup so WTN auto-fills everywhere
