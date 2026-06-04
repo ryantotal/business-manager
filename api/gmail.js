@@ -45,6 +45,25 @@ function buildEmail({ to, subject, body, fromEmail, fromName, pdfHtml }) {
   return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+// ── fix32h: parse WTN reference into { jobNum, suffixLetter } ─────────────
+// Refs look like:
+//   WTN-TWS-1557      → jobNum "1557", suffix null
+//   WTN-TWS-1557-A    → jobNum "1557", suffix "A"
+//   WTN-1557          → jobNum "1557", suffix null  (legacy, no TWS- prefix)
+//   WTN-TWS-1557-AB   → jobNum "1557", suffix "AB" (future-proof if you ever
+//                       exceed 26 lines per job)
+function parseWtnRef(id) {
+  // Strip leading "WTN-" (case-insensitive)
+  let s = String(id || '').replace(/^WTN-/i, '');
+  // Strip optional "TWS-" prefix
+  s = s.replace(/^TWS-/i, '');
+  // Capture trailing -<letters> as the suffix (uppercase)
+  const m = s.match(/-([A-Z]+)$/i);
+  const suffixLetter = m ? m[1].toUpperCase() : null;
+  const jobNum = m ? s.slice(0, m.index) : s;
+  return { jobNum, suffixLetter };
+}
+
 export default async function handler(req, res) {
   const action = req.query.action;
 
@@ -186,17 +205,23 @@ export default async function handler(req, res) {
         process.env.SUPABASE_SERVICE_KEY
       );
 
-      const jobNum = id.replace(/^WTN-/i, '');
+      // fix32h — multi-line jobs have refs like WTN-TWS-1557-A, where the
+      // trailing -A is the per-line suffix and NOT part of job_number.
+      // Previously the code did .eq('job_number', 'TWS-1557-A') and missed
+      // every multi-line WTN.  parseWtnRef splits these out properly.
+      const { jobNum, suffixLetter } = parseWtnRef(id);
+      console.log('[gmail/wtn] lookup', { id, jobNum, suffixLetter });
+
       let { data: jobs } = await supabase
         .from('jobs')
-        .select('wtn_data, wtn_sent, customer_name, job_number, job_type, job_date, site_address1, site_postcode')
+        .select('id, wtn_data, wtn_sent, customer_name, job_number, job_type, job_date, site_address1, site_postcode')
         .eq('job_number', jobNum)
         .limit(1);
 
       if (!jobs?.length) {
         const { data: fallback } = await supabase
           .from('jobs')
-          .select('wtn_data, wtn_sent, customer_name, job_number, job_type, job_date, site_address1, site_postcode')
+          .select('id, wtn_data, wtn_sent, customer_name, job_number, job_type, job_date, site_address1, site_postcode')
           .eq('wtn_sent', true)
           .ilike('wtn_data', '%' + jobNum + '%')
           .limit(1);
@@ -208,8 +233,70 @@ export default async function handler(req, res) {
         return res.status(404).send(`<html><body style="font-family:Arial;padding:40px;text-align:center;"><h2>WTN Not Found</h2><p>Reference <strong>${id}</strong> could not be found.</p><p>Contact Total Waste Services Ltd if you believe this is an error.</p></body></html>`);
       }
 
+      // fix32h — for multi-line jobs, look up the correct WTN row by
+      // suffix_letter from the wtns table. Falls back to the legacy
+      // wtn_data JSON blob (used by single-line jobs from before the wtns
+      // table existed).
       let wtnData = {};
-      try { wtnData = typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : (job.wtn_data || {}); } catch(e) {}
+      if (suffixLetter) {
+        const { data: wtnRows } = await supabase
+          .from('wtns')
+          .select('*')
+          .eq('job_id', job.id)
+          .eq('suffix_letter', suffixLetter)
+          .limit(1);
+        if (wtnRows?.length) {
+          const r = wtnRows[0];
+          // Map snake_case row → camelCase shape the renderer below expects.
+          // Keep field names aligned with what the React WtnPortalModal sets
+          // so the rendered output matches the in-app preview.
+          wtnData = {
+            wtnNumber: r.wtn_number || id,
+            transferDate: r.transfer_date,
+            transferTime: r.transfer_time,
+            wasteDescription: r.waste_description,
+            skipSize: r.skip_size,
+            listOfWasteCode: r.list_of_waste_code,
+            wasteContainer: r.waste_container,
+            quantity: r.quantity,
+            unit: r.unit,
+            isHazardous: r.is_hazardous,
+            transferorName: r.transferor_name,
+            transferorAddress: r.transferor_address,
+            transferorPostcode: r.transferor_postcode,
+            transferorSicCode: r.transferor_sic_code,
+            transferorIsProducer: r.transferor_is_producer,
+            transferorPermitNumber: r.transferor_permit_number,
+            transferorSignature: r.transferor_signature,
+            transferorRepresenting: r.transferor_representing,
+            transfereeName: r.transferee_name,
+            transfereeAddress: r.transferee_address,
+            transfereePostcode: r.transferee_postcode,
+            transfereeCarrierReg: r.transferee_carrier_reg,
+            transfereePermitNumber: r.transferee_permit_number,
+            transfereeSignature: r.transferee_signature,
+            transfereeRepresenting: r.transferee_representing,
+            transferAddress: r.transfer_address,
+            brokerName: r.broker_name,
+            brokerAddress: r.broker_address,
+            brokerCarrierReg: r.broker_carrier_reg,
+            recycledPct: r.recycled_pct,
+            recoveredPct: r.recovered_pct,
+            landfillPct: r.landfill_pct,
+            notes: r.notes,
+            // Note: htmlContent is NOT taken from the wtns row. The brief
+            // calls this out — baking htmlContent at send-time froze permits
+            // on older WTNs. Always re-render fresh from the live row.
+          };
+        } else {
+          console.log('[gmail/wtn] no wtns row for', { job_id: job.id, suffixLetter });
+        }
+      }
+
+      // Fallback: legacy single-line jobs that pre-date the wtns table
+      if (!Object.keys(wtnData).length) {
+        try { wtnData = typeof job.wtn_data === 'string' ? JSON.parse(job.wtn_data) : (job.wtn_data || {}); } catch(e) {}
+      }
 
       // Fetch company settings for logo
       let companyLogoUrl = '';
