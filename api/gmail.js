@@ -47,16 +47,17 @@ function buildEmail({ to, subject, body, fromEmail, fromName, pdfHtml }) {
 
 // ── fix32h: parse WTN reference into { jobNum, suffixLetter } ─────────────
 // Refs look like:
-//   WTN-TWS-1557      → jobNum "1557", suffix null
-//   WTN-TWS-1557-A    → jobNum "1557", suffix "A"
-//   WTN-1557          → jobNum "1557", suffix null  (legacy, no TWS- prefix)
-//   WTN-TWS-1557-AB   → jobNum "1557", suffix "AB" (future-proof if you ever
+//   WTN-TWS-1599      → jobNum "TWS-1599", suffix null
+//   WTN-TWS-1599-B    → jobNum "TWS-1599", suffix "B"
+//   WTN-TWS-1599-AB   → jobNum "TWS-1599", suffix "AB" (future-proof if you ever
 //                       exceed 26 lines per job)
+//
+// fix32h(2) — the jobs.job_number column stores "TWS-1599" with the prefix,
+// NOT bare digits. Earlier draft stripped TWS- too, which broke the lookup.
+// Only WTN- and the trailing suffix are stripped here.
 function parseWtnRef(id) {
   // Strip leading "WTN-" (case-insensitive)
   let s = String(id || '').replace(/^WTN-/i, '');
-  // Strip optional "TWS-" prefix
-  s = s.replace(/^TWS-/i, '');
   // Capture trailing -<letters> as the suffix (uppercase)
   const m = s.match(/-([A-Z]+)$/i);
   const suffixLetter = m ? m[1].toUpperCase() : null;
