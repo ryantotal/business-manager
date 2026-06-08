@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32g-2026-05-19-ewc-picker-position-fix';
+        window.PHASE3_BUILD = 'fix32l-2026-06-08-auto-split-over50-addresses';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-05-19T18:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-06-08T14:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -500,6 +500,58 @@ function parseAddressToParts(rawAddress, existingCity, existingPostcode) {
 }
 function combinePartsToAddress({ line1, line2, city, postcode }) {
   return [line1, line2, city, postcode].filter(Boolean).join('\n');
+}
+
+// ============================================================================
+// fix32l — split an over-50-char address line 1 into line 1 + line 2
+// ============================================================================
+// Used wherever we display or save site_address1 / billing line 1.  The Sage
+// API caps address_line_1 and address_line_2 at 50 chars each; rather than
+// hard-truncate (lossy) we split on a natural boundary (comma or space) close
+// to but not exceeding 50 chars, then put the overflow in line 2.  If line 2
+// already has content, the helper appends to it (separated by ", ").  If the
+// overflow itself exceeds 50, it gets hard-cut at 50 — Sage won't accept more.
+//
+//   splitOverflowFromLine1("Jordhan Industries Ltd, Unit F6 Latherford Close Four Ashes Wolverhampton", "")
+//     → { line1: "Jordhan Industries Ltd, Unit F6 Latherford Close",
+//         line2: "Four Ashes Wolverhampton" }
+//
+// If line1 already fits, returns it unchanged.  Always returns both fields,
+// never null.
+function splitOverflowFromLine1(rawLine1, rawLine2) {
+  const line1In = String(rawLine1 || '').trim();
+  const line2In = String(rawLine2 || '').trim();
+  if (line1In.length <= 50) return { line1: line1In, line2: line2In };
+
+  // Find the latest natural break (comma preferred, then space) at <= 50 chars
+  let cutAt = -1;
+  // First try comma
+  for (let i = 50; i >= 1; i--) {
+    if (line1In[i] === ',' || line1In[i - 1] === ',') {
+      cutAt = (line1In[i] === ',') ? i : i - 1;
+      break;
+    }
+  }
+  // Fall back to space
+  if (cutAt === -1) {
+    for (let i = 50; i >= 1; i--) {
+      if (line1In[i] === ' ' || line1In[i - 1] === ' ') {
+        cutAt = (line1In[i] === ' ') ? i : i - 1;
+        break;
+      }
+    }
+  }
+  // Last resort: hard cut at 50 (no whitespace/commas in first 50 chars)
+  if (cutAt === -1) cutAt = 50;
+
+  const newLine1 = line1In.slice(0, cutAt).replace(/[,\s]+$/, '').trim();
+  const overflow = line1In.slice(cutAt).replace(/^[,\s]+/, '').trim();
+  // Combine overflow with whatever was already in line 2
+  let newLine2 = overflow;
+  if (line2In) newLine2 = overflow + (overflow ? ', ' : '') + line2In;
+  // Cap line 2 at 50 too
+  if (newLine2.length > 50) newLine2 = newLine2.slice(0, 50).trim();
+  return { line1: newLine1, line2: newLine2 };
 }
 
 // Searchable Dropdown Component
@@ -1273,10 +1325,11 @@ return (
                       </div>
                     )}
                     <div className="space-y-2">
-                      <input type="text" value={form.siteAddress1} onChange={e => setForm({...form, siteAddress1: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 1" />
-                      <input type="text" value={form.siteAddress2} onChange={e => setForm({...form, siteAddress2: e.target.value})}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 2 (optional)" />
+                      {/* fix32k — 50-char cap to match Sage's address_line limit */}
+                      <input type="text" maxLength={50} value={form.siteAddress1} onChange={e => setForm({...form, siteAddress1: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 1 (max 50)" />
+                      <input type="text" maxLength={50} value={form.siteAddress2} onChange={e => setForm({...form, siteAddress2: e.target.value})}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="Address line 2 (optional, max 50)" />
                       <div className="grid grid-cols-2 gap-2">
                         <input type="text" value={form.siteCity} onChange={e => setForm({...form, siteCity: e.target.value})}
                           className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" placeholder="City / Town" />
@@ -5937,16 +5990,20 @@ const [isEvent, setIsEvent] = useState(false);
   <div className="space-y-4">
     <div className="relative">
       <label className="block text-sm font-medium text-gray-700 mb-1">Site Address *</label>
+      {/* fix32k — line 1/2 capped at 50 chars to match Sage's address_line limit.
+          Prevents the legacy "crammed string" issue that broke invoice push. */}
       <input
         type="text"
+        maxLength={50}
         value={formData.siteAddress1}
         onChange={(e) => {
             setFormData({...formData, siteAddress1: e.target.value});
             handleAddressSearch(e.target.value);
         }}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
-        placeholder="Delivery/collection address"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-1"
+        placeholder="Street number and name (max 50 chars)"
       />
+      <p className="text-xs text-gray-400 mb-2">{(formData.siteAddress1 || '').length}/50</p>
       
       {/* DROPDOWN GOES AFTER THE INPUT CLOSES */}
       {showAddressSuggestions && addressSuggestions && addressSuggestions.length > 0 ? (
@@ -5957,9 +6014,14 @@ const [isEvent, setIsEvent] = useState(false);
                     className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
                     onClick={() => {
                         console.log('Clicked:', suggestion);
+                        // fix32l — split over-50 picked addresses into line1+line2
+                        // rather than truncating (fix32k did a brutal .slice that
+                        // chopped off the end with no overflow recovery).
+                        const split = splitOverflowFromLine1(suggestion.address || '', formData.siteAddress2 || '');
                         setFormData({
                             ...formData,
-                            siteAddress1: suggestion.address,
+                            siteAddress1: split.line1,
+                            siteAddress2: split.line2,
                             sitePostcode: suggestion.postcode
                         });
                         setShowAddressSuggestions(false);
@@ -5975,12 +6037,23 @@ const [isEvent, setIsEvent] = useState(false);
       ) : null}
     </div>
     
+    <div>
+      <input
+        type="text"
+        maxLength={50}
+        value={formData.siteAddress2}
+        onChange={(e) => setFormData({...formData, siteAddress2: e.target.value})}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-1"
+        placeholder="Address line 2 (optional, max 50 chars)"
+      />
+      <p className="text-xs text-gray-400 mb-2">{(formData.siteAddress2 || '').length}/50</p>
+    </div>
     <input
       type="text"
-      value={formData.siteAddress2}
-      onChange={(e) => setFormData({...formData, siteAddress2: e.target.value})}
+      value={formData.siteCity || ''}
+      onChange={(e) => setFormData({...formData, siteCity: e.target.value})}
       className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
-      placeholder="Address line 2 (optional)"
+      placeholder="City / Town"
     />
     <input
       type="text"
@@ -8888,14 +8961,56 @@ tax_amount: item.tax_code === 'T1'
 reference: job.customerPO || job.customer_po || '',
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
-        delivery_address: {
-    address_line_1: jobToInvoice.siteAddress1 || '',  // Changed from site_address1
-address_line_2: jobToInvoice.siteAddress2 || '',  // Changed from site_address2
-city: jobToInvoice.siteCity || '',                // Changed from site_city
-region: jobToInvoice.siteCounty || '',            // Changed from site_county
-postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
-    country_code: 'GB'
-},
+        // fix32j — defensive backstop for legacy jobs whose site_address1 is
+        // a crammed single string longer than Sage's 50-char limit. Split it
+        // on commas/newlines, fill line_1 greedily up to 50, overflow to
+        // line_2.  Falls back cleanly when siteAddress1 already fits.
+        delivery_address: (() => {
+          const splitSiteAddress = (full) => {
+            const out = { line1: '', line2: '' };
+            if (!full) return out;
+            const trimmed = String(full).trim();
+            if (trimmed.length <= 50) { out.line1 = trimmed; return out; }
+            const parts = trimmed.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+            let l1 = ''; let i = 0;
+            while (i < parts.length) {
+              const next = (l1 ? l1 + ', ' : '') + parts[i];
+              if (next.length <= 50) { l1 = next; i++; } else { break; }
+            }
+            let l2 = '';
+            while (i < parts.length) {
+              const next = (l2 ? l2 + ', ' : '') + parts[i];
+              if (next.length <= 50) { l2 = next; i++; } else {
+                l2 = (l2 ? l2 + ', ' : '') + parts[i].slice(0, 50 - (l2 ? l2.length + 2 : 0));
+                break;
+              }
+            }
+            out.line1 = l1 || trimmed.slice(0, 50);
+            out.line2 = l2;
+            return out;
+          };
+          const rawLine1 = jobToInvoice.siteAddress1 || '';
+          const rawLine2 = jobToInvoice.siteAddress2 || '';
+          if (rawLine1.length <= 50 && rawLine2.length <= 50) {
+            return {
+              address_line_1: rawLine1,
+              address_line_2: rawLine2,
+              city: jobToInvoice.siteCity || '',
+              region: jobToInvoice.siteCounty || '',
+              postal_code: jobToInvoice.sitePostcode || '',
+              country_code: 'GB',
+            };
+          }
+          const split = splitSiteAddress(rawLine1);
+          return {
+            address_line_1: split.line1,
+            address_line_2: split.line2 || (rawLine2.length <= 50 ? rawLine2 : rawLine2.slice(0, 50)),
+            city: jobToInvoice.siteCity || '',
+            region: jobToInvoice.siteCounty || '',
+            postal_code: jobToInvoice.sitePostcode || '',
+            country_code: 'GB',
+          };
+        })(),
         invoice_lines: lineItems
     }
 };
@@ -10958,14 +11073,56 @@ const invoiceData = {
         reference: jobToInvoice.customerPO || jobToInvoice.customer_po || '',
         // REMOVE LINE 3314 - no notes field at all
         // CHANGE: Add delivery_settings instead of main_address
-        delivery_address: {
-    address_line_1: jobToInvoice.siteAddress1 || '',  // Changed from site_address1
-address_line_2: jobToInvoice.siteAddress2 || '',  // Changed from site_address2
-city: jobToInvoice.siteCity || '',                // Changed from site_city
-region: jobToInvoice.siteCounty || '',            // Changed from site_county
-postal_code: jobToInvoice.sitePostcode || '',     // Changed from site_postcode
-    country_code: 'GB'
-},
+        // fix32j — defensive backstop for legacy jobs whose site_address1 is
+        // a crammed single string longer than Sage's 50-char limit. Split it
+        // on commas/newlines, fill line_1 greedily up to 50, overflow to
+        // line_2.  Falls back cleanly when siteAddress1 already fits.
+        delivery_address: (() => {
+          const splitSiteAddress = (full) => {
+            const out = { line1: '', line2: '' };
+            if (!full) return out;
+            const trimmed = String(full).trim();
+            if (trimmed.length <= 50) { out.line1 = trimmed; return out; }
+            const parts = trimmed.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+            let l1 = ''; let i = 0;
+            while (i < parts.length) {
+              const next = (l1 ? l1 + ', ' : '') + parts[i];
+              if (next.length <= 50) { l1 = next; i++; } else { break; }
+            }
+            let l2 = '';
+            while (i < parts.length) {
+              const next = (l2 ? l2 + ', ' : '') + parts[i];
+              if (next.length <= 50) { l2 = next; i++; } else {
+                l2 = (l2 ? l2 + ', ' : '') + parts[i].slice(0, 50 - (l2 ? l2.length + 2 : 0));
+                break;
+              }
+            }
+            out.line1 = l1 || trimmed.slice(0, 50);
+            out.line2 = l2;
+            return out;
+          };
+          const rawLine1 = jobToInvoice.siteAddress1 || '';
+          const rawLine2 = jobToInvoice.siteAddress2 || '';
+          if (rawLine1.length <= 50 && rawLine2.length <= 50) {
+            return {
+              address_line_1: rawLine1,
+              address_line_2: rawLine2,
+              city: jobToInvoice.siteCity || '',
+              region: jobToInvoice.siteCounty || '',
+              postal_code: jobToInvoice.sitePostcode || '',
+              country_code: 'GB',
+            };
+          }
+          const split = splitSiteAddress(rawLine1);
+          return {
+            address_line_1: split.line1,
+            address_line_2: split.line2 || (rawLine2.length <= 50 ? rawLine2 : rawLine2.slice(0, 50)),
+            city: jobToInvoice.siteCity || '',
+            region: jobToInvoice.siteCounty || '',
+            postal_code: jobToInvoice.sitePostcode || '',
+            country_code: 'GB',
+          };
+        })(),
         invoice_lines: lineItems
     }
 };
@@ -17656,8 +17813,8 @@ collectionDate: job.collection_date,
   profitMargin: job.profit_margin || 0,
   jobValue: job.job_value || 0,
   siteAddress: job.site_address,
-  siteAddress1: job.site_address1,
-  siteAddress2: job.site_address2,
+  // fix32l — auto-split over-50-char line 1 into line1+line2
+  ...(() => { const s = splitOverflowFromLine1(job.site_address1, job.site_address2); return { siteAddress1: s.line1, siteAddress2: s.line2 }; })(),
   siteCity: job.site_city,
   sitePostcode: job.site_postcode,
   siteContact: job.site_contact,
@@ -17764,8 +17921,8 @@ const refreshJobs = async () => {
                 profitMargin: job.profit_margin || 0,
                 jobValue: job.job_value || 0,
                 siteAddress: job.site_address,
-                siteAddress1: job.site_address1,
-                siteAddress2: job.site_address2,
+                // fix32l — auto-split over-50-char line 1
+                ...(() => { const s = splitOverflowFromLine1(job.site_address1, job.site_address2); return { siteAddress1: s.line1, siteAddress2: s.line2 }; })(),
                 siteCity: job.site_city,
                 sitePostcode: job.site_postcode,
                 siteContact: job.site_contact,
@@ -19887,8 +20044,8 @@ const formattedJobs = updatedJobs.map(job => ({
     isCompleted: job.is_completed,
     isCancelled: job.is_cancelled,
     siteAddress: job.site_address,
-    siteAddress1: job.site_address1,
-    siteAddress2: job.site_address2,
+    // fix32l — auto-split over-50-char line 1
+    ...(() => { const s = splitOverflowFromLine1(job.site_address1, job.site_address2); return { siteAddress1: s.line1, siteAddress2: s.line2 }; })(),
     siteCity: job.site_city,
     sitePostcode: job.site_postcode,
     status: job.status,
@@ -20053,8 +20210,9 @@ if (!Array.isArray(job.lineItems)) {
         isCancelled: job.is_cancelled || job.isCancelled || false,
         notes: job.notes || '',
 lineItems: lineItems,        
-siteAddress1: job.site_address1 || job.siteAddress1 || '',
-siteAddress2: job.site_address2 || job.siteAddress2 || '',
+// fix32l — auto-split over-50-char line 1
+...(() => { const s = splitOverflowFromLine1(job.site_address1 || job.siteAddress1 || '', job.site_address2 || job.siteAddress2 || ''); return { siteAddress1: s.line1, siteAddress2: s.line2 }; })(),
+// (siteAddress2 set by split above — fix32l)
 siteCity: job.site_city || job.siteCity || '',
 sitePostcode: job.site_postcode || job.sitePostcode || '',
 siteContact: job.site_contact || job.siteContact || '',
@@ -25908,19 +26066,32 @@ By approving this quotation and authorising us to commence services, you acknowl
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Site Address *</label>
+                {/* fix32k — line 1/2 capped at 50 chars to match Sage's
+                    address_line limit. */}
                 <input
                   type="text"
+                  maxLength={50}
                   value={formData.siteAddress1}
                   onChange={(e) => setFormData({...formData, siteAddress1: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
-                  placeholder="Delivery/collection address"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-1"
+                  placeholder="Street number and name (max 50 chars)"
                 />
+                <p className="text-xs text-gray-400 mb-2">{(formData.siteAddress1 || '').length}/50</p>
                 <input
                   type="text"
+                  maxLength={50}
                   value={formData.siteAddress2}
                   onChange={(e) => setFormData({...formData, siteAddress2: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-1"
+                  placeholder="Address line 2 (optional, max 50 chars)"
+                />
+                <p className="text-xs text-gray-400 mb-2">{(formData.siteAddress2 || '').length}/50</p>
+                <input
+                  type="text"
+                  value={formData.siteCity || ''}
+                  onChange={(e) => setFormData({...formData, siteCity: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
-                  placeholder="Address line 2 (optional)"
+                  placeholder="City / Town"
                 />
                 <input
                   type="text"
