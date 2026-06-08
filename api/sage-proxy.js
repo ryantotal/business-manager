@@ -930,8 +930,22 @@ export default async function handler(req, res) {
       status: sageResponse.status,
       ok: sageResponse.ok,
       hasData: !!data,
-      errorMessage: data?.error || data?.message
+      // fix32i — Sage returns errors as an array like
+      //   [{"$severity":"error","$message":"..."}]
+      // not as data.error/data.message. The old logger read those fields and
+      // got `undefined`, hiding the real cause of every 4xx.
+      errorMessage: (Array.isArray(data) && data[0]?.$message)
+        || data?.error
+        || data?.message
+        || (data?.[0]?.$message)
+        || null
     });
+    // On non-2xx, dump the full response body so we can see Sage's exact
+    // complaint (severity, dataCode, message, source field). Without this
+    // the proxy was silently swallowing the diagnostic.
+    if (!sageResponse.ok) {
+      console.error('[Sage Proxy] Sage API non-2xx body:', JSON.stringify(data));
+    }
     
     if (sageResponse.status === 401) {
       console.log('[Sage Proxy] Received 401, attempting token refresh...');
