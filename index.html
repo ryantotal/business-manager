@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32o-2026-06-10-vat-on-customer-supplier-update';
+        window.PHASE3_BUILD = 'fix32p-2026-06-10-debounce-address-contact-phone-search';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-06-10T10:30:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-06-10T11:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -20145,7 +20145,32 @@ const formattedJobs = updatedJobs.map(job => ({
         alert('Error duplicating job: ' + error.message);
     }
 };
-const handleAddressSearch = async (searchText) => {
+// fix32p — debounce on-keystroke Supabase lookups for address / contact /
+// phone autocomplete.  Previously every character typed in any of those
+// fields fired a `SELECT ... ILIKE '%text%'` against the jobs table.  With
+// 1220 jobs and no index on a leading-wildcard pattern, every keystroke
+// did a sequential scan.  Typing "Wolverhampton" was 13 round-trips, each
+// scanning the full table — visible UI lag while typing.  The wrapper
+// below holds the call until the user pauses typing for 250ms.
+function debounceAsync(fn, ms) {
+  let timer = null;
+  let lastResolve = null;
+  return (...args) => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    return new Promise((resolve) => {
+      // Replace any previous pending resolution
+      lastResolve = resolve;
+      timer = setTimeout(async () => {
+        timer = null;
+        const r = lastResolve;
+        try { const v = await fn(...args); if (r === lastResolve) r(v); }
+        catch (e) { if (r === lastResolve) r(undefined); }
+      }, ms);
+    });
+  };
+}
+
+const _doAddressSearch = async (searchText) => {
 
     
     try {
@@ -20182,7 +20207,9 @@ const handleAddressSearch = async (searchText) => {
         console.error('Error in handleAddressSearch:', error);
     }
 };
-const handleContactSearch = async (searchText) => {
+const handleAddressSearch = debounceAsync(_doAddressSearch, 250);
+
+const _doContactSearch = async (searchText) => {
     try {
         if (searchText.length < 2) {
             setContactSuggestions([]);
@@ -20210,8 +20237,9 @@ const handleContactSearch = async (searchText) => {
         console.error('Error searching contacts:', error);
     }
 };
+const handleContactSearch = debounceAsync(_doContactSearch, 250);
 
-const handlePhoneSearch = async (searchText) => {
+const _doPhoneSearch = async (searchText) => {
     try {
         if (searchText.length < 2) {
             setPhoneSuggestions([]);
@@ -20239,6 +20267,7 @@ const handlePhoneSearch = async (searchText) => {
         console.error('Error searching phones:', error);
     }
 };
+const handlePhoneSearch = debounceAsync(_doPhoneSearch, 250);
          const handleEditJob = async (job) => {
     // Fetch line items for this job - using correct table name
    
