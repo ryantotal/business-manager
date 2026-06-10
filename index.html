@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32n-2026-06-10-customer-address-dedupe';
+        window.PHASE3_BUILD = 'fix32o-2026-06-10-vat-on-customer-supplier-update';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-06-10T10:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-06-10T10:30:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -22737,6 +22737,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           email: formData.email || undefined,
                           credit_limit: parseFloat(formData.creditLimit) || undefined,
                           credit_days: parseInt(formData.paymentTerms) || 30,
+                          // fix32o — push VAT number on update too. Sage's API
+                          // field is `tax_number` (not vat_number). Previously
+                          // only the CREATE path sent VAT; updates left it
+                          // alone, so adding VAT to an existing customer in
+                          // the portal never reached Sage.
+                          tax_number: (formData.vatNumber || '').trim().toUpperCase().replace(/[\s-]/g, '') || undefined,
                         }
                       }
                     })
@@ -24532,6 +24538,8 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           name: formData.companyName,
                           email: formData.email || undefined,
                           credit_days: parseInt(formData.paymentTerms) || 30,
+                          // fix32o — push VAT to Sage on update (was missing)
+                          tax_number: (formData.vatNumber || '').trim().toUpperCase().replace(/[\s-]/g, '') || undefined,
                         }
                       }
                     })
