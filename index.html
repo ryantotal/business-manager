@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32l-2026-06-08-auto-split-over50-addresses';
+        window.PHASE3_BUILD = 'fix32n-2026-06-10-customer-address-dedupe';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-06-08T14:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-06-10T10:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -475,17 +475,39 @@ function parseAddressToParts(rawAddress, existingCity, existingPostcode) {
   // Split on newlines OR commas, trim, drop empties
   const parts = raw.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
   if (parts.length === 0) return out;
-  // Pull postcode off the end if the last part looks like one and we don't
-  // already have a postcode in the dedicated column.
-  let postcode = out.postcode;
   let remaining = parts.slice();
-  if (!postcode && remaining.length > 0 && UK_POSTCODE_RE.test(remaining[remaining.length - 1])) {
-    postcode = remaining.pop();
-  }
-  // Pull city off the (new) end if we don't have one and there are >= 2 parts left
+  // fix32n — ALWAYS strip a trailing postcode and city from the address
+  // blob, even if we already have those values in the dedicated columns.
+  // Previously the parser only popped them when the column was empty, so
+  // a customer with city/postcode already filled would see line 2 = "City,
+  // Postcode" (duplicated). On save this got combined back into the blob
+  // and the duplication doubled each time the customer was opened.
+  // The loop handles the legacy case where the blob already contains
+  // multiple repetitions ("Wolverhampton, WV11 2BB, Wolverhampton, WV11 2BB").
+  let postcode = out.postcode;
   let city = out.city;
-  if (!city && remaining.length >= 2) {
-    city = remaining.pop();
+  // Strip any trailing duplicates of (city, postcode) tuples or lone postcode/city
+  let madeProgress = true;
+  while (madeProgress && remaining.length > 0) {
+    madeProgress = false;
+    // Trailing postcode
+    if (remaining.length > 0 && UK_POSTCODE_RE.test(remaining[remaining.length - 1])) {
+      const popped = remaining.pop();
+      if (!postcode) postcode = popped;
+      madeProgress = true;
+    }
+    // Trailing city (only pop if it matches existing city OR if we don't have a city yet)
+    if (remaining.length >= 1) {
+      const last = remaining[remaining.length - 1];
+      if (city && last.toLowerCase() === city.toLowerCase()) {
+        remaining.pop();
+        madeProgress = true;
+      } else if (!city && remaining.length >= 2) {
+        // No city set yet — adopt this one (only when there's still a line1 to keep)
+        city = remaining.pop();
+        madeProgress = true;
+      }
+    }
   }
   // Whatever's left goes to line1 / line2
   let line1 = remaining.shift() || '';
@@ -501,6 +523,29 @@ function parseAddressToParts(rawAddress, existingCity, existingPostcode) {
 function combinePartsToAddress({ line1, line2, city, postcode }) {
   return [line1, line2, city, postcode].filter(Boolean).join('\n');
 }
+
+// ============================================================================
+// fix32m — cheap job-list signature for "did anything actually change?" check
+// ============================================================================
+// The auto-refresh tick replaces the entire `jobs` array reference every 30s.
+// Even when nothing has changed in the DB, the new reference invalidates every
+// memo that depends on `jobs` — causing visible UI churn on a 1200-row list.
+// This helper builds a short string fingerprint that captures the fields most
+// likely to actually change (status, completion, on-stop, updated_at, count).
+// If the fingerprint matches the previously-stored one, we keep the existing
+// state reference rather than calling setJobs with a brand new array.
+function buildJobsSignature(jobs) {
+  if (!Array.isArray(jobs)) return '';
+  // Sort-independent count + per-row update fields, hashed into one string
+  // joined by | so a single changed status flips the whole signature.
+  const parts = jobs.map(j =>
+    (j.id || '') + ':' + (j.status || '') + ':' +
+    (j.isCompleted ? '1' : '0') + (j.isCancelled ? '1' : '0') +
+    (j.onStop ? '1' : '0') + ':' + (j.updated_at || j.updatedAt || '')
+  );
+  return jobs.length + '#' + parts.join('|');
+}
+window.__lastJobsSignature = window.__lastJobsSignature || '';
 
 // ============================================================================
 // fix32l — split an over-50-char address line 1 into line 1 + line 2
@@ -8827,6 +8872,17 @@ const shortenCompanyName = (name) => {
           const [currentMonth, setCurrentMonth] = useState(new Date());
           const [expandedDays, setExpandedDays] = useState({});
           const [searchQuery, setSearchQuery] = useState('');
+          // fix32m — debounce the search filter. The input itself updates
+          // immediately (user sees their keystrokes), but the filter memo
+          // reads `debouncedSearchQuery` which lags by 200ms. With 1200+ jobs
+          // and 5 toLowerCase() calls per row, every keystroke was triggering
+          // ~6000 string ops — visibly jumpy. Debouncing collapses bursts of
+          // typing into a single recompute when the user pauses.
+          const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+          React.useEffect(() => {
+            const t = setTimeout(() => setDebouncedSearchQuery(searchQuery), 200);
+            return () => clearTimeout(t);
+          }, [searchQuery]);
           const [sortBy, setSortBy] = React.useState('createdAt');
 const [sortOrder, setSortOrder] = React.useState('desc');
           const [filters, setFilters] = useState({
@@ -9114,8 +9170,8 @@ reference: job.customerPO || job.customer_po || '',
     // EXCLUDE EVENTS FROM LIST VIEW
     if (job.isEvent || job.status === 'EVENT') return false;
     
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+    if (debouncedSearchQuery) {
+      const query = debouncedSearchQuery.toLowerCase();
       const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
       const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
       const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
@@ -9182,7 +9238,7 @@ reference: job.customerPO || job.customer_po || '',
     
     return sortOrder === 'asc' ? compareValue : -compareValue;
   });
-}, [jobs, searchQuery, filters, sortBy, sortOrder]);
+}, [jobs, debouncedSearchQuery, filters, sortBy, sortOrder]);
 
     const handleJobClick = (job) => {
   setShowFullPageJob(job);
@@ -9346,8 +9402,8 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
       } else {
         let includeJob = true;
 
-        if (searchQuery) {
-          const query = searchQuery.toLowerCase();
+        if (debouncedSearchQuery) {
+          const query = debouncedSearchQuery.toLowerCase();
           const matchesJobNumber = (job.jobNumber || '').toLowerCase().includes(query);
           const matchesCustomer = (job.customerName || '').toLowerCase().includes(query);
           const matchesSupplier = (job.supplierName || '').toLowerCase().includes(query);
@@ -9378,7 +9434,7 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
       }
     });
     return map;
-  }, [jobs, searchQuery, filters.jobType, filters.status]);
+  }, [jobs, debouncedSearchQuery, filters.jobType, filters.status]);
 
   const navigateMonth = (direction) => {
     const newMonth = new Date(currentMonth);
@@ -17882,8 +17938,16 @@ collectionDate: job.collection_date,
   // attach them as `job.wtns` (also keeping legacy `job.wtnData` populated
   // from the first WTN so un-migrated readers keep working).
   const enriched = await enrichJobsWithWtns(jobsWithCamelCase);
-  setJobs(enriched);
-        console.log('Loaded', data.length, 'jobs from Supabase');
+  // fix32m — skip setJobs if nothing actually changed since last load.
+  // Prevents the 30s auto-refresh from invalidating every memo for free.
+  const newSig = buildJobsSignature(enriched);
+  if (newSig !== window.__lastJobsSignature) {
+    window.__lastJobsSignature = newSig;
+    setJobs(enriched);
+    console.log('Loaded', data.length, 'jobs from Supabase');
+  } else {
+    console.log('Loaded', data.length, 'jobs — no changes detected, skipping state update');
+  }
       }
     } catch (error) {
       console.error('Error loading jobs:', error);
@@ -17985,8 +18049,15 @@ const refreshJobs = async () => {
             }));
             // Phase 2: enrich with WTNs from the new table.
             const enriched = await enrichJobsWithWtns(jobsWithCamelCase);
-            setJobs(enriched);
-            console.log('Refreshed', data.length, 'jobs from Supabase');
+            // fix32m — skip setJobs if nothing changed
+            const newSig = buildJobsSignature(enriched);
+            if (newSig !== window.__lastJobsSignature) {
+              window.__lastJobsSignature = newSig;
+              setJobs(enriched);
+              console.log('Refreshed', data.length, 'jobs from Supabase');
+            } else {
+              console.log('Refreshed', data.length, 'jobs — no changes detected, skipping state update');
+            }
         }
     } catch (error) {
         console.error('Error refreshing jobs:', error);
