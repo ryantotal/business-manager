@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32q-2026-06-16-recurring-spawn-race-safe-claim';
+        window.PHASE3_BUILD = 'fix32p-2026-06-10-debounce-address-contact-phone-search';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-06-16T10:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-06-10T11:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -18172,37 +18172,6 @@ useEffect(() => {
         else if (freq === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
         const nextDateStr = nextDate.toISOString().split('T')[0];
 
-        // ── fix32q — RACE-SAFE GUARD ─────────────────────────────────────
-        // Previous guard checked notes string for "scheduled DD/MM/YYYY" —
-        // brittle (locale-dependent format) and inherently race-prone
-        // (two tabs both see the parent due, both find no existing child,
-        // both insert).
-        //
-        // New approach: advance the parent's recurring_next_date FIRST with
-        // a conditional update (matching the old date we expect to see).
-        // PostgREST returns the rows actually changed; if zero rows changed,
-        // another session beat us to it and we skip the insert entirely.
-        // This makes the spawn atomic per scheduled date.
-        const expectedOldDate = rj.recurring_next_date;
-        const { data: claimedRows, error: claimError } = await window.supabase
-          .from('jobs')
-          .update({ recurring_next_date: nextDateStr })
-          .eq('id', rj.id)
-          .eq('recurring_next_date', expectedOldDate)
-          .select('id');
-        if (claimError) {
-          console.error('[checkRecurringJobs] claim update failed:', claimError);
-          continue;
-        }
-        if (!claimedRows || claimedRows.length === 0) {
-          console.log(`[checkRecurringJobs] another session already spawned for ${rj.job_number} @ ${expectedOldDate}, skipping`);
-          continue;
-        }
-        // We "won the claim" — parent's next_date is now advanced.  Even if
-        // another session loaded the parent at the same instant, only ONE
-        // session's UPDATE matches the WHERE clause, and the other gets
-        // zero rows and falls through.
-
         // Generate new job number - try RPC first, fall back to query
         let newJobNumber;
         try {
@@ -18304,20 +18273,27 @@ useEffect(() => {
           parent_job_id: rj.id,
         };
 
-        // fix32q — guard moved up to claim-the-slot UPDATE above.  No need
-        // for a second notes-substring check here.
-        const { error: insertError } = await window.supabase.from('jobs').insert([newJob]);
-        if (insertError) {
-          console.error('Error creating recurring job:', insertError);
-          // If insert failed AFTER we claimed the slot, roll back the date
-          // so the next run will retry. Without this, a failed insert would
-          // silently skip this occurrence forever.
-          await window.supabase.from('jobs')
-            .update({ recurring_next_date: expectedOldDate })
-            .eq('id', rj.id)
-            .eq('recurring_next_date', nextDateStr);
+        // Guard: check if a child job for this parent already exists for this scheduled date
+        // Prevents duplicates when checkRecurringJobs fires multiple times in one session
+        const scheduledDate = rj.recurring_next_date;
+        const { data: existingJobs } = await window.supabase
+          .from('jobs')
+          .select('id')
+          .eq('parent_job_id', rj.id)
+          .eq('job_date', today)
+          .ilike('notes', `%scheduled ${new Date(scheduledDate).toLocaleDateString('en-GB')}%`);
+
+        if (existingJobs && existingJobs.length > 0) {
+          // Job already created for this occurrence — just make sure next_date is advanced
+          await window.supabase.from('jobs').update({ recurring_next_date: nextDateStr }).eq('id', rj.id);
           continue;
         }
+
+        const { error: insertError } = await window.supabase.from('jobs').insert([newJob]);
+        if (insertError) { console.error('Error creating recurring job:', insertError); continue; }
+
+        // Advance the next-due date on the template job
+        await window.supabase.from('jobs').update({ recurring_next_date: nextDateStr }).eq('id', rj.id);
 
         const msg = `🔁 Recurring job created: ${newJobNumber} for ${rj.customer_name} (${freq} — job date ${new Date(rj.recurring_next_date).toLocaleDateString('en-GB')}, next due ${new Date(nextDateStr).toLocaleDateString('en-GB')})`;
         setRecurringNotifications(prev => [...prev, msg]);
