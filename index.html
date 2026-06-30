@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32s-2026-06-17-recurring-claim-slot-atomic';
+        window.PHASE3_BUILD = 'fix32t-2026-06-17-duplicate-keep-customer-po';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-06-17T10:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-06-17T11:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -20001,6 +20001,7 @@ console.log('Has sage_line_items?', jobTemplate.sage_line_items);
         const jobForDatabase = {
             job_number: jobNumber,
            customer_name: jobTemplate.customerName || jobTemplate.customer_name || fullJob?.customer_name,
+            customer_po: jobTemplate.customerPO || jobTemplate.customer_po || fullJob?.customer_po || null, // keep the customer's PO number on duplicated jobs
 supplier_name: jobTemplate.supplierName || jobTemplate.supplier_name || fullJob?.supplier_name,
 description: fullJob?.description || null,
 sage_product_name: fullJob?.sage_product_name || null,
