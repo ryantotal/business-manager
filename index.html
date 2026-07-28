@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32v-2026-07-28-dashboard-financials-admin-only';
+        window.PHASE3_BUILD = 'fix32w-2026-07-28-jobs-list-pagination';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-07-28T10:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-07-28T10:30:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -8873,6 +8873,7 @@ const shortenCompanyName = (name) => {
           const [selectedJob, setSelectedJob] = useState(null);
           const [showJobSidebar, setShowJobSidebar] = useState(false);
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
+          const [visibleCount, setVisibleCount] = useState(150); // fix32w: render this many job rows at a time (Load more reveals the rest)
           const [currentMonth, setCurrentMonth] = useState(new Date());
           const [expandedDays, setExpandedDays] = useState({});
           const [searchQuery, setSearchQuery] = useState('');
@@ -10007,7 +10008,7 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
                     <CalendarView expandedDays={expandedDays} setExpandedDays={setExpandedDays} />
                   ) : viewMode === 'grid' ? (
                     <div className="grid grid-cols-1 md:grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 sm:grid-cols-3 gap-6">
-                      {filteredJobs.map(job => (
+                      {filteredJobs.slice(0, visibleCount).map(job => (
                         <JobCard
                           key={job.id}
                           job={job}
@@ -10021,7 +10022,7 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
                     <div className="sm:hidden divide-y divide-gray-100">
                       {filteredJobs.length === 0 ? (
                         <div className="px-4 py-8 text-center text-gray-400 text-sm">No jobs match your filters.</div>
-                      ) : filteredJobs.map(job => {
+                      ) : filteredJobs.slice(0, visibleCount).map(job => {
                         const mStatusCfg = {
                           'QUOTED': 'bg-yellow-100 text-yellow-800',
                           'CONFIRMED': 'bg-green-100 text-green-800',
@@ -10089,7 +10090,7 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
         </tr>
       </thead>
 <tbody className="bg-white divide-y divide-gray-200">
-  {filteredJobs.map(job => {
+  {filteredJobs.slice(0, visibleCount).map(job => {
 const statusConfig = {
  'QUOTED': 'bg-yellow-100 text-yellow-800',
 'CONFIRMED': 'bg-green-100 text-green-800',
@@ -10192,6 +10193,17 @@ job.status.replace('_', ' ')}
                   )}
                 </div>
               </div>
+
+              {viewMode !== 'calendar' && filteredJobs.length > visibleCount && (
+                <div className="flex justify-center py-4">
+                  <button
+                    onClick={() => setVisibleCount(c => c + 150)}
+                    className="px-5 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm"
+                  >
+                    Show more — showing {Math.min(visibleCount, filteredJobs.length)} of {filteredJobs.length}
+                  </button>
+                </div>
+              )}
 
               {selectedJob && (() => {
                 const currentIndex = filteredJobs.findIndex(j => j.id === selectedJob.id);
