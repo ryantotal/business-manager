@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32t-2026-06-17-duplicate-keep-customer-po';
+        window.PHASE3_BUILD = 'fix32v-2026-07-28-dashboard-financials-admin-only';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-06-17T11:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-07-28T10:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -8003,6 +8003,7 @@ const DayStrip = React.memo(({ days, jobsByDate, todayString, selectedDay, jobCo
 
 // Dashboard Component - COMPLETE WITH FILTERS AND SEARCH
 const Dashboard = ({ jobs, customers, suppliers, products }) => {
+  const { user } = useAuth();  // fix32v: needed to gate financial reports by role
   // State for filters
   const [dateRange, setDateRange] = useState('all');
   const [startDate, setStartDate] = useState(null);
@@ -8137,6 +8138,8 @@ const [groupByProduct, setGroupByProduct] = useState(false);
         </div>
       </div>
 
+      {/* fix32v: Managers/Brokers see only the Staff Holidays widget below; every financial report (margins, profit, cost, turnover) is Admin-only */}
+      {(user?.role === 'ADMIN') && (<>
       {/* Report 1: Products Sold with Margins */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-4">
@@ -8767,6 +8770,7 @@ const [groupByProduct, setGroupByProduct] = useState(false);
   </div>
 </div>
 
+      </>)}
 {/* ── Staff Holiday Tracker ──────────────────────────────────────── */}
 <div className="bg-white rounded-xl border border-gray-200 p-6">
   <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">🏖️ Staff Holidays</h3>
