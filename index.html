@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32x-2026-07-28-holiday-count-exclude-weekends';
+        window.PHASE3_BUILD = 'fix32y-2026-07-28-invoice-status-sync-across-sessions';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-07-28T11:00:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-07-28T14:30:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -541,7 +541,14 @@ function buildJobsSignature(jobs) {
   const parts = jobs.map(j =>
     (j.id || '') + ':' + (j.status || '') + ':' +
     (j.isCompleted ? '1' : '0') + (j.isCancelled ? '1' : '0') +
-    (j.onStop ? '1' : '0') + ':' + (j.updated_at || j.updatedAt || '')
+    (j.onStop ? '1' : '0') + ':' + (j.updated_at || j.updatedAt || '') + ':' +
+    // fix32y — include invoice/payment fields so invoicing a job propagates to
+    // every other logged-in session via the 30s auto-refresh (previously an
+    // invoice-only change left the signature identical, so colleagues stayed stale).
+    (j.invoiceStatus || j.invoice_status || '') + ':' +
+    (j.invoiceNumber || j.invoice_number || '') + ':' +
+    (j.sageSiNumber || j.sage_si_number || '') + ':' +
+    (j.paymentStatus || j.payment_status || '')
   );
   return jobs.length + '#' + parts.join('|');
 }
