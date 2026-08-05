@@ -376,10 +376,10 @@
         // to confirm which version of the file is actually live. Kept as a
         // silent property (no log) once Phase 3 is stable; the diagnostic
         // logs added during fix5–fix9 have been removed.
-        window.PHASE3_BUILD = 'fix32y-2026-07-28-invoice-status-sync-across-sessions';
+        window.PHASE3_BUILD = 'fix32z-2026-07-28-manager-can-delete-jobs';
         // Phase 4 build timestamp — used by the consent reload checker to
         // detect when a new version has been deployed. Bump on every push.
-        window.APP_BUILD_TIMESTAMP = '2026-07-28T14:30:00Z';
+        window.APP_BUILD_TIMESTAMP = '2026-07-28T15:00:00Z';
 
         // ── UK VAT number validation ──────────────────────────────────────
         // HMRC VAT numbers = 9 digits, must pass modulus 97 or 9755 check.
@@ -11058,6 +11058,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // This works with your existing code structure and won't break anything
 
 const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onStop, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh }) => {
+  const { hasPermission } = useAuth();  // fix32z: lets the delete button follow the roles map (Managers can delete)
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
@@ -11576,7 +11577,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
         </button>
       )}
 
-      {user?.role === 'ADMIN' && (
+      {hasPermission('jobs:delete') && (
         <button
           onClick={() => setDeleteConfirmation({ show: true, jobId: job.id, jobNumber: job.jobNumber || 'this job' })}
           className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
