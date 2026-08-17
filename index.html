@@ -11260,10 +11260,33 @@ const SiteAllocationCounter = ({ job, jobs }) => {
     [jobs, key]
   );
 
-  const booked = React.useMemo(
-    () => linked.reduce((sum, j) => sum + getJobAllocationQty(j, product), 0),
-    [linked, product]
-  );
+  // A job counts as delivered once it's marked completed or collected.
+  const isJobDelivered = (j) =>
+    !!(j.isCompleted || j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED');
+
+  // Three figures, because they answer different questions:
+  //   delivered  — actual tonnage tipped, from the Qty on completed jobs. This
+  //                is where the 19.x tonne loads show up: correct the Qty on
+  //                the job when you complete it and this figure follows.
+  //   outstanding— booked but not yet run. Ordered tonnage, still an estimate.
+  //   booked     — the two added together. This is the exposure against the
+  //                cap, and what the main bar and the warnings use.
+  const { delivered, outstanding, booked, deliveredJobs, outstandingJobs } = React.useMemo(() => {
+    let d = 0, o = 0;
+    const dJobs = [], oJobs = [];
+    for (const j of linked) {
+      const qty = getJobAllocationQty(j, product);
+      if (isJobDelivered(j)) { d += qty; dJobs.push(j); }
+      else { o += qty; oJobs.push(j); }
+    }
+    return {
+      delivered: d,
+      outstanding: o,
+      booked: d + o,
+      deliveredJobs: dJobs,
+      outstandingJobs: oJobs,
+    };
+  }, [linked, product]);
 
   const saveCap = async () => {
     const capValue = parseFloat(capInput);
@@ -11334,6 +11357,10 @@ const SiteAllocationCounter = ({ job, jobs }) => {
   const cap       = alloc ? (parseFloat(alloc.cap_tonnes) || 0) : 0;
   const remaining = cap - booked;
   const pct       = cap > 0 ? (booked / cap) * 100 : 0;
+  // Delivered and outstanding as a share of the cap, for the segmented bar.
+  const deliveredPct   = cap > 0 ? (delivered / cap) * 100 : 0;
+  const outstandingPct = cap > 0 ? (outstanding / cap) * 100 : 0;
+  const deliveredColour = '#15803d';
   const over      = cap > 0 && pct >= 100;
   const warn      = cap > 0 && pct >= 80 && !over;
 
@@ -11360,12 +11387,42 @@ const SiteAllocationCounter = ({ job, jobs }) => {
             </span>
           </div>
 
-          {/* Progress bar */}
-          <div className="mt-1.5 h-1.5 w-full max-w-md rounded-full bg-white bg-opacity-70 overflow-hidden">
+          {/* Booked bar — delivered shown as a solid darker segment inside it,
+              so you can see at a glance how much of the committed tonnage has
+              actually been tipped. */}
+          <div className="mt-1.5 h-2 w-full max-w-md rounded-full bg-white bg-opacity-70 overflow-hidden flex">
             <div
-              className="h-full rounded-full transition-all"
-              style={{ width: Math.min(100, pct) + '%', background: barColour }}
+              className="h-full transition-all"
+              style={{ width: Math.min(100, deliveredPct) + '%', background: deliveredColour }}
+              title={'Delivered: ' + fmt(delivered) + ' tonnes'}
             />
+            <div
+              className="h-full transition-all"
+              style={{ width: Math.min(100 - Math.min(100, deliveredPct), outstandingPct) + '%', background: barColour, opacity: 0.4 }}
+              title={'Booked, not yet delivered: ' + fmt(outstanding) + ' tonnes'}
+            />
+          </div>
+
+          {/* Delivered line — the actual weighbridge figure */}
+          <div className="text-xs font-medium mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5" style={{ color: textColour }}>
+            <span>
+              <span className="inline-block w-2 h-2 rounded-full mr-1 align-middle" style={{ background: deliveredColour }} />
+              Delivered <strong>{fmt(delivered)}</strong>
+              {cap > 0 && <span style={{ opacity: 0.7 }}> ({deliveredPct.toFixed(0)}% of cap)</span>}
+              {deliveredJobs.length > 0 && <span style={{ opacity: 0.7 }}> · {deliveredJobs.length} job{deliveredJobs.length === 1 ? '' : 's'}</span>}
+            </span>
+            <span>
+              <span className="inline-block w-2 h-2 rounded-full mr-1 align-middle" style={{ background: barColour, opacity: 0.4 }} />
+              Still to come <strong>{fmt(outstanding)}</strong>
+              {outstandingJobs.length > 0 && <span style={{ opacity: 0.7 }}> · {outstandingJobs.length} job{outstandingJobs.length === 1 ? '' : 's'}</span>}
+            </span>
+            {delivered > 0 && outstanding === 0 && cap > 0 && (
+              <span style={{ opacity: 0.85 }}>
+                {(cap - delivered) >= 0
+                  ? fmt(cap - delivered) + ' tonnes left on the cap'
+                  : fmt(delivered - cap) + ' tonnes over on delivered'}
+              </span>
+            )}
           </div>
 
           {over && (
@@ -11455,12 +11512,21 @@ const SiteAllocationCounter = ({ job, jobs }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {linked
+              {/* Delivered jobs first, then still-to-come, each with a
+                  subtotal so the two figures on the counter can be checked
+                  against the jobs behind them. */}
+              {deliveredJobs.length > 0 && (
+                <tr className="bg-green-50">
+                  <td className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-green-800" colSpan={4}>
+                    Delivered
+                  </td>
+                </tr>
+              )}
+              {deliveredJobs
                 .slice()
                 .sort((a, b) => String(a.jobNumber || '').localeCompare(String(b.jobNumber || '')))
                 .map(j => {
                   const isThis = j.id === job.id;
-                  const done = j.isCompleted || j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED';
                   return (
                     <tr key={j.id} className={isThis ? 'bg-blue-50 font-semibold' : ''}>
                       <td className="px-3 py-2 font-mono">
@@ -11472,7 +11538,7 @@ const SiteAllocationCounter = ({ job, jobs }) => {
                           : '—'}
                       </td>
                       <td className="px-3 py-2 text-gray-500">
-                        {done ? 'Completed' : String(j.status || '').replace('_', ' ')}
+                        {j.status === 'COLLECTED' ? 'Collected' : 'Completed'}
                       </td>
                       <td className="px-3 py-2 text-right">
                         {fmt(getJobAllocationQty(j, product))}
@@ -11480,10 +11546,58 @@ const SiteAllocationCounter = ({ job, jobs }) => {
                     </tr>
                   );
                 })}
+              {deliveredJobs.length > 0 && (
+                <tr className="bg-green-50">
+                  <td className="px-3 py-1.5 text-right font-semibold text-green-900" colSpan={3}>
+                    Delivered subtotal
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-bold text-green-900">{fmt(delivered)}</td>
+                </tr>
+              )}
+
+              {outstandingJobs.length > 0 && (
+                <tr className="bg-gray-100">
+                  <td className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-600" colSpan={4}>
+                    Booked — not yet delivered
+                  </td>
+                </tr>
+              )}
+              {outstandingJobs
+                .slice()
+                .sort((a, b) => String(a.jobNumber || '').localeCompare(String(b.jobNumber || '')))
+                .map(j => {
+                  const isThis = j.id === job.id;
+                  return (
+                    <tr key={j.id} className={isThis ? 'bg-blue-50 font-semibold' : ''}>
+                      <td className="px-3 py-2 font-mono">
+                        {j.jobNumber || j.job_number}{isThis ? ' ← this job' : ''}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">
+                        {(j.jobDate || j.job_date)
+                          ? new Date(j.jobDate || j.job_date).toLocaleDateString('en-GB')
+                          : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">
+                        {String(j.status || '').replace('_', ' ')}
+                      </td>
+                      <td className="px-3 py-2 text-right text-gray-500">
+                        {fmt(getJobAllocationQty(j, product))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              {outstandingJobs.length > 0 && (
+                <tr className="bg-gray-100">
+                  <td className="px-3 py-1.5 text-right font-semibold text-gray-700" colSpan={3}>
+                    Still to come subtotal
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-bold text-gray-700">{fmt(outstanding)}</td>
+                </tr>
+              )}
             </tbody>
-            <tfoot className="bg-gray-50">
+            <tfoot className="bg-gray-50 border-t-2 border-gray-300">
               <tr>
-                <td className="px-3 py-2 font-semibold" colSpan={3}>Total booked</td>
+                <td className="px-3 py-2 font-semibold" colSpan={3}>Total booked against cap</td>
                 <td className="px-3 py-2 text-right font-bold">{fmt(booked)}</td>
               </tr>
             </tfoot>
