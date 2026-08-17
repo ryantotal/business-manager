@@ -3416,6 +3416,7 @@ const parseJobLineItems = (jobObj) => {
     productName: li?.product_name || li?.productName || '',
     lineDescription: li?.description || '',
     lineQty: li?.quantity || null,
+    lineUnit: li?.unit || null,
   }));
 };
 
@@ -3474,7 +3475,8 @@ const buildDefaultLines = (jobObj) => {
                     : jobObj?.jobType === 'Grab Hire' ? 'Loose' : 'Skip',
       wasteProcess: '',
       quantity: m.lineQty || jobObj?.quantity || 1,
-      unit: jobObj?.unit || 'tonnes',
+      // Per-line unit where the line item has one; job-level as the fallback.
+      unit: m.lineUnit || jobObj?.unit || 'tonnes',
       isHazardous: !!jobObj?.hazardousWaste,
       skipSize: m.productName || skipSize || '',
       // Phase 3 (post-fix11) — informational disposal site (see comment
@@ -5078,6 +5080,29 @@ const [isEvent, setIsEvent] = useState(false);
 
 
    const handleSubmit = async () => {
+  // ── Derive job-level quantity and unit from the line items ───────────
+  // The job row still has `quantity` and `unit` columns, and plenty of things
+  // read them: the dashboard's quantity reporting, the "Qty: 400 tonnes" shown
+  // on the job list, calendar cards and the customer portal, the Sage invoice
+  // fallback, and the skip/RoRo job-splitting rule. Rather than ask the user
+  // to type the figure twice, roll it up from the lines here.
+  //
+  // Quantity is the sum of the line quantities. Unit comes from the first
+  // line, since the job-level column can only hold one — if a job genuinely
+  // mixes units, the per-line values are the accurate record and this is just
+  // a summary for the older readers.
+  try {
+    const li = Array.isArray(formData.lineItems) ? formData.lineItems : [];
+    if (li.length > 0) {
+      const summedQty = li.reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+      if (summedQty > 0) formData.quantity = summedQty;
+      const firstUnit = li.find(i => i.unit && String(i.unit).trim());
+      if (firstUnit) formData.unit = firstUnit.unit;
+    }
+  } catch (unitErr) {
+    console.warn('[Line items] could not derive job quantity/unit:', unitErr);
+  }
+
   // ── Site allocation check ────────────────────────────────────────────
   // Warn if this booking would breach the customer's tonnage cap for the
   // site + product. Not a hard block — customers do verbally increase caps —
@@ -5100,6 +5125,7 @@ const [isEvent, setIsEvent] = useState(false);
       if (allocation) {
         const allocProduct = getJobProductName(allocDraft);
         const cap = parseFloat(allocation.cap_tonnes) || 0;
+        const capU = allocation.cap_unit ? ' ' + (allocation.cap_unit === 'm3' ? 'm\u00b3' : allocation.cap_unit) : '';
         // Sum every OTHER job in the group, then add this one's new figure,
         // so editing an existing job doesn't double-count it.
         const others = getLinkedAllocationJobs(jobs, allocKey)
@@ -5110,11 +5136,11 @@ const [isEvent, setIsEvent] = useState(false);
 
         if (cap > 0 && newTotal > cap) {
           const proceed = confirm(
-            'TONNAGE CAP EXCEEDED\n\n' +
+            'QUANTITY CAP EXCEEDED\n\n' +
             formData.sitePostcode + ' \u00b7 ' + allocProduct + '\n\n' +
-            'Cap: ' + cap.toLocaleString('en-GB') + ' tonnes\n' +
-            'This booking takes it to: ' + newTotal.toLocaleString('en-GB') + ' tonnes\n' +
-            'Over by: ' + (newTotal - cap).toLocaleString('en-GB') + ' tonnes\n\n' +
+            'Cap: ' + cap.toLocaleString('en-GB') + capU + '\n' +
+            'This booking takes it to: ' + newTotal.toLocaleString('en-GB') + capU + '\n' +
+            'Over by: ' + (newTotal - cap).toLocaleString('en-GB') + capU + '\n\n' +
             'Book anyway?'
           );
           if (!proceed) return;
@@ -5125,10 +5151,10 @@ const [isEvent, setIsEvent] = useState(false);
           }
         } else if (cap > 0 && (newTotal / cap) >= 0.8) {
           alert(
-            'Approaching tonnage cap\n\n' +
+            'Approaching cap\n\n' +
             formData.sitePostcode + ' \u00b7 ' + allocProduct + '\n' +
-            newTotal.toLocaleString('en-GB') + ' of ' + cap.toLocaleString('en-GB') +
-            ' tonnes (' + Math.round((newTotal / cap) * 100) + '%)'
+            newTotal.toLocaleString('en-GB') + ' of ' + cap.toLocaleString('en-GB') + capU +
+            ' (' + Math.round((newTotal / cap) * 100) + '%)'
           );
         }
       }
@@ -5196,8 +5222,11 @@ const [isEvent, setIsEvent] = useState(false);
   return;
 }
 
-  // Check if this is a skip/RoRo with quantity > 1
-  if ((formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
+  // Skip / RoRo job-splitting removed (confirmed unused). A skip job with a
+  // quantity of 3 used to become three separate linked jobs; it now stays as
+  // one job with a quantity of 3. This branch is disabled rather than deleted
+  // so the code is still here if it's ever wanted back — flip the `false`.
+  if (false && (formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && formData.quantity > 1) {
     const jobs = [];
     
     for (let i = 0; i < formData.quantity; i++) {
@@ -5694,6 +5723,7 @@ const [isEvent, setIsEvent] = useState(false);
                       item_code: product.item_code,
                       type: product.type,
                       quantity: 1,
+                      unit: defaultUnitForJobType(formData.jobType),
                       supplier_price: product.supplier_price || product.supplierPrice || 0.00,
                       customer_price: product.customer_price || product.customerPrice || 0.00,
                       unit_price: 0.00,
@@ -5729,6 +5759,7 @@ const [isEvent, setIsEvent] = useState(false);
                       item_code: product.item_code,
                       type: product.type,
                       quantity: 1,
+                      unit: defaultUnitForJobType(formData.jobType),
                       supplier_price: product.supplier_price || product.supplierPrice || 0.00,
                       customer_price: product.customer_price || product.customerPrice || 0.00,
                       unit_price: 0.00,
@@ -5758,6 +5789,7 @@ const [isEvent, setIsEvent] = useState(false);
                       <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
                       <th className="px-4 py-3 text-left font-medium w-1/3">Description (Editable)</th>
                       <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
+                      <th className="px-2 py-3 text-left font-medium w-24">Unit</th>
                       <th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
                       <th className="px-2 py-3 text-left font-medium w-20">RRP £</th>
                       <th className="px-2 py-3 text-left font-medium w-20">Profit</th>
@@ -5803,6 +5835,27 @@ const [isEvent, setIsEvent] = useState(false);
                                 setFormData({...formData, lineItems: updatedItems});
                               }}
                             />
+                          </td>
+                          {/* Per-line unit. Tonnes vs loads vs skips is a
+                              per-line decision — an aggregates job can be sold
+                              either way, and one job can mix them. */}
+                          <td className="px-2 py-3">
+                            <select
+                              className="w-24 px-1 py-1 border border-gray-300 rounded text-sm"
+                              value={item.unit || defaultUnitForJobType(formData.jobType)}
+                              onChange={(e) => {
+                                const updatedItems = [...formData.lineItems];
+                                updatedItems[index] = {
+                                  ...updatedItems[index],
+                                  unit: e.target.value
+                                };
+                                setFormData({...formData, lineItems: updatedItems});
+                              }}
+                            >
+                              {LINE_ITEM_UNITS.map(u => (
+                                <option key={u} value={u}>{formatUnit(u)}</option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-2 py-3">
                             <input
@@ -5932,6 +5985,7 @@ const [isEvent, setIsEvent] = useState(false);
                       item_code: product.item_code,
                       type: product.type,
                       quantity: 1,
+                      unit: defaultUnitForJobType(formData.jobType),
                       supplier_price: product.supplier_price || product.supplierPrice || 0.00,
                       customer_price: product.customer_price || product.customerPrice || 0.00,
                       unit_price: 0.00,
@@ -5967,6 +6021,7 @@ const [isEvent, setIsEvent] = useState(false);
                       item_code: product.item_code,
                       type: product.type,
                       quantity: 1,
+                      unit: defaultUnitForJobType(formData.jobType),
                       supplier_price: product.supplier_price || product.supplierPrice || 0.00,
                       customer_price: product.customer_price || product.customerPrice || 0.00,
                       unit_price: 0.00,
@@ -5986,35 +6041,11 @@ const [isEvent, setIsEvent] = useState(false);
             </div>
           )}
           
+          {/* Quantity and Unit used to live here. They're now entered per line
+              in the Products & Services table above, and rolled up into the
+              job's own quantity/unit columns on save — so the dashboard, job
+              list, calendar and customer portal keep working unchanged. */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity * 
-                {(formData.jobType === 'Skip Hire' || formData.jobType === 'Roll-on Roll-off') && 
-                  <span className="text-xs text-gray-500 ml-1">(creates multiple jobs if &gt; 1)</span>
-                }
-              </label>
-              <input
-                type="number"
-                value={formData.quantity}
-                onChange={(e) => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-              <select
-                value={formData.unit}
-                onChange={(e) => setFormData({...formData, unit: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              >
-                <option value="skip">Skip</option>
-                <option value="tonnes">Tonnes</option>
-                <option value="loads">Loads</option>
-                <option value="collections">Collections</option>
-                <option value="days">Days</option>
-              </select>
-            </div>
             {formData.jobType !== 'Aggregates' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Weight (tonnes)</label>
@@ -6067,30 +6098,10 @@ const [isEvent, setIsEvent] = useState(false);
             ) : null}
           </div>
 
-          <div>
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                checked={formData.hazardousWaste}
-                onChange={(e) => setFormData({...formData, hazardousWaste: e.target.checked})}
-                className="mr-2"
-              />
-              <span className="text-sm font-medium cursor-pointer">Contains Hazardous Waste</span>
-            </div>
-          </div>
-
-          {formData.hazardousWaste && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Consignment Note Number</label>
-              <input
-                type="text"
-                value={formData.consignmentNote}
-                onChange={(e) => setFormData({...formData, consignmentNote: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                placeholder="Hazardous waste consignment note"
-              />
-            </div>
-          )}
+          {/* The "Contains Hazardous Waste" tick and Consignment Note Number
+              field used to sit here. Hazardous waste is now flagged per line
+              on the WTN tab, which is what generates the consignment note —
+              this pair was duplicate data entry nobody was using. */}
         </>
       )}
     </div>
@@ -11117,6 +11128,50 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // This works with your existing code structure and won't break anything
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LINE ITEM UNITS
+//
+// Units live on the line item rather than the job, because one job can mix
+// them — an aggregates job might have a tonnes line and a loads line. The
+// job-level `unit` column is still written on save (derived from the first
+// line) so the dashboard, job list and customer portal keep working.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LINE_ITEM_UNITS = ['tonnes', 'loads', 'skip', 'collections', 'days', 'm3', 'each'];
+
+// Sensible starting unit for a new line, based on how the job is sold.
+// The user can always change it on the line.
+function defaultUnitForJobType(jobType) {
+  switch (jobType) {
+    case 'Aggregates':        return 'tonnes';
+    case 'Muck Away':         return 'loads';
+    case 'Grab Hire':         return 'loads';
+    case 'Skip Hire':         return 'skip';
+    case 'Roll-on Roll-off':  return 'skip';
+    default:                  return 'loads';
+  }
+}
+
+// Unit for a given line, falling back to the job's unit then the job type
+// default. Keeps older line items (saved before units existed) sensible.
+function getLineItemUnit(item, job) {
+  if (item && item.unit) return item.unit;
+  if (job && (job.unit || job.unit === '')) return job.unit || defaultUnitForJobType(job.jobType || job.job_type);
+  return defaultUnitForJobType(job && (job.jobType || job.job_type));
+}
+
+// Display form — 'm3' renders as m³, everything else as typed.
+function formatUnit(unit) {
+  if (!unit) return '';
+  if (unit === 'm3') return 'm\u00b3';
+  return unit;
+}
+
+window.LINE_ITEM_UNITS = LINE_ITEM_UNITS;
+window.defaultUnitForJobType = defaultUnitForJobType;
+window.getLineItemUnit = getLineItemUnit;
+window.formatUnit = formatUnit;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SITE ALLOCATION — tonnage cap tracking
 //
 // Customers cap how much material we can supply to a site (e.g. DSS Civil
@@ -11176,6 +11231,28 @@ function getJobAllocationQty(j, productName) {
   return parseFloat(j.quantity) || 0;
 }
 
+// Units used by the lines a job contributes to its allocation group.
+// Usually one, but a job could in principle mix them.
+function getJobAllocationUnits(j, productName) {
+  const target = (productName || '').trim().toLowerCase();
+  const units = [];
+  try {
+    const raw = j.lineItems || j.line_items || j.sageLineItems || j.sage_line_items;
+    const items = typeof raw === 'string' ? JSON.parse(raw) : (Array.isArray(raw) ? raw : []);
+    const matched = items.filter(i =>
+      (i.product_name || i.productName || i.description || '').trim().toLowerCase() === target
+    );
+    for (const i of matched) {
+      const u = i.unit || j.unit || j.unit_of_measure;
+      if (u) units.push(String(u).trim().toLowerCase());
+    }
+    if (matched.length > 0) return units;
+  } catch (e) { /* fall through */ }
+  // No matching line items — fall back to the job-level unit.
+  const ju = j.unit || j.unit_of_measure;
+  return ju ? [String(ju).trim().toLowerCase()] : [];
+}
+
 // Every non-cancelled job in the same allocation group.
 function getLinkedAllocationJobs(allJobs, key) {
   if (!key || !Array.isArray(allJobs)) return [];
@@ -11227,6 +11304,7 @@ window.getAllocationKey = getAllocationKey;
 window.getJobProductName = getJobProductName;
 window.getJobAllocationQty = getJobAllocationQty;
 window.getLinkedAllocationJobs = getLinkedAllocationJobs;
+window.getJobAllocationUnits = getJobAllocationUnits;
 window.fetchAllocationForJob = fetchAllocationForJob;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11316,6 +11394,31 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
     };
   }, [linked, product]);
 
+  // What unit is this group actually being booked in? Derived from the line
+  // items rather than assumed, so it follows whatever staff select.
+  //   size 0 -> nothing booked yet, or no units recorded on old line items
+  //   size 1 -> the group is consistent; use it to label the cap
+  //   size 2+ -> tonnes and loads are being mixed in one group, which makes
+  //              the total meaningless. Surfaced as a warning rather than
+  //              silently added together.
+  const groupUnits = React.useMemo(() => {
+    const set = new Set();
+    for (const j of linked) {
+      for (const u of getJobAllocationUnits(j, product)) set.add(u);
+    }
+    return set;
+  }, [linked, product]);
+
+  const derivedUnit = groupUnits.size === 1 ? Array.from(groupUnits)[0] : '';
+  const unitsMixed  = groupUnits.size > 1;
+  // The cap's own unit, fixed at the point it was set so it can't drift.
+  // Falls back to whatever the group is currently using.
+  const capUnit = (alloc && alloc.cap_unit) || derivedUnit || '';
+  const unitLabel = capUnit ? ' ' + formatUnit(capUnit) : '';
+  // The group has moved to a different unit since the cap was set — the cap
+  // figure may no longer mean what it did.
+  const unitDrift = !!(alloc && alloc.cap_unit && derivedUnit && derivedUnit !== alloc.cap_unit);
+
   const saveCap = async () => {
     const capValue = parseFloat(capInput);
     if (isNaN(capValue) || capValue <= 0) { alert('Enter a cap greater than zero.'); return; }
@@ -11327,6 +11430,9 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
         product_name:  product,
         site_address:  siteAddr || null,
         cap_tonnes:    capValue,
+        // Pin the unit the cap is expressed in, so "4000" can't quietly change
+        // meaning if the group later starts being booked in a different unit.
+        cap_unit:      (derivedUnit || getLineItemUnit({}, job) || '') || null,
         status:        'open',
         updated_at:    new Date().toISOString(),
       };
@@ -11375,8 +11481,15 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
     return (
       <div className="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200">
         <div className="text-xs text-gray-500 mb-2">
-          No tonnage cap for <strong>{postcode}</strong> · {product}.
+          No cap for <strong>{postcode}</strong> · {product}
+          {derivedUnit && <span> — currently booked in <strong>{formatUnit(derivedUnit)}</strong></span>}.
           {linked.length > 1 && ' ' + linked.length + ' jobs would be counted against one.'}
+          {unitsMixed && (
+            <span className="block mt-1 text-amber-700">
+              ⚠ These jobs use mixed units ({Array.from(groupUnits).map(formatUnit).join(', ')}).
+              A single cap will add them together.
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input
@@ -11384,7 +11497,7 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
             value={capInput}
             onChange={e => setCapInput(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-40"
-            placeholder="Cap in tonnes"
+            placeholder={derivedUnit ? 'Cap in ' + formatUnit(derivedUnit) : 'Cap quantity'}
             autoFocus
           />
           <button
@@ -11429,7 +11542,7 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
           </div>
 
           <div className="text-sm font-bold mt-0.5" style={{ color: textColour }}>
-            {fmt(booked)} / {fmt(cap)} tonnes booked
+            {fmt(booked)} / {fmt(cap)}{unitLabel} booked
             <span className="font-medium ml-2" style={{ opacity: 0.85 }}>
               {remaining >= 0
                 ? fmt(remaining) + ' remaining'
@@ -11445,12 +11558,12 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
             <div
               className="h-full transition-all"
               style={{ width: Math.min(100, deliveredPct) + '%', background: deliveredColour }}
-              title={'Delivered: ' + fmt(delivered) + ' tonnes'}
+              title={'Delivered: ' + fmt(delivered)}
             />
             <div
               className="h-full transition-all"
               style={{ width: Math.min(100 - Math.min(100, deliveredPct), outstandingPct) + '%', background: barColour, opacity: 0.4 }}
-              title={'Booked, not yet delivered: ' + fmt(outstanding) + ' tonnes'}
+              title={'Booked, not yet delivered: ' + fmt(outstanding)}
             />
           </div>
 
@@ -11458,24 +11571,37 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
           <div className="text-xs font-medium mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5" style={{ color: textColour }}>
             <span>
               <span className="inline-block w-2 h-2 rounded-full mr-1 align-middle" style={{ background: deliveredColour }} />
-              Delivered <strong>{fmt(delivered)}</strong>
+              Delivered <strong>{fmt(delivered)}{unitLabel}</strong>
               {cap > 0 && <span style={{ opacity: 0.7 }}> ({deliveredPct.toFixed(0)}% of cap)</span>}
               {deliveredJobs.length > 0 && <span style={{ opacity: 0.7 }}> · {deliveredJobs.length} job{deliveredJobs.length === 1 ? '' : 's'}</span>}
             </span>
             <span>
               <span className="inline-block w-2 h-2 rounded-full mr-1 align-middle" style={{ background: barColour, opacity: 0.4 }} />
-              Still to come <strong>{fmt(outstanding)}</strong>
+              Still to come <strong>{fmt(outstanding)}{unitLabel}</strong>
               {outstandingJobs.length > 0 && <span style={{ opacity: 0.7 }}> · {outstandingJobs.length} job{outstandingJobs.length === 1 ? '' : 's'}</span>}
             </span>
             {delivered > 0 && outstanding === 0 && cap > 0 && (
               <span style={{ opacity: 0.85 }}>
                 {(cap - delivered) >= 0
-                  ? fmt(cap - delivered) + ' tonnes left on the cap'
-                  : fmt(delivered - cap) + ' tonnes over on delivered'}
+                  ? fmt(cap - delivered) + ' left on the cap'
+                  : fmt(delivered - cap) + ' over on delivered'}
               </span>
             )}
           </div>
 
+          {unitsMixed && (
+            <div className="text-xs font-semibold mt-1.5 px-2 py-1 rounded bg-white bg-opacity-80" style={{ color: '#92400e' }}>
+              ⚠ Mixed units in this group ({Array.from(groupUnits).map(formatUnit).join(', ')}) —
+              the total above adds them together, so treat it as a rough figure
+              until the units are consistent.
+            </div>
+          )}
+          {unitDrift && (
+            <div className="text-xs font-semibold mt-1.5 px-2 py-1 rounded bg-white bg-opacity-80" style={{ color: '#92400e' }}>
+              ⚠ This cap was set in {formatUnit(alloc.cap_unit)} but jobs are now
+              being booked in {formatUnit(derivedUnit)}. Check the cap is still right.
+            </div>
+          )}
           {over && (
             <div className="text-xs font-semibold mt-1.5" style={{ color: textColour }}>
               ⛔ Over the customer's cap — check before booking anything further.
@@ -11511,7 +11637,8 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
       {editing && (
         <div className="mt-3 p-3 bg-white rounded-lg border border-gray-200">
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            Cap for {custName} · {postcode} · {product} (tonnes)
+            Cap for {custName} · {postcode} · {product}
+            {capUnit && <span className="text-gray-400"> — in {formatUnit(capUnit)}</span>}
           </label>
           <div className="flex items-center gap-2 flex-wrap">
             <input
@@ -11519,7 +11646,7 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
               value={capInput}
               onChange={e => setCapInput(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-40"
-              placeholder="e.g. 4000"
+              placeholder={derivedUnit ? 'e.g. 4000 ' + formatUnit(derivedUnit) : 'e.g. 4000'}
               autoFocus
             />
             <button
@@ -11559,7 +11686,7 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
                 <th className="px-3 py-2 text-left font-medium">Job</th>
                 <th className="px-3 py-2 text-left font-medium">Date</th>
                 <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2 text-right font-medium">Tonnes</th>
+                <th className="px-3 py-2 text-right font-medium">Qty{unitLabel}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -12138,7 +12265,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
   <button
     onClick={() => setCapEditorOpen(v => !v)}
     className={`p-2 rounded-lg ${capEditorOpen ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
-    title="Set or edit the customer's tonnage cap for this site"
+    title="Set or edit the customer's quantity cap for this site"
   >
     <LucideIcon icon="BarChart3" size={20} />
   </button>
@@ -12480,6 +12607,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                         </td>
                         <td className="py-2 px-2 text-center text-xs">
                           {item.quantity || 1}
+                          <span className="text-gray-500 ml-1">{formatUnit(getLineItemUnit(item, job))}</span>
                         </td>
                         <td className="py-2 px-2 text-right text-xs text-red-600 font-medium">
                           £{lineCost.toFixed(2)}
@@ -12514,7 +12642,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                     </div>
                     <div className="text-gray-500">Code: {item.item_code || 'N/A'}{(item.one_off || item.type === 'one_off') ? ' · This job only' : ''}</div>
                     <div className="grid grid-cols-2 gap-1 mt-1">
-                      <div>Qty: <span className="font-medium">{item.quantity || 1}</span></div>
+                      <div>Qty: <span className="font-medium">{item.quantity || 1} {formatUnit(getLineItemUnit(item, job))}</span></div>
                       <div>Cost: <span className="text-red-600 font-medium">£{lineCost.toFixed(2)}</span></div>
                       <div>RRP: <span className="text-blue-600 font-medium">£{lineRRP.toFixed(2)}</span></div>
                       <div>Profit: <span className={`font-medium ${lineProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>£{lineProfit.toFixed(2)}</span></div>
@@ -13409,9 +13537,12 @@ const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSe
       ? quote.lineItems.map(item => {
           const price = item?.customer_price || item?.supplier_price || item?.unit_price || item?.price || 0;
           const qty = item?.quantity || 1;
+          // Show the unit alongside the quantity so the customer can see
+          // whether they're being quoted per tonne, per load or per skip.
+          const unitLabel = item?.unit ? ' ' + (item.unit === 'm3' ? 'm\u00b3' : item.unit) : '';
           return `<tr>
             <td>${item?.description || item?.product_name || 'Service'}</td>
-            <td style="text-align:center">${qty}</td>
+            <td style="text-align:center">${qty}${unitLabel}</td>
             <td style="text-align:right">£${parseFloat(price).toFixed(2)}</td>
             <td style="text-align:right">£${(qty * price).toFixed(2)}</td>
           </tr>`;
@@ -13952,6 +14083,7 @@ Total Waste Services Ltd`);
                               </td>
                               <td className="py-2 px-2 text-center text-xs">
                                 {item.quantity || 1}
+                                <span className="text-gray-500 ml-1">{formatUnit(getLineItemUnit(item, quote))}</span>
                               </td>
                               <td className="py-2 px-2 text-right text-xs font-medium">
                                 £{(parseFloat(unitPrice) || 0).toFixed(2)}
@@ -13977,8 +14109,8 @@ Total Waste Services Ltd`);
                           <div className="font-medium">{item.product_name || item.name}</div>
                           <div className="text-gray-500">Code: {item.item_code || 'N/A'}</div>
                           <div className="grid grid-cols-2 gap-1 mt-1">
-                            <div>Qty: <span className="font-medium">{item.quantity || 1}</span></div>
-                            <div>Unit: <span className="font-medium">£{(parseFloat(unitPrice) || 0).toFixed(2)}</span></div>
+                            <div>Qty: <span className="font-medium">{item.quantity || 1} {formatUnit(getLineItemUnit(item, quote))}</span></div>
+                            <div>Unit price: <span className="font-medium">£{(parseFloat(unitPrice) || 0).toFixed(2)}</span></div>
                             <div className="col-span-2">Total: <span className="text-blue-600 font-medium">£{lineTotal.toFixed(2)}</span></div>
                           </div>
                         </div>
@@ -26140,6 +26272,20 @@ By approving this quotation and authorising us to commence services, you acknowl
     try {
       if (!formData.customerName) { alert('Please select a customer.'); return; }
       if (!formData.jobType) { alert('Please select a job type.'); return; }
+
+      // Roll the line quantities up onto the quote itself, same as the job
+      // form. The quote list and the converted job both read these columns.
+      try {
+        const qli = Array.isArray(formData.lineItems) ? formData.lineItems : [];
+        if (qli.length > 0) {
+          const summedQty = qli.reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+          if (summedQty > 0) formData.quantity = summedQty;
+          const firstUnit = qli.find(i => i.unit && String(i.unit).trim());
+          if (firstUnit) formData.unit = firstUnit.unit;
+        }
+      } catch (unitErr) {
+        console.warn('[Quote] could not derive quantity/unit from lines:', unitErr);
+      }
       setSaving(true);
       const newQuoteNumber = quote?.quoteNumber || await generateQuoteNumber();
       const newQuote = {
@@ -26406,6 +26552,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          unit: defaultUnitForJobType(formData.jobType),
                           supplier_price: 0.00,
                           customer_price: 0.00,
                           unit_price: 0.00,
@@ -26436,6 +26583,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                           <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
                           <th className="px-4 py-3 text-left font-medium w-1/3">Description (Editable)</th>
                           <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
+                          <th className="px-2 py-3 text-left font-medium w-24">Unit</th>
                           <th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
                           <th className="px-2 py-3 text-left font-medium w-20">RRP £</th>
                           <th className="px-2 py-3 text-left font-medium w-20">Profit</th>
@@ -26482,6 +26630,26 @@ By approving this quotation and authorising us to commence services, you acknowl
                                     setFormData({...formData, lineItems: updatedItems});
                                   }}
                                 />
+                              </td>
+                              {/* Per-line unit, matching the job form. Carries
+                                  through to the job when the quote is converted. */}
+                              <td className="px-2 py-3">
+                                <select
+                                  className="w-24 px-1 py-1 border border-gray-300 rounded text-sm"
+                                  value={item.unit || defaultUnitForJobType(formData.jobType)}
+                                  onChange={(e) => {
+                                    const updatedItems = [...formData.lineItems];
+                                    updatedItems[index] = {
+                                      ...updatedItems[index],
+                                      unit: e.target.value
+                                    };
+                                    setFormData({...formData, lineItems: updatedItems});
+                                  }}
+                                >
+                                  {LINE_ITEM_UNITS.map(u => (
+                                    <option key={u} value={u}>{formatUnit(u)}</option>
+                                  ))}
+                                </select>
                               </td>
                               <td className="px-2 py-3">
                                 <input
@@ -26632,6 +26800,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          unit: defaultUnitForJobType(formData.jobType),
                           supplier_price: 0.00,
                           customer_price: 0.00,
                           unit_price: 0.00,
@@ -26667,6 +26836,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          unit: defaultUnitForJobType(formData.jobType),
                           supplier_price: 0.00,
                           customer_price: 0.00,
                           unit_price: 0.00,
@@ -26702,6 +26872,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                           item_code: product.item_code,
                           type: product.type,
                           quantity: 1,
+                          unit: defaultUnitForJobType(formData.jobType),
                           supplier_price: 0.00,
                           customer_price: 0.00,
                           unit_price: 0.00,
@@ -26721,30 +26892,9 @@ By approving this quotation and authorising us to commence services, you acknowl
                 </div>
               )}
 
+              {/* Quantity and Unit are entered per line in the Products &
+                  Services table above, then rolled up onto the quote on save. */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
-                  <input
-                    type="number"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                  <select
-                    value={formData.unit}
-                    onChange={(e) => setFormData({...formData, unit: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value="skip">Skip</option>
-                    <option value="tonnes">Tonnes</option>
-                    <option value="loads">Loads</option>
-                    <option value="collections">Collections</option>
-                    <option value="days">Days</option>
-                  </select>
-                </div>
                 {formData.jobType !== 'Aggregates' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Weight (tonnes)</label>
@@ -26809,30 +26959,9 @@ By approving this quotation and authorising us to commence services, you acknowl
                 </div>
               </div>
 
-              <div>
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={formData.hazardousWaste}
-                    onChange={(e) => setFormData({...formData, hazardousWaste: e.target.checked})}
-                    className="mr-2"
-                  />
-                  <span className="text-sm font-medium">Contains Hazardous Waste</span>
-                </label>
-              </div>
-
-              {formData.hazardousWaste && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Consignment Note Number</label>
-                  <input
-                    type="text"
-                    value={formData.consignmentNote}
-                    onChange={(e) => setFormData({...formData, consignmentNote: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="Hazardous waste consignment note"
-                  />
-                </div>
-              )}
+              {/* Hazardous waste tick and Consignment Note removed to match the
+                  job form — hazardous waste is recorded per line on the WTN tab
+                  once the quote becomes a job. */}
             </div>
           )}
 
