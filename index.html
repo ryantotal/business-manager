@@ -11364,10 +11364,14 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
 
   const fmt = n => Number(n).toLocaleString('en-GB', { maximumFractionDigits: 2 });
 
-  // No cap on this site + product, and the user hasn't asked to add one:
-  // render nothing. Caps are the exception, so we don't nag on every job.
-  // Setting one is a deliberate act via the header button.
-  if (!alloc && !editing) {
+  // No cap on this site + product, and the user hasn't opened the editor:
+  // render nothing whatsoever. Caps are the exception, so the job page looks
+  // exactly as it did before this feature existed. The only way to create one
+  // is the chart icon in the header.
+  if (!alloc && !editing) return null;
+
+  // Editor opened from the header button, for a group that has no cap yet.
+  if (!alloc && editing) {
     return (
       <div className="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200">
         <div className="text-xs text-gray-500 mb-2">
