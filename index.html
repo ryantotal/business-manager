@@ -11180,8 +11180,18 @@ function getJobAllocationQty(j, productName) {
 function getLinkedAllocationJobs(allJobs, key) {
   if (!key || !Array.isArray(allJobs)) return [];
   return allJobs.filter(j => {
-    if (j.isCancelled || j.is_cancelled || j.status === 'CANCELLED') return false;
-    if (j.isEvent || j.is_event || j.status === 'EVENT') return false;
+    // camelCase takes precedence over snake_case for the same reason as
+    // isJobDelivered: un-ticking a flag in the edit form only resets the
+    // camelCase field, so reading either one would keep acting on the stale
+    // value until the next reload from Supabase.
+    const cancelled = (j.isCancelled !== undefined && j.isCancelled !== null)
+      ? !!j.isCancelled
+      : !!j.is_cancelled;
+    if (cancelled || j.status === 'CANCELLED') return false;
+    const isEvent = (j.isEvent !== undefined && j.isEvent !== null)
+      ? !!j.isEvent
+      : !!j.is_event;
+    if (isEvent || j.status === 'EVENT') return false;
     return getAllocationKey(j) === key;
   });
 }
@@ -11261,8 +11271,17 @@ const SiteAllocationCounter = ({ job, jobs }) => {
   );
 
   // A job counts as delivered once it's marked completed or collected.
-  const isJobDelivered = (j) =>
-    !!(j.isCompleted || j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED');
+  //
+  // Field precedence matters here. Completing a job writes both isCompleted
+  // and is_completed into the local record; un-ticking "Job Completed" resets
+  // only the camelCase one, leaving is_completed stale until the next reload.
+  // Reading either field would keep an un-completed job in the delivered
+  // total, so camelCase wins whenever it's defined.
+  const isJobDelivered = (j) => {
+    if (j.status === 'COMPLETED' || j.status === 'COLLECTED') return true;
+    if (j.isCompleted !== undefined && j.isCompleted !== null) return !!j.isCompleted;
+    return !!j.is_completed;
+  };
 
   // Three figures, because they answer different questions:
   //   delivered  — actual tonnage tipped, from the Qty on completed jobs. This
@@ -11540,6 +11559,7 @@ const SiteAllocationCounter = ({ job, jobs }) => {
                       <td className="px-3 py-2 text-gray-500">
                         {j.status === 'COLLECTED' ? 'Collected' : 'Completed'}
                       </td>
+
                       <td className="px-3 py-2 text-right">
                         {fmt(getJobAllocationQty(j, product))}
                       </td>
