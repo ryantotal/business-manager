@@ -11240,13 +11240,22 @@ window.fetchAllocationForJob = fetchAllocationForJob;
 // jobs drop out automatically; an under-delivering job needs its Qty
 // correcting on the job itself.
 // ─────────────────────────────────────────────────────────────────────────────
-const SiteAllocationCounter = ({ job, jobs }) => {
+const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) => {
   const [alloc, setAlloc]       = React.useState(null);
   const [loading, setLoading]   = React.useState(true);
-  const [editing, setEditing]   = React.useState(false);
+  // Local edit flag, for editing a cap that already exists. When no cap
+  // exists, the editor is opened from the header button instead — that state
+  // lives in FullPageJobView and arrives as capEditorOpen.
+  const [editingLocal, setEditingLocal] = React.useState(false);
   const [capInput, setCapInput] = React.useState('');
   const [saving, setSaving]     = React.useState(false);
   const [expanded, setExpanded] = React.useState(false);
+
+  const editing = editingLocal || !!capEditorOpen;
+  const setEditing = (v) => {
+    setEditingLocal(v);
+    if (!v && setCapEditorOpen) setCapEditorOpen(false);
+  };
 
   const key      = getAllocationKey(job);
   const custName = (job.customerName || job.customer_name || '').trim();
@@ -11330,7 +11339,8 @@ const SiteAllocationCounter = ({ job, jobs }) => {
           .from('site_allocations').insert([payload]);
         if (error) throw error;
       }
-      setEditing(false);
+      setEditingLocal(false);
+      if (setCapEditorOpen) setCapEditorOpen(false);
       await reload();
     } catch (e) {
       alert('Could not save the cap: ' + e.message);
@@ -11354,21 +11364,39 @@ const SiteAllocationCounter = ({ job, jobs }) => {
 
   const fmt = n => Number(n).toLocaleString('en-GB', { maximumFractionDigits: 2 });
 
-  // No cap set yet — a quiet one-line prompt rather than a big empty panel.
+  // No cap on this site + product, and the user hasn't asked to add one:
+  // render nothing. Caps are the exception, so we don't nag on every job.
+  // Setting one is a deliberate act via the header button.
   if (!alloc && !editing) {
     return (
-      <div className="px-4 sm:px-6 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-3">
-        <span className="text-xs text-gray-500">
-          {linked.length > 1
-            ? linked.length + ' jobs at ' + postcode + ' for ' + product + ' — no tonnage cap set.'
-            : 'No tonnage cap set for ' + postcode + ' · ' + product + '.'}
-        </span>
-        <button
-          onClick={() => { setCapInput(''); setEditing(true); }}
-          className="px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 whitespace-nowrap"
-        >
-          Set tonnage cap
-        </button>
+      <div className="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200">
+        <div className="text-xs text-gray-500 mb-2">
+          No tonnage cap for <strong>{postcode}</strong> · {product}.
+          {linked.length > 1 && ' ' + linked.length + ' jobs would be counted against one.'}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="number"
+            value={capInput}
+            onChange={e => setCapInput(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-40"
+            placeholder="Cap in tonnes"
+            autoFocus
+          />
+          <button
+            onClick={saveCap}
+            disabled={saving}
+            className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save cap'}
+          </button>
+          <button
+            onClick={() => { if (setCapEditorOpen) setCapEditorOpen(false); }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     );
   }
@@ -11635,6 +11663,12 @@ const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, on
   const [jobAttachments, setJobAttachments] = useState([]);
   const [currentJob, setCurrentJob] = useState(job);
   const [showSidebar, setShowSidebar] = useState(false);
+  // Opens the tonnage cap editor on the allocation counter. Lives here rather
+  // than in the counter because the button that triggers it is in this
+  // component's header.
+  const [capEditorOpen, setCapEditorOpen] = useState(false);
+  // Reset when navigating between jobs so the editor doesn't follow you.
+  React.useEffect(() => { setCapEditorOpen(false); }, [job && job.id]);
 
   // Navigation - filter events same as JobsView
   const navJobs = React.useMemo(() => (jobs || []).filter(j => !j.isEvent && j.status !== 'EVENT'), [jobs]);
@@ -12093,6 +12127,18 @@ console.log(JSON.stringify(invoiceData, null, 2));
     <LucideIcon icon="FileText" size={20} />
   </button>
 )}
+{/* Set tonnage cap — only shown when the job has the customer, postcode and
+    product needed to define an allocation group. Deliberate action: the
+    counter stays hidden until a cap exists. */}
+{getAllocationKey(job) && (
+  <button
+    onClick={() => setCapEditorOpen(v => !v)}
+    className={`p-2 rounded-lg ${capEditorOpen ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
+    title="Set or edit the customer's tonnage cap for this site"
+  >
+    <LucideIcon icon="BarChart3" size={20} />
+  </button>
+)}
 {/* Complete button for non-Skip/RoRo jobs - only check status, not isCompleted */}
 {job.jobType !== 'Skip Hire' && job.jobType !== 'Roll-on Roll-off' && job.status !== 'COMPLETED' && (
   <button
@@ -12161,8 +12207,15 @@ console.log(JSON.stringify(invoiceData, null, 2));
   </div>
 </div>
 
-      {/* Site tonnage allocation counter */}
-      <SiteAllocationCounter job={job} jobs={jobs} />
+      {/* Site tonnage allocation counter — renders only when a cap exists for
+          this customer + postcode + product, or when the header button has
+          been used to start creating one. */}
+      <SiteAllocationCounter
+        job={job}
+        jobs={jobs}
+        capEditorOpen={capEditorOpen}
+        setCapEditorOpen={setCapEditorOpen}
+      />
 
       {/* ON STOP Banner */}
       {job.onStop && (
