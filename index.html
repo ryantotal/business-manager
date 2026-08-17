@@ -3270,7 +3270,7 @@ const EWCPicker = ({ value, onChange }) => {
   );
 };
 
-const JobForm = ({ job, onClose, onSave, setJobs, onUpdateDisplay, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
+const JobForm = ({ job, onClose, onSave, setJobs, jobs, onUpdateDisplay, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
  
           const [uploadFile, setUploadFile] = useState(null);
           const [jobAttachments, setJobAttachments] = useState([]);
@@ -5078,6 +5078,65 @@ const [isEvent, setIsEvent] = useState(false);
 
 
    const handleSubmit = async () => {
+  // ── Site allocation check ────────────────────────────────────────────
+  // Warn if this booking would breach the customer's tonnage cap for the
+  // site + product. Not a hard block — customers do verbally increase caps —
+  // but "Book anyway" asks for a reason, which is written onto the job notes
+  // so there's a trail. Wrapped in try/catch: a failure here must never stop
+  // a job being saved.
+  try {
+    const allocDraft = {
+      id: job && job.id,
+      customerName: formData.customerName,
+      sitePostcode: formData.sitePostcode,
+      lineItems: formData.lineItems,
+      quantity: formData.quantity,
+      jobType: formData.jobType,
+      sageProductName: formData.sageProductName,
+    };
+    const allocKey = getAllocationKey(allocDraft);
+    if (allocKey) {
+      const allocation = await fetchAllocationForJob(allocDraft);
+      if (allocation) {
+        const allocProduct = getJobProductName(allocDraft);
+        const cap = parseFloat(allocation.cap_tonnes) || 0;
+        // Sum every OTHER job in the group, then add this one's new figure,
+        // so editing an existing job doesn't double-count it.
+        const others = getLinkedAllocationJobs(jobs, allocKey)
+          .filter(j => !(job && j.id === job.id));
+        const otherTotal = others.reduce((s, j) => s + getJobAllocationQty(j, allocProduct), 0);
+        const thisQty = getJobAllocationQty(allocDraft, allocProduct);
+        const newTotal = otherTotal + thisQty;
+
+        if (cap > 0 && newTotal > cap) {
+          const proceed = confirm(
+            'TONNAGE CAP EXCEEDED\n\n' +
+            formData.sitePostcode + ' \u00b7 ' + allocProduct + '\n\n' +
+            'Cap: ' + cap.toLocaleString('en-GB') + ' tonnes\n' +
+            'This booking takes it to: ' + newTotal.toLocaleString('en-GB') + ' tonnes\n' +
+            'Over by: ' + (newTotal - cap).toLocaleString('en-GB') + ' tonnes\n\n' +
+            'Book anyway?'
+          );
+          if (!proceed) return;
+          const reason = prompt('Reason for going over the cap (recorded on the job):');
+          if (reason) {
+            formData.notes = (formData.notes ? formData.notes + '\n\n' : '') +
+              '\u26a0 Booked over tonnage cap (' + cap + 't) \u2014 reason: ' + reason;
+          }
+        } else if (cap > 0 && (newTotal / cap) >= 0.8) {
+          alert(
+            'Approaching tonnage cap\n\n' +
+            formData.sitePostcode + ' \u00b7 ' + allocProduct + '\n' +
+            newTotal.toLocaleString('en-GB') + ' of ' + cap.toLocaleString('en-GB') +
+            ' tonnes (' + Math.round((newTotal / cap) * 100) + '%)'
+          );
+        }
+      }
+    }
+  } catch (allocErr) {
+    console.warn('[Allocation] cap check failed, saving anyway:', allocErr);
+  }
+
   // Define sageProductData at the very beginning - it's used in multiple places
   const sageProductData = (formData.lineItems || []).map(item => ({
     sage_id: item.sage_id,
@@ -11057,6 +11116,384 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SITE ALLOCATION — tonnage cap tracking
+//
+// Customers cap how much material we can supply to a site (e.g. DSS Civil
+// Engineering capped Hanningfield CM3 8BJ at 4,000 tonnes of 6F5). This groups
+// jobs by customer + postcode + product and totals the tonnage booked against
+// that cap.
+//
+// Grouping is computed live from the in-memory jobs array — there is no link
+// table and no backfill needed, so existing jobs group themselves the moment
+// a cap is set. The only thing stored is the cap, in the site_allocations
+// table.
+//
+// Postcode alone is deliberately NOT the key. Postcodes get reused by
+// different customers, and a muck away job at the same address must not count
+// against an aggregates cap.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Pull the product name off a job. Falls back through line items → sage
+// product name → job type so legacy jobs without line items still group.
+function getJobProductName(j) {
+  try {
+    const raw = j.lineItems || j.line_items || j.sageLineItems || j.sage_line_items;
+    const items = typeof raw === 'string' ? JSON.parse(raw) : (Array.isArray(raw) ? raw : []);
+    if (items.length > 0) {
+      return items[0].product_name || items[0].productName || items[0].description || '';
+    }
+  } catch (e) { /* malformed line_items — fall through to the job-level fields */ }
+  return j.sageProductName || j.sage_product_name || j.jobType || j.job_type || '';
+}
+
+// Build the grouping key. Returns null when any part is missing, which simply
+// means the job doesn't participate in allocation tracking.
+function getAllocationKey(j) {
+  if (!j) return null;
+  const cust = (j.customerName || j.customer_name || '').trim().toLowerCase();
+  const pc   = (j.sitePostcode || j.site_postcode || '').replace(/\s+/g, '').toUpperCase();
+  const prod = getJobProductName(j).trim().toLowerCase();
+  if (!cust || !pc || !prod) return null;
+  return cust + '|' + pc + '|' + prod;
+}
+
+// Tonnage this job contributes to its group. Prefers the line item matching
+// the group's product; falls back to the job-level quantity for jobs with no
+// line items.
+function getJobAllocationQty(j, productName) {
+  const target = (productName || '').trim().toLowerCase();
+  try {
+    const raw = j.lineItems || j.line_items || j.sageLineItems || j.sage_line_items;
+    const items = typeof raw === 'string' ? JSON.parse(raw) : (Array.isArray(raw) ? raw : []);
+    const matched = items.filter(i =>
+      (i.product_name || i.productName || i.description || '').trim().toLowerCase() === target
+    );
+    if (matched.length > 0) {
+      return matched.reduce((sum, i) => sum + (parseFloat(i.quantity) || 0), 0);
+    }
+  } catch (e) { /* fall through */ }
+  return parseFloat(j.quantity) || 0;
+}
+
+// Every non-cancelled job in the same allocation group.
+function getLinkedAllocationJobs(allJobs, key) {
+  if (!key || !Array.isArray(allJobs)) return [];
+  return allJobs.filter(j => {
+    if (j.isCancelled || j.is_cancelled || j.status === 'CANCELLED') return false;
+    if (j.isEvent || j.is_event || j.status === 'EVENT') return false;
+    return getAllocationKey(j) === key;
+  });
+}
+
+// Look up a stored cap for a job's group. Returns the row or null.
+async function fetchAllocationForJob(job) {
+  const key = getAllocationKey(job);
+  if (!key) return null;
+  const custName = (job.customerName || job.customer_name || '').trim();
+  const product  = getJobProductName(job).trim();
+  const pcNorm   = (job.sitePostcode || job.site_postcode || '').replace(/\s+/g, '').toUpperCase();
+  try {
+    // ilike gives case-insensitive matching on name and product. The postcode
+    // is normalised in JS rather than SQL because spacing varies in the data
+    // ("CM3 8BJ" vs "CM38BJ").
+    const { data, error } = await window.supabase
+      .from('site_allocations')
+      .select('*')
+      .ilike('customer_name', custName)
+      .ilike('product_name', product)
+      .eq('status', 'open');
+    if (error) throw error;
+    return (data || []).find(a =>
+      (a.site_postcode || '').replace(/\s+/g, '').toUpperCase() === pcNorm
+    ) || null;
+  } catch (e) {
+    console.warn('[Allocation] lookup failed:', e.message);
+    return null;
+  }
+}
+
+window.getAllocationKey = getAllocationKey;
+window.getJobProductName = getJobProductName;
+window.getJobAllocationQty = getJobAllocationQty;
+window.getLinkedAllocationJobs = getLinkedAllocationJobs;
+window.fetchAllocationForJob = fetchAllocationForJob;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SiteAllocationCounter
+//
+// Sits at the top of a job showing how much tonnage has been booked against
+// the customer's cap for that site + product. Green under 80%, amber 80–99%,
+// red at 100% or over. Clicking the job count expands the linked jobs.
+//
+// "Booked" means the Qty on each job — committed, not delivered. Cancelled
+// jobs drop out automatically; an under-delivering job needs its Qty
+// correcting on the job itself.
+// ─────────────────────────────────────────────────────────────────────────────
+const SiteAllocationCounter = ({ job, jobs }) => {
+  const [alloc, setAlloc]       = React.useState(null);
+  const [loading, setLoading]   = React.useState(true);
+  const [editing, setEditing]   = React.useState(false);
+  const [capInput, setCapInput] = React.useState('');
+  const [saving, setSaving]     = React.useState(false);
+  const [expanded, setExpanded] = React.useState(false);
+
+  const key      = getAllocationKey(job);
+  const custName = (job.customerName || job.customer_name || '').trim();
+  const postcode = (job.sitePostcode || job.site_postcode || '').trim();
+  const product  = getJobProductName(job).trim();
+  const siteAddr = [job.siteAddress1 || job.site_address1, job.siteCity || job.site_city]
+    .filter(Boolean).join(', ');
+
+  const reload = React.useCallback(async () => {
+    setLoading(true);
+    const found = await fetchAllocationForJob(job);
+    setAlloc(found);
+    setCapInput(found ? String(found.cap_tonnes) : '');
+    setLoading(false);
+  }, [key]);
+
+  React.useEffect(() => { reload(); }, [reload]);
+
+  const linked = React.useMemo(
+    () => getLinkedAllocationJobs(jobs, key),
+    [jobs, key]
+  );
+
+  const booked = React.useMemo(
+    () => linked.reduce((sum, j) => sum + getJobAllocationQty(j, product), 0),
+    [linked, product]
+  );
+
+  const saveCap = async () => {
+    const capValue = parseFloat(capInput);
+    if (isNaN(capValue) || capValue <= 0) { alert('Enter a cap greater than zero.'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        customer_name: custName,
+        site_postcode: postcode,
+        product_name:  product,
+        site_address:  siteAddr || null,
+        cap_tonnes:    capValue,
+        status:        'open',
+        updated_at:    new Date().toISOString(),
+      };
+      if (alloc && alloc.id) {
+        const { error } = await window.supabase
+          .from('site_allocations').update(payload).eq('id', alloc.id);
+        if (error) throw error;
+      } else {
+        const { error } = await window.supabase
+          .from('site_allocations').insert([payload]);
+        if (error) throw error;
+      }
+      setEditing(false);
+      await reload();
+    } catch (e) {
+      alert('Could not save the cap: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeCap = async () => {
+    if (!alloc || !alloc.id) return;
+    if (!confirm('Remove the tonnage cap for this site?')) return;
+    try {
+      await window.supabase.from('site_allocations').delete().eq('id', alloc.id);
+      await reload();
+    } catch (e) { alert('Could not remove the cap: ' + e.message); }
+  };
+
+  // Job has no customer, postcode or product — nothing to track against.
+  if (!key) return null;
+  if (loading) return null;
+
+  const fmt = n => Number(n).toLocaleString('en-GB', { maximumFractionDigits: 2 });
+
+  // No cap set yet — a quiet one-line prompt rather than a big empty panel.
+  if (!alloc && !editing) {
+    return (
+      <div className="px-4 sm:px-6 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-3">
+        <span className="text-xs text-gray-500">
+          {linked.length > 1
+            ? linked.length + ' jobs at ' + postcode + ' for ' + product + ' — no tonnage cap set.'
+            : 'No tonnage cap set for ' + postcode + ' · ' + product + '.'}
+        </span>
+        <button
+          onClick={() => { setCapInput(''); setEditing(true); }}
+          className="px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 whitespace-nowrap"
+        >
+          Set tonnage cap
+        </button>
+      </div>
+    );
+  }
+
+  const cap       = alloc ? (parseFloat(alloc.cap_tonnes) || 0) : 0;
+  const remaining = cap - booked;
+  const pct       = cap > 0 ? (booked / cap) * 100 : 0;
+  const over      = cap > 0 && pct >= 100;
+  const warn      = cap > 0 && pct >= 80 && !over;
+
+  const barColour  = over ? '#dc2626' : warn ? '#d97706' : '#16a34a';
+  const bgColour   = over ? '#fef2f2' : warn ? '#fffbeb' : '#f0fdf4';
+  const brdColour  = over ? '#fecaca' : warn ? '#fde68a' : '#bbf7d0';
+  const textColour = over ? '#991b1b' : warn ? '#92400e' : '#166534';
+
+  return (
+    <div className="px-4 sm:px-6 py-3 border-b" style={{ background: bgColour, borderColor: brdColour }}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-xs uppercase tracking-wide font-semibold" style={{ color: textColour, opacity: 0.75 }}>
+            {postcode} · {product} · {custName}
+          </div>
+
+          <div className="text-sm font-bold mt-0.5" style={{ color: textColour }}>
+            {fmt(booked)} / {fmt(cap)} tonnes booked
+            <span className="font-medium ml-2" style={{ opacity: 0.85 }}>
+              {remaining >= 0
+                ? fmt(remaining) + ' remaining'
+                : fmt(Math.abs(remaining)) + ' OVER CAP'}
+              {' '}({pct.toFixed(0)}%)
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          <div className="mt-1.5 h-1.5 w-full max-w-md rounded-full bg-white bg-opacity-70 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: Math.min(100, pct) + '%', background: barColour }}
+            />
+          </div>
+
+          {over && (
+            <div className="text-xs font-semibold mt-1.5" style={{ color: textColour }}>
+              ⛔ Over the customer's cap — check before booking anything further.
+            </div>
+          )}
+          {warn && (
+            <div className="text-xs font-medium mt-1.5" style={{ color: textColour }}>
+              ⚠ Approaching the cap.
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-white border hover:bg-gray-50 whitespace-nowrap"
+            style={{ borderColor: brdColour, color: textColour }}
+          >
+            {linked.length} linked job{linked.length === 1 ? '' : 's'} {expanded ? '▲' : '▼'}
+          </button>
+          <button
+            onClick={() => { setCapInput(String(cap)); setEditing(true); }}
+            className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-white border hover:bg-gray-50"
+            style={{ borderColor: brdColour, color: textColour }}
+            title="Edit cap"
+          >
+            Edit
+          </button>
+        </div>
+      </div>
+
+      {/* Cap editor */}
+      {editing && (
+        <div className="mt-3 p-3 bg-white rounded-lg border border-gray-200">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Cap for {custName} · {postcode} · {product} (tonnes)
+          </label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="number"
+              value={capInput}
+              onChange={e => setCapInput(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-40"
+              placeholder="e.g. 4000"
+              autoFocus
+            />
+            <button
+              onClick={saveCap}
+              disabled={saving}
+              className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save cap'}
+            </button>
+            <button
+              onClick={() => { setEditing(false); setCapInput(alloc ? String(alloc.cap_tonnes) : ''); }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            {alloc && alloc.id && (
+              <button
+                onClick={removeCap}
+                className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg ml-auto"
+              >
+                Remove cap
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            Applies to every job with this customer, postcode and product.
+          </p>
+        </div>
+      )}
+
+      {/* Linked jobs list */}
+      {expanded && (
+        <div className="mt-3 bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-500 uppercase">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Job</th>
+                <th className="px-3 py-2 text-left font-medium">Date</th>
+                <th className="px-3 py-2 text-left font-medium">Status</th>
+                <th className="px-3 py-2 text-right font-medium">Tonnes</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {linked
+                .slice()
+                .sort((a, b) => String(a.jobNumber || '').localeCompare(String(b.jobNumber || '')))
+                .map(j => {
+                  const isThis = j.id === job.id;
+                  const done = j.isCompleted || j.is_completed || j.status === 'COMPLETED' || j.status === 'COLLECTED';
+                  return (
+                    <tr key={j.id} className={isThis ? 'bg-blue-50 font-semibold' : ''}>
+                      <td className="px-3 py-2 font-mono">
+                        {j.jobNumber || j.job_number}{isThis ? ' ← this job' : ''}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">
+                        {(j.jobDate || j.job_date)
+                          ? new Date(j.jobDate || j.job_date).toLocaleDateString('en-GB')
+                          : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">
+                        {done ? 'Completed' : String(j.status || '').replace('_', ' ')}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {fmt(getJobAllocationQty(j, product))}
+                      </td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+            <tfoot className="bg-gray-50">
+              <tr>
+                <td className="px-3 py-2 font-semibold" colSpan={3}>Total booked</td>
+                <td className="px-3 py-2 text-right font-bold">{fmt(booked)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onStop, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh }) => {
   const { hasPermission } = useAuth();  // fix32z: lets the delete button follow the roles map (Managers can delete)
   const [creatingInvoice, setCreatingInvoice] = useState(false);
@@ -11589,6 +12026,9 @@ console.log(JSON.stringify(invoiceData, null, 2));
     </div>
   </div>
 </div>
+
+      {/* Site tonnage allocation counter */}
+      <SiteAllocationCounter job={job} jobs={jobs} />
 
       {/* ON STOP Banner */}
       {job.onStop && (
@@ -21510,6 +21950,7 @@ onClick={() => {
             }
         }}
         setJobs={setJobs}
+        jobs={jobs}
         onUpdateDisplay={setShowFullPageJob}
         customers={customers}
         suppliers={suppliers}
