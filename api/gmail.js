@@ -14,35 +14,100 @@ async function refreshAccessToken(refreshToken) {
   return res.json();
 }
 
-function buildEmail({ to, subject, body, fromEmail, fromName, pdfHtml }) {
-  const htmlBody = `
-    <div style="font-family:Arial,sans-serif;max-width:800px;margin:0 auto">
-      <div style="padding:20px 0 30px 0;white-space:pre-wrap;font-size:14px;color:#333;border-bottom:2px solid #eee;margin-bottom:30px">${body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-      ${pdfHtml.replace(/<html>.*?<body>/s,'').replace(/<\/body>.*?<\/html>/s,'')}
-    </div>`;
+// ── PDF attachment fix ────────────────────────────────────────────────────
+// Structure produced:
+//   multipart/mixed
+//     ├── multipart/alternative   (the covering message)
+//     │     ├── text/plain
+//     │     └── text/html
+//     └── application/pdf         (the attachment)
+//
+// The previous version used multipart/alternative as the OUTER container.
+// That MIME type means "the same message in two formats, plain and HTML" and
+// cannot carry an attachment at all — which is why the quote was being spliced
+// into the message body as HTML instead of attached. multipart/mixed is the
+// type that carries attachments.
+function buildEmail({ to, subject, body, fromEmail, fromName, pdfBase64, pdfFilename }) {
+  const safeName = String(pdfFilename || 'document.pdf').replace(/["\\\r\n]/g, '');
+  const plainBody = String(body || '');
 
-  const boundary = 'tws_boundary_' + Date.now();
+  const htmlBody =
+    '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;line-height:1.5;max-width:620px">' +
+    '<div style="white-space:pre-wrap">' +
+      plainBody.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+    '</div>' +
+    (pdfBase64
+      ? '<p style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:13px">' +
+        '\uD83D\uDCCE Attached: ' + safeName + '</p>'
+      : '') +
+    '</div>';
+
+  // Base64 for the text parts too, so pound signs and accented characters
+  // survive intact without worrying about line lengths.
+  const b64 = (s) => Buffer.from(s, 'utf-8').toString('base64').replace(/(.{76})/g, '$1\r\n');
+
+  // RFC 2045 caps encoded lines at 76 characters. Gmail is lenient, but some
+  // mail gateways reject longer lines outright.
+  const wrap = (s) => String(s || '').replace(/\s+/g, '').replace(/(.{76})/g, '$1\r\n');
+
+  // RFC 2047 encoding, so a subject containing "£" or an accent isn't mangled.
+  const encodeHeader = (s) => {
+    const str = String(s || '');
+    return /^[\x00-\x7F]*$/.test(str)
+      ? str
+      : '=?UTF-8?B?' + Buffer.from(str, 'utf-8').toString('base64') + '?=';
+  };
+
+  const mixed = 'tws_mixed_' + Date.now();
+  const alt = 'tws_alt_' + Date.now();
+
   const lines = [
-    `From: ${fromName} <${fromEmail}>`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    `MIME-Version: 1.0`,
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    ``,
-    `--${boundary}`,
-    `Content-Type: text/plain; charset="UTF-8"`,
-    ``,
-    body,
-    ``,
-    `--${boundary}`,
-    `Content-Type: text/html; charset="UTF-8"`,
-    ``,
-    htmlBody,
-    ``,
-    `--${boundary}--`,
+    'From: ' + encodeHeader(fromName) + ' <' + fromEmail + '>',
+    'To: ' + to,
+    'Subject: ' + encodeHeader(subject),
+    'MIME-Version: 1.0',
+    'Content-Type: multipart/mixed; boundary="' + mixed + '"',
+    '',
+    '--' + mixed,
+    'Content-Type: multipart/alternative; boundary="' + alt + '"',
+    '',
+    '--' + alt,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64(plainBody),
+    '',
+    '--' + alt,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64(htmlBody),
+    '',
+    '--' + alt + '--',
+    '',
   ];
+
+  // Attachment is optional, so this function can also send a plain message.
+  if (pdfBase64) {
+    lines.push(
+      '--' + mixed,
+      'Content-Type: application/pdf; name="' + safeName + '"',
+      'Content-Transfer-Encoding: base64',
+      'Content-Disposition: attachment; filename="' + safeName + '"',
+      '',
+      wrap(pdfBase64),
+      ''
+    );
+  }
+
+  lines.push('--' + mixed + '--');
+
   const raw = lines.join('\r\n');
-  return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return Buffer.from(raw)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 }
 
 // ── fix32h: parse WTN reference into { jobNum, suffixLetter } ─────────────
@@ -167,13 +232,17 @@ export default async function handler(req, res) {
         }).eq('user_id', user_id);
       }
 
+      // pdfBase64 is passed straight through as an attachment. The previous
+      // version decoded it to a UTF-8 string and spliced it into the body,
+      // which is why nothing ever arrived as an actual attached file.
       const rawEmail = buildEmail({
         to,
         subject,
         body,
         fromEmail: tokenRow.user_email,
         fromName: fromName || 'Total Waste Services',
-        pdfHtml: Buffer.from(pdfBase64, 'base64').toString('utf-8'),
+        pdfBase64,
+        pdfFilename: pdfFilename || 'Quotation.pdf',
       });
 
       const sendRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
