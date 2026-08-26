@@ -11792,15 +11792,18 @@ function buildWtnPdfDoc(wtnList, job, ctx) {
     doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
     doc.setLineWidth(0.8);
 
-    let headerBottom = y + 14;
+    let headerBottom = y + 20;
     if (ctx.logoDataUrl) {
       try {
         const props = doc.getImageProperties(ctx.logoDataUrl);
-        const ratio = Math.min(30 / props.width, 14 / props.height);
-        doc.addImage(ctx.logoDataUrl, M + 1, y + 1, props.width * ratio, props.height * ratio);
+        // Fit inside a 34 x 16 box and centre it vertically in the band, so
+        // logos with the company name underneath aren't cropped.
+        const ratio = Math.min(34 / props.width, 17 / props.height);
+        const lw = props.width * ratio, lh = props.height * ratio;
+        doc.addImage(ctx.logoDataUrl, M + 2, y + 1 + (18 - lh) / 2, lw, lh);
       } catch (e) {
         setFont('bold', 9, GREEN);
-        doc.text(company.name || 'Total Waste Services Ltd', M + 1, y + 8);
+        doc.text(company.name || 'Total Waste Services Ltd', M + 2, y + 10);
       }
     } else {
       setFont('bold', 9, GREEN);
@@ -11809,17 +11812,17 @@ function buildWtnPdfDoc(wtnList, job, ctx) {
 
     const midX = M + CW / 2;
     setFont('bold', 13, GREEN);
-    doc.text('WASTE TRANSFER NOTE', midX, y + 6, { align: 'center' });
+    doc.text('WASTE TRANSFER NOTE', midX, y + 8, { align: 'center' });
     setFont('normal', 6.5, MUTED);
-    doc.text('Duty of Care \u2014 Environmental Protection Act 1990 s.34', midX, y + 10, { align: 'center' });
-    doc.text('Waste (England & Wales) Regulations 2011', midX, y + 13, { align: 'center' });
+    doc.text('Duty of Care \u2014 Environmental Protection Act 1990 s.34', midX, y + 12, { align: 'center' });
+    doc.text('Waste (England & Wales) Regulations 2011', midX, y + 15, { align: 'center' });
 
     const rx = M + CW - 1;
     setFont('bold', 10, GREEN);
-    doc.text(wtnRef, rx, y + 6, { align: 'right' });
+    doc.text(wtnRef, rx, y + 8, { align: 'right' });
     setFont('normal', 6.5, MUTED);
-    doc.text('Job: ' + (job.jobNumber || job.job_number || '\u2014'), rx, y + 10, { align: 'right' });
-    doc.text(fmtDate(w.transferDate), rx, y + 13, { align: 'right' });
+    doc.text('Job: ' + (job.jobNumber || job.job_number || '\u2014'), rx, y + 12, { align: 'right' });
+    doc.text(fmtDate(w.transferDate), rx, y + 15, { align: 'right' });
 
     y = headerBottom + 1;
     doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
@@ -12023,7 +12026,7 @@ function buildWtnPdfDoc(wtnList, job, ctx) {
 
     setFont('normal', 6, MUTED);
     doc.text((company.name || 'Total Waste Services Ltd') +
-      '  \u2022  Broker Reg: ' + (w.brokerCarrierReg || company.carrierReg || '\u2014') +
+      '  \u2022  Waste Carrier: ' + (company.carrierReg || w.brokerCarrierReg || '\u2014') +
       '  \u2022  www.totalwasteservicesltd.com', M, y + 4);
     doc.text('WMC2A  \u2022  Issued ' + new Date().toLocaleDateString('en-GB') +
       (multi ? '  \u2022  Note ' + suffix + ' of ' + list.length : ''),
