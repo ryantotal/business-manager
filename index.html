@@ -11477,7 +11477,11 @@ function buildQuotePdfDoc(quote, ctx) {
   }
 
   // ══ ACCEPTANCE ════════════════════════════════════════════════════════
-  need(46);
+  // Reserve the whole block up front. It is roughly 88mm tall: heading and
+  // rule (~10), the intro paragraph (~14), a 4mm gap, then four signature
+  // lines 13mm apart with their labels (~59). Reserving only part of it let
+  // the last line — the PO number — collide with the page footer.
+  need(88);
   heading('Acceptance');
   paragraph('To accept this quotation, please sign below or reply confirming acceptance in writing. Works will be scheduled on receipt of a signed copy or written confirmation.', { size: 9 });
   y += 4;
