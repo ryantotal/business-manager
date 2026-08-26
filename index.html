@@ -143,6 +143,11 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Real PDF generation for quotes. jsPDF draws text natively, so the
+         output has selectable text and stays small — unlike screenshotting
+         the page into an image. autoTable handles the line item tables. -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -11127,6 +11132,471 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
 // SAFE VERSION - Add this AFTER your existing JobsView component (around line 2800)
 // This works with your existing code structure and won't break anything
 
+// ═══════════════════════════════════════════════════════════════════════════
+// QUOTE PDF GENERATOR
+//
+// Produces a real, text-based PDF via jsPDF — not an HTML file with a .pdf
+// name. Text stays selectable and searchable, the file is small, and it opens
+// natively on phones and in mail clients.
+//
+// Layout, top to bottom:
+//   header band (logo + quote ref)  ·  prepared for / prepared by
+//   scope paragraph  ·  priced items  ·  optional items  ·  totals
+//   what's included  ·  exclusions  ·  terms  ·  acceptance  ·  footer
+//
+// Every free-text section is optional: leave it blank on the quote form and
+// the section is skipped entirely rather than printing an empty heading.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function buildQuotePdfDoc(quote, ctx) {
+  ctx = ctx || {};
+  const company = ctx.company || {};
+  const preparedBy = ctx.preparedBy || {};
+
+  const jsPDFCtor = ctx.jsPDF || (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF);
+  if (!jsPDFCtor) throw new Error('jsPDF is not loaded');
+
+  const doc = new jsPDFCtor({ unit: 'mm', format: 'a4', compress: true });
+
+  // ── Palette ───────────────────────────────────────────────────────────
+  const GREEN     = [26, 92, 42];
+  const GREEN_LT  = [232, 243, 235];
+  const INK       = [17, 24, 39];
+  const MUTED     = [107, 114, 128];
+  const RULE      = [209, 213, 219];
+  const AMBER_BG  = [254, 249, 231];
+
+  const PAGE_W = doc.internal.pageSize.getWidth();
+  const PAGE_H = doc.internal.pageSize.getHeight();
+  const M      = 16;                 // margin
+  const CW     = PAGE_W - M * 2;     // content width
+  const FOOT_H = 16;                 // reserved footer space
+
+  let y = M;
+
+  // ── Helpers ───────────────────────────────────────────────────────────
+  const setFont = (style, size, colour) => {
+    doc.setFont('helvetica', style || 'normal');
+    doc.setFontSize(size || 10);
+    const c = colour || INK;
+    doc.setTextColor(c[0], c[1], c[2]);
+  };
+
+  // Reserve vertical space, adding a page if this block won't fit.
+  const need = (h) => {
+    if (y + h > PAGE_H - FOOT_H) {
+      doc.addPage();
+      y = M;
+      return true;
+    }
+    return false;
+  };
+
+  const money = (n) => {
+    const v = parseFloat(n) || 0;
+    return '\u00A3' + v.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const unitLabel = (u) => (!u ? '' : (u === 'm3' ? 'm\u00B3' : String(u)));
+
+  // Split a textarea into clean bullet lines, tolerating "- " / "• " prefixes.
+  const toLines = (text) => String(text || '')
+    .split(/\r?\n/)
+    .map(l => l.replace(/^\s*[-•*\u2022]\s*/, '').trim())
+    .filter(Boolean);
+
+  // Section heading with a green underline.
+  const heading = (label) => {
+    y += 3;                 // breathing room above the rule
+    need(16);
+    setFont('bold', 10, GREEN);
+    doc.text(String(label).toUpperCase(), M, y);
+    y += 1.8;
+    doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+    doc.setLineWidth(0.4);
+    doc.line(M, y, M + CW, y);
+    y += 5;
+  };
+
+  // Wrapped body paragraph.
+  const paragraph = (text, opts) => {
+    opts = opts || {};
+    const size = opts.size || 9.5;
+    const lh = size * 0.42;
+    setFont(opts.style || 'normal', size, opts.colour || INK);
+    const lines = doc.splitTextToSize(String(text || ''), opts.width || CW);
+    for (const line of lines) {
+      need(lh + 1);
+      setFont(opts.style || 'normal', size, opts.colour || INK);
+      doc.text(line, opts.x || M, y);
+      y += lh;
+    }
+    y += opts.gap === undefined ? 2 : opts.gap;
+  };
+
+  // Bulleted list with a green marker.
+  const bullets = (items) => {
+    setFont('normal', 9.5, INK);
+    for (const item of items) {
+      const lines = doc.splitTextToSize(item, CW - 5);
+      need(lines.length * 4 + 1);
+      doc.setFillColor(GREEN[0], GREEN[1], GREEN[2]);
+      doc.circle(M + 1.4, y - 1.05, 0.65, 'F');
+      setFont('normal', 9.5, INK);
+      lines.forEach((line, i) => {
+        doc.text(line, M + 5, y);
+        y += 4;
+        if (i < lines.length - 1) need(4);
+      });
+      y += 0.8;
+    }
+    y += 2;
+  };
+
+  // ══ HEADER ════════════════════════════════════════════════════════════
+  doc.setFillColor(GREEN[0], GREEN[1], GREEN[2]);
+  doc.rect(0, 0, PAGE_W, 3, 'F');
+  y = M + 2;
+
+  let headerBottom = y;
+
+  // Logo, or the company name if there isn't one.
+  if (ctx.logoDataUrl) {
+    try {
+      const maxW = 46, maxH = 18;
+      const props = doc.getImageProperties(ctx.logoDataUrl);
+      const ratio = Math.min(maxW / props.width, maxH / props.height);
+      const w = props.width * ratio, h = props.height * ratio;
+      doc.addImage(ctx.logoDataUrl, M, y, w, h);
+      headerBottom = Math.max(headerBottom, y + h);
+    } catch (e) {
+      setFont('bold', 15, GREEN);
+      doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
+      headerBottom = Math.max(headerBottom, y + 10);
+    }
+  } else {
+    setFont('bold', 15, GREEN);
+    doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
+    headerBottom = Math.max(headerBottom, y + 10);
+  }
+
+  // Quote reference block, right aligned.
+  const rx = PAGE_W - M;
+  setFont('bold', 20, GREEN);
+  doc.text('QUOTATION', rx, y + 7, { align: 'right' });
+  setFont('bold', 11, INK);
+  doc.text(String(quote.quoteNumber || ''), rx, y + 13.5, { align: 'right' });
+  setFont('normal', 8.5, MUTED);
+  const dateStr = quote.createdDate || quote.created_at;
+  doc.text('Date: ' + (dateStr ? new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'), rx, y + 18.5, { align: 'right' });
+  if (quote.validUntil) {
+    doc.text('Valid until: ' + new Date(quote.validUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), rx, y + 22.5, { align: 'right' });
+  }
+  headerBottom = Math.max(headerBottom, y + 24);
+
+  y = headerBottom + 4;
+  doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+  doc.setLineWidth(0.3);
+  doc.line(M, y, M + CW, y);
+  y += 7;
+
+  // ══ PREPARED FOR / PREPARED BY ════════════════════════════════════════
+  const colW = (CW - 8) / 2;
+  const colTop = y;
+
+  setFont('bold', 8, GREEN);
+  doc.text('PREPARED FOR', M, y);
+  setFont('bold', 10.5, INK);
+  doc.text(doc.splitTextToSize(String(quote.customerName || '—'), colW), M, y + 5.5);
+  let leftY = y + 5.5 + doc.splitTextToSize(String(quote.customerName || '—'), colW).length * 4.4;
+  setFont('normal', 9, MUTED);
+  if (quote.customerContact) { doc.text('FAO: ' + quote.customerContact, M, leftY); leftY += 4.2; }
+  const siteBits = [quote.siteAddress1 || quote.siteAddress, quote.siteCity, quote.sitePostcode].filter(Boolean).join(', ');
+  if (siteBits) {
+    const sl = doc.splitTextToSize('Site: ' + siteBits, colW);
+    doc.text(sl, M, leftY); leftY += sl.length * 4.2;
+  }
+  if (quote.customerPO) { doc.text('PO: ' + quote.customerPO, M, leftY); leftY += 4.2; }
+
+  const rcx = M + colW + 8;
+  setFont('bold', 8, GREEN);
+  doc.text('PREPARED BY', rcx, colTop);
+  setFont('bold', 10.5, INK);
+  doc.text(preparedBy.name || company.name || 'Total Waste Services Ltd', rcx, colTop + 5.5);
+  let rightY = colTop + 10;
+  setFont('normal', 9, MUTED);
+  if (preparedBy.name && company.name) { doc.text(company.name, rcx, rightY); rightY += 4.2; }
+  if (company.phone) { doc.text('T: ' + company.phone, rcx, rightY); rightY += 4.2; }
+  const contactEmail = preparedBy.email || company.email;
+  if (contactEmail) { doc.text('E: ' + contactEmail, rcx, rightY); rightY += 4.2; }
+
+  y = Math.max(leftY, rightY) + 4;
+
+  // ══ SERVICE DESCRIPTION ═══════════════════════════════════════════════
+  if (quote.scopeDescription && String(quote.scopeDescription).trim()) {
+    heading('Service description');
+    paragraph(quote.scopeDescription);
+    y += 1;
+  }
+
+  // ══ LINE ITEMS ════════════════════════════════════════════════════════
+  const allItems = Array.isArray(quote.lineItems) ? quote.lineItems : [];
+  const priced   = allItems.filter(i => !i.optional);
+  const optional = allItems.filter(i => i.optional);
+
+  const hidePrices = !!quote.hidePricesOnPDF;
+
+  const rowFor = (item) => {
+    const qty   = parseFloat(item.quantity) || 1;
+    const price = parseFloat(item.customer_price || item.unit_price || item.price || 0) || 0;
+    const desc  = item.description || item.product_name || 'Service';
+    const name  = item.product_name && item.description && item.product_name !== item.description
+      ? item.product_name + '\n' + item.description
+      : desc;
+    return {
+      name: name,
+      qty: String(qty) + (item.unit ? ' ' + unitLabel(item.unit) : ''),
+      price: money(price),
+      net: money(qty * price),
+    };
+  };
+
+  const tableStyles = {
+    theme: 'plain',
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 2.4, bottom: 2.4, left: 2, right: 2 }, textColor: INK, lineColor: RULE, lineWidth: 0 },
+    headStyles: { fillColor: GREEN, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, cellPadding: { top: 2.6, bottom: 2.6, left: 2, right: 2 } },
+    alternateRowStyles: { fillColor: [250, 250, 250] },
+    margin: { left: M, right: M },
+  };
+
+  if (priced.length > 0) {
+    heading('Schedule of works');
+    doc.autoTable(Object.assign({}, tableStyles, {
+      startY: y,
+      head: [hidePrices ? ['Description', 'Qty'] : ['Description', 'Qty', 'Unit price', 'Net']],
+      body: priced.map(i => {
+        const r = rowFor(i);
+        return hidePrices ? [r.name, r.qty] : [r.name, r.qty, r.price, r.net];
+      }),
+      columnStyles: hidePrices
+        ? { 0: { cellWidth: CW - 30 }, 1: { cellWidth: 30, halign: 'center' } }
+        : { 0: { cellWidth: CW - 88 }, 1: { cellWidth: 26, halign: 'center' },
+            2: { cellWidth: 30, halign: 'right' }, 3: { cellWidth: 32, halign: 'right' } },
+    }));
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  // Optional extras — priced but deliberately outside the total.
+  if (optional.length > 0) {
+    need(30);
+    heading('Optional extras');
+    setFont('normal', 8.5, MUTED);
+    paragraph('Chargeable only if instructed. Not included in the total below.', { size: 8.5, colour: MUTED, gap: 2 });
+    doc.autoTable(Object.assign({}, tableStyles, {
+      startY: y,
+      headStyles: Object.assign({}, tableStyles.headStyles, { fillColor: [120, 113, 108] }),
+      alternateRowStyles: { fillColor: AMBER_BG },
+      startY: y,
+      head: [hidePrices ? ['Description', 'Qty'] : ['Description', 'Qty', 'Unit price', 'Net']],
+      body: optional.map(i => {
+        const r = rowFor(i);
+        return hidePrices ? [r.name, r.qty] : [r.name, r.qty, r.price, r.net];
+      }),
+      columnStyles: hidePrices
+        ? { 0: { cellWidth: CW - 30 }, 1: { cellWidth: 30, halign: 'center' } }
+        : { 0: { cellWidth: CW - 88 }, 1: { cellWidth: 26, halign: 'center' },
+            2: { cellWidth: 30, halign: 'right' }, 3: { cellWidth: 32, halign: 'right' } },
+    }));
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  // ══ TOTALS ════════════════════════════════════════════════════════════
+  if (!hidePrices) {
+    const net = priced.reduce((s, i) =>
+      s + (parseFloat(i.quantity) || 1) * (parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0), 0);
+    const vatRate = quote.vatRate === 0 ? 0 : (parseFloat(quote.vatRate) || 20);
+    const vat = net * (vatRate / 100);
+
+    need(30);
+    const boxW = 78, boxX = M + CW - boxW;
+    setFont('normal', 9.5, INK);
+    doc.text('Total (net)', boxX, y);
+    doc.text(money(net), M + CW, y, { align: 'right' });
+    y += 5;
+    doc.text('VAT (' + vatRate + '%)', boxX, y);
+    doc.text(money(vat), M + CW, y, { align: 'right' });
+    y += 2.5;
+    doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+    doc.setLineWidth(0.4);
+    doc.line(boxX, y, M + CW, y);
+    y += 5.5;
+    doc.setFillColor(GREEN_LT[0], GREEN_LT[1], GREEN_LT[2]);
+    doc.rect(boxX - 3, y - 5.4, boxW + 3, 9, 'F');
+    setFont('bold', 12, GREEN);
+    doc.text('TOTAL INC. VAT', boxX, y);
+    doc.text(money(net + vat), M + CW, y, { align: 'right' });
+    y += 10;
+  }
+
+  // ══ INCLUDED / EXCLUDED ═══════════════════════════════════════════════
+  const incl = toLines(quote.inclusions);
+  if (incl.length > 0) { heading('What is included'); bullets(incl); }
+
+  const excl = toLines(quote.exclusions);
+  if (excl.length > 0) { heading('Exclusions'); bullets(excl); }
+
+  // ══ TERMS ═════════════════════════════════════════════════════════════
+  const termRows = [];
+  if (quote.validUntil) {
+    termRows.push(['Quote valid', 'Until ' + new Date(quote.validUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })]);
+  }
+  termRows.push(['VAT', 'All prices subject to VAT at the prevailing rate']);
+  if (quote.paymentTerms) termRows.push(['Payment terms', String(quote.paymentTerms)]);
+  if (company.carrierReg) termRows.push(['Waste carrier licence', company.carrierReg]);
+
+  const freeTerms = String(quote.terms_conditions || '').trim();
+
+  if (termRows.length > 0 || freeTerms) {
+    need(24);
+    heading('Terms & conditions');
+    if (termRows.length > 0) {
+      doc.autoTable({
+        startY: y,
+        theme: 'plain',
+        styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 1.8, bottom: 1.8, left: 0, right: 2 }, textColor: INK },
+        columnStyles: { 0: { cellWidth: 44, fontStyle: 'bold' }, 1: { cellWidth: CW - 44 } },
+        body: termRows,
+        margin: { left: M, right: M },
+      });
+      y = doc.lastAutoTable.finalY + 4;
+    }
+    if (freeTerms) paragraph(freeTerms, { size: 8.5, colour: MUTED });
+  }
+
+  // ══ ACCEPTANCE ════════════════════════════════════════════════════════
+  need(46);
+  heading('Acceptance');
+  paragraph('To accept this quotation, please sign below or reply confirming acceptance in writing. Works will be scheduled on receipt of a signed copy or written confirmation.', { size: 9 });
+  y += 4;
+
+  const sigW = (CW - 12) / 2;
+  const sigTop = y;
+  doc.setDrawColor(INK[0], INK[1], INK[2]);
+  doc.setLineWidth(0.3);
+
+  // Client column
+  setFont('bold', 8, GREEN);
+  doc.text('CLIENT SIGNATURE', M, sigTop);
+  let sy = sigTop + 12;
+  doc.line(M, sy, M + sigW, sy);
+  setFont('normal', 8, MUTED);
+  doc.text('Signed', M, sy + 3.6);
+  sy += 13;
+  doc.line(M, sy, M + sigW, sy);
+  doc.text('Name', M, sy + 3.6);
+  sy += 13;
+  doc.line(M, sy, M + sigW, sy);
+  doc.text('Date', M, sy + 3.6);
+  sy += 13;
+  doc.line(M, sy, M + sigW, sy);
+  doc.text('PO number (if required)', M, sy + 3.6);
+
+  // Our column
+  const ax = M + sigW + 12;
+  setFont('bold', 8, GREEN);
+  doc.text('AUTHORISED BY', ax, sigTop);
+  setFont('bold', 10, INK);
+  doc.text(preparedBy.name || company.name || '', ax, sigTop + 7);
+  setFont('normal', 9, MUTED);
+  let ay = sigTop + 12;
+  if (company.name) { doc.text(company.name, ax, ay); ay += 4.2; }
+  if (company.phone) { doc.text('T: ' + company.phone, ax, ay); ay += 4.2; }
+  if (contactEmail) { doc.text('E: ' + contactEmail, ax, ay); ay += 4.2; }
+
+  y = Math.max(sy + 8, ay + 4);
+
+  // ══ FOOTER on every page ══════════════════════════════════════════════
+  const footerBits = [
+    company.name,
+    company.companyNo ? 'Reg. No. ' + company.companyNo : null,
+    company.vat ? 'VAT No. ' + company.vat : null,
+    company.carrierReg ? 'Waste Carrier ' + company.carrierReg : null,
+  ].filter(Boolean).join('  |  ');
+
+  const pages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+    doc.setLineWidth(0.3);
+    doc.line(M, PAGE_H - 12, M + CW, PAGE_H - 12);
+    setFont('normal', 7, MUTED);
+    doc.text(doc.splitTextToSize(footerBits, CW - 24)[0] || '', M, PAGE_H - 8);
+    doc.text('Page ' + p + ' of ' + pages, M + CW, PAGE_H - 8, { align: 'right' });
+  }
+
+  return doc;
+}
+
+// Fetch the company logo and turn it into a data URL so jsPDF can embed it.
+// Returns null on any failure — the PDF falls back to the company name.
+async function loadLogoDataUrl() {
+  const url = localStorage.getItem('companyLogo');
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn('[Quote PDF] logo could not be loaded, falling back to text:', e.message);
+    return null;
+  }
+}
+
+// Assemble the context the generator needs: company details from settings,
+// and the logged-in user as the person the quote is prepared by.
+async function buildQuotePdfContext(user) {
+  return {
+    jsPDF: window.jspdf && window.jspdf.jsPDF,
+    logoDataUrl: await loadLogoDataUrl(),
+    company: {
+      name:       localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+      address:    localStorage.getItem('companyAddress') || '',
+      phone:      localStorage.getItem('companyPhone') || '01743 298890',
+      email:      localStorage.getItem('companyEmail') || 'info@totalwasteservicesltd.com',
+      vat:        localStorage.getItem('companyVat') || '291386772',
+      companyNo:  localStorage.getItem('companyNumber') || '11143143',
+      carrierReg: localStorage.getItem('carrierReg') || '',
+    },
+    preparedBy: user ? {
+      name: [user.firstName, user.lastName].filter(Boolean).join(' '),
+      email: user.email || '',
+    } : {},
+  };
+}
+
+// Build the finished PDF for a quote. Returns { doc, filename, base64 }.
+async function generateQuotePdf(quote, user) {
+  if (!(window.jspdf && window.jspdf.jsPDF)) {
+    throw new Error('The PDF library has not loaded. Check your connection and reload the page.');
+  }
+  const ctx = await buildQuotePdfContext(user);
+  const doc = buildQuotePdfDoc(quote, ctx);
+  const filename = 'Quotation-' + (quote.quoteNumber || 'draft') + '.pdf';
+  // datauristring looks like "data:application/pdf;filename=...;base64,XXXX"
+  const dataUri = doc.output('datauristring');
+  const base64 = dataUri.substring(dataUri.indexOf('base64,') + 7);
+  return { doc: doc, filename: filename, base64: base64 };
+}
+
+window.buildQuotePdfDoc = buildQuotePdfDoc;
+window.generateQuotePdf = generateQuotePdf;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LINE ITEM UNITS
 //
@@ -13609,7 +14079,29 @@ By approving this quotation and authorising us to commence services, you acknowl
     </body></html>`;
   };
 
-  const handlePreviewPdf = () => {
+  // Preview the real PDF. Opened via a blob URL so the browser's own PDF
+  // viewer renders it — what the customer sees is exactly what's previewed.
+  //
+  // The window is opened synchronously before the await, because popup
+  // blockers reject window.open() called from an async continuation.
+  const handlePreviewPdf = async () => {
+    const w = window.open('', '_blank');
+    try {
+      const { doc } = await generateQuotePdf(quote, user);
+      const url = doc.output('bloburl');
+      if (w) { w.location.href = url; }
+      else { window.open(url, '_blank'); }
+    } catch (err) {
+      console.error('[Quote PDF] preview failed:', err);
+      if (w) w.close();
+      alert('Could not generate the PDF: ' + err.message);
+    }
+  };
+
+  // Kept for reference: the previous HTML-based document. Nothing calls it,
+  // but it's the fallback if the PDF layout ever needs comparing against the
+  // old output.
+  const handlePreviewLegacyHtml = () => {
     const w = window.open('', '_blank');
     w.document.write(buildPdfHtml());
     w.document.close();
@@ -13782,16 +14274,16 @@ Total Waste Services Ltd`);
                     {/* Download PDF button */}
                     <button
                       onClick={async () => {
-                        const pdfHtml = buildPdfHtml();
-                        const blob = new Blob([pdfHtml], { type: 'text/html' });
-                        const dlUrl = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = dlUrl;
-                        a.download = 'Quotation-' + quote.quoteNumber + '.html';
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        setTimeout(() => URL.revokeObjectURL(dlUrl), 1000);
+                        try {
+                          // jsPDF's own save() handles the blob, filename and
+                          // cleanup — and produces an actual PDF, where this
+                          // button previously downloaded an .html file.
+                          const { doc, filename } = await generateQuotePdf(quote, user);
+                          doc.save(filename);
+                        } catch (err) {
+                          console.error('[Quote PDF] download failed:', err);
+                          alert('Could not generate the PDF: ' + err.message);
+                        }
                       }}
                       className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-2"
                     >
@@ -13802,10 +14294,12 @@ Total Waste Services Ltd`);
                       <button
                         onClick={async () => {
                           try {
-                            // Generate PDF as base64
-                            const pdfHtml = buildPdfHtml();
-                            const pdfBase64 = btoa(unescape(encodeURIComponent(pdfHtml)));
-                            const pdfFilename = `Quotation-${quote.quoteNumber}.html`;
+                            // Real PDF attachment. The old code base64-encoded
+                            // the HTML and called it .html, which mail filters
+                            // often strip or quarantine.
+                            const generated = await generateQuotePdf(quote, user);
+                            const pdfBase64 = generated.base64;
+                            const pdfFilename = generated.filename;
 
                             const res = await fetch('/api/gmail?action=send', {
                               method: 'POST',
@@ -19449,6 +19943,10 @@ const loadQuotesFromSupabase = async () => {
         createdDate: quote.created_at || new Date().toISOString().split('T')[0],
         created_at: quote.created_at || new Date().toISOString().split('T')[0],
         terms_conditions: quote.terms_conditions || '',
+        scopeDescription: quote.scope_description || '',
+        inclusions: quote.inclusions || '',
+        exclusions: quote.exclusions || '',
+        preparedBy: quote.prepared_by || '',
       }));
       
       setQuotes(quotesWithCamelCase);
@@ -21436,6 +21934,9 @@ const saveSupplierToDatabase = async (supplier) => {
       status: newQuote.status || 'PENDING',
       line_items: JSON.stringify(newQuote.lineItems || []),
       terms_conditions: newQuote.terms_conditions || '',
+      scope_description: newQuote.scopeDescription || '',
+      inclusions: newQuote.inclusions || '',
+      exclusions: newQuote.exclusions || '',
       created_at: newQuote.createdDate || new Date().toISOString()
     };
 
@@ -21491,6 +21992,9 @@ const saveSupplierToDatabase = async (supplier) => {
       delivery_instructions: updatedQuote.deliveryInstructions || '',
       access_restrictions: updatedQuote.accessRestrictions || '',  // Add this one too
       hide_prices_on_pdf: updatedQuote.hidePricesOnPDF || false,
+      scope_description: updatedQuote.scopeDescription || '',
+      inclusions: updatedQuote.inclusions || '',
+      exclusions: updatedQuote.exclusions || '',
       notes: updatedQuote.notes || '',
       status: updatedQuote.status || 'PENDING'
     };
@@ -26302,6 +26806,9 @@ By approving this quotation and authorising us to commence services, you acknowl
         siteAddress: formData.siteAddress1,
         lineItems: formData.lineItems || [],
         terms_conditions: formData.terms_conditions || defaultTerms,
+        scopeDescription: formData.scopeDescription || '',
+        inclusions: formData.inclusions || '',
+        exclusions: formData.exclusions || '',
       };
       await onSave(newQuote);
     } catch (err) {
@@ -26354,6 +26861,14 @@ By approving this quotation and authorising us to commence services, you acknowl
             Pricing & Status
           </button>
           <button
+            onClick={() => setActiveTab('presentation')}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'presentation' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
+          >
+            Quote Document
+          </button>
+          <button
             onClick={() => setActiveTab('documents')}
             className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
               activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
@@ -26364,6 +26879,111 @@ By approving this quotation and authorising us to commence services, you acknowl
         </div>
 
         <div className="p-6">
+          {/* ── Quote Document Tab ──────────────────────────────────────
+              Free-text sections that flow into the customer's PDF. Each one
+              is optional — leave it blank and the section is left out of the
+              document entirely rather than printing an empty heading. */}
+          {activeTab === 'presentation' && (
+            <div className="space-y-5">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                Anything you type here appears on the PDF the customer receives.
+                Leave a section blank and it's left off the document.
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Service Description</label>
+                <p className="text-xs text-gray-500 mb-2">
+                  A short paragraph explaining the job in plain English. Sits under the
+                  customer details, above the pricing.
+                </p>
+                <textarea
+                  value={formData.scopeDescription || ''}
+                  onChange={e => setFormData({...formData, scopeDescription: e.target.value})}
+                  rows={5}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  placeholder={'Total Waste Services Ltd is pleased to submit the following quotation for\u2026'}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">What Is Included</label>
+                  <p className="text-xs text-gray-500 mb-2">One per line. Each becomes a bullet point.</p>
+                  <textarea
+                    value={formData.inclusions || ''}
+                    onChange={e => setFormData({...formData, inclusions: e.target.value})}
+                    rows={8}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+                    placeholder={'Supply and delivery of material to the agreed site address\nAll haulage, fuel and driver costs\nWaste Transfer Notes issued for every load'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Exclusions</label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    One per line. Worth filling in — this is what protects you if a
+                    customer expects something that wasn't quoted.
+                  </p>
+                  <textarea
+                    value={formData.exclusions || ''}
+                    onChange={e => setFormData({...formData, exclusions: e.target.value})}
+                    rows={8}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+                    placeholder={'Offloading, spreading or compaction of delivered material\nStanding time beyond 30 minutes per load\nHazardous material \u2014 quoted separately once identified'}
+                  />
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                <strong>Optional extras:</strong> on the Quote Details tab, any line
+                marked <em>Optional</em> appears in its own table on the PDF, clearly
+                priced but excluded from the total — for work the customer can choose
+                to instruct separately.
+              </div>
+
+              {/* Reusable wording, so nobody retypes the same exclusions daily. */}
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Saved wording</p>
+                    <p className="text-xs text-gray-500">Store the sections above as your default, or load them back in.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button"
+                      onClick={() => {
+                        try {
+                          localStorage.setItem('quoteDefaultSections', JSON.stringify({
+                            scopeDescription: formData.scopeDescription || '',
+                            inclusions: formData.inclusions || '',
+                            exclusions: formData.exclusions || '',
+                          }));
+                          alert('Saved as your default wording.');
+                        } catch (e) { alert('Could not save: ' + e.message); }
+                      }}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+                      Save as default
+                    </button>
+                    <button type="button"
+                      onClick={() => {
+                        try {
+                          const saved = JSON.parse(localStorage.getItem('quoteDefaultSections') || 'null');
+                          if (!saved) { alert('No default wording saved yet.'); return; }
+                          setFormData({
+                            ...formData,
+                            scopeDescription: saved.scopeDescription || formData.scopeDescription,
+                            inclusions: saved.inclusions || formData.inclusions,
+                            exclusions: saved.exclusions || formData.exclusions,
+                          });
+                        } catch (e) { alert('Could not load: ' + e.message); }
+                      }}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+                      Load default
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Quote Details Tab - MATCHING JOB DETAILS */}
           {activeTab === 'details' && (
             <div className="space-y-4">
@@ -26594,10 +27214,11 @@ By approving this quotation and authorising us to commence services, you acknowl
                         {formData.lineItems.map((item, index) => {
                           const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
                           return (
-                            <tr key={item.id} className={`border-t hover:bg-gray-50 ${item.one_off ? 'bg-amber-50' : ''}`}>
+                            <tr key={item.id} className={`border-t hover:bg-gray-50 ${item.optional ? 'bg-amber-50' : item.one_off ? 'bg-amber-50' : ''}`}>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
                                   {item.product_name}
+                                  {item.optional && <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">Optional</span>}
                                   {item.one_off && <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">One-Off</span>}
                                 </div>
                                 <div className="text-xs text-gray-500">{item.item_code}</div>
@@ -26687,7 +27308,22 @@ By approving this quotation and authorising us to commence services, you acknowl
                                 </div>
                               </td>
                               <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {/* Optional lines are priced on the PDF but sit
+                                      outside the quoted total, for work the customer
+                                      can instruct separately. */}
+                                  <button
+                                    type="button"
+                                    title={item.optional ? 'Optional — priced separately, excluded from the total' : 'Mark as an optional extra (excluded from the quote total)'}
+                                    onClick={() => {
+                                      const updatedItems = [...formData.lineItems];
+                                      updatedItems[index] = {...updatedItems[index], optional: !updatedItems[index].optional};
+                                      setFormData({...formData, lineItems: updatedItems});
+                                    }}
+                                    className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${item.optional ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300'}`}
+                                  >
+                                    {item.optional ? 'Optional \u2713' : 'Optional'}
+                                  </button>
                                   <button
                                     type="button"
                                     title={item.one_off ? "Marked as one-off — click to make recurring" : "Mark as one-off (won't copy to recurring jobs)"}
