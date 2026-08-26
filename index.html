@@ -7455,43 +7455,73 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                         if (wtnTotalPct !== 100) { alert('Recycling percentages must total 100%.'); return; }
                         setWtnSending(true);
                         try {
-                          // Phase 4: build the email body using buildMultiWtnHtml so that multi-line
-                          // jobs send ALL ticked WTN pages stitched together (with page-break CSS)
-                          // instead of just the top-level fields. For single-line jobs buildMultiWtnHtml
-                          // falls through to buildWtnHtml, so the common case is unchanged. EmailJS
-                          // puts the whole HTML doc in the email body — there is no PDF attachment;
-                          // customers see the WTN(s) inline as a formatted message.
+                          // ── WTN email: real PDF attachment via Gmail ──────────
+                          // Previously this pasted the WTN's HTML into the message
+                          // body through EmailJS, which mail clients mangled — the
+                          // same problem that made the print button and formatting
+                          // unreliable. Now the WTN is generated as a proper PDF and
+                          // attached, sent from the logged-in user's own Gmail so
+                          // replies reach the right person.
                           const includedLines = Array.isArray(wtnFields.lines)
                             ? wtnFields.lines.filter(l => l.included)
                             : [];
-                          const wtnCount = includedLines.length || 1;
-                          const htmlBody = buildMultiWtnHtml(wtnFields, job);
+                          const generated = await generateWtnPdf(wtnFields, job);
+                          const wtnCount = generated.count;
 
-                          // Send via EmailJS to all selected emails. For multi-line jobs we
-                          // pass a label like "WTN-TWS-1344 (3 notes: A, B, C)" as the
-                          // wtn_number template variable so the email subject pluralises
-                          // naturally — the body itself already contains all N WTN pages
-                          // stitched by buildMultiWtnHtml.
-                          const emailsToSend = wtnFields.selectedEmails?.length > 0 ? wtnFields.selectedEmails : [wtnFields.recipientEmail];
                           let wtnNumberForSubject = wtnFields.wtnNumber;
                           if (wtnCount > 1) {
-                            const suffixes = includedLines
-                              .slice()
-                              .sort((a, b) => a.lineItemIndex - b.lineItemIndex)
-                              .map((_, i) => String.fromCharCode(65 + i))
-                              .join(', ');
+                            const suffixes = Array.from({ length: wtnCount },
+                              (_, i) => String.fromCharCode(65 + i)).join(', ');
                             wtnNumberForSubject = `${wtnFields.wtnNumber} (${wtnCount} notes: ${suffixes})`;
                           }
-                          for (const emailAddr of emailsToSend) {
-                            await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
-                              wtn_number: wtnNumberForSubject,
-                              customer_name: wtnFields.transferorName || job.customerName,
-                              email: emailAddr,
-                              name: wtnFields.transferorName || job.customerName,
-                              message: htmlBody,
-                            });
+
+                          const customerLabel = wtnFields.transferorName || job.customerName || 'Customer';
+                          const subject = wtnCount > 1
+                            ? `Waste Transfer Notes ${wtnNumberForSubject} \u2014 ${customerLabel}`
+                            : `Waste Transfer Note ${wtnFields.wtnNumber} \u2014 ${customerLabel}`;
+
+                          const coveringNote = [
+                            'Dear ' + customerLabel + ',',
+                            '',
+                            wtnCount > 1
+                              ? 'Please find attached ' + wtnCount + ' Waste Transfer Notes for job ' + (job.jobNumber || '') + '.'
+                              : 'Please find attached your Waste Transfer Note for job ' + (job.jobNumber || '') + '.',
+                            '',
+                            'Site: ' + (wtnFields.transferAddress || wtnFields.transferorAddress || '\u2014'),
+                            'Date of transfer: ' + (wtnFields.transferDate ? new Date(wtnFields.transferDate).toLocaleDateString('en-GB') : '\u2014'),
+                            '',
+                            'This is issued under the Environmental Protection Act 1990 s.34 and the',
+                            'Waste (England & Wales) Regulations 2011. Please retain it for a minimum',
+                            'of 2 years, or 3 years for hazardous waste.',
+                            '',
+                            'Kind regards,',
+                            [user && user.firstName, user && user.lastName].filter(Boolean).join(' ') || 'Total Waste Services Ltd',
+                            localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+                            'EA Broker Registration: ' + TWS_COMPANY.carrierReg,
+                          ].join('\n');
+
+                          if (!user || !user.id) {
+                            throw new Error('No logged-in user found. Please sign out and back in.');
                           }
-                          console.log(`[Phase 4] sent ${wtnCount} WTN${wtnCount === 1 ? '' : 's'} to ${emailsToSend.length} recipient${emailsToSend.length === 1 ? '' : 's'} for ${wtnFields.wtnNumber}`);
+
+                          const sendRes = await fetch('/api/gmail?action=send', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              user_id: user.id,
+                              to: emailsToSend.join(', '),
+                              subject: subject,
+                              body: coveringNote,
+                              pdfBase64: generated.base64,
+                              pdfFilename: generated.filename,
+                              fromName: ([user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services') + ' - Total Waste Services',
+                            }),
+                          });
+                          const sendResult = await sendRes.json();
+                          if (!sendRes.ok) {
+                            throw new Error(sendResult.error || 'Gmail send failed');
+                          }
+                          console.log(`[WTN] sent ${wtnCount} WTN PDF${wtnCount === 1 ? '' : 's'} to ${emailsToSend.join(', ')} for ${wtnFields.wtnNumber}`);
 
                           // Save ALL WTN fields to Supabase so they survive reload
                           const wtnUrl = `https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=${wtnFields.wtnNumber}`;
@@ -7502,7 +7532,10 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                             // Phase 3: dual-write — keep populating the legacy column with
                             // the FIRST included line's data so any un-migrated reader
                             // keeps rendering. Phase 5 retires this column.
-                            wtn_data: JSON.stringify({...wtnFields, htmlContent: htmlBody}),
+                            // htmlContent is no longer stored — the WTN is rendered
+                            // fresh from the record whenever it's viewed or printed,
+                            // so a baked copy would only go stale.
+                            wtn_data: JSON.stringify(wtnFields),
                             wtn_portal_visible: true,
                           };
                           if (wtnFields.recurringWtn && wtnFields.recurringWtnNextDate) {
@@ -7584,10 +7617,17 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                           if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
                           setWtnSentOk(true);
                           setTimeout(()=>setWtnSentOk(false), 4000);
-                          alert(`✅ ${wtnCount === 1 ? 'WTN' : `${wtnCount} WTNs`} sent to ${emailsToSend.join(', ')}\n\nThe full ${wtnCount === 1 ? 'WTN has' : 'WTNs have'} been sent as an HTML email — ${wtnCount === 1 ? 'it' : 'they'} will display as a formatted document in their inbox.`);
+                          alert(`✅ ${wtnCount === 1 ? 'WTN' : `${wtnCount} WTNs`} sent to ${emailsToSend.join(', ')}\n\nAttached as ${generated.filename}, sent from your Gmail account.`);
                         } catch(err) {
                           console.error('WTN send error:', err);
-                          alert('Failed to send WTN.\n\nError: ' + (err.text || err.message || JSON.stringify(err)));
+                          const msg = err.text || err.message || JSON.stringify(err);
+                          // The commonest failure by far is Gmail not being linked
+                          // for this user, so say what to do about it.
+                          if (/Gmail not connected|reconnect|token expired/i.test(msg)) {
+                            alert('Could not send: your Gmail account is not connected.\n\nGo to Admin \u2192 User Management and click "Connect my Gmail", then try again.');
+                          } else {
+                            alert('Failed to send WTN.\n\nError: ' + msg);
+                          }
                         } finally {
                           setWtnSending(false);
                         }
@@ -7596,9 +7636,18 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                       return (
                         <div className="space-y-2 pt-2">
                           <div className="flex gap-3">
-                            <button type="button" onClick={()=>{
-                              const w=window.open('','_blank');
-                              if(w){w.document.write(buildMultiWtnHtml(wtnFields,job));w.document.close();}
+                            <button type="button" onClick={async ()=>{
+                              // Open the window before awaiting — popup blockers
+                              // reject window.open() from an async continuation.
+                              const w = window.open('', '_blank');
+                              try {
+                                const { doc } = await generateWtnPdf(wtnFields, job);
+                                const url = doc.output('bloburl');
+                                if (w) { w.location.href = url; } else { window.open(url, '_blank'); }
+                              } catch (e) {
+                                if (w) w.close();
+                                alert('Could not generate the PDF: ' + e.message);
+                              }
                             }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
                               👁 Preview WTN{Array.isArray(wtnFields.lines) && wtnFields.lines.filter(l=>l.included).length > 1 ? `s (${wtnFields.lines.filter(l=>l.included).length})` : ''}
                             </button>
@@ -11605,6 +11654,449 @@ async function generateQuotePdf(quote, user) {
 
 window.buildQuotePdfDoc = buildQuotePdfDoc;
 window.generateQuotePdf = generateQuotePdf;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WASTE TRANSFER NOTE — PDF GENERATOR
+//
+// Draws the WTN natively with jsPDF, matching the layout of the HTML version
+// customers already recognise. Text stays selectable, the file is small, and
+// it opens as a PDF everywhere — unlike the HTML that was previously pasted
+// into the email body and mangled by mail clients.
+//
+// A job with several waste lines produces one page per line, each with its
+// own suffixed reference (WTN-TWS-1575-A, -B and so on).
+// ═══════════════════════════════════════════════════════════════════════════
+
+function buildWtnPdfDoc(wtnList, job, ctx) {
+  ctx = ctx || {};
+  const company = ctx.company || {};
+  const jsPDFCtor = ctx.jsPDF || (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF);
+  if (!jsPDFCtor) throw new Error('jsPDF is not loaded');
+
+  const doc = new jsPDFCtor({ unit: 'mm', format: 'a4', compress: true });
+
+  // ── Palette, matching the on-screen WTN ───────────────────────────────
+  const GREEN      = [26, 92, 42];
+  const GREEN_HDR  = [209, 250, 229];
+  const GREEN_SOFT = [240, 253, 244];
+  const YELLOW     = [255, 248, 197];
+  const INK        = [31, 41, 55];
+  const MUTED      = [85, 85, 85];
+  const RULE       = [204, 204, 204];
+  const BLACK      = [0, 0, 0];
+
+  const PAGE_W = doc.internal.pageSize.getWidth();
+  const M = 12;
+  const CW = PAGE_W - M * 2;
+
+  const setFont = (style, size, colour) => {
+    doc.setFont('helvetica', style || 'normal');
+    doc.setFontSize(size || 9);
+    const c = colour || INK;
+    doc.setTextColor(c[0], c[1], c[2]);
+  };
+
+  const fmtDate = (d) => {
+    if (!d) return '\u2014';
+    const dt = new Date(d);
+    return isNaN(dt.getTime()) ? '\u2014' : dt.toLocaleDateString('en-GB');
+  };
+
+  const unitLabel = (u) => (!u ? '' : (u === 'm3' ? 'm\u00B3' : String(u)));
+
+  // A filled pie sector, approximated as a polygon. jsPDF has no arc
+  // primitive, so the curve is built from 2-degree segments.
+  const sector = (cx, cy, r, startDeg, sweepDeg, colour) => {
+    if (sweepDeg <= 0) return;
+    const pts = [[0, 0]];
+    const steps = Math.max(2, Math.ceil(sweepDeg / 2));
+    let px = 0, py = 0;
+    for (let i = 0; i <= steps; i++) {
+      const a = (startDeg + (sweepDeg * i) / steps) * Math.PI / 180;
+      const x = r * Math.cos(a);
+      const y = r * Math.sin(a);
+      pts.push([x - px, y - py]);
+      px = x; py = y;
+    }
+    pts.push([-px, -py]);
+    doc.setFillColor(colour[0], colour[1], colour[2]);
+    doc.lines(pts.slice(1), cx, cy, [1, 1], 'F', true);
+  };
+
+  // A labelled cell with a thin rule underneath.
+  const cell = (x, y, w, h, label, value, opts) => {
+    opts = opts || {};
+    setFont('normal', 6, MUTED);
+    doc.text(String(label || '').toUpperCase(), x + 2, y + 3.2);
+    setFont(opts.valueStyle || 'bold', opts.valueSize || 8.5, opts.valueColour || INK);
+    const lines = doc.splitTextToSize(String(value == null || value === '' ? '\u2014' : value), w - 4);
+    let vy = y + 7.4;
+    for (const line of lines.slice(0, opts.maxLines || 3)) {
+      doc.text(line, x + 2, vy);
+      vy += 3.6;
+    }
+    return vy;
+  };
+
+  const sectionBar = (y, text) => {
+    doc.setFillColor(GREEN_HDR[0], GREEN_HDR[1], GREEN_HDR[2]);
+    doc.rect(M, y, CW, 6, 'F');
+    doc.setDrawColor(BLACK[0], BLACK[1], BLACK[2]);
+    doc.setLineWidth(0.3);
+    doc.line(M, y + 6, M + CW, y + 6);
+    setFont('bold', 7.5, INK);
+    doc.text(String(text).toUpperCase(), M + 3, y + 4.1);
+    return y + 6;
+  };
+
+  const hRule = (y) => {
+    doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+    doc.setLineWidth(0.2);
+    doc.line(M, y, M + CW, y);
+  };
+
+  const vRule = (x, y1, y2) => {
+    doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+    doc.setLineWidth(0.2);
+    doc.line(x, y1, x, y2);
+  };
+
+  const checkbox = (x, y, checked, label) => {
+    doc.setDrawColor(BLACK[0], BLACK[1], BLACK[2]);
+    doc.setLineWidth(0.3);
+    doc.rect(x, y - 2.4, 2.8, 2.8);
+    if (checked) {
+      doc.setLineWidth(0.5);
+      doc.line(x + 0.5, y - 1.1, x + 1.2, y - 0.1);
+      doc.line(x + 1.2, y - 0.1, x + 2.4, y - 2.0);
+      doc.setLineWidth(0.3);
+    }
+    setFont('normal', 7.5, INK);
+    doc.text(String(label), x + 4, y);
+    return x + 4 + doc.getTextWidth(String(label)) + 5;
+  };
+
+  const list = Array.isArray(wtnList) && wtnList.length ? wtnList : [{}];
+  const multi = list.length > 1;
+
+  list.forEach((w, idx) => {
+    if (idx > 0) doc.addPage();
+
+    const suffix = multi ? String.fromCharCode(65 + idx) : '';
+    const wtnRef = w.wtnNumber ||
+      ('WTN-' + (job.jobNumber || job.job_number || '') + (suffix ? '-' + suffix : ''));
+
+    let y = M;
+
+    // ══ HEADER ═════════════════════════════════════════════════════════
+    doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+    doc.setLineWidth(0.8);
+
+    let headerBottom = y + 14;
+    if (ctx.logoDataUrl) {
+      try {
+        const props = doc.getImageProperties(ctx.logoDataUrl);
+        const ratio = Math.min(30 / props.width, 14 / props.height);
+        doc.addImage(ctx.logoDataUrl, M + 1, y + 1, props.width * ratio, props.height * ratio);
+      } catch (e) {
+        setFont('bold', 9, GREEN);
+        doc.text(company.name || 'Total Waste Services Ltd', M + 1, y + 8);
+      }
+    } else {
+      setFont('bold', 9, GREEN);
+      doc.text(company.name || 'Total Waste Services Ltd', M + 1, y + 8);
+    }
+
+    const midX = M + CW / 2;
+    setFont('bold', 13, GREEN);
+    doc.text('WASTE TRANSFER NOTE', midX, y + 6, { align: 'center' });
+    setFont('normal', 6.5, MUTED);
+    doc.text('Duty of Care \u2014 Environmental Protection Act 1990 s.34', midX, y + 10, { align: 'center' });
+    doc.text('Waste (England & Wales) Regulations 2011', midX, y + 13, { align: 'center' });
+
+    const rx = M + CW - 1;
+    setFont('bold', 10, GREEN);
+    doc.text(wtnRef, rx, y + 6, { align: 'right' });
+    setFont('normal', 6.5, MUTED);
+    doc.text('Job: ' + (job.jobNumber || job.job_number || '\u2014'), rx, y + 10, { align: 'right' });
+    doc.text(fmtDate(w.transferDate), rx, y + 13, { align: 'right' });
+
+    y = headerBottom + 1;
+    doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+    doc.setLineWidth(0.9);
+    doc.line(M, y, M + CW, y);
+
+    // ══ LEGAL BANNER ═══════════════════════════════════════════════════
+    doc.setFillColor(YELLOW[0], YELLOW[1], YELLOW[2]);
+    doc.rect(M, y, CW, 7.5, 'F');
+    setFont('bold', 6.3, INK);
+    const banner = 'LEGAL DOCUMENT \u2014 Both parties must retain a signed copy for a minimum of 2 years and produce on request to the Environment Agency or Local Authority within 7 days.';
+    const bl = doc.splitTextToSize(banner, CW - 8);
+    let by = y + 3;
+    for (const line of bl) { doc.text(line, midX, by, { align: 'center' }); by += 2.9; }
+    y += 7.5;
+    doc.setDrawColor(BLACK[0], BLACK[1], BLACK[2]);
+    doc.setLineWidth(0.4);
+    doc.line(M, y, M + CW, y);
+
+    const half = CW / 2;
+
+    // ══ SECTION A ══════════════════════════════════════════════════════
+    y = sectionBar(y, 'Section A \u2014 Description of Waste');
+    let rowTop = y;
+    cell(M, y, half, 13, 'A1 Description of waste', w.wasteDescription);
+    cell(M + half, y, half, 13, 'Container / skip size', w.skipSize);
+    vRule(M + half, rowTop, rowTop + 13);
+    y += 13; hRule(y);
+
+    rowTop = y;
+    const third = CW / 3;
+    cell(M, y, third, 11, 'EWC code (List of Waste Regs)', w.listOfWasteCode);
+    cell(M + third, y, third, 11, 'A3 Quantity', (w.quantity != null ? w.quantity : '') + ' ' + unitLabel(w.unit));
+    cell(M + third * 2, y, third, 11, 'Hazardous waste?',
+      w.isHazardous ? 'YES \u2014 Consignment Note required' : 'No',
+      { valueColour: w.isHazardous ? [200, 30, 30] : INK, valueSize: 8 });
+    vRule(M + third, rowTop, rowTop + 11);
+    vRule(M + third * 2, rowTop, rowTop + 11);
+    y += 11; hRule(y);
+
+    setFont('bold', 7.5, INK);
+    doc.text('A2 How is the waste contained?', M + 2, y + 4.5);
+    let cbx = M + 52;
+    for (const opt of ['Loose', 'Sacks', 'Skip', 'Drum', 'Roll-on roll-off', 'Other']) {
+      cbx = checkbox(cbx, y + 4.5, w.wasteContainer === opt, opt);
+    }
+    y += 7; hRule(y);
+
+    // ══ SECTION B ══════════════════════════════════════════════════════
+    y = sectionBar(y, 'Section B \u2014 Current Holder of the Waste (Transferor)');
+    rowTop = y;
+    cell(M, y, half, 20, 'B1 Full name, company and address',
+      (w.transferorName || '\u2014') + '\n' + (w.transferorAddress || ''), { maxLines: 4 });
+    cell(M + half, y, half, 20, 'B2 SIC code (2007)', w.transferorSicCode, { maxLines: 1 });
+    setFont('bold', 7, INK);
+    doc.text('B3 Are you:', M + half + 2, y + 12);
+    let bx = M + half + 20;
+    bx = checkbox(bx, y + 12, !!w.transferorIsProducer, 'Producer');
+    checkbox(bx, y + 12, !!w.transferorPermitNumber, 'Permit holder');
+    setFont('normal', 6.5, MUTED);
+    doc.text('Permit / Carrier Reg / Exemption:', M + half + 2, y + 17);
+    setFont('bold', 7, INK);
+    doc.text(String(w.transferorPermitNumber || '\u2014'), M + half + 48, y + 17);
+    vRule(M + half, rowTop, rowTop + 20);
+    y += 20; hRule(y);
+
+    rowTop = y;
+    setFont('normal', 6, MUTED);
+    doc.text("TRANSFEROR'S SIGNATURE", M + 2, y + 3.2);
+    doc.setDrawColor(BLACK[0], BLACK[1], BLACK[2]);
+    doc.setLineWidth(0.4);
+    doc.line(M + 2, y + 11, M + half - 6, y + 11);
+    setFont('bold', 8, INK);
+    doc.text(String(w.transferorSignature || ''), M + 2, y + 10);
+    setFont('normal', 6, MUTED);
+    doc.text('Representing: ' + (w.transferorRepresenting || w.transferorName || '\u2014'), M + 2, y + 14.5);
+    cell(M + half, y, half, 16, 'Date of transfer',
+      fmtDate(w.transferDate) + (w.transferTime ? '   Time: ' + w.transferTime : ''), { valueSize: 9 });
+    vRule(M + half, rowTop, rowTop + 16);
+    y += 16; hRule(y);
+
+    // ══ SECTION C ══════════════════════════════════════════════════════
+    y = sectionBar(y, 'Section C \u2014 Person Collecting the Waste (Transferee / Carrier)');
+    rowTop = y;
+    cell(M, y, half, 20, 'C1 Full name, company and address',
+      (w.transfereeName || '\u2014') + '\n' + (w.transfereeAddress || ''), { maxLines: 4 });
+    setFont('bold', 7, INK);
+    doc.text('C3 Are you:', M + half + 2, y + 5);
+    let cx2 = M + half + 20;
+    cx2 = checkbox(cx2, y + 5, !!w.transfereeCarrierReg, 'Registered carrier');
+    checkbox(cx2, y + 5, !!w.transfereePermitNumber, 'Permit holder');
+    setFont('normal', 6.5, MUTED);
+    doc.text('EA Carrier Registration No.:', M + half + 2, y + 11);
+    setFont('bold', 7.5, INK);
+    doc.text(String(w.transfereeCarrierReg || '\u2014'), M + half + 42, y + 11);
+    setFont('normal', 6.5, MUTED);
+    doc.text('Environmental Permit / Exemption:', M + half + 2, y + 16);
+    setFont('bold', 7.5, INK);
+    doc.text(String(w.transfereePermitNumber || '\u2014'), M + half + 50, y + 16);
+    vRule(M + half, rowTop, rowTop + 20);
+    y += 20; hRule(y);
+
+    rowTop = y;
+    setFont('normal', 6, MUTED);
+    doc.text("TRANSFEREE'S SIGNATURE", M + 2, y + 3.2);
+    doc.setDrawColor(BLACK[0], BLACK[1], BLACK[2]);
+    doc.setLineWidth(0.4);
+    doc.line(M + 2, y + 11, M + half - 6, y + 11);
+    setFont('bold', 8, INK);
+    doc.text(String(w.transfereeSignature || ''), M + 2, y + 10);
+    setFont('normal', 6, MUTED);
+    doc.text('Representing: ' + (w.transfereeRepresenting || w.transfereeName || '\u2014'), M + 2, y + 14.5);
+    cell(M + half, y, half, 16, 'Date of transfer', fmtDate(w.transferDate), { valueSize: 9 });
+    vRule(M + half, rowTop, rowTop + 16);
+    y += 16; hRule(y);
+
+    // ══ SECTION D ══════════════════════════════════════════════════════
+    y = sectionBar(y, 'Section D \u2014 The Transfer');
+    rowTop = y;
+    cell(M, y, half, 13, 'D1 Address of transfer / collection point', w.transferAddress, { maxLines: 2 });
+    cell(M + half, y, half, 13, 'Date & time of transfer',
+      fmtDate(w.transferDate) + (w.transferTime ? ' at ' + w.transferTime : ''));
+    vRule(M + half, rowTop, rowTop + 13);
+    y += 13; hRule(y);
+
+    setFont('normal', 6, MUTED);
+    doc.text('D2 BROKER OR DEALER WHO ARRANGED THIS TRANSFER', M + 2, y + 3.4);
+    rowTop = y + 4;
+    cell(M, rowTop, third, 11, 'Name / company', w.brokerName || company.name, { maxLines: 1 });
+    cell(M + third, rowTop, third, 13, 'Address', w.brokerAddress || company.address, { maxLines: 2, valueSize: 7 });
+    cell(M + third * 2, rowTop, third, 13, 'Registration No.', w.brokerCarrierReg || company.carrierReg, { maxLines: 1 });
+    y += 17; hRule(y);
+
+    // ══ WASTE HIERARCHY ════════════════════════════════════════════════
+    y = sectionBar(y, 'Waste Hierarchy Confirmation & Recycling Breakdown (Reg. 12)');
+    const qty = parseFloat(w.quantity) || 0;
+    const slices = [
+      { pct: parseFloat(w.recycledPct) || 0, colour: [22, 163, 74], label: 'Recycled / Reused' },
+      { pct: parseFloat(w.recoveredPct) || 0, colour: [37, 99, 235], label: 'Recovered' },
+      { pct: parseFloat(w.landfillPct) || 0, colour: [234, 88, 12], label: 'Disposal' },
+    ].filter(s => s.pct > 0);
+
+    const pieCx = M + 20, pieCy = y + 20, pieR = 15;
+    let ang = -90;
+    for (const s of slices) {
+      const sweep = (s.pct / 100) * 360;
+      sector(pieCx, pieCy, pieR, ang, sweep, s.colour);
+      ang += sweep;
+    }
+    if (slices.length === 0) {
+      doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+      doc.circle(pieCx, pieCy, pieR, 'S');
+    }
+
+    let ly = y + 8;
+    for (const s of slices) {
+      doc.setFillColor(s.colour[0], s.colour[1], s.colour[2]);
+      doc.circle(M + 44, ly - 1.2, 1.3, 'F');
+      setFont('bold', 8, INK);
+      doc.text(s.pct + '%', M + 48, ly);
+      setFont('normal', 8, INK);
+      doc.text(s.label, M + 58, ly);
+      setFont('normal', 7, MUTED);
+      doc.text('(' + ((qty * s.pct) / 100).toFixed(2) + ' ' + unitLabel(w.unit) + ')', M + 92, ly);
+      ly += 5;
+    }
+    setFont('normal', 6.3, [22, 101, 52]);
+    const reg12 = 'By completing this WTN I confirm that I have fulfilled my duty to apply the waste hierarchy as required by Regulation 12 of the Waste (England & Wales) Regulations 2011.';
+    const r12 = doc.splitTextToSize(reg12, CW - 46);
+    for (const line of r12) { doc.text(line, M + 44, ly); ly += 2.9; }
+
+    y = Math.max(y + 40, ly + 2);
+
+    if (w.notes) {
+      hRule(y);
+      setFont('bold', 7, INK);
+      doc.text('Notes:', M + 2, y + 4);
+      setFont('normal', 7, INK);
+      const nl = doc.splitTextToSize(String(w.notes), CW - 20);
+      let ny = y + 4;
+      for (const line of nl.slice(0, 4)) { doc.text(line, M + 16, ny); ny += 3.4; }
+      y = ny + 1;
+    }
+
+    hRule(y);
+    doc.setFillColor(GREEN_SOFT[0], GREEN_SOFT[1], GREEN_SOFT[2]);
+    doc.rect(M, y, CW, 13, 'F');
+    setFont('bold', 6.3, [22, 101, 52]);
+    doc.text('Duty of Care:', M + 2, y + 3.6);
+    setFont('normal', 6.3, [22, 101, 52]);
+    const duty = 'Both parties confirm they have fulfilled duty of care obligations under the Environmental Protection Act 1990 s.34. The carrier in Section C holds a valid EA waste carrier registration. Both parties must retain a signed copy for a minimum of 2 years (3 years for hazardous waste) and produce on request within 7 days. Failure to produce is a criminal offence.';
+    const dl = doc.splitTextToSize(duty, CW - 24);
+    let dy = y + 3.6;
+    for (const line of dl) { doc.text(line, M + 20, dy); dy += 2.8; }
+    y += 13;
+
+    // ══ BORDER + FOOTER ════════════════════════════════════════════════
+    doc.setDrawColor(BLACK[0], BLACK[1], BLACK[2]);
+    doc.setLineWidth(0.5);
+    doc.rect(M, M, CW, y - M);
+
+    setFont('normal', 6, MUTED);
+    doc.text((company.name || 'Total Waste Services Ltd') +
+      '  \u2022  Broker Reg: ' + (w.brokerCarrierReg || company.carrierReg || '\u2014') +
+      '  \u2022  www.totalwasteservicesltd.com', M, y + 4);
+    doc.text('WMC2A  \u2022  Issued ' + new Date().toLocaleDateString('en-GB') +
+      (multi ? '  \u2022  Note ' + suffix + ' of ' + list.length : ''),
+      M + CW, y + 4, { align: 'right' });
+  });
+
+  return doc;
+}
+
+// Flatten the WTN form state into one plain object per ticked line, which is
+// what the PDF generator expects. Mirrors buildMultiWtnHtml's per-line
+// snapshot so the PDF and the on-screen preview agree.
+function wtnFieldsToPdfList(wtnFields, job) {
+  const included = Array.isArray(wtnFields.lines)
+    ? wtnFields.lines.filter(l => l.included).sort((a, b) => a.lineItemIndex - b.lineItemIndex)
+    : [];
+  const base = wtnFields.wtnNumber || ('WTN-' + (job.jobNumber || job.job_number || ''));
+
+  // No per-line state (legacy single-WTN jobs): use the flat fields as-is.
+  if (included.length === 0) {
+    return [Object.assign({}, wtnFields, { wtnNumber: base })];
+  }
+
+  const multi = included.length > 1;
+  return included.map((line, i) => {
+    const suffix = multi ? String.fromCharCode(65 + i) : '';
+    return Object.assign({}, wtnFields, {
+      wtnNumber: base + (suffix ? '-' + suffix : ''),
+      wasteDescription: line.wasteDescription || wtnFields.wasteDescription || '',
+      listOfWasteCode: line.listOfWasteCode || '',
+      wasteContainer: line.wasteContainer || 'Skip',
+      wasteProcess: line.wasteProcess || '',
+      quantity: line.quantity,
+      unit: line.unit || 'tonnes',
+      isHazardous: !!line.isHazardous,
+      skipSize: line.skipSize || line.productName || '',
+      disposalSiteName: line.disposalSiteName || '',
+      disposalSiteAddress: line.disposalSiteAddress || '',
+      lines: undefined,
+    });
+  });
+}
+
+// Build the finished WTN PDF. Returns { doc, filename, base64 }.
+async function generateWtnPdf(wtnFields, job) {
+  if (!(window.jspdf && window.jspdf.jsPDF)) {
+    throw new Error('The PDF library has not loaded. Check your connection and reload the page.');
+  }
+  const list = wtnFieldsToPdfList(wtnFields, job);
+  const ctx = {
+    jsPDF: window.jspdf.jsPDF,
+    logoDataUrl: await loadLogoDataUrl(),
+    company: {
+      name: localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+      address: localStorage.getItem('companyAddress') || '',
+      carrierReg: TWS_COMPANY.carrierReg,
+    },
+  };
+  const doc = buildWtnPdfDoc(list, job, ctx);
+  const base = wtnFields.wtnNumber || ('WTN-' + (job.jobNumber || job.job_number || 'draft'));
+  const filename = base + (list.length > 1 ? '-' + list.length + '-notes' : '') + '.pdf';
+  const dataUri = doc.output('datauristring');
+  return {
+    doc: doc,
+    filename: filename,
+    base64: dataUri.substring(dataUri.indexOf('base64,') + 7),
+    count: list.length,
+  };
+}
+
+window.buildWtnPdfDoc = buildWtnPdfDoc;
+window.generateWtnPdf = generateWtnPdf;
+window.wtnFieldsToPdfList = wtnFieldsToPdfList;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPANY IDENTIFIERS
@@ -21074,23 +21566,56 @@ const handleCompleteJob = async (job, sendChoice) => {
             siteAddress1: job.siteAddress1 || job.site_address1,
             sitePostcode: job.sitePostcode || job.site_postcode,
           };
-          // buildMultiWtnHtml handles the single-line fast path internally.
-          const htmlBody = buildMultiWtnHtml(wtnDataForEmail, jobForEmail);
-          const includedCount = Array.isArray(wtnDataForEmail.lines)
-            ? wtnDataForEmail.lines.filter(l => l.included).length
-            : 1;
+          // Real PDF attachment, sent from the logged-in user's Gmail — same
+          // route as the manual Send WTN button. Previously this pasted the
+          // WTN's HTML into the message body via EmailJS.
+          const generated = await generateWtnPdf(wtnDataForEmail, jobForEmail);
+          const includedCount = generated.count;
           let wtnNumberForSubject = wtnDataForEmail.wtnNumber || `WTN-${jobForEmail.jobNumber}`;
           if (includedCount > 1) {
             const suffixes = Array.from({length: includedCount}, (_, i) => String.fromCharCode(65 + i)).join(', ');
             wtnNumberForSubject = `${wtnNumberForSubject} (${includedCount} notes: ${suffixes})`;
           }
-          await emailjs.send('service_mmqyuum', 'template_rol3o4h', {
-            wtn_number: wtnNumberForSubject,
-            customer_name: jobForEmail.customerName,
-            email: recipient,
-            name: jobForEmail.customerName,
-            message: htmlBody,
+
+          if (!user || !user.id) {
+            throw new Error('No logged-in user found, so the WTN could not be emailed. The job has still been completed.');
+          }
+
+          const coveringNote = [
+            'Dear ' + (jobForEmail.customerName || 'Customer') + ',',
+            '',
+            includedCount > 1
+              ? 'Please find attached ' + includedCount + ' Waste Transfer Notes for job ' + (jobForEmail.jobNumber || '') + ', now completed.'
+              : 'Please find attached your Waste Transfer Note for job ' + (jobForEmail.jobNumber || '') + ', now completed.',
+            '',
+            'Site: ' + [jobForEmail.siteAddress1, jobForEmail.sitePostcode].filter(Boolean).join(', '),
+            '',
+            'This is issued under the Environmental Protection Act 1990 s.34 and the',
+            'Waste (England & Wales) Regulations 2011. Please retain it for a minimum',
+            'of 2 years, or 3 years for hazardous waste.',
+            '',
+            'Kind regards,',
+            [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services Ltd',
+            localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+            'EA Broker Registration: ' + TWS_COMPANY.carrierReg,
+          ].join('\n');
+
+          const wtnSendRes = await fetch('/api/gmail?action=send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: user.id,
+              to: recipient,
+              subject: (includedCount > 1 ? 'Waste Transfer Notes ' : 'Waste Transfer Note ') +
+                       wtnNumberForSubject + ' \u2014 ' + (jobForEmail.customerName || ''),
+              body: coveringNote,
+              pdfBase64: generated.base64,
+              pdfFilename: generated.filename,
+              fromName: ([user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services') + ' - Total Waste Services',
+            }),
           });
+          const wtnSendResult = await wtnSendRes.json();
+          if (!wtnSendRes.ok) throw new Error(wtnSendResult.error || 'Gmail send failed');
           // Stamp the sent flags — this is a genuine email send.
           const sentAt = new Date().toISOString();
           await window.supabase.from('jobs').update({
