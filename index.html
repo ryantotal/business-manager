@@ -1726,15 +1726,14 @@ return (
           }, []);
           const clearSelection = React.useCallback(() => setSelectedJobIds(new Set()), []);
 
-          // Stitch the print pages of every WTN on every selected job into
-          // one HTML document and open it in a new tab. Customer hits print
-          // once and gets a single PDF/printout with all notes.
+          // Build one multi-page PDF containing every WTN on every selected
+          // job, using the same generator as the emailed and portal copies.
           //
-          // Mechanism: the existing print endpoint /api/gmail?action=wtn&id=X
-          // returns ready-to-print HTML for a single WTN. We fetch each one,
-          // strip <html>/<body> wrappers, and concatenate the bodies with a
-          // page-break between each. The combined document re-uses each WTN's
-          // own <style> tags so layout is preserved exactly.
+          // The previous version fetched one HTML page per WTN from the
+          // serverless endpoint and stitched the markup together — one
+          // function invocation and one database round trip per note, then a
+          // print dialog. This reads the rows in a single query and renders
+          // locally.
           const downloadSelectedWtns = React.useCallback(async (jobsList) => {
             if (batchDownloading) return;
             const selectedJobs = jobsList.filter(j => selectedJobIds.has(j.id));
@@ -1742,108 +1741,73 @@ return (
               alert('No jobs selected.');
               return;
             }
-            // Collect WTN numbers from each selected job. Multi-line jobs
-            // have multiple wtns rows; legacy jobs may have only the single
-            // wtn_number/wtn_data field. Cover both.
-            const wtnIds = [];
-            for (const job of selectedJobs) {
-              if (Array.isArray(job.wtns) && job.wtns.length > 0) {
-                job.wtns.forEach(w => { if (w.wtnNumber) wtnIds.push(w.wtnNumber); });
-              } else if (job.wtn_number) {
-                wtnIds.push(job.wtn_number);
-              } else {
-                // Synthesize from job number for legacy rows that have wtn_data
-                // but no explicit wtn_number column.
-                wtnIds.push('WTN-' + (job.job_number || job.jobNumber));
-              }
-            }
-            if (wtnIds.length === 0) {
-              alert('None of the selected jobs have a Waste Transfer Note available.');
-              return;
-            }
-
             setBatchDownloading(true);
-            // Open the new tab immediately — most browsers block window.open
-            // when called from a delayed async callback (treats it as a popup).
-            // We open with about:blank first and write into it as data arrives.
-            const printWin = window.open('', '_blank');
-            if (!printWin) {
-              setBatchDownloading(false);
-              alert("Couldn't open a new tab — please check your browser's popup blocker and try again.");
-              return;
-            }
-            printWin.document.write('<!doctype html><html><head><title>Loading WTNs…</title><meta charset="utf-8"><style>body{font-family:system-ui,sans-serif;padding:40px;color:#555;}</style></head><body>Loading ' + wtnIds.length + ' Waste Transfer Note' + (wtnIds.length === 1 ? '' : 's') + '…</body></html>');
-
             try {
-              const baseUrl = 'https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=';
-              const results = await Promise.all(wtnIds.map(async id => {
-                try {
-                  const r = await fetch(baseUrl + encodeURIComponent(id));
-                  if (!r.ok) return { id, html: null, err: 'HTTP ' + r.status };
-                  const html = await r.text();
-                  return { id, html, err: null };
-                } catch (e) {
-                  return { id, html: null, err: e.message };
-                }
-              }));
+              const jobIds = selectedJobs.map(j => j.id);
 
-              const okResults = results.filter(r => r.html);
-              const failed = results.filter(r => !r.html);
+              // One query for every note across every selected job.
+              const { data: rows, error } = await window.supabase
+                .from('wtns')
+                .select('*')
+                .in('job_id', jobIds)
+                .order('job_id', { ascending: true })
+                .order('suffix_letter', { ascending: true });
+              if (error) throw error;
 
-              // Extract <body>...</body> AND <style>...</style> blocks from
-              // each result. We keep all the page's styles together at the
-              // top of the combined doc so all WTNs render correctly.
-              const styles = [];
-              const bodies = [];
-              for (const r of okResults) {
-                const styleMatches = r.html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) || [];
-                styleMatches.forEach(s => { if (!styles.includes(s)) styles.push(s); });
-                const bodyMatch = r.html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-                bodies.push(bodyMatch ? bodyMatch[1] : r.html);
+              const byJob = new Map();
+              for (const r of (rows || [])) {
+                if (!byJob.has(r.job_id)) byJob.set(r.job_id, []);
+                byJob.get(r.job_id).push(mapWtnRowToCamel(r));
               }
 
-              const pageBreakCss = `
-                <style>
-                  @media print { .tws-wtn-page-break { page-break-after: always; break-after: page; } }
-                  .tws-wtn-page-break { margin: 60px 0; border-top: 2px dashed #ccc; }
-                  .tws-wtn-batch-banner { background:#15803d; color:#fff; padding:14px 20px; font-family:system-ui,sans-serif; margin-bottom:24px; border-radius:6px; }
-                  .tws-wtn-batch-banner h1 { margin:0 0 4px 0; font-size:16px; }
-                  .tws-wtn-batch-banner p { margin:0; font-size:13px; opacity:0.9; }
-                  @media print { .tws-wtn-batch-banner { display:none; } }
-                </style>`;
+              // Legacy jobs pre-date the wtns table and keep their note in
+              // jobs.wtn_data, so fall back to that when there are no rows.
+              const all = [];
+              for (const job of selectedJobs) {
+                let list = byJob.get(job.id);
+                if (!list || list.length === 0) {
+                  try {
+                    const raw = job.wtn_data || job.wtnData;
+                    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                    if (parsed && Object.keys(parsed).length) list = [parsed];
+                  } catch (e) { /* unparseable legacy blob — skip this job */ }
+                }
+                if (!list || list.length === 0) continue;
+                for (const w of list) {
+                  all.push({ wtn: w, job: {
+                    jobNumber: job.job_number || job.jobNumber,
+                    customerName: job.customer_name || job.customerName,
+                  }});
+                }
+              }
 
-              const banner = `
-                <div class="tws-wtn-batch-banner">
-                  <h1>📄 ${okResults.length} Waste Transfer Note${okResults.length === 1 ? '' : 's'} — ready to print</h1>
-                  <p>Press <strong>Cmd+P</strong> (Mac) or <strong>Ctrl+P</strong> (Windows) to print or save all notes as a single PDF.${failed.length > 0 ? ` ${failed.length} note${failed.length === 1 ? '' : 's'} failed to load — see the bottom of this page.` : ''}</p>
-                </div>`;
+              if (all.length === 0) {
+                alert('No Waste Transfer Notes found on the selected jobs.');
+                return;
+              }
 
-              const failedSection = failed.length === 0 ? '' : `
-                <div style="margin-top:60px;padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-family:system-ui,sans-serif;">
-                  <strong style="color:#991b1b;">Failed to load:</strong>
-                  <ul style="margin:8px 0 0 20px;color:#7f1d1d;font-size:13px;">
-                    ${failed.map(f => `<li>${f.id} (${f.err})</li>`).join('')}
-                  </ul>
-                </div>`;
+              const ctx = {
+                jsPDF: window.jspdf && window.jspdf.jsPDF,
+                logoDataUrl: await loadLogoDataUrl(),
+                company: {
+                  name: localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+                  address: localStorage.getItem('companyAddress') || '',
+                  carrierReg: TWS_COMPANY.carrierReg,
+                },
+              };
 
-              const stitched = bodies.map((b, i) =>
-                `<div class="tws-wtn-single">${b}</div>` + (i < bodies.length - 1 ? '<div class="tws-wtn-page-break"></div>' : '')
-              ).join('\n');
+              // Each note carries its own job on _job, so the whole selection
+              // renders as one document in a single pass.
+              const notes = all.map(entry => Object.assign({}, entry.wtn, { _job: entry.job }));
+              const doc = buildWtnPdfDoc(notes, all[0].job, ctx);
 
-              const finalHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Waste Transfer Notes (${okResults.length})</title>${styles.join('\n')}${pageBreakCss}</head><body>${banner}${stitched}${failedSection}</body></html>`;
-
-              // Replace the loading page with the stitched document.
-              printWin.document.open();
-              printWin.document.write(finalHtml);
-              printWin.document.close();
-              printWin.document.title = `Waste Transfer Notes (${okResults.length})`;
-            } catch (err) {
-              try {
-                printWin.document.open();
-                printWin.document.write('<!doctype html><html><body style="font-family:system-ui;padding:40px;color:#991b1b;">Failed to load WTNs: ' + (err.message || err) + '</body></html>');
-                printWin.document.close();
-              } catch(_) {}
-              console.error('[batch WTN download] failed:', err);
+              const name = all.length === 1
+                ? (all[0].wtn.wtnNumber || 'WTN') + '.pdf'
+                : 'Waste-Transfer-Notes-' + all.length + '.pdf';
+              doc.save(name);
+            } catch (e) {
+              console.error('[Portal batch WTN]', e);
+              alert('Could not build the PDF: ' + e.message);
             } finally {
               setBatchDownloading(false);
             }
@@ -2939,10 +2903,35 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
               {wtnList.length > 1 && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-semibold">{wtnList.length} notes</span>}
             </h2>
             <div className="flex gap-2 flex-shrink-0">
-              <button onClick={() => {
-                // Use the active WTN's number if available, fall back to derived
-                const wtnId = (savedWtn && savedWtn.wtnNumber) || job.wtn_number || ('WTN-' + (job.job_number || job.jobNumber));
-                window.open('https://portal.totalwasteservicesltd.com/api/gmail?action=wtn&id=' + wtnId, '_blank');
+              <button onClick={async () => {
+                // Same generator as the emailed WTN, so the customer's
+                // downloaded copy is identical to the one they were sent.
+                const w = window.open('', '_blank');
+                try {
+                  const jobForPdf = {
+                    jobNumber: job.job_number || job.jobNumber,
+                    customerName: job.customer_name || job.customerName,
+                  };
+                  const list = (Array.isArray(wtnList) && wtnList.length > 0)
+                    ? wtnList
+                    : [savedWtn || {}];
+                  const ctx = {
+                    jsPDF: window.jspdf && window.jspdf.jsPDF,
+                    logoDataUrl: await loadLogoDataUrl(),
+                    company: {
+                      name: localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+                      address: localStorage.getItem('companyAddress') || '',
+                      carrierReg: TWS_COMPANY.carrierReg,
+                    },
+                  };
+                  const doc = buildWtnPdfDoc(list, jobForPdf, ctx);
+                  const url = doc.output('bloburl');
+                  if (w) { w.location.href = url; } else { window.open(url, '_blank'); }
+                } catch (e) {
+                  if (w) w.close();
+                  console.error('[Portal WTN PDF]', e);
+                  alert('Could not generate the PDF: ' + e.message);
+                }
               }} className="px-2 sm:px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">🖨 <span className="hidden sm:inline">Print / Save PDF</span><span className="sm:hidden">Print</span></button>
               <button onClick={onClose} className="px-2 sm:px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">✕</button>
             </div>
@@ -11782,9 +11771,12 @@ function buildWtnPdfDoc(wtnList, job, ctx) {
   list.forEach((w, idx) => {
     if (idx > 0) doc.addPage();
 
+    // A note may carry its own job via _job, so a single document can hold
+    // notes from several jobs (the portal's batch download does this).
+    const pageJob = w._job || job || {};
     const suffix = multi ? String.fromCharCode(65 + idx) : '';
     const wtnRef = w.wtnNumber ||
-      ('WTN-' + (job.jobNumber || job.job_number || '') + (suffix ? '-' + suffix : ''));
+      ('WTN-' + (pageJob.jobNumber || pageJob.job_number || '') + (suffix ? '-' + suffix : ''));
 
     let y = M;
 
@@ -11821,7 +11813,7 @@ function buildWtnPdfDoc(wtnList, job, ctx) {
     setFont('bold', 10, GREEN);
     doc.text(wtnRef, rx, y + 8, { align: 'right' });
     setFont('normal', 6.5, MUTED);
-    doc.text('Job: ' + (job.jobNumber || job.job_number || '\u2014'), rx, y + 12, { align: 'right' });
+    doc.text('Job: ' + (pageJob.jobNumber || pageJob.job_number || '\u2014'), rx, y + 12, { align: 'right' });
     doc.text(fmtDate(w.transferDate), rx, y + 15, { align: 'right' });
 
     y = headerBottom + 1;
@@ -20287,11 +20279,13 @@ useEffect(() => {
       console.log('[AutoRefresh] SKIPPED — pause flag is set');
       return;
     }
-    console.log('[AutoRefresh] running');
+    // Jobs and customers are already refreshed by the visibility-aware poll
+    // above, which pauses when the tab is hidden. Duplicating them here meant
+    // fetching every job twice a minute. Quotes are not covered there, so
+    // they stay.
+    if (document.visibilityState !== 'visible') return;
     try {
-      await window.loadJobsFromSupabase();
       await loadQuotesFromSupabase();
-      await loadCustomersFromSupabase();
     } catch(e) {
       // Silent fail
     }
