@@ -11327,6 +11327,9 @@ function buildQuotePdfDoc(quote, ctx) {
   setFont('normal', 9, MUTED);
   if (preparedBy.name && company.name) { doc.text(company.name, rcx, rightY); rightY += 4.2; }
   if (company.phone) { doc.text('T: ' + company.phone, rcx, rightY); rightY += 4.2; }
+  // The logged-in user's email, so replies go to whoever actually sent the
+  // quote rather than a shared inbox. Falls back to the company address only
+  // if the user record has no email on it.
   const contactEmail = preparedBy.email || company.email;
   if (contactEmail) { doc.text('E: ' + contactEmail, rcx, rightY); rightY += 4.2; }
 
@@ -11567,11 +11570,13 @@ async function buildQuotePdfContext(user) {
     company: {
       name:       localStorage.getItem('companyName') || 'Total Waste Services Ltd',
       address:    localStorage.getItem('companyAddress') || '',
-      phone:      localStorage.getItem('companyPhone') || '01743 298890',
-      email:      localStorage.getItem('companyEmail') || 'info@totalwasteservicesltd.com',
-      vat:        localStorage.getItem('companyVat') || '291386772',
-      companyNo:  localStorage.getItem('companyNumber') || '11143143',
-      carrierReg: localStorage.getItem('carrierReg') || '',
+      // Phone is a setting; the rest are baked so they can't be mistyped
+      // onto a document that ends up in front of the Environment Agency.
+      phone:      localStorage.getItem('companyPhone') || TWS_COMPANY.fallbackPhone,
+      email:      TWS_COMPANY.fallbackEmail,
+      vat:        TWS_COMPANY.vat,
+      companyNo:  TWS_COMPANY.companyNo,
+      carrierReg: TWS_COMPANY.carrierReg,
     },
     preparedBy: user ? {
       name: [user.firstName, user.lastName].filter(Boolean).join(' '),
@@ -11596,6 +11601,26 @@ async function generateQuotePdf(quote, user) {
 
 window.buildQuotePdfDoc = buildQuotePdfDoc;
 window.generateQuotePdf = generateQuotePdf;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPANY IDENTIFIERS
+//
+// These are facts about the company, not preferences, and they appear on legal
+// documents — a typo in a VAT or waste carrier number on a WTN is a real
+// problem. They are deliberately NOT editable in Admin Settings. If any of
+// them genuinely changes, edit this block.
+//
+// The phone number IS editable in Admin Settings, because it changes more
+// readily and carries no legal weight.
+// ─────────────────────────────────────────────────────────────────────────────
+const TWS_COMPANY = {
+  vat:           '291386772',
+  companyNo:     '11143143',
+  carrierReg:    'CBDU218525',
+  fallbackEmail: 'info@totalwasteservicesltd.com',
+  fallbackPhone: '07546 215 502',
+};
+window.TWS_COMPANY = TWS_COMPANY;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LINE ITEM UNITS
@@ -16179,7 +16204,11 @@ const handleApplySync = async () => {
           const [companyName, setCompanyName] = useState('Total Waste Services');
           const [primaryColor, setPrimaryColor] = useState('#2563eb');
           const [companyAddress, setCompanyAddress] = useState(localStorage.getItem('companyAddress') || '');
-          const [carrierReg, setCarrierReg] = useState(localStorage.getItem('carrierReg') || '');
+          // Company contact and registration details. These flow onto the
+          // quote PDF — phone and email in the "Prepared by" and "Authorised
+          // by" blocks, VAT and company number in the page footer.
+          const [companyPhone, setCompanyPhone] = useState(localStorage.getItem('companyPhone') || '');
+
           const [portalUrlSetting, setPortalUrlSetting] = useState(localStorage.getItem('portalUrl') || 'https://portal.totalwasteservicesltd.com');
           const [editingJobType, setEditingJobType] = useState('');
           const [newType, setNewType] = useState('');
@@ -16221,9 +16250,10 @@ useEffect(() => {
           } else if (setting.setting_name === 'company_address') {
             setCompanyAddress(setting.setting_value);
             localStorage.setItem('companyAddress', setting.setting_value);
-          } else if (setting.setting_name === 'carrier_reg') {
-            setCarrierReg(setting.setting_value);
-            localStorage.setItem('carrierReg', setting.setting_value);
+          } else if (setting.setting_name === 'company_phone') {
+            setCompanyPhone(setting.setting_value);
+            localStorage.setItem('companyPhone', setting.setting_value);
+
           } else if (setting.setting_name === 'portal_url') {
             setPortalUrlSetting(setting.setting_value);
             localStorage.setItem('portalUrl', setting.setting_value);
@@ -16514,7 +16544,7 @@ const loadUsers = async () => {
   { setting_name: 'primary_color', setting_value: primaryColor },
   { setting_name: 'logo_url', setting_value: logo },
   { setting_name: 'company_address', setting_value: companyAddress },
-  { setting_name: 'carrier_reg', setting_value: carrierReg },
+  { setting_name: 'company_phone', setting_value: companyPhone },
   { setting_name: 'portal_url', setting_value: portalUrlSetting },
 ];
     for (const update of updates) {
@@ -16526,7 +16556,7 @@ const loadUsers = async () => {
     localStorage.setItem('primaryColor', primaryColor);
     localStorage.setItem('companyLogo', logo);
     localStorage.setItem('companyAddress', companyAddress);
-    localStorage.setItem('carrierReg', carrierReg);
+    localStorage.setItem('companyPhone', companyPhone);
     localStorage.setItem('portalUrl', portalUrlSetting);
     alert('Settings saved successfully!');
   } catch (error) {
@@ -16669,6 +16699,52 @@ const loadUsers = async () => {
                           </div>
                         </div>
 
+                        {/* Company contact details — these appear on the quote PDF */}
+                        <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
+                          <h4 className="font-semibold text-blue-800 text-sm">\ud83d\udcc4 Quote Document Details</h4>
+                          <p className="text-xs text-blue-700">
+                            These appear on every quote PDF. The phone number and email show
+                            under "Prepared by" and next to the signature block; the VAT and
+                            company numbers go in the footer of each page.
+                          </p>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Company Phone</label>
+                            <input type="tel" value={companyPhone} onChange={e => setCompanyPhone(e.target.value)}
+                              placeholder="e.g. 07546 215 502"
+                              className="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Shown under "Prepared by" and next to the signature block on every quote.
+                            </p>
+                          </div>
+
+                          {/* Read-only: these are legal identifiers and appear on
+                              WTNs and consignment notes as well as quotes, so they
+                              aren't editable here. */}
+                          <div className="pt-3 border-t border-blue-200">
+                            <p className="text-xs font-medium text-blue-900 mb-2">
+                              Fixed company details \u2014 shown on quotes and waste documents
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="bg-white border border-blue-100 rounded-lg px-3 py-2">
+                                <div className="text-xs text-gray-500">VAT Number</div>
+                                <div className="text-sm font-semibold text-gray-800">{TWS_COMPANY.vat}</div>
+                              </div>
+                              <div className="bg-white border border-blue-100 rounded-lg px-3 py-2">
+                                <div className="text-xs text-gray-500">Company Reg. No.</div>
+                                <div className="text-sm font-semibold text-gray-800">{TWS_COMPANY.companyNo}</div>
+                              </div>
+                              <div className="bg-white border border-blue-100 rounded-lg px-3 py-2">
+                                <div className="text-xs text-gray-500">Waste Carrier Reg.</div>
+                                <div className="text-sm font-semibold text-gray-800">{TWS_COMPANY.carrierReg}</div>
+                              </div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-2">
+                              Locked deliberately \u2014 a typo in these on a Waste Transfer Note is
+                              a compliance problem. If one genuinely changes, it needs a code update.
+                            </p>
+                          </div>
+                        </div>
+
                         {/* WTN / Legal fields */}
                         <div className="border border-green-200 bg-green-50 rounded-lg p-4 space-y-3">
                           <h4 className="font-semibold text-green-800 text-sm">📄 Waste Transfer Note Settings</h4>
@@ -16685,8 +16761,12 @@ const loadUsers = async () => {
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">EA Waste Carrier Registration No. (CBDU...)</label>
-                            <input type="text" value={carrierReg} onChange={e => setCarrierReg(e.target.value)}
-                              placeholder="e.g. CBDU123456" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                            <div className="w-full px-3 py-2 border border-gray-200 bg-gray-100 rounded-lg text-sm text-gray-700 font-semibold">
+                              {TWS_COMPANY.carrierReg}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">
+                              Fixed \u2014 appears on every WTN and consignment note.
+                            </p>
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Customer Portal URL</label>
@@ -19419,11 +19499,17 @@ useEffect(() => {
           if (s.setting_name === 'company_name' && s.setting_value) localStorage.setItem('companyName', s.setting_value);
           if (s.setting_name === 'logo_url' && s.setting_value) localStorage.setItem('companyLogo', s.setting_value);
           if (s.setting_name === 'company_address' && s.setting_value) localStorage.setItem('companyAddress', s.setting_value);
-          if (s.setting_name === 'carrier_reg' && s.setting_value) localStorage.setItem('carrierReg', s.setting_value);
+          // carrier_reg is deliberately NOT read from settings any more — see
+          // TWS_COMPANY. Forced below so WTNs and quotes always agree.
+          if (s.setting_name === 'company_phone' && s.setting_value) localStorage.setItem('companyPhone', s.setting_value);
           if (s.setting_name === 'portal_url' && s.setting_value) localStorage.setItem('portalUrl', s.setting_value);
           if (s.setting_name === 'primary_color' && s.setting_value) document.documentElement.style.setProperty('--primary-color', s.setting_value);
         });
       }
+      // Pin the baked identifiers regardless of what's in the settings table,
+      // so every document — WTN, consignment note, quote — shows the same
+      // waste carrier registration.
+      localStorage.setItem('carrierReg', TWS_COMPANY.carrierReg);
     } catch(e) { console.error('Settings load error:', e); }
   })();
 
