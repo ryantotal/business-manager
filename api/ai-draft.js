@@ -39,10 +39,13 @@ export default async function handler(req, res) {
     const {
       mode, instructions,
       customerName, jobType, siteAddress, lineItems, notes,
-      existingScope,
+      existingScope, existingInclusions, existingExclusions,
     } = req.body || {};
 
     const scopeOnly = mode === 'scope';
+    // 'add' keeps what the user already has and works the new instruction in,
+    // rather than throwing away wording they may have edited by hand.
+    const addMode = mode === 'add';
 
     // Summarise the job. Prices are included so the wording can reflect how
     // the work is sold — per tonne versus per load — but the model is told
@@ -87,9 +90,50 @@ export default async function handler(req, res) {
       briefParts.push('Current description, to improve rather than ignore: ' + existingScope.trim());
     }
 
+    if (addMode) {
+      briefParts.push('');
+      briefParts.push('=== EXISTING WORDING \u2014 KEEP ALL OF THIS ===');
+      briefParts.push('');
+      briefParts.push('SERVICE DESCRIPTION:');
+      briefParts.push(existingScope && existingScope.trim() ? existingScope.trim() : '(empty)');
+      briefParts.push('');
+      briefParts.push('INCLUSIONS:');
+      briefParts.push(existingInclusions && existingInclusions.trim() ? existingInclusions.trim() : '(empty)');
+      briefParts.push('');
+      briefParts.push('EXCLUSIONS:');
+      briefParts.push(existingExclusions && existingExclusions.trim() ? existingExclusions.trim() : '(empty)');
+      briefParts.push('');
+      briefParts.push('=== END EXISTING WORDING ===');
+    }
+
     const brief = briefParts.join('\n');
 
-    const rules = [
+    const rules = [];
+
+    if (addMode) {
+      rules.push(
+        'You are ADDING TO an existing quotation, not rewriting it.',
+        '',
+        'The existing wording is shown at the end of the brief. It has been',
+        'written and possibly hand-edited by the salesperson. Your job is to',
+        'keep it and work the new instruction into it.',
+        '',
+        'Absolute rules for this task:',
+        '- Reproduce every existing sentence and every existing bullet. Do not',
+        '  drop, shorten, merge, reorder or reword any of them.',
+        '- Add only what the new instruction calls for.',
+        '- Put new material where it belongs: a new constraint or timing detail',
+        '  goes in the description, something we are providing goes in',
+        '  inclusions, something we are not covering goes in exclusions.',
+        '- If the instruction only affects one section, return the other two',
+        '  exactly as they were.',
+        '- Return the COMPLETE updated text for all three sections, existing',
+        '  content included \u2014 not just the new parts.',
+        ''
+      );
+    }
+
+    rules.push(
       'You write quotation wording for Total Waste Services Ltd, a UK waste',
       'management and aggregates broker. They supply skips, aggregates, muck away,',
       'grab hire and roll-on roll-off, and arrange licensed disposal.',
@@ -104,8 +148,8 @@ export default async function handler(req, res) {
       '- Never invent licence numbers, permit numbers or insurance figures.',
       '- Do not promise delivery times or completion dates unless given one.',
       '- Do not restate the line item prices; the table already shows them.',
-      '- If the brief is thin, write less rather than padding it out.',
-    ];
+      '- If the brief is thin, write less rather than padding it out.'
+    );
 
     if (!scopeOnly) {
       rules.push(
