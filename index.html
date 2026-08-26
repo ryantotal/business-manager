@@ -26915,6 +26915,13 @@ By approving this quotation and authorising us to commence services, you acknowl
   //   mode 'scope' — just the service description, leaving the lists alone
   // The user's brief is passed through as instructions, so "customer is
   // offloading themselves" lands in the wording rather than being guessed at.
+  // True when any of the three sections already has wording in it.
+  const hasQuoteWording = !!(
+    (formData.scopeDescription || '').trim() ||
+    (formData.inclusions || '').trim() ||
+    (formData.exclusions || '').trim()
+  );
+
   const runAiDraft = async (mode) => {
     const hasAnyContext = formData.customerName ||
       (formData.lineItems && formData.lineItems.length > 0) ||
@@ -26924,14 +26931,23 @@ By approving this quotation and authorising us to commence services, you acknowl
       return;
     }
 
-    // Only warn about overwriting the sections this run will actually touch.
-    const willReplace = mode === 'scope'
-      ? (formData.scopeDescription || '').trim()
-      : [(formData.scopeDescription || ''), (formData.inclusions || ''), (formData.exclusions || '')]
-          .some(v => v.trim());
-    if (willReplace) {
-      const what = mode === 'scope' ? 'the service description' : 'all three sections';
-      if (!confirm('This will replace ' + what + '. Continue?')) return;
+    // 'add' keeps everything and works the new instruction in, so there's
+    // nothing to warn about. Only the replacing modes ask.
+    if (mode !== 'add') {
+      const willReplace = mode === 'scope'
+        ? (formData.scopeDescription || '').trim()
+        : [(formData.scopeDescription || ''), (formData.inclusions || ''), (formData.exclusions || '')]
+            .some(v => v.trim());
+      if (willReplace) {
+        const what = mode === 'scope' ? 'the service description' : 'all three sections';
+        if (!confirm('This will replace ' + what + '. Continue?')) return;
+      }
+    }
+
+    // Adding needs something to add.
+    if (mode === 'add' && !aiBrief.trim()) {
+      alert('Write what you want adding in the box above first \u2014 for example "add that the customer is offloading themselves".');
+      return;
     }
 
     setAiDrafting(mode);
@@ -26963,6 +26979,10 @@ By approving this quotation and authorising us to commence services, you acknowl
             inclusions: result.inclusions || prev.inclusions,
             exclusions: result.exclusions || prev.exclusions,
           }));
+
+      // Adding is cumulative — clear the brief so the same instruction isn't
+      // accidentally applied twice on the next click.
+      if (mode === 'add') setAiBrief('');
     } catch (err) {
       console.error('[AI draft] failed:', err);
       alert('Could not draft the wording: ' + err.message);
@@ -27052,6 +27072,12 @@ By approving this quotation and authorising us to commence services, you acknowl
                   <p className="text-xs text-purple-700 mt-0.5">
                     It already knows the customer, site, job type and line items from
                     this quote. Use the box below to tell it anything else that matters.
+                    {hasQuoteWording && (
+                      <span className="block mt-1 font-medium">
+                        There's already wording on this quote \u2014 "Add to what's there"
+                        keeps all of it and works your note in.
+                      </span>
+                    )}
                   </p>
                 </div>
 
@@ -27064,7 +27090,9 @@ By approving this quotation and authorising us to commence services, you acknowl
                     onChange={e => setAiBrief(e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm"
-                    placeholder={'e.g. two week job, tight access so 8-wheelers only, customer offloading themselves, no weekend deliveries, price held until end of October'}
+                    placeholder={hasQuoteWording
+                      ? 'e.g. add that this can be completed before 14/09/26 once we have a PO, and that we work to schedule'
+                      : 'e.g. two week job, tight access so 8-wheelers only, customer offloading themselves, no weekend deliveries, price held until end of October'}
                   />
                   <p className="text-xs text-purple-600 mt-1">
                     Working notes for the AI — not saved with the quote and never shown to the customer.
@@ -27072,14 +27100,40 @@ By approving this quotation and authorising us to commence services, you acknowl
                 </div>
 
                 <div className="flex gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    disabled={!!aiDrafting}
-                    onClick={() => runAiDraft('all')}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 whitespace-nowrap"
-                  >
-                    {aiDrafting === 'all' ? '\u2699 Writing\u2026' : '\u2728 Draft all three sections'}
-                  </button>
+                  {/* Once there's wording on the quote, adding to it is what
+                      people actually want — replacing wholesale throws away
+                      anything they've edited by hand. So the primary button
+                      changes to "Add to what's there" and starting over
+                      becomes the secondary, clearly-labelled option. */}
+                  {hasQuoteWording ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!!aiDrafting}
+                        onClick={() => runAiDraft('add')}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {aiDrafting === 'add' ? '\u2699 Adding\u2026' : '\u2795 Add to what\u2019s there'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!aiDrafting}
+                        onClick={() => runAiDraft('all')}
+                        className="px-4 py-2 border border-purple-300 text-purple-800 bg-white rounded-lg text-sm font-medium hover:bg-purple-100 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {aiDrafting === 'all' ? '\u2699 Writing\u2026' : '\u21bb Start again'}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!!aiDrafting}
+                      onClick={() => runAiDraft('all')}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {aiDrafting === 'all' ? '\u2699 Writing\u2026' : '\u2728 Draft all three sections'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={!!aiDrafting}
