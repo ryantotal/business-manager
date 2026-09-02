@@ -13850,7 +13850,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Request a Purchase Order</h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {job.jobNumber} \u00b7 {job.customerName}
+                    {job.jobNumber} · {job.customerName}
                   </p>
                 </div>
                 <button onClick={() => setPoModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
@@ -13883,7 +13883,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                     <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
                       {items.map((i, n) => (
                         <div key={n} className="flex justify-between text-xs text-gray-600">
-                          <span>{i.product_name || i.description} \u00b7 {i.quantity} {formatUnit(getLineItemUnit(i, job))}</span>
+                          <span>{i.product_name || i.description} · {i.quantity} {formatUnit(getLineItemUnit(i, job))}</span>
                           <span>{fmt((parseFloat(i.quantity) || 0) * (parseFloat(i.customer_price) || 0))}</span>
                         </div>
                       ))}
@@ -13910,7 +13910,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                         </button>
                       ))}
                       {poSageLoading && (
-                        <span className="text-xs text-gray-400">checking Sage\u2026</span>
+                        <span className="text-xs text-gray-400">checking Sage…</span>
                       )}
                     </div>
                   )}
@@ -14883,7 +14883,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
 
                       {!done && (
                         <p className="text-xs text-amber-600 mt-2">
-                          Add the PO number to the job once it arrives \u2014 it appears on the invoice.
+                          Add the PO number to the job once it arrives — it appears on the invoice.
                         </p>
                       )}
                     </div>
@@ -17985,7 +17985,7 @@ const loadUsers = async () => {
 
                         {/* Company contact details — these appear on the quote PDF */}
                         <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
-                          <h4 className="font-semibold text-blue-800 text-sm">\ud83d\udcc4 Quote Document Details</h4>
+                          <h4 className="font-semibold text-blue-800 text-sm">📄 Quote Document Details</h4>
                           <p className="text-xs text-blue-700">
                             These appear on every quote PDF. The phone number and email show
                             under "Prepared by" and next to the signature block; the VAT and
@@ -18006,7 +18006,7 @@ const loadUsers = async () => {
                               aren't editable here. */}
                           <div className="pt-3 border-t border-blue-200">
                             <p className="text-xs font-medium text-blue-900 mb-2">
-                              Fixed company details \u2014 shown on quotes and waste documents
+                              Fixed company details — shown on quotes and waste documents
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                               <div className="bg-white border border-blue-100 rounded-lg px-3 py-2">
@@ -18023,7 +18023,7 @@ const loadUsers = async () => {
                               </div>
                             </div>
                             <p className="text-xs text-gray-400 mt-2">
-                              Locked deliberately \u2014 a typo in these on a Waste Transfer Note is
+                              Locked deliberately — a typo in these on a Waste Transfer Note is
                               a compliance problem. If one genuinely changes, it needs a code update.
                             </p>
                           </div>
@@ -18049,7 +18049,7 @@ const loadUsers = async () => {
                               {TWS_COMPANY.carrierReg}
                             </div>
                             <p className="text-xs text-gray-400 mt-1">
-                              Fixed \u2014 appears on every WTN and consignment note.
+                              Fixed — appears on every WTN and consignment note.
                             </p>
                           </div>
                           <div>
