@@ -12093,6 +12093,359 @@ window.buildWtnPdfDoc = buildWtnPdfDoc;
 window.generateWtnPdf = generateWtnPdf;
 window.wtnFieldsToPdfList = wtnFieldsToPdfList;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PURCHASE ORDER REQUEST — PDF GENERATOR
+//
+// Some customers won't issue a PO until they know the final figure. Their
+// waste is weighed at the disposal facility, that weight comes back to us,
+// and we then have to ask them to raise a PO for the resulting value before
+// we can invoice.
+//
+// This produces that request on the company letterhead, from the job's own
+// data, so nobody retypes tonnages or prices into an email.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function buildPoRequestPdfDoc(job, ctx) {
+  ctx = ctx || {};
+  const company = ctx.company || {};
+  const requestedBy = ctx.requestedBy || {};
+  const jsPDFCtor = ctx.jsPDF || (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF);
+  if (!jsPDFCtor) throw new Error('jsPDF is not loaded');
+
+  const doc = new jsPDFCtor({ unit: 'mm', format: 'a4', compress: true });
+
+  const GREEN    = [26, 92, 42];
+  const GREEN_LT = [232, 243, 235];
+  const INK      = [17, 24, 39];
+  const MUTED    = [107, 114, 128];
+  const RULE     = [209, 213, 219];
+  const AMBER_BG = [255, 251, 235];
+  const AMBER_BD = [253, 230, 138];
+
+  const PAGE_W = doc.internal.pageSize.getWidth();
+  const PAGE_H = doc.internal.pageSize.getHeight();
+  const M  = 16;
+  const CW = PAGE_W - M * 2;
+  let y = M;
+
+  const setFont = (style, size, colour) => {
+    doc.setFont('helvetica', style || 'normal');
+    doc.setFontSize(size || 10);
+    const c = colour || INK;
+    doc.setTextColor(c[0], c[1], c[2]);
+  };
+
+  const money = (n) => '\u00A3' + (parseFloat(n) || 0)
+    .toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const unitLabel = (u) => (!u ? '' : (u === 'm3' ? 'm\u00B3' : String(u)));
+
+  const fmtDate = (d) => {
+    if (!d) return '\u2014';
+    const dt = new Date(d);
+    return isNaN(dt.getTime()) ? '\u2014'
+      : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
+  // Reserve vertical space, starting a new page if the block won't fit above
+  // the footer. Without this, headings printed and their content silently
+  // vanished off the bottom of the page.
+  const need = (h) => {
+    if (y + h > PAGE_H - 20) { doc.addPage(); y = M; return true; }
+    return false;
+  };
+
+  const heading = (label) => {
+    y += 3;
+    need(14);
+    setFont('bold', 10, GREEN);
+    doc.text(String(label).toUpperCase(), M, y);
+    y += 1.8;
+    doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+    doc.setLineWidth(0.4);
+    doc.line(M, y, M + CW, y);
+    y += 5;
+  };
+
+  // ══ LETTERHEAD ════════════════════════════════════════════════════════
+  doc.setFillColor(GREEN[0], GREEN[1], GREEN[2]);
+  doc.rect(0, 0, PAGE_W, 3, 'F');
+  y = M + 2;
+  let headerBottom = y;
+
+  if (ctx.logoDataUrl) {
+    try {
+      const props = doc.getImageProperties(ctx.logoDataUrl);
+      const ratio = Math.min(46 / props.width, 18 / props.height);
+      const w = props.width * ratio, h = props.height * ratio;
+      doc.addImage(ctx.logoDataUrl, M, y, w, h);
+      headerBottom = Math.max(headerBottom, y + h);
+    } catch (e) {
+      setFont('bold', 15, GREEN);
+      doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
+      headerBottom = Math.max(headerBottom, y + 10);
+    }
+  } else {
+    setFont('bold', 15, GREEN);
+    doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
+    headerBottom = Math.max(headerBottom, y + 10);
+  }
+
+  const rx = PAGE_W - M;
+  setFont('bold', 17, GREEN);
+  doc.text('PURCHASE ORDER REQUEST', rx, y + 7, { align: 'right' });
+  setFont('bold', 10, INK);
+  doc.text('Ref: ' + (job.poRequestRef || ('POR-' + (job.jobNumber || job.job_number || ''))), rx, y + 13, { align: 'right' });
+  setFont('normal', 8.5, MUTED);
+  doc.text('Date: ' + fmtDate(new Date()), rx, y + 18, { align: 'right' });
+  headerBottom = Math.max(headerBottom, y + 20);
+
+  y = headerBottom + 4;
+  doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+  doc.setLineWidth(0.3);
+  doc.line(M, y, M + CW, y);
+  y += 7;
+
+  // ══ TO / FROM ═════════════════════════════════════════════════════════
+  const colW = (CW - 8) / 2;
+  const colTop = y;
+
+  setFont('bold', 8, GREEN);
+  doc.text('TO', M, y);
+  setFont('bold', 10.5, INK);
+  const custLines = doc.splitTextToSize(String(job.customerName || job.customer_name || '\u2014'), colW);
+  doc.text(custLines, M, y + 5.5);
+  let leftY = y + 5.5 + custLines.length * 4.4;
+  setFont('normal', 9, MUTED);
+  const contact = job.customerContact || job.customer_contact;
+  if (contact) { doc.text('FAO: ' + contact, M, leftY); leftY += 4.2; }
+
+  const rcx = M + colW + 8;
+  setFont('bold', 8, GREEN);
+  doc.text('FROM', rcx, colTop);
+  setFont('bold', 10.5, INK);
+  doc.text(requestedBy.name || company.name || 'Total Waste Services Ltd', rcx, colTop + 5.5);
+  let rightY = colTop + 10;
+  setFont('normal', 9, MUTED);
+  if (requestedBy.name && company.name) { doc.text(company.name, rcx, rightY); rightY += 4.2; }
+  if (company.phone) { doc.text('T: ' + company.phone, rcx, rightY); rightY += 4.2; }
+  const fromEmail = requestedBy.email || company.email;
+  if (fromEmail) { doc.text('E: ' + fromEmail, rcx, rightY); rightY += 4.2; }
+
+  y = Math.max(leftY, rightY) + 3;
+
+  // ══ THE ASK ═══════════════════════════════════════════════════════════
+  // Stated plainly at the top, because this is the whole point of the
+  // document and shouldn't be buried under the detail.
+  doc.setFillColor(GREEN_LT[0], GREEN_LT[1], GREEN_LT[2]);
+  doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(M, y, CW, 13.5, 1.5, 1.5, 'FD');
+  setFont('bold', 9.5, GREEN);
+  doc.text('Please raise a purchase order for the value shown below.', M + 4, y + 5.5);
+  setFont('normal', 8.5, INK);
+  doc.text('The work is complete and the quantity confirmed by weighbridge ticket. We are unable to', M + 4, y + 9.6);
+  doc.text('invoice until a PO number is received.', M + 4, y + 12.4);
+  y += 17;
+
+  // ══ JOB DETAILS ═══════════════════════════════════════════════════════
+  heading('Job details');
+
+  const site = [job.siteAddress1 || job.site_address1, job.siteCity || job.site_city,
+                job.sitePostcode || job.site_postcode].filter(Boolean).join(', ');
+
+  const detailRows = [
+    ['Our job number', job.jobNumber || job.job_number || '\u2014'],
+    ['Job type', job.jobType || job.job_type || '\u2014'],
+    ['Site', site || '\u2014'],
+    ['Date of works', fmtDate(job.jobDate || job.job_date)],
+  ];
+  if (job.disposalSiteName) detailRows.push(['Disposal facility', job.disposalSiteName]);
+  if (job.ticketReference) detailRows.push(['Weighbridge ticket', job.ticketReference]);
+  if (job.wtnReference) detailRows.push(['Waste Transfer Note', job.wtnReference]);
+  if (job.customerReference) detailRows.push(['Your reference', job.customerReference]);
+
+  doc.autoTable({
+    startY: y,
+    theme: 'plain',
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 1.2, bottom: 1.2, left: 0, right: 2 }, textColor: INK },
+    columnStyles: { 0: { cellWidth: 46, fontStyle: 'bold' }, 1: { cellWidth: CW - 46 } },
+    body: detailRows,
+    margin: { left: M, right: M },
+  });
+  y = doc.lastAutoTable.finalY + 3;
+
+  // ══ WHAT'S BEING CHARGED ══════════════════════════════════════════════
+  heading('Amount to be raised');
+
+  const items = Array.isArray(job.lineItems) ? job.lineItems
+    : (Array.isArray(job.line_items) ? job.line_items : []);
+
+  const rows = items.map(i => {
+    const qty = parseFloat(i.quantity) || 0;
+    const price = parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0;
+    const name = i.product_name && i.description && i.product_name !== i.description
+      ? i.product_name + '\n' + i.description
+      : (i.description || i.product_name || 'Service');
+    return [name, qty + (i.unit ? ' ' + unitLabel(i.unit) : ''), money(price), money(qty * price)];
+  });
+
+  // Fall back to the job-level figures for jobs with no line items.
+  if (rows.length === 0) {
+    const qty = parseFloat(job.quantity) || 1;
+    const price = parseFloat(job.customerUnitPrice) || 0;
+    rows.push([
+      job.jobType || 'Service',
+      qty + (job.unit ? ' ' + unitLabel(job.unit) : ''),
+      money(price),
+      money(parseFloat(job.customerFinalPrice) || qty * price),
+    ]);
+  }
+
+  doc.autoTable({
+    startY: y,
+    theme: 'plain',
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 2.0, bottom: 2.0, left: 2, right: 2 }, textColor: INK },
+    headStyles: { fillColor: GREEN, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5 },
+    alternateRowStyles: { fillColor: [250, 250, 250] },
+    head: [['Description', 'Quantity', 'Rate', 'Net']],
+    body: rows,
+    columnStyles: {
+      0: { cellWidth: CW - 88 },
+      1: { cellWidth: 26, halign: 'center' },
+      2: { cellWidth: 30, halign: 'right' },
+      3: { cellWidth: 32, halign: 'right' },
+    },
+    margin: { left: M, right: M },
+  });
+  y = doc.lastAutoTable.finalY + 5;
+
+  // ══ TOTALS ════════════════════════════════════════════════════════════
+  const net = items.length > 0
+    ? items.reduce((s, i) => s + (parseFloat(i.quantity) || 0) *
+        (parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0), 0)
+    : (parseFloat(job.customerFinalPrice) || 0);
+  const vatRate = job.vatRate === 0 ? 0 : (parseFloat(job.vatRate) || 20);
+  const vat = net * (vatRate / 100);
+
+  const boxW = 82, boxX = M + CW - boxW;
+  setFont('normal', 9.5, INK);
+  doc.text('Net', boxX, y);
+  doc.text(money(net), M + CW, y, { align: 'right' });
+  y += 5;
+  doc.text('VAT (' + vatRate + '%)', boxX, y);
+  doc.text(money(vat), M + CW, y, { align: 'right' });
+  y += 2.5;
+  doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+  doc.setLineWidth(0.4);
+  doc.line(boxX, y, M + CW, y);
+  y += 6;
+  doc.setFillColor(GREEN_LT[0], GREEN_LT[1], GREEN_LT[2]);
+  doc.rect(boxX - 3, y - 5.6, boxW + 3, 9.5, 'F');
+  setFont('bold', 12, GREEN);
+  doc.text('PO VALUE REQUIRED', boxX, y);
+  doc.text(money(net + vat), M + CW, y, { align: 'right' });
+  y += 9;
+
+  // ══ NOTE ══════════════════════════════════════════════════════════════
+  if (job.poRequestNote && String(job.poRequestNote).trim()) {
+    setFont('normal', 9.5, INK);
+    const nl = doc.splitTextToSize(String(job.poRequestNote).trim(), CW);
+    // Keep the heading with at least the first few lines of its text.
+    need(14 + Math.min(nl.length, 4) * 4.2);
+    heading('Additional information');
+    setFont('normal', 9.5, INK);
+    for (const line of nl) {
+      need(6);
+      setFont('normal', 9.5, INK);
+      doc.text(line, M, y);
+      y += 4.2;
+    }
+    y += 3;
+  }
+
+  // ══ RETURN THE PO ═════════════════════════════════════════════════════
+  need(40);
+  heading('Please return');
+
+  doc.setFillColor(AMBER_BG[0], AMBER_BG[1], AMBER_BG[2]);
+  doc.setDrawColor(AMBER_BD[0], AMBER_BD[1], AMBER_BD[2]);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(M, y, CW, 22, 1.5, 1.5, 'FD');
+
+  setFont('bold', 9, [146, 64, 14]);
+  doc.text('PO number', M + 5, y + 7);
+  doc.setDrawColor(146, 64, 14);
+  doc.setLineWidth(0.3);
+  doc.line(M + 34, y + 8, M + 110, y + 8);
+
+  setFont('bold', 9, [146, 64, 14]);
+  doc.text('Authorised by', M + 5, y + 16.5);
+  doc.line(M + 34, y + 17.5, M + 110, y + 17.5);
+
+  setFont('normal', 8, [146, 64, 14]);
+  doc.text('Reply to this email with the PO number, or', M + 118, y + 8);
+  doc.text('return this page signed.', M + 118, y + 12);
+  y += 27;
+
+  // ══ FOOTER ════════════════════════════════════════════════════════════
+  const footerBits = [
+    company.name,
+    company.companyNo ? 'Reg. No. ' + company.companyNo : null,
+    company.vat ? 'VAT No. ' + company.vat : null,
+    company.carrierReg ? 'Waste Carrier ' + company.carrierReg : null,
+  ].filter(Boolean).join('  |  ');
+
+  const pages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+    doc.setLineWidth(0.3);
+    doc.line(M, PAGE_H - 12, M + CW, PAGE_H - 12);
+    setFont('normal', 7, MUTED);
+    doc.text(doc.splitTextToSize(footerBits, CW - 24)[0] || '', M, PAGE_H - 8);
+    doc.text('Page ' + p + ' of ' + pages, M + CW, PAGE_H - 8, { align: 'right' });
+  }
+
+  return doc;
+}
+
+// Build the finished PO request PDF for a job. Returns { doc, filename, base64 }.
+async function generatePoRequestPdf(job, user) {
+  if (!(window.jspdf && window.jspdf.jsPDF)) {
+    throw new Error('The PDF library has not loaded. Check your connection and reload the page.');
+  }
+  const ctx = {
+    jsPDF: window.jspdf.jsPDF,
+    logoDataUrl: await loadLogoDataUrl(),
+    company: {
+      name:       localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+      address:    localStorage.getItem('companyAddress') || '',
+      phone:      localStorage.getItem('companyPhone') || TWS_COMPANY.fallbackPhone,
+      email:      TWS_COMPANY.fallbackEmail,
+      vat:        TWS_COMPANY.vat,
+      companyNo:  TWS_COMPANY.companyNo,
+      carrierReg: TWS_COMPANY.carrierReg,
+    },
+    requestedBy: user ? {
+      name: [user.firstName, user.lastName].filter(Boolean).join(' '),
+      email: user.email || '',
+    } : {},
+  };
+  const doc = buildPoRequestPdfDoc(job, ctx);
+  const ref = job.poRequestRef || ('POR-' + (job.jobNumber || job.job_number || 'draft'));
+  const dataUri = doc.output('datauristring');
+  return {
+    doc: doc,
+    filename: ref + '.pdf',
+    base64: dataUri.substring(dataUri.indexOf('base64,') + 7),
+    ref: ref,
+  };
+}
+
+window.buildPoRequestPdfDoc = buildPoRequestPdfDoc;
+window.generatePoRequestPdf = generatePoRequestPdf;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPANY IDENTIFIERS
 //
@@ -12784,8 +13137,57 @@ const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, on
   // than in the counter because the button that triggers it is in this
   // component's header.
   const [capEditorOpen, setCapEditorOpen] = useState(false);
+  // Purchase order request. Some customers won't raise a PO until the final
+  // weighed figure is known, so this asks them for one off the job's own data.
+  const [poModalOpen, setPoModalOpen] = useState(false);
+  const [poRecipient, setPoRecipient] = useState('');
+  const [poTicketRef, setPoTicketRef] = useState('');
+  const [poNote, setPoNote] = useState('');
+  const [poSending, setPoSending] = useState(false);
+  const [poEmailOptions, setPoEmailOptions] = useState([]);
   // Reset when navigating between jobs so the editor doesn't follow you.
-  React.useEffect(() => { setCapEditorOpen(false); }, [job && job.id]);
+  React.useEffect(() => { setCapEditorOpen(false); setPoModalOpen(false); }, [job && job.id]);
+
+  // Prefill the PO request from the job and the customer record when opened.
+  React.useEffect(() => {
+    if (!poModalOpen) return;
+    setPoTicketRef(job.ticketReference || job.ticket_reference || '');
+    setPoNote(job.poRequestNote || job.po_request_note || '');
+    setPoRecipient(job.poRequestSentTo || job.po_request_sent_to || '');
+
+    // A PO request belongs with accounts rather than the site contact, so
+    // offer the accounts address first where the customer record has one.
+    (async () => {
+      try {
+        const { data } = await window.supabase
+          .from('customers')
+          .select('id, email, additional_emails')
+          .eq('name', job.customerName)
+          .limit(1);
+        const c = (data || [])[0];
+        if (!c) return;
+        const opts = [];
+        if (c.additional_emails) opts.push({ label: 'Accounts', email: c.additional_emails });
+        if (c.email) opts.push({ label: 'Main', email: c.email });
+        try {
+          const { data: contacts } = await window.supabase
+            .from('customer_contacts')
+            .select('name, email, role')
+            .eq('customer_id', c.id)
+            .not('email', 'is', null);
+          for (const ct of (contacts || [])) {
+            if (!opts.some(o => o.email === ct.email)) {
+              opts.push({ label: ct.name || ct.role || 'Contact', email: ct.email });
+            }
+          }
+        } catch (e) { /* contacts are a bonus, not required */ }
+        setPoEmailOptions(opts);
+        setPoRecipient(prev => prev || (opts[0] && opts[0].email) || '');
+      } catch (e) {
+        console.warn('[PO request] could not load customer emails:', e);
+      }
+    })();
+  }, [poModalOpen, job && job.id]);
 
   // Navigation - filter events same as JobsView
   const navJobs = React.useMemo(() => (jobs || []).filter(j => !j.isEvent && j.status !== 'EVENT'), [jobs]);
@@ -13256,6 +13658,17 @@ console.log(JSON.stringify(invoiceData, null, 2));
     <LucideIcon icon="BarChart3" size={20} />
   </button>
 )}
+{/* Request a purchase order. The customer needs the final weighed figure
+    before they'll raise one, so this pulls the value straight off the job. */}
+<button
+  onClick={() => setPoModalOpen(true)}
+  className={`p-2 rounded-lg ${job.poRequestedAt || job.po_requested_at ? 'text-green-600 hover:bg-green-100' : 'text-gray-500 hover:bg-gray-100'}`}
+  title={job.poRequestedAt || job.po_requested_at
+    ? 'PO request sent \u2014 click to send again'
+    : 'Request a purchase order from the customer'}
+>
+  <LucideIcon icon="ClipboardCheck" size={20} />
+</button>
 {/* Complete button for non-Skip/RoRo jobs - only check status, not isCompleted */}
 {job.jobType !== 'Skip Hire' && job.jobType !== 'Roll-on Roll-off' && job.status !== 'COMPLETED' && (
   <button
@@ -13323,6 +13736,226 @@ console.log(JSON.stringify(invoiceData, null, 2));
     </div>
   </div>
 </div>
+
+      {/* ── Purchase Order Request ──────────────────────────────────────
+          Builds the request from the job as it stands, so the figure the
+          customer is asked to raise is the figure we'll invoice. Sent from
+          the logged-in user's Gmail, same route as quotes and WTNs. */}
+      {poModalOpen && (() => {
+        const poJob = {
+          ...job,
+          ticketReference: poTicketRef || job.ticketReference || '',
+          poRequestNote: poNote,
+          poRequestRef: 'POR-' + (job.jobNumber || job.job_number || ''),
+        };
+        const items = Array.isArray(job.lineItems) ? job.lineItems : [];
+        const net = items.length > 0
+          ? items.reduce((s, i) => s + (parseFloat(i.quantity) || 0) *
+              (parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0), 0)
+          : (parseFloat(job.customerFinalPrice) || 0);
+        const vatRate = job.vatRate === 0 ? 0 : (parseFloat(job.vatRate) || 20);
+        const gross = net * (1 + vatRate / 100);
+        const fmt = n => '\u00A3' + Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+               onClick={e => { if (e.target === e.currentTarget) setPoModalOpen(false); }}>
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white rounded-t-xl">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Request a Purchase Order</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {job.jobNumber} \u00b7 {job.customerName}
+                  </p>
+                </div>
+                <button onClick={() => setPoModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                  <LucideIcon icon="X" size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                {(job.poRequestedAt || job.po_requested_at) && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+                    A PO request was already sent
+                    {(job.poRequestedAt || job.po_requested_at)
+                      ? ' on ' + new Date(job.poRequestedAt || job.po_requested_at).toLocaleDateString('en-GB')
+                      : ''}
+                    {(job.poRequestSentTo || job.po_request_sent_to)
+                      ? ' to ' + (job.poRequestSentTo || job.po_request_sent_to)
+                      : ''}.
+                    {job.customerPO ? ' PO ' + job.customerPO + ' has been received.' : ' No PO recorded yet.'}
+                  </div>
+                )}
+
+                {/* The figure being requested — the whole point, so it leads. */}
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold">PO value required</div>
+                  <div className="text-2xl font-bold text-green-800 mt-1">{fmt(gross)}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {fmt(net)} net plus {vatRate}% VAT
+                  </div>
+                  {items.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
+                      {items.map((i, n) => (
+                        <div key={n} className="flex justify-between text-xs text-gray-600">
+                          <span>{i.product_name || i.description} \u00b7 {i.quantity} {formatUnit(getLineItemUnit(i, job))}</span>
+                          <span>{fmt((parseFloat(i.quantity) || 0) * (parseFloat(i.customer_price) || 0))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 mt-3">
+                    Taken from the job's line items. If the weighbridge figure differs,
+                    close this, correct the quantity on the job, then come back.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Send to *</label>
+                  {poEmailOptions.length > 0 && (
+                    <div className="flex gap-2 flex-wrap mb-2">
+                      {poEmailOptions.map(opt => (
+                        <button key={opt.email} type="button"
+                          onClick={() => setPoRecipient(opt.email)}
+                          className={`px-2.5 py-1 rounded-lg text-xs border ${poRecipient === opt.email ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                          {opt.label}: {opt.email}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input type="email" value={poRecipient} onChange={e => setPoRecipient(e.target.value)}
+                    placeholder="accounts@customer.co.uk"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Usually their accounts or procurement address rather than the site contact.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Weighbridge ticket reference
+                    <span className="text-gray-400 font-normal ml-1">(optional)</span>
+                  </label>
+                  <input type="text" value={poTicketRef} onChange={e => setPoTicketRef(e.target.value)}
+                    placeholder="e.g. WB-448211"
+                    className="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Shown on the request so they can tie the figure back to the weight.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Additional information
+                    <span className="text-gray-400 font-normal ml-1">(optional)</span>
+                  </label>
+                  <textarea value={poNote} onChange={e => setPoNote(e.target.value)} rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder="e.g. weight confirmed at 8.9 tonnes against 9.5 estimated at booking, so the value is lower than originally indicated" />
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-200 flex gap-2 flex-wrap sticky bottom-0 bg-white rounded-b-xl">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const w = window.open('', '_blank');
+                    try {
+                      const { doc } = await generatePoRequestPdf(poJob, user);
+                      const url = doc.output('bloburl');
+                      if (w) { w.location.href = url; } else { window.open(url, '_blank'); }
+                    } catch (e) {
+                      if (w) w.close();
+                      alert('Could not generate the PDF: ' + e.message);
+                    }
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  Preview PDF
+                </button>
+                <button
+                  type="button"
+                  disabled={poSending || !poRecipient.trim()}
+                  onClick={async () => {
+                    if (!poRecipient.trim()) { alert('Enter an email address to send to.'); return; }
+                    if (!user || !user.id) { alert('No logged-in user found. Please sign out and back in.'); return; }
+                    setPoSending(true);
+                    try {
+                      const generated = await generatePoRequestPdf(poJob, user);
+                      const body = [
+                        'Dear ' + (job.customerContact || job.customerName || 'Sir/Madam') + ',',
+                        '',
+                        'Please find attached a purchase order request for job ' + (job.jobNumber || '') + '.',
+                        '',
+                        'Site: ' + [job.siteAddress1, job.sitePostcode].filter(Boolean).join(', '),
+                        'PO value required: ' + fmt(gross) + ' (' + fmt(net) + ' net plus ' + vatRate + '% VAT)',
+                        poTicketRef ? 'Weighbridge ticket: ' + poTicketRef : null,
+                        '',
+                        'The work is complete and the quantity confirmed. We are unable to raise',
+                        'our invoice until a PO number is received, so a reply with the number',
+                        'would be much appreciated.',
+                        '',
+                        'Kind regards,',
+                        [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services Ltd',
+                        localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+                      ].filter(v => v !== null).join('\n');
+
+                      const res = await fetch('/api/gmail?action=send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          user_id: user.id,
+                          to: poRecipient.trim(),
+                          subject: 'Purchase Order Request ' + generated.ref + ' \u2014 ' + (job.customerName || ''),
+                          body: body,
+                          pdfBase64: generated.base64,
+                          pdfFilename: generated.filename,
+                          fromName: ([user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services') + ' - Total Waste Services',
+                        }),
+                      });
+                      const result = await res.json();
+                      if (!res.ok) throw new Error(result.error || 'Gmail send failed');
+
+                      // Record it on the job so the button turns green and
+                      // nobody sends a second request by accident.
+                      try {
+                        await window.supabase.from('jobs').update({
+                          po_requested_at: new Date().toISOString(),
+                          po_request_sent_to: poRecipient.trim(),
+                          po_request_ref: generated.ref,
+                          po_request_note: poNote || null,
+                          ticket_reference: poTicketRef || null,
+                        }).eq('id', job.id);
+                        if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
+                      } catch (saveErr) {
+                        console.warn('[PO request] sent but not recorded on the job:', saveErr);
+                      }
+
+                      alert('\u2705 PO request sent to ' + poRecipient.trim() + '\n\nAttached as ' + generated.filename + '.');
+                      setPoModalOpen(false);
+                    } catch (err) {
+                      console.error('[PO request] send failed:', err);
+                      const msg = err.message || String(err);
+                      if (/Gmail not connected|reconnect|token expired/i.test(msg)) {
+                        alert('Could not send: your Gmail account is not connected.\n\nGo to Admin \u2192 User Management and click "Connect my Gmail", then try again.');
+                      } else {
+                        alert('Could not send the PO request.\n\n' + msg);
+                      }
+                    } finally {
+                      setPoSending(false);
+                    }
+                  }}
+                  className="px-4 py-2 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-50">
+                  {poSending ? 'Sending\u2026' : 'Send PO Request'}
+                </button>
+                <button type="button" onClick={() => setPoModalOpen(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 ml-auto">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Site tonnage allocation counter — renders only when a cap exists for
           this customer + postcode + product, or when the header button has
@@ -19707,6 +20340,12 @@ const loadJobsFromSupabase = async () => {
   createdDate: job.created_at,
   customerName: job.customer_name,
   customerPO: job.customer_po,
+  // Purchase order request tracking
+  poRequestedAt: job.po_requested_at,
+  poRequestSentTo: job.po_request_sent_to,
+  poRequestRef: job.po_request_ref,
+  poRequestNote: job.po_request_note,
+  ticketReference: job.ticket_reference,
   supplierName: job.supplier_name,
   supplierRef: job.supplier_ref,
   haulierName: job.haulier_name,
@@ -19823,6 +20462,12 @@ const refreshJobs = async () => {
                 createdDate: job.created_at,
                 customerName: job.customer_name,
                 customerPO: job.customer_po,
+                // Purchase order request tracking
+                poRequestedAt: job.po_requested_at,
+                poRequestSentTo: job.po_request_sent_to,
+                poRequestRef: job.po_request_ref,
+                poRequestNote: job.po_request_note,
+                ticketReference: job.ticket_reference,
                 supplierName: job.supplier_name,
                 supplierRef: job.supplier_ref,
                 haulierName: job.haulier_name,
