@@ -434,6 +434,7 @@
                 Calendar: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>,
                 Copy: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>,
                 XCircle: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path></svg>,
+                Clock: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>,
                 ClipboardCheck: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="m9 14 2 2 4-4"></path></svg>,
                 CheckCircle: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>,
                 Edit3: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>,
@@ -13176,6 +13177,7 @@ const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, on
   const [poNote, setPoNote] = useState('');
   const [poSending, setPoSending] = useState(false);
   const [poEmailOptions, setPoEmailOptions] = useState([]);
+  const [poSageLoading, setPoSageLoading] = useState(false);
   // Reset when navigating between jobs so the editor doesn't follow you.
   React.useEffect(() => { setCapEditorOpen(false); setPoModalOpen(false); }, [job && job.id]);
 
@@ -13185,35 +13187,77 @@ const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, on
     setPoTicketRef(job.ticketReference || job.ticket_reference || '');
     setPoNote(job.poRequestNote || job.po_request_note || '');
     setPoRecipient(job.poRequestSentTo || job.po_request_sent_to || '');
+    setPoEmailOptions([]);
 
     // A PO request belongs with accounts rather than the site contact, so
-    // offer the accounts address first where the customer record has one.
+    // gather every address we know of and offer them as one-click chips.
+    // Sources, in order of usefulness: the customer's accounts address, their
+    // main address, saved contacts, then anyone Sage knows about.
     (async () => {
       try {
         const { data } = await window.supabase
           .from('customers')
-          .select('id, email, additional_emails')
+          .select('id, email, additional_emails, sage_id')
           .eq('name', job.customerName)
           .limit(1);
         const c = (data || [])[0];
         if (!c) return;
+
         const opts = [];
-        if (c.additional_emails) opts.push({ label: 'Accounts', email: c.additional_emails });
-        if (c.email) opts.push({ label: 'Main', email: c.email });
+        const add = (label, email, source) => {
+          const e = String(email || '').trim();
+          if (!e || !e.includes('@')) return;
+          if (opts.some(o => o.email.toLowerCase() === e.toLowerCase())) return;
+          opts.push({ label: label || 'Contact', email: e, source: source || 'portal' });
+        };
+
+        if (c.additional_emails) add('Accounts', c.additional_emails);
+        if (c.email) add('Main', c.email);
+
         try {
           const { data: contacts } = await window.supabase
             .from('customer_contacts')
             .select('name, email, role')
             .eq('customer_id', c.id)
             .not('email', 'is', null);
-          for (const ct of (contacts || [])) {
-            if (!opts.some(o => o.email === ct.email)) {
-              opts.push({ label: ct.name || ct.role || 'Contact', email: ct.email });
-            }
-          }
-        } catch (e) { /* contacts are a bonus, not required */ }
-        setPoEmailOptions(opts);
+          for (const ct of (contacts || [])) add(ct.name || ct.role, ct.email);
+        } catch (e) { /* saved contacts are a bonus, not required */ }
+
+        // Show what we have straight away, then top up from Sage.
+        setPoEmailOptions(opts.slice());
         setPoRecipient(prev => prev || (opts[0] && opts[0].email) || '');
+
+        // Sage often holds accounts contacts that were never copied into the
+        // portal. Fetched in the background so the modal isn't held up, and
+        // failures are silent — these are suggestions, not a requirement.
+        if (c.sage_id) {
+          setPoSageLoading(true);
+          try {
+            const res = await fetch('/api/sage-proxy', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'manageContactPerson',
+                operation: 'list',
+                sageContactId: c.sage_id,
+              }),
+            });
+            const result = await res.json();
+            if (res.ok) {
+              for (const sp of (result.contact_persons || [])) {
+                const isAccounts = /account|finance|purchas|payable/i
+                  .test((sp.name || '') + ' ' + JSON.stringify(sp.contact_person_types || ''));
+                add((sp.name || 'Sage contact') + (isAccounts ? ' (accounts)' : ''), sp.email, 'sage');
+              }
+              setPoEmailOptions(opts.slice());
+              setPoRecipient(prev => prev || (opts[0] && opts[0].email) || '');
+            }
+          } catch (sageErr) {
+            console.warn('[PO request] Sage lookup failed:', sageErr);
+          } finally {
+            setPoSageLoading(false);
+          }
+        }
       } catch (e) {
         console.warn('[PO request] could not load customer emails:', e);
       }
@@ -13691,15 +13735,25 @@ console.log(JSON.stringify(invoiceData, null, 2));
 )}
 {/* Request a purchase order. The customer needs the final weighed figure
     before they'll raise one, so this pulls the value straight off the job. */}
-<button
-  onClick={() => setPoModalOpen(true)}
-  className={`p-2 rounded-lg ${job.poRequestedAt || job.po_requested_at ? 'text-green-600 hover:bg-green-100' : 'text-gray-500 hover:bg-gray-100'}`}
-  title={job.poRequestedAt || job.po_requested_at
-    ? 'PO request sent \u2014 click to send again'
-    : 'Request a purchase order from the customer'}
->
-  <LucideIcon icon="ClipboardCheck" size={20} />
-</button>
+{(() => {
+  const poSent = job.poRequestedAt || job.po_requested_at;
+  const poIn = job.customerPO || job.customer_po;
+  // Grey = never asked. Amber dot = asked, still waiting. Green tick = PO in.
+  const tone = poIn ? 'text-green-600 hover:bg-green-100'
+             : poSent ? 'text-amber-600 hover:bg-amber-100'
+             : 'text-gray-500 hover:bg-gray-100';
+  const tip = poIn ? 'PO ' + poIn + ' received'
+            : poSent ? 'PO requested \u2014 awaiting a number. Click to send again.'
+            : 'Request a purchase order from the customer';
+  return (
+    <button onClick={() => setPoModalOpen(true)} className={`p-2 rounded-lg relative ${tone}`} title={tip}>
+      <LucideIcon icon="ClipboardCheck" size={20} />
+      {poSent && (
+        <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ring-2 ring-white ${poIn ? 'bg-green-500' : 'bg-amber-500'}`} />
+      )}
+    </button>
+  );
+})()}
 {/* Complete button for non-Skip/RoRo jobs - only check status, not isCompleted */}
 {job.jobType !== 'Skip Hire' && job.jobType !== 'Roll-on Roll-off' && job.status !== 'COMPLETED' && (
   <button
@@ -13843,15 +13897,21 @@ console.log(JSON.stringify(invoiceData, null, 2));
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Send to *</label>
-                  {poEmailOptions.length > 0 && (
-                    <div className="flex gap-2 flex-wrap mb-2">
+                  {(poEmailOptions.length > 0 || poSageLoading) && (
+                    <div className="flex gap-2 flex-wrap mb-2 items-center">
                       {poEmailOptions.map(opt => (
                         <button key={opt.email} type="button"
                           onClick={() => setPoRecipient(opt.email)}
-                          className={`px-2.5 py-1 rounded-lg text-xs border ${poRecipient === opt.email ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-                          {opt.label}: {opt.email}
+                          className={`px-2.5 py-1 rounded-lg text-xs border flex items-center gap-1.5 ${poRecipient === opt.email ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                          {opt.source === 'sage' && (
+                            <span className="px-1 py-0.5 rounded bg-gray-800 text-white text-[9px] font-semibold leading-none">SAGE</span>
+                          )}
+                          <span>{opt.label}: {opt.email}</span>
                         </button>
                       ))}
+                      {poSageLoading && (
+                        <span className="text-xs text-gray-400">checking Sage\u2026</span>
+                      )}
                     </div>
                   )}
                   <input type="email" value={poRecipient} onChange={e => setPoRecipient(e.target.value)}
@@ -13954,6 +14014,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                           po_request_sent_to: poRecipient.trim(),
                           po_request_ref: generated.ref,
                           po_request_note: poNote || null,
+                          po_request_sent_by: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || null,
                           ticket_reference: poTicketRef || null,
                         }).eq('id', job.id);
                         if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
@@ -14768,6 +14829,74 @@ console.log(JSON.stringify(invoiceData, null, 2));
         {/* Financial & Billing Tab */}
         {activeTab === 'financial' && (
           <div className="space-y-8">
+
+            {/* ── Purchase Order status ────────────────────────────────
+                Sits above the Sage block deliberately: for customers who
+                work this way, the invoice can't go anywhere until the PO
+                number is back. */}
+            {(() => {
+              const sentAt = job.poRequestedAt || job.po_requested_at;
+              const sentTo = job.poRequestSentTo || job.po_request_sent_to;
+              const sentBy = job.poRequestSentBy || job.po_request_sent_by;
+              const ref = job.poRequestRef || job.po_request_ref;
+              const poReceived = job.customerPO || job.customer_po;
+              if (!sentAt && !poReceived) return null;
+
+              const when = sentAt ? new Date(sentAt) : null;
+              const whenStr = when && !isNaN(when.getTime())
+                ? when.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) +
+                  ' at ' + when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                : null;
+
+              // Three states: PO received, requested and waiting, or a PO
+              // recorded without us ever having asked for one.
+              const done = !!poReceived;
+              const bg  = done ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200';
+              const txt = done ? 'text-green-800' : 'text-amber-800';
+              const sub = done ? 'text-green-700' : 'text-amber-700';
+
+              return (
+                <div className={`rounded-lg border p-6 ${bg}`}>
+                  <div className="flex items-start gap-3">
+                    <LucideIcon icon={done ? 'CheckCircle' : 'Clock'} size={20}
+                      className={done ? 'text-green-600 mt-0.5' : 'text-amber-600 mt-0.5'} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-semibold ${txt}`}>
+                        {done
+                          ? 'Purchase order received \u2014 PO ' + poReceived
+                          : 'Purchase order requested \u2014 awaiting a number'}
+                      </p>
+
+                      {sentAt ? (
+                        <div className={`text-sm mt-1.5 space-y-0.5 ${sub}`}>
+                          <div>
+                            Request {ref ? ref + ' ' : ''}sent{whenStr ? ' on ' + whenStr : ''}
+                          </div>
+                          {sentTo && <div>To: {sentTo}</div>}
+                          {sentBy && <div>By: {sentBy}</div>}
+                        </div>
+                      ) : (
+                        <div className={`text-sm mt-1.5 ${sub}`}>
+                          Recorded on the job. No request was sent from the system.
+                        </div>
+                      )}
+
+                      {!done && (
+                        <p className="text-xs text-amber-600 mt-2">
+                          Add the PO number to the job once it arrives \u2014 it appears on the invoice.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setPoModalOpen(true)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border whitespace-nowrap ${done ? 'border-green-300 text-green-800 bg-white hover:bg-green-100' : 'border-amber-300 text-amber-800 bg-white hover:bg-amber-100'}`}
+                    >
+                      {sentAt ? 'Send again' : 'Request PO'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Sage Integration - Send Invoice */}
             {user?.role === 'ADMIN' && (
@@ -20374,6 +20503,7 @@ const loadJobsFromSupabase = async () => {
   // Purchase order request tracking
   poRequestedAt: job.po_requested_at,
   poRequestSentTo: job.po_request_sent_to,
+  poRequestSentBy: job.po_request_sent_by,
   poRequestRef: job.po_request_ref,
   poRequestNote: job.po_request_note,
   ticketReference: job.ticket_reference,
@@ -20496,6 +20626,7 @@ const refreshJobs = async () => {
                 // Purchase order request tracking
                 poRequestedAt: job.po_requested_at,
                 poRequestSentTo: job.po_request_sent_to,
+                poRequestSentBy: job.po_request_sent_by,
                 poRequestRef: job.po_request_ref,
                 poRequestNote: job.po_request_note,
                 ticketReference: job.ticket_reference,
