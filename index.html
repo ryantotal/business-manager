@@ -11300,7 +11300,9 @@ function buildQuotePdfDoc(quote, ctx) {
 
   let headerBottom = y;
 
-  // Logo, or the company name if there isn't one.
+  // Logo (or the company name if there isn't one), with the registered
+  // address beneath, matching the PO request letterhead.
+  let addrTop = y;
   if (ctx.logoDataUrl) {
     try {
       const maxW = 46, maxH = 18;
@@ -11308,17 +11310,28 @@ function buildQuotePdfDoc(quote, ctx) {
       const ratio = Math.min(maxW / props.width, maxH / props.height);
       const w = props.width * ratio, h = props.height * ratio;
       doc.addImage(ctx.logoDataUrl, M, y, w, h);
-      headerBottom = Math.max(headerBottom, y + h);
+      addrTop = y + h + 3.5;
     } catch (e) {
       setFont('bold', 15, GREEN);
       doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
-      headerBottom = Math.max(headerBottom, y + 10);
+      addrTop = y + 11;
     }
   } else {
     setFont('bold', 15, GREEN);
     doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
-    headerBottom = Math.max(headerBottom, y + 10);
+    addrTop = y + 11;
   }
+
+  if (company.address) {
+    setFont('normal', 8, MUTED);
+    const al = doc.splitTextToSize(String(company.address), 70);
+    for (const line of al) {
+      doc.text(line, M, addrTop);
+      addrTop += 3.4;
+    }
+    if (company.phone) { doc.text('T: ' + company.phone, M, addrTop); addrTop += 3.4; }
+  }
+  headerBottom = Math.max(headerBottom, addrTop);
 
   // Quote reference block, right aligned.
   const rx = PAGE_W - M;
@@ -11613,7 +11626,7 @@ async function buildQuotePdfContext(user) {
     logoDataUrl: await loadLogoDataUrl(),
     company: {
       name:       localStorage.getItem('companyName') || 'Total Waste Services Ltd',
-      address:    localStorage.getItem('companyAddress') || '',
+      address:    localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress,
       // Phone is a setting; the rest are baked so they can't be mistyped
       // onto a document that ends up in front of the Environment Agency.
       phone:      localStorage.getItem('companyPhone') || TWS_COMPANY.fallbackPhone,
@@ -12175,23 +12188,38 @@ function buildPoRequestPdfDoc(job, ctx) {
   y = M + 2;
   let headerBottom = y;
 
+  // Logo (or the company name if there isn't one), with the registered
+  // address beneath — it's a letterhead, so the address belongs on it.
+  let addrTop = y;
   if (ctx.logoDataUrl) {
     try {
       const props = doc.getImageProperties(ctx.logoDataUrl);
       const ratio = Math.min(46 / props.width, 18 / props.height);
       const w = props.width * ratio, h = props.height * ratio;
       doc.addImage(ctx.logoDataUrl, M, y, w, h);
-      headerBottom = Math.max(headerBottom, y + h);
+      addrTop = y + h + 3.5;
     } catch (e) {
       setFont('bold', 15, GREEN);
       doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
-      headerBottom = Math.max(headerBottom, y + 10);
+      addrTop = y + 11;
     }
   } else {
     setFont('bold', 15, GREEN);
     doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
-    headerBottom = Math.max(headerBottom, y + 10);
+    addrTop = y + 11;
   }
+
+  if (company.address) {
+    setFont('normal', 8, MUTED);
+    // Wrapped to the left column so it can't run under the title on the right.
+    const al = doc.splitTextToSize(String(company.address), 70);
+    for (const line of al) {
+      doc.text(line, M, addrTop);
+      addrTop += 3.4;
+    }
+    if (company.phone) { doc.text('T: ' + company.phone, M, addrTop); addrTop += 3.4; }
+  }
+  headerBottom = Math.max(headerBottom, addrTop);
 
   const rx = PAGE_W - M;
   setFont('bold', 17, GREEN);
@@ -12422,7 +12450,7 @@ async function generatePoRequestPdf(job, user) {
     logoDataUrl: await loadLogoDataUrl(),
     company: {
       name:       localStorage.getItem('companyName') || 'Total Waste Services Ltd',
-      address:    localStorage.getItem('companyAddress') || '',
+      address:    localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress,
       phone:      localStorage.getItem('companyPhone') || TWS_COMPANY.fallbackPhone,
       email:      TWS_COMPANY.fallbackEmail,
       vat:        TWS_COMPANY.vat,
@@ -12465,6 +12493,7 @@ const TWS_COMPANY = {
   carrierReg:    'CBDU218525',
   fallbackEmail: 'info@totalwasteservicesltd.com',
   fallbackPhone: '07546 215 502',
+  fallbackAddress: '10 Park Plaza, Battlefield Enterprise Park, Shrewsbury, SY1 3AF',
 };
 window.TWS_COMPANY = TWS_COMPANY;
 
