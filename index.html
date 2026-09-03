@@ -11793,7 +11793,7 @@ async function buildQuotePdfContext(user) {
       address:    localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress,
       // Phone is a setting; the rest are baked so they can't be mistyped
       // onto a document that ends up in front of the Environment Agency.
-      phone:      localStorage.getItem('companyPhone') || TWS_COMPANY.fallbackPhone,
+      phone:      TWS_COMPANY.phone,
       email:      TWS_COMPANY.fallbackEmail,
       vat:        TWS_COMPANY.vat,
       companyNo:  TWS_COMPANY.companyNo,
@@ -12764,7 +12764,7 @@ async function generatePoRequestPdf(job, user) {
     company: {
       name:       localStorage.getItem('companyName') || 'Total Waste Services Ltd',
       address:    localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress,
-      phone:      localStorage.getItem('companyPhone') || TWS_COMPANY.fallbackPhone,
+      phone:      TWS_COMPANY.phone,
       email:      TWS_COMPANY.fallbackEmail,
       vat:        TWS_COMPANY.vat,
       companyNo:  TWS_COMPANY.companyNo,
@@ -12806,7 +12806,11 @@ const TWS_COMPANY = {
   companyNo:     '11143143',
   carrierReg:    'CBDU218525',
   fallbackEmail: 'info@totalwasteservicesltd.com',
-  fallbackPhone: '07546 215 502',
+  // The general office line, printed on every letterhead. Baked rather than
+  // a setting because it was once overwritten with an individual's mobile,
+  // which then went out on every document. Personal numbers live on the user
+  // record instead (Admin -> User Management).
+  phone: '07546 215 502',
   fallbackAddress: '10 Park Plaza, Battlefield Enterprise Park, Shrewsbury, SY1 3AF',
 };
 window.TWS_COMPANY = TWS_COMPANY;
@@ -18055,7 +18059,6 @@ const handleApplySync = async () => {
           // Company contact and registration details. These flow onto the
           // quote PDF — phone and email in the "Prepared by" and "Authorised
           // by" blocks, VAT and company number in the page footer.
-          const [companyPhone, setCompanyPhone] = useState(localStorage.getItem('companyPhone') || '');
 
           const [portalUrlSetting, setPortalUrlSetting] = useState(localStorage.getItem('portalUrl') || 'https://portal.totalwasteservicesltd.com');
           const [editingJobType, setEditingJobType] = useState('');
@@ -18098,9 +18101,6 @@ useEffect(() => {
           } else if (setting.setting_name === 'company_address') {
             setCompanyAddress(setting.setting_value);
             localStorage.setItem('companyAddress', setting.setting_value);
-          } else if (setting.setting_name === 'company_phone') {
-            setCompanyPhone(setting.setting_value);
-            localStorage.setItem('companyPhone', setting.setting_value);
 
           } else if (setting.setting_name === 'portal_url') {
             setPortalUrlSetting(setting.setting_value);
@@ -18393,7 +18393,6 @@ const loadUsers = async () => {
   { setting_name: 'primary_color', setting_value: primaryColor },
   { setting_name: 'logo_url', setting_value: logo },
   { setting_name: 'company_address', setting_value: companyAddress },
-  { setting_name: 'company_phone', setting_value: companyPhone },
   { setting_name: 'portal_url', setting_value: portalUrlSetting },
 ];
     for (const update of updates) {
@@ -18405,7 +18404,6 @@ const loadUsers = async () => {
     localStorage.setItem('primaryColor', primaryColor);
     localStorage.setItem('companyLogo', logo);
     localStorage.setItem('companyAddress', companyAddress);
-    localStorage.setItem('companyPhone', companyPhone);
     localStorage.setItem('portalUrl', portalUrlSetting);
     alert('Settings saved successfully!');
   } catch (error) {
@@ -18557,23 +18555,21 @@ const loadUsers = async () => {
                             under "Prepared by" and next to the signature block; the VAT and
                             company numbers go in the footer of each page.
                           </p>
+                          {/* Read-only: the office number and the legal
+                              identifiers. The number is fixed because it was
+                              once replaced with an individual's mobile, which
+                              then went out on every document. Personal numbers
+                              belong on the user record instead. */}
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Company Phone</label>
-                            <input type="tel" value={companyPhone} onChange={e => setCompanyPhone(e.target.value)}
-                              placeholder="e.g. 07546 215 502"
-                              className="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                            <p className="text-xs text-gray-500 mt-1">
-                              Shown under "Prepared by" and next to the signature block on every quote.
-                            </p>
-                          </div>
-
-                          {/* Read-only: these are legal identifiers and appear on
-                              WTNs and consignment notes as well as quotes, so they
-                              aren't editable here. */}
-                          <div className="pt-3 border-t border-blue-200">
                             <p className="text-xs font-medium text-blue-900 mb-2">
-                              Fixed company details — shown on quotes and waste documents
+                              Fixed company details — shown on quotes, PO requests and waste documents
                             </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                              <div className="bg-white border border-blue-100 rounded-lg px-3 py-2">
+                                <div className="text-xs text-gray-500">Office phone (letterhead)</div>
+                                <div className="text-sm font-semibold text-gray-800">{TWS_COMPANY.phone}</div>
+                              </div>
+                            </div>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                               <div className="bg-white border border-blue-100 rounded-lg px-3 py-2">
                                 <div className="text-xs text-gray-500">VAT Number</div>
@@ -18590,7 +18586,13 @@ const loadUsers = async () => {
                             </div>
                             <p className="text-xs text-gray-400 mt-2">
                               Locked deliberately — a typo in these on a Waste Transfer Note is
-                              a compliance problem. If one genuinely changes, it needs a code update.
+                              a compliance problem, and the office number should never be an
+                              individual's mobile. If one genuinely changes, it needs a code update.
+                            </p>
+                            <p className="text-xs text-blue-700 mt-2">
+                              Staff phone numbers are set per person in Admin → User Management.
+                              A quote or PO request shows the sender's own number as "Direct",
+                              alongside the office number on the letterhead.
                             </p>
                           </div>
                         </div>
@@ -21375,7 +21377,6 @@ useEffect(() => {
           if (s.setting_name === 'company_address' && s.setting_value) localStorage.setItem('companyAddress', s.setting_value);
           // carrier_reg is deliberately NOT read from settings any more — see
           // TWS_COMPANY. Forced below so WTNs and quotes always agree.
-          if (s.setting_name === 'company_phone' && s.setting_value) localStorage.setItem('companyPhone', s.setting_value);
           if (s.setting_name === 'portal_url' && s.setting_value) localStorage.setItem('portalUrl', s.setting_value);
           if (s.setting_name === 'primary_color' && s.setting_value) document.documentElement.style.setProperty('--primary-color', s.setting_value);
         });
@@ -21384,6 +21385,9 @@ useEffect(() => {
       // so every document — WTN, consignment note, quote — shows the same
       // waste carrier registration.
       localStorage.setItem('carrierReg', TWS_COMPANY.carrierReg);
+      // The office number is baked now; drop any value left over from when it
+      // was an editable setting so nothing can read a stale one.
+      localStorage.removeItem('companyPhone');
     } catch(e) { console.error('Settings load error:', e); }
   })();
 
