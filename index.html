@@ -1184,6 +1184,9 @@ return (
       email: data.email,
       firstName: firstName,
       lastName: lastName,
+      // Their own contact number, shown on documents they send. Falls back to
+      // the company number when they haven't got one.
+      phone: data.phone || '',
       role: data.role,
       gmailConnected: !!tokenRow,
       gmailEmail: tokenRow?.user_email || ''
@@ -5783,8 +5786,8 @@ const [isEvent, setIsEvent] = useState(false);
                 <table className="w-full border border-gray-300 rounded-lg bg-white">
                   <thead className="bg-gray-100">
                     <tr>
-                      <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
-                      <th className="px-4 py-3 text-left font-medium w-1/3">Description (Editable)</th>
+                      <th className="px-4 py-3 text-left font-medium w-56">Product / Site</th>
+                      <th className="px-4 py-3 text-left font-medium">Description (Editable)</th>
                       <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
                       <th className="px-2 py-3 text-left font-medium w-24">Unit</th>
                       <th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
@@ -5798,23 +5801,99 @@ const [isEvent, setIsEvent] = useState(false);
                       const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
                       return (
                         <tr key={item.id} className={`border-t hover:bg-gray-50 ${item.one_off ? 'bg-amber-50' : ''}`}>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 align-top">
                             <div className="flex items-center gap-2">
                               <span>{item.product_name}</span>
                               {item.one_off && <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300" title="This item is marked as one-off and will not be copied to recurring child jobs">One-Off</span>}
                             </div>
                             <div className="text-xs text-gray-500">{item.item_code}</div>
+                            {/* Tipping site sits with the product rather than in
+                                its own column — one job can cover loads from
+                                several of a customer's sites, and the PO request
+                                groups by this. Keeping it here leaves the
+                                description room to breathe. */}
+                            <div className="mt-1.5">
+
+                            {(() => {
+                              const mc = customers?.find(c => (c.name || c.companyName) === formData.customerName);
+                              const sites = getCustomerSites(mc);
+                              const current = item.site_name || '';
+                              const known = sites.some(s => (s.siteName || s.name) === current);
+
+                              if (sites.length === 0) {
+                                return (
+                                  <input
+                                    type="text"
+                                    className="w-40 px-2 py-1 border border-gray-300 rounded text-sm"
+                                    placeholder="Site"
+                                    value={current}
+                                    onChange={(e) => {
+                                      const updated = [...formData.lineItems];
+                                      updated[index] = {...updated[index], site_name: e.target.value};
+                                      setFormData({...formData, lineItems: updated});
+                                    }}
+                                  />
+                                );
+                              }
+
+                              return (
+                                <div className="space-y-1">
+                                  <select
+                                    className={`w-40 px-1 py-1 border rounded text-sm ${current ? 'border-gray-300' : 'border-amber-300 bg-amber-50'}`}
+                                    value={known ? current : (current ? '__other__' : '')}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      const updated = [...formData.lineItems];
+                                      updated[index] = {
+                                        ...updated[index],
+                                        site_name: v === '__other__' ? (current || ' ') : v,
+                                      };
+                                      setFormData({...formData, lineItems: updated});
+                                    }}
+                                  >
+                                    <option value="">Select site…</option>
+                                    {sites.map(s => (
+                                      <option key={s.id || s.siteName} value={s.siteName || s.name}>
+                                        {s.siteName || s.name}
+                                      </option>
+                                    ))}
+                                    <option value="__other__">Other (type it)</option>
+                                  </select>
+                                  {current && !known && (
+                                    <input
+                                      type="text"
+                                      className="w-40 px-2 py-1 border border-gray-300 rounded text-sm"
+                                      placeholder="Site name"
+                                      value={current.trim()}
+                                      onChange={(e) => {
+                                        const updated = [...formData.lineItems];
+                                        updated[index] = {...updated[index], site_name: e.target.value};
+                                        setFormData({...formData, lineItems: updated});
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })()}
+                            </div>
                           </td>
-                          <td className="px-4 py-3">
-                            <input
-                              type="text"
+                          <td className="px-4 py-3 align-top">
+                            {/* A textarea rather than a single-line input:
+                                descriptions on these jobs run to a couple of
+                                sentences, and a one-line box meant typing into
+                                a slot that showed six words. Drag the corner to
+                                make it taller still. */}
+                            <textarea
+                              rows={3}
                               value={item.description}
                               onChange={(e) => {
                                 const updatedItems = [...formData.lineItems];
                                 updatedItems[index].description = e.target.value;
                                 setFormData({...formData, lineItems: updatedItems});
                               }}
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="w-full min-w-[16rem] px-3 py-2 border border-gray-300 rounded text-sm resize-y"
+                              style={{ minHeight: '80px' }}
+                              placeholder="Description shown on the quote, PO request and invoice"
                             />
                           </td>
                           <td className="px-2 py-3">
@@ -11395,7 +11474,13 @@ function buildQuotePdfDoc(quote, ctx) {
       doc.text(line, M, addrTop);
       addrTop += 3.4;
     }
-    if (company.phone) { doc.text('T: ' + company.phone, M, addrTop); addrTop += 3.4; }
+    // General office line, on every document. The sender's own number appears
+    // separately under "Prepared by" so the customer can choose between the
+    // office and the person who wrote to them.
+    if (company.phone) {
+      doc.text('T: ' + company.phone, M, addrTop);
+      addrTop += 3.4;
+    }
   }
   headerBottom = Math.max(headerBottom, addrTop);
 
@@ -11445,7 +11530,17 @@ function buildQuotePdfDoc(quote, ctx) {
   let rightY = colTop + 10;
   setFont('normal', 9, MUTED);
   if (preparedBy.name && company.name) { doc.text(company.name, rcx, rightY); rightY += 4.2; }
-  if (company.phone) { doc.text('T: ' + company.phone, rcx, rightY); rightY += 4.2; }
+  // The sender's own number where they have one, so a customer ringing back
+  // reaches the person who sent the document rather than whoever's number
+  // happens to be in company settings.
+  const contactPhone = preparedBy.phone || company.phone;
+  if (contactPhone) {
+    // "Direct" only when it's genuinely their own line, not the office number
+    // repeated back.
+    const label = (preparedBy.phone && preparedBy.phone !== company.phone) ? 'Direct: ' : 'T: ';
+    doc.text(label + contactPhone, rcx, rightY);
+    rightY += 4.2;
+  }
   // The logged-in user's email, so replies go to whoever actually sent the
   // quote rather than a shared inbox. Falls back to the company address only
   // if the user record has no email on it.
@@ -11636,7 +11731,11 @@ function buildQuotePdfDoc(quote, ctx) {
   setFont('normal', 9, MUTED);
   let ay = sigTop + 12;
   if (company.name) { doc.text(company.name, ax, ay); ay += 4.2; }
-  if (company.phone) { doc.text('T: ' + company.phone, ax, ay); ay += 4.2; }
+  if (contactPhone) {
+    const alabel = (preparedBy.phone && preparedBy.phone !== company.phone) ? 'Direct: ' : 'T: ';
+    doc.text(alabel + contactPhone, ax, ay);
+    ay += 4.2;
+  }
   if (contactEmail) { doc.text('E: ' + contactEmail, ax, ay); ay += 4.2; }
 
   y = Math.max(sy + 8, ay + 4);
@@ -11704,6 +11803,7 @@ async function buildQuotePdfContext(user) {
     preparedBy: user ? {
       name: [user.firstName, user.lastName].filter(Boolean).join(' '),
       email: user.email || '',
+      phone: user.phone || '',
     } : {},
   };
 }
@@ -12283,7 +12383,12 @@ function buildPoRequestPdfDoc(job, ctx) {
       doc.text(line, M, addrTop);
       addrTop += 3.4;
     }
-    if (company.phone) { doc.text('T: ' + company.phone, M, addrTop); addrTop += 3.4; }
+    // General office line, on every document. The sender's own number appears
+    // separately under "From".
+    if (company.phone) {
+      doc.text('T: ' + company.phone, M, addrTop);
+      addrTop += 3.4;
+    }
   }
   headerBottom = Math.max(headerBottom, addrTop);
 
@@ -12324,7 +12429,14 @@ function buildPoRequestPdfDoc(job, ctx) {
   let rightY = colTop + 10;
   setFont('normal', 9, MUTED);
   if (requestedBy.name && company.name) { doc.text(company.name, rcx, rightY); rightY += 4.2; }
-  if (company.phone) { doc.text('T: ' + company.phone, rcx, rightY); rightY += 4.2; }
+  // The sender's own number, so the customer rings the person who wrote to
+  // them rather than whoever's number is in company settings.
+  const fromPhone = requestedBy.phone || company.phone;
+  if (fromPhone) {
+    const label = (requestedBy.phone && requestedBy.phone !== company.phone) ? 'Direct: ' : 'T: ';
+    doc.text(label + fromPhone, rcx, rightY);
+    rightY += 4.2;
+  }
   const fromEmail = requestedBy.email || company.email;
   if (fromEmail) { doc.text('E: ' + fromEmail, rcx, rightY); rightY += 4.2; }
 
@@ -12355,8 +12467,22 @@ function buildPoRequestPdfDoc(job, ctx) {
 
   const detailRows = isMulti
     ? (() => {
-        const sites = new Set(coveredJobs.map(j =>
-          [j.siteAddress1 || j.site_address1, j.sitePostcode || j.site_postcode].filter(Boolean).join(', ')));
+        // Count sites from the line items, since that's where they're recorded.
+        const sites = new Set();
+        for (const j of coveredJobs) {
+          const li = Array.isArray(j.lineItems) ? j.lineItems
+            : (Array.isArray(j.line_items) ? j.line_items : []);
+          if (li.length === 0) {
+            sites.add([j.siteAddress1 || j.site_address1, j.sitePostcode || j.site_postcode].filter(Boolean).join(', ') || 'Site not recorded');
+          } else {
+            for (const i of li) {
+              const s = i.site_name || i.siteName;
+              sites.add((s && String(s).trim()) ||
+                [j.siteAddress1 || j.site_address1, j.sitePostcode || j.site_postcode].filter(Boolean).join(', ') ||
+                'Site not recorded');
+            }
+          }
+        }
         const dates = coveredJobs.map(j => new Date(j.jobDate || j.job_date))
           .filter(d => !isNaN(d.getTime())).sort((a, b) => a - b);
         const rows = [
@@ -12370,12 +12496,20 @@ function buildPoRequestPdfDoc(job, ctx) {
         }
         return rows;
       })()
-    : [
-        ['Our job number', job.jobNumber || job.job_number || '\u2014'],
-        ['Job type', job.jobType || job.job_type || '\u2014'],
-        ['Site', site || '\u2014'],
-        ['Date of works', fmtDate(job.jobDate || job.job_date)],
-      ];
+    : (() => {
+        const rows = [
+          ['Our job number', job.jobNumber || job.job_number || '\u2014'],
+          ['Job type', job.jobType || job.job_type || '\u2014'],
+        ];
+        // Only show a job-level site when the lines don't carry their own —
+        // otherwise it's redundant, or a dash where the table has the detail.
+        const li = Array.isArray(job.lineItems) ? job.lineItems
+          : (Array.isArray(job.line_items) ? job.line_items : []);
+        const linesHaveSites = li.some(i => (i.site_name || i.siteName));
+        if (!linesHaveSites) rows.push(['Site', site || '\u2014']);
+        rows.push(['Date of works', fmtDate(job.jobDate || job.job_date)]);
+        return rows;
+      })();
   if (job.disposalSiteName) detailRows.push(['Disposal facility', job.disposalSiteName]);
   if (job.ticketReference) detailRows.push(['Weighbridge ticket', job.ticketReference]);
   if (job.wtnReference) detailRows.push(['Waste Transfer Note', job.wtnReference]);
@@ -12406,10 +12540,17 @@ function buildPoRequestPdfDoc(job, ctx) {
 
   const multiJob = poJobs.length > 1;
 
-  heading(multiJob ? 'Amount to be raised \u2014 ' + poJobs.length + ' jobs' : 'Amount to be raised');
+  heading('Amount to be raised');
 
-  const siteOf = (j) => [j.siteAddress1 || j.site_address1, j.siteCity || j.site_city,
-                         j.sitePostcode || j.site_postcode].filter(Boolean).join(', ') || 'Site not recorded';
+  // The site is recorded per line, because one job can tip loads from several
+  // of the customer's sites. The job's own address is the fallback.
+  const jobSiteOf = (j) => [j.siteAddress1 || j.site_address1, j.siteCity || j.site_city,
+                            j.sitePostcode || j.site_postcode].filter(Boolean).join(', ');
+  const lineSiteOf = (i, j) => {
+    const s = i && (i.site_name || i.siteName);
+    if (s && String(s).trim()) return String(s).trim();
+    return jobSiteOf(j) || 'Site not recorded';
+  };
 
   const linesOf = (j) => {
     const items = Array.isArray(j.lineItems) ? j.lineItems
@@ -12429,14 +12570,25 @@ function buildPoRequestPdfDoc(job, ctx) {
     ? i._flatTotal
     : (parseFloat(i.quantity) || 0) * (parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0);
 
-  // Group the jobs by site, preserving the order sites first appear.
-  const bySite = [];
+  // Flatten every line across every covered job, then group by the line's
+  // site. Grouping at line level rather than job level is the point: a single
+  // job can carry loads from four different council sites, and the customer
+  // needs the cost split by site to allocate it.
+  const allLines = [];
   for (const j of poJobs) {
-    const site = siteOf(j);
-    let group = bySite.find(g => g.site === site);
-    if (!group) { group = { site: site, jobs: [] }; bySite.push(group); }
-    group.jobs.push(j);
+    for (const i of linesOf(j)) {
+      allLines.push({ line: i, job: j, site: lineSiteOf(i, j) });
+    }
   }
+
+  const bySite = [];
+  for (const entry of allLines) {
+    let group = bySite.find(g => g.site === entry.site);
+    if (!group) { group = { site: entry.site, entries: [] }; bySite.push(group); }
+    group.entries.push(entry);
+  }
+
+  const showSiteHeadings = bySite.length > 1;
 
   const body = [];
   let net = 0;
@@ -12444,7 +12596,7 @@ function buildPoRequestPdfDoc(job, ctx) {
   for (const group of bySite) {
     let siteNet = 0;
 
-    if (multiJob) {
+    if (showSiteHeadings) {
       body.push([{
         content: group.site,
         colSpan: 5,
@@ -12452,27 +12604,25 @@ function buildPoRequestPdfDoc(job, ctx) {
       }]);
     }
 
-    for (const j of group.jobs) {
-      for (const i of linesOf(j)) {
-        const amount = lineNet(i);
-        siteNet += amount;
-        const desc = i.product_name && i.description && i.product_name !== i.description
-          ? i.product_name + '\n' + i.description
-          : (i.description || i.product_name || 'Service');
-        body.push([
-          j.jobNumber || j.job_number || '\u2014',
-          desc,
-          (parseFloat(i.quantity) || 0) + (i.unit ? ' ' + unitLabel(i.unit) : ''),
-          money(parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0),
-          money(amount),
-        ]);
-      }
+    for (const entry of group.entries) {
+      const i = entry.line;
+      const amount = lineNet(i);
+      siteNet += amount;
+      const desc = i.product_name && i.description && i.product_name !== i.description
+        ? i.product_name + '\n' + i.description
+        : (i.description || i.product_name || 'Service');
+      body.push([
+        entry.job.jobNumber || entry.job.job_number || '\u2014',
+        desc,
+        (parseFloat(i.quantity) || 0) + (i.unit ? ' ' + unitLabel(i.unit) : ''),
+        money(parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0),
+        money(amount),
+      ]);
     }
 
     net += siteNet;
 
-    // Only worth a subtotal when there's more than one site to compare.
-    if (multiJob && bySite.length > 1) {
+    if (showSiteHeadings) {
       body.push([{
         content: 'Subtotal \u2014 ' + group.site,
         colSpan: 4,
@@ -12609,6 +12759,7 @@ async function generatePoRequestPdf(job, user) {
     requestedBy: user ? {
       name: [user.firstName, user.lastName].filter(Boolean).join(' '),
       email: user.email || '',
+      phone: user.phone || '',
     } : {},
   };
   const doc = buildPoRequestPdfDoc(job, ctx);
@@ -12679,8 +12830,21 @@ function siteLabel(site) {
   return name || addr || 'Unnamed site';
 }
 
+// The tipping site recorded against a line item. Lines carry their own site
+// because a single job can cover loads from several of a customer's sites;
+// the job-level address is the fallback for lines that don't specify one.
+function getLineSite(item, job) {
+  const fromLine = item && (item.site_name || item.siteName);
+  if (fromLine && String(fromLine).trim()) return String(fromLine).trim();
+  if (!job) return 'Site not recorded';
+  const fromJob = [job.siteAddress1 || job.site_address1, job.sitePostcode || job.site_postcode]
+    .filter(Boolean).join(', ');
+  return fromJob || 'Site not recorded';
+}
+
 window.getCustomerSites = getCustomerSites;
 window.siteLabel = siteLabel;
+window.getLineSite = getLineSite;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LINE ITEM UNITS
@@ -14072,7 +14236,19 @@ console.log(JSON.stringify(invoiceData, null, 2));
         const gross = net * (1 + vatRate / 100);
         const fmt = n => '\u00A3' + Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const siteOfJob = (j) => [j.siteAddress1, j.siteCity, j.sitePostcode].filter(Boolean).join(', ') || 'Site not recorded';
-        const siteCount = new Set(coveredJobs.map(siteOfJob)).size;
+
+        // Sites come from the line items — one job can cover several.
+        const lineSites = [];
+        for (const j of coveredJobs) {
+          const li = Array.isArray(j.lineItems) ? j.lineItems : [];
+          if (li.length === 0) { lineSites.push(siteOfJob(j)); continue; }
+          for (const i of li) lineSites.push(getLineSite(i, j));
+        }
+        const siteCount = new Set(lineSites).size;
+        const linesWithoutSite = coveredJobs.reduce((n, j) => {
+          const li = Array.isArray(j.lineItems) ? j.lineItems : [];
+          return n + li.filter(i => !(i.site_name || i.siteName)).length;
+        }, 0);
 
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
@@ -14116,17 +14292,44 @@ console.log(JSON.stringify(invoiceData, null, 2));
                   </div>
 
                   <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
-                    {coveredJobs.map(j => (
-                      <div key={j.id} className="flex justify-between text-xs text-gray-600 gap-3">
-                        <span className="truncate">
-                          <span className="font-mono">{j.jobNumber}</span>
-                          {coveredJobs.length > 1 && <span className="text-gray-400"> · {siteOfJob(j)}</span>}
-                        </span>
-                        <span className="whitespace-nowrap">{fmt(jobNet(j))}</span>
-                      </div>
-                    ))}
+                    {coveredJobs.map(j => {
+                      const li = Array.isArray(j.lineItems) ? j.lineItems : [];
+                      if (li.length === 0) {
+                        return (
+                          <div key={j.id} className="flex justify-between text-xs text-gray-600 gap-3">
+                            <span className="truncate">
+                              <span className="font-mono">{j.jobNumber}</span>
+                              <span className="text-gray-400"> · {siteOfJob(j)}</span>
+                            </span>
+                            <span className="whitespace-nowrap">{fmt(jobNet(j))}</span>
+                          </div>
+                        );
+                      }
+                      return li.map((i, n) => (
+                        <div key={j.id + '-' + n} className="flex justify-between text-xs text-gray-600 gap-3">
+                          <span className="truncate">
+                            <span className="font-mono">{j.jobNumber}</span>
+                            <span className="text-gray-400"> · </span>
+                            <span className={(i.site_name || i.siteName) ? 'text-gray-500' : 'text-amber-600'}>
+                              {getLineSite(i, j)}
+                            </span>
+                            <span className="text-gray-400"> · {i.product_name || i.description}</span>
+                          </span>
+                          <span className="whitespace-nowrap">
+                            {fmt((parseFloat(i.quantity) || 0) * (parseFloat(i.customer_price) || 0))}
+                          </span>
+                        </div>
+                      ));
+                    })}
                   </div>
 
+                  {linesWithoutSite > 0 && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-3">
+                      {linesWithoutSite} line{linesWithoutSite === 1 ? ' has' : 's have'} no tipping site set,
+                      so {linesWithoutSite === 1 ? 'it' : 'they'} will show under the job's own address.
+                      Set the site on the Products &amp; Services table if the customer needs the cost split.
+                    </p>
+                  )}
                   <p className="text-xs text-gray-400 mt-3">
                     Taken from each job's line items. If a weighbridge figure differs,
                     close this, correct the quantity on that job, then come back.
@@ -14620,6 +14823,9 @@ console.log(JSON.stringify(invoiceData, null, 2));
                         <td className="py-2 px-2 text-center text-xs">
                           {item.quantity || 1}
                           <span className="text-gray-500 ml-1">{formatUnit(getLineItemUnit(item, job))}</span>
+                          {(item.site_name || item.siteName) && (
+                            <span className="block text-gray-400">{item.site_name || item.siteName}</span>
+                          )}
                         </td>
                         <td className="py-2 px-2 text-right text-xs text-red-600 font-medium">
                           £{lineCost.toFixed(2)}
@@ -18133,6 +18339,7 @@ const loadUsers = async () => {
           firstName: nameParts[0] || '',
           lastName: nameParts.slice(1).join(' ') || '',
           role: u.role,
+          phone: u.phone || '',
         };
       }));
     }
@@ -18255,6 +18462,7 @@ const loadUsers = async () => {
         email: updatedUser.email,
         name: fullName,
         role: updatedUser.role,
+        phone: updatedUser.phone || null,
       })
       .eq('id', updatedUser.id);
     
@@ -18746,6 +18954,16 @@ const loadUsers = async () => {
                                 onChange={(e) => setEditingUser({...editingUser, email: e.target.value})}
                                 className="px-3 py-2 border border-gray-300 rounded-lg"
                                 placeholder="Work email"
+                              />
+                              {/* Shown on quotes and PO requests this person
+                                  sends, so customers ring them and not whoever
+                                  the company number belongs to. */}
+                              <input
+                                type="tel"
+                                value={editingUser.phone || ''}
+                                onChange={(e) => setEditingUser({...editingUser, phone: e.target.value})}
+                                className="px-3 py-2 border border-gray-300 rounded-lg"
+                                placeholder="Contact number (shown on their documents)"
                               />
                               <select
                                 value={editingUser.role}
