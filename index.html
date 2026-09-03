@@ -5786,13 +5786,14 @@ const [isEvent, setIsEvent] = useState(false);
                 <table className="w-full border border-gray-300 rounded-lg bg-white">
                   <thead className="bg-gray-100">
                     <tr>
-                      <th className="px-4 py-3 text-left font-medium w-56">Product / Site</th>
+                      <th className="px-4 py-3 text-left font-medium w-44">Product/Service</th>
                       <th className="px-4 py-3 text-left font-medium">Description (Editable)</th>
+                      <th className="px-2 py-3 text-left font-medium w-36">Tipping Site</th>
                       <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
                       <th className="px-2 py-3 text-left font-medium w-24">Unit</th>
                       <th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
                       <th className="px-2 py-3 text-left font-medium w-20">RRP £</th>
-                      <th className="px-2 py-3 text-left font-medium w-20">Profit</th>
+                      <th className="px-2 py-3 text-left font-medium w-16">Profit</th>
                       <th className="px-4 py-3 text-left font-medium w-20">Actions</th>
                     </tr>
                   </thead>
@@ -5807,12 +5808,30 @@ const [isEvent, setIsEvent] = useState(false);
                               {item.one_off && <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300" title="This item is marked as one-off and will not be copied to recurring child jobs">One-Off</span>}
                             </div>
                             <div className="text-xs text-gray-500">{item.item_code}</div>
-                            {/* Tipping site sits with the product rather than in
-                                its own column — one job can cover loads from
-                                several of a customer's sites, and the PO request
-                                groups by this. Keeping it here leaves the
-                                description room to breathe. */}
-                            <div className="mt-1.5">
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            {/* A textarea rather than a single-line input:
+                                descriptions on these jobs run to a couple of
+                                sentences, and a one-line box meant typing into
+                                a slot that showed six words. Drag the corner to
+                                make it taller still. */}
+                            <textarea
+                              rows={3}
+                              value={item.description}
+                              onChange={(e) => {
+                                const updatedItems = [...formData.lineItems];
+                                updatedItems[index].description = e.target.value;
+                                setFormData({...formData, lineItems: updatedItems});
+                              }}
+                              className="w-full min-w-[16rem] px-3 py-2 border border-gray-300 rounded text-sm resize-y"
+                              style={{ minHeight: '80px' }}
+                              placeholder="Description shown on the quote, PO request and invoice"
+                            />
+                          </td>
+                          {/* Per-line tipping site. One job can cover loads from
+                              several of a customer's sites, and the PO request
+                              groups by this. */}
+                          <td className="px-2 py-3 align-top">
 
                             {(() => {
                               const mc = customers?.find(c => (c.name || c.companyName) === formData.customerName);
@@ -5875,26 +5894,6 @@ const [isEvent, setIsEvent] = useState(false);
                                 </div>
                               );
                             })()}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 align-top">
-                            {/* A textarea rather than a single-line input:
-                                descriptions on these jobs run to a couple of
-                                sentences, and a one-line box meant typing into
-                                a slot that showed six words. Drag the corner to
-                                make it taller still. */}
-                            <textarea
-                              rows={3}
-                              value={item.description}
-                              onChange={(e) => {
-                                const updatedItems = [...formData.lineItems];
-                                updatedItems[index].description = e.target.value;
-                                setFormData({...formData, lineItems: updatedItems});
-                              }}
-                              className="w-full min-w-[16rem] px-3 py-2 border border-gray-300 rounded text-sm resize-y"
-                              style={{ minHeight: '80px' }}
-                              placeholder="Description shown on the quote, PO request and invoice"
-                            />
                           </td>
                           <td className="px-2 py-3">
                             <input
