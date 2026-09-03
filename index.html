@@ -5788,13 +5788,13 @@ const [isEvent, setIsEvent] = useState(false);
                     <tr>
                       <th className="px-4 py-3 text-left font-medium w-44">Product/Service</th>
                       <th className="px-4 py-3 text-left font-medium">Description (Editable)</th>
-                      <th className="px-2 py-3 text-left font-medium w-36">Tipping Site</th>
                       <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
                       <th className="px-2 py-3 text-left font-medium w-24">Unit</th>
                       <th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
                       <th className="px-2 py-3 text-left font-medium w-20">RRP £</th>
                       <th className="px-2 py-3 text-left font-medium w-16">Profit</th>
                       <th className="px-4 py-3 text-left font-medium w-20">Actions</th>
+                      <th className="px-2 py-3 text-left font-medium w-36">Tipping Site</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -5827,73 +5827,6 @@ const [isEvent, setIsEvent] = useState(false);
                               style={{ minHeight: '80px' }}
                               placeholder="Description shown on the quote, PO request and invoice"
                             />
-                          </td>
-                          {/* Per-line tipping site. One job can cover loads from
-                              several of a customer's sites, and the PO request
-                              groups by this. */}
-                          <td className="px-2 py-3 align-top">
-
-                            {(() => {
-                              const mc = customers?.find(c => (c.name || c.companyName) === formData.customerName);
-                              const sites = getCustomerSites(mc);
-                              const current = item.site_name || '';
-                              const known = sites.some(s => (s.siteName || s.name) === current);
-
-                              if (sites.length === 0) {
-                                return (
-                                  <input
-                                    type="text"
-                                    className="w-40 px-2 py-1 border border-gray-300 rounded text-sm"
-                                    placeholder="Site"
-                                    value={current}
-                                    onChange={(e) => {
-                                      const updated = [...formData.lineItems];
-                                      updated[index] = {...updated[index], site_name: e.target.value};
-                                      setFormData({...formData, lineItems: updated});
-                                    }}
-                                  />
-                                );
-                              }
-
-                              return (
-                                <div className="space-y-1">
-                                  <select
-                                    className={`w-40 px-1 py-1 border rounded text-sm ${current ? 'border-gray-300' : 'border-amber-300 bg-amber-50'}`}
-                                    value={known ? current : (current ? '__other__' : '')}
-                                    onChange={(e) => {
-                                      const v = e.target.value;
-                                      const updated = [...formData.lineItems];
-                                      updated[index] = {
-                                        ...updated[index],
-                                        site_name: v === '__other__' ? (current || ' ') : v,
-                                      };
-                                      setFormData({...formData, lineItems: updated});
-                                    }}
-                                  >
-                                    <option value="">Select site…</option>
-                                    {sites.map(s => (
-                                      <option key={s.id || s.siteName} value={s.siteName || s.name}>
-                                        {s.siteName || s.name}
-                                      </option>
-                                    ))}
-                                    <option value="__other__">Other (type it)</option>
-                                  </select>
-                                  {current && !known && (
-                                    <input
-                                      type="text"
-                                      className="w-40 px-2 py-1 border border-gray-300 rounded text-sm"
-                                      placeholder="Site name"
-                                      value={current.trim()}
-                                      onChange={(e) => {
-                                        const updated = [...formData.lineItems];
-                                        updated[index] = {...updated[index], site_name: e.target.value};
-                                        setFormData({...formData, lineItems: updated});
-                                      }}
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })()}
                           </td>
                           <td className="px-2 py-3">
                             <input
@@ -5992,6 +5925,73 @@ const [isEvent, setIsEvent] = useState(false);
                                 Remove
                               </button>
                             </div>
+                          </td>
+                          {/* Per-line tipping site. One job can cover loads from
+                              several of a customer's sites, and the PO request
+                              groups by this. */}
+                          <td className="px-2 py-3 align-top">
+
+                            {(() => {
+                              const mc = customers?.find(c => (c.name || c.companyName) === formData.customerName);
+                              const sites = getCustomerSites(mc);
+                              const current = item.site_name || '';
+                              const known = sites.some(s => (s.siteName || s.name) === current);
+
+                              if (sites.length === 0) {
+                                return (
+                                  <input
+                                    type="text"
+                                    className="w-40 px-2 py-1 border border-gray-300 rounded text-sm"
+                                    placeholder="Site"
+                                    value={current}
+                                    onChange={(e) => {
+                                      const updated = [...formData.lineItems];
+                                      updated[index] = {...updated[index], site_name: e.target.value};
+                                      setFormData({...formData, lineItems: updated});
+                                    }}
+                                  />
+                                );
+                              }
+
+                              return (
+                                <div className="space-y-1">
+                                  <select
+                                    className={`w-40 px-1 py-1 border rounded text-sm ${current ? 'border-gray-300' : 'border-amber-300 bg-amber-50'}`}
+                                    value={known ? current : (current ? '__other__' : '')}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      const updated = [...formData.lineItems];
+                                      updated[index] = {
+                                        ...updated[index],
+                                        site_name: v === '__other__' ? (current || ' ') : v,
+                                      };
+                                      setFormData({...formData, lineItems: updated});
+                                    }}
+                                  >
+                                    <option value="">Select site…</option>
+                                    {sites.map(s => (
+                                      <option key={s.id || s.siteName} value={s.siteName || s.name}>
+                                        {s.siteName || s.name}
+                                      </option>
+                                    ))}
+                                    <option value="__other__">Other (type it)</option>
+                                  </select>
+                                  {current && !known && (
+                                    <input
+                                      type="text"
+                                      className="w-40 px-2 py-1 border border-gray-300 rounded text-sm"
+                                      placeholder="Site name"
+                                      value={current.trim()}
+                                      onChange={(e) => {
+                                        const updated = [...formData.lineItems];
+                                        updated[index] = {...updated[index], site_name: e.target.value};
+                                        setFormData({...formData, lineItems: updated});
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
                         </tr>
                       );
