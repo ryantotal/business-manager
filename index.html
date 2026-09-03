@@ -12500,12 +12500,27 @@ function buildPoRequestPdfDoc(job, ctx) {
           ['Our job number', job.jobNumber || job.job_number || '\u2014'],
           ['Job type', job.jobType || job.job_type || '\u2014'],
         ];
-        // Only show a job-level site when the lines don't carry their own —
-        // otherwise it's redundant, or a dash where the table has the detail.
+
+        // Where the site goes depends on how many there are:
+        //   one  -> a row here, because the table shows no heading for a
+        //           single group and the site would otherwise appear nowhere
+        //   many -> omitted here, because the table groups and subtotals by
+        //           site and repeating it would just be noise
         const li = Array.isArray(job.lineItems) ? job.lineItems
           : (Array.isArray(job.line_items) ? job.line_items : []);
-        const linesHaveSites = li.some(i => (i.site_name || i.siteName));
-        if (!linesHaveSites) rows.push(['Site', site || '\u2014']);
+        const lineSites = [];
+        for (const i of li) {
+          const v = i.site_name || i.siteName;
+          if (v && String(v).trim()) lineSites.push(String(v).trim());
+        }
+        const distinct = Array.from(new Set(lineSites));
+
+        if (distinct.length === 1) {
+          rows.push(['Tipping site', distinct[0]]);
+        } else if (distinct.length === 0) {
+          rows.push(['Site', site || '\u2014']);
+        }
+
         rows.push(['Date of works', fmtDate(job.jobDate || job.job_date)]);
         return rows;
       })();
