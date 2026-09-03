@@ -5350,7 +5350,29 @@ const [isEvent, setIsEvent] = useState(false);
   }
 };
 
-          const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed', 
+          // Horizontal scrolling for the products table. It's wider than the modal
+  // once the Tipping Site column is in, and the native scrollbar is hard to
+  // grab, so the arrows above the table drive it instead.
+  const productScrollRef = React.useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
+  const [canScrollRight, setCanScrollRight] = React.useState(false);
+
+  const updateProductScroll = React.useCallback(() => {
+    const el = productScrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  // Re-check when the line items change, since adding a row can change the
+  // table's width.
+  React.useEffect(() => {
+    updateProductScroll();
+    window.addEventListener('resize', updateProductScroll);
+    return () => window.removeEventListener('resize', updateProductScroll);
+  }, [updateProductScroll, formData.lineItems, activeTab]);
+
+  const skipSizes = ['4 yard', '6 yard', '8 yard', '8 yard enclosed', '10 yard', '10 yard enclosed', 
                              '12 yard', '12 yard enclosed', '14 yard', '14 yard enclosed', '16 yard', '16 yard enclosed'];
           const roroSizes = ['20 yard', '40 yard'];
           const timeSlots = ['AM (8:00-12:00)', 'PM (12:00-17:00)'];
@@ -5781,8 +5803,37 @@ const [isEvent, setIsEvent] = useState(false);
 
           {formData.lineItems && formData.lineItems.length > 0 && (
             <div className="mt-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-xl font-semibold mb-6">Selected Products & Services</h3>
-              <div className="overflow-x-auto">
+              <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                <h3 className="text-xl font-semibold">Selected Products & Services</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 hidden sm:inline">Scroll for more columns</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = productScrollRef.current;
+                      if (el) el.scrollBy({ left: -320, behavior: 'smooth' });
+                    }}
+                    disabled={!canScrollLeft}
+                    title="Scroll left"
+                    className={`p-2 rounded-lg border ${canScrollLeft ? 'border-gray-300 text-gray-700 hover:bg-gray-100' : 'border-gray-200 text-gray-300 cursor-not-allowed'}`}
+                  >
+                    <LucideIcon icon="ChevronLeft" size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = productScrollRef.current;
+                      if (el) el.scrollBy({ left: 320, behavior: 'smooth' });
+                    }}
+                    disabled={!canScrollRight}
+                    title="Scroll right to the Tipping Site column"
+                    className={`p-2 rounded-lg border ${canScrollRight ? 'border-gray-300 text-gray-700 hover:bg-gray-100' : 'border-gray-200 text-gray-300 cursor-not-allowed'}`}
+                  >
+                    <LucideIcon icon="ChevronRight" size={18} />
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto" ref={productScrollRef} onScroll={updateProductScroll}>
                 <table className="w-full border border-gray-300 rounded-lg bg-white">
                   <thead className="bg-gray-100">
                     <tr>
@@ -5961,10 +6012,22 @@ const [isEvent, setIsEvent] = useState(false);
                                     onChange={(e) => {
                                       const v = e.target.value;
                                       const updated = [...formData.lineItems];
-                                      updated[index] = {
-                                        ...updated[index],
-                                        site_name: v === '__other__' ? (current || ' ') : v,
-                                      };
+                                      if (v === '__other__') {
+                                        updated[index] = { ...updated[index], site_name: current || ' ', site_address: '' };
+                                      } else {
+                                        // Copy the address across too, so the PO
+                                        // request can show the customer exactly
+                                        // where each load came from rather than
+                                        // just a site name.
+                                        const picked = sites.find(x => (x.siteName || x.name) === v);
+                                        updated[index] = {
+                                          ...updated[index],
+                                          site_name: v,
+                                          site_address: picked
+                                            ? [picked.address, picked.postcode].filter(Boolean).join(', ')
+                                            : '',
+                                        };
+                                      }
                                       setFormData({...formData, lineItems: updated});
                                     }}
                                   >
@@ -12510,8 +12573,12 @@ function buildPoRequestPdfDoc(job, ctx) {
           : (Array.isArray(job.line_items) ? job.line_items : []);
         const lineSites = [];
         for (const i of li) {
-          const v = i.site_name || i.siteName;
-          if (v && String(v).trim()) lineSites.push(String(v).trim());
+          const nm = i.site_name || i.siteName;
+          if (!nm || !String(nm).trim()) continue;
+          const ad = i.site_address || i.siteAddress;
+          lineSites.push(ad && String(ad).trim()
+            ? String(nm).trim() + ' \u2014 ' + String(ad).trim()
+            : String(nm).trim());
         }
         const distinct = Array.from(new Set(lineSites));
 
@@ -12561,8 +12628,21 @@ function buildPoRequestPdfDoc(job, ctx) {
   const jobSiteOf = (j) => [j.siteAddress1 || j.site_address1, j.siteCity || j.site_city,
                             j.sitePostcode || j.site_postcode].filter(Boolean).join(', ');
   const lineSiteOf = (i, j) => {
-    const s = i && (i.site_name || i.siteName);
-    if (s && String(s).trim()) return String(s).trim();
+    const nm = i && (i.site_name || i.siteName);
+    const ad = i && (i.site_address || i.siteAddress);
+    if (nm && String(nm).trim()) {
+      return ad && String(ad).trim()
+        ? String(nm).trim() + ' \u2014 ' + String(ad).trim()
+        : String(nm).trim();
+    }
+    return jobSiteOf(j) || 'Site not recorded';
+  };
+
+  // Just the name, for the subtotal line — repeating the full address there
+  // makes it unreadable.
+  const lineSiteNameOf = (i, j) => {
+    const nm = i && (i.site_name || i.siteName);
+    if (nm && String(nm).trim()) return String(nm).trim();
     return jobSiteOf(j) || 'Site not recorded';
   };
 
@@ -12591,14 +12671,14 @@ function buildPoRequestPdfDoc(job, ctx) {
   const allLines = [];
   for (const j of poJobs) {
     for (const i of linesOf(j)) {
-      allLines.push({ line: i, job: j, site: lineSiteOf(i, j) });
+      allLines.push({ line: i, job: j, site: lineSiteOf(i, j), siteName: lineSiteNameOf(i, j) });
     }
   }
 
   const bySite = [];
   for (const entry of allLines) {
     let group = bySite.find(g => g.site === entry.site);
-    if (!group) { group = { site: entry.site, entries: [] }; bySite.push(group); }
+    if (!group) { group = { site: entry.site, name: entry.siteName, entries: [] }; bySite.push(group); }
     group.entries.push(entry);
   }
 
@@ -12638,7 +12718,7 @@ function buildPoRequestPdfDoc(job, ctx) {
 
     if (showSiteHeadings) {
       body.push([{
-        content: 'Subtotal \u2014 ' + group.site,
+        content: 'Subtotal \u2014 ' + (group.name || group.site),
         colSpan: 4,
         styles: { halign: 'right', fontStyle: 'bold', fillColor: [248, 250, 249] },
       }, {
@@ -12860,9 +12940,23 @@ function getLineSite(item, job) {
   return fromJob || 'Site not recorded';
 }
 
+// Name and address together, for documents the customer reads — a site name
+// on its own doesn't tell them which of their depots a load came from.
+function getLineSiteFull(item, job) {
+  const name = item && (item.site_name || item.siteName);
+  const addr = item && (item.site_address || item.siteAddress);
+  if (name && String(name).trim()) {
+    return addr && String(addr).trim()
+      ? String(name).trim() + ' \u2014 ' + String(addr).trim()
+      : String(name).trim();
+  }
+  return getLineSite(item, job);
+}
+
 window.getCustomerSites = getCustomerSites;
 window.siteLabel = siteLabel;
 window.getLineSite = getLineSite;
+window.getLineSiteFull = getLineSiteFull;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LINE ITEM UNITS
@@ -14329,7 +14423,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                             <span className="font-mono">{j.jobNumber}</span>
                             <span className="text-gray-400"> · </span>
                             <span className={(i.site_name || i.siteName) ? 'text-gray-500' : 'text-amber-600'}>
-                              {getLineSite(i, j)}
+                              {getLineSiteFull(i, j)}
                             </span>
                             <span className="text-gray-400"> · {i.product_name || i.description}</span>
                           </span>
@@ -14842,7 +14936,12 @@ console.log(JSON.stringify(invoiceData, null, 2));
                           {item.quantity || 1}
                           <span className="text-gray-500 ml-1">{formatUnit(getLineItemUnit(item, job))}</span>
                           {(item.site_name || item.siteName) && (
-                            <span className="block text-gray-400">{item.site_name || item.siteName}</span>
+                            <span className="block text-gray-400">
+                              {item.site_name || item.siteName}
+                              {(item.site_address || item.siteAddress) && (
+                                <span className="block">{item.site_address || item.siteAddress}</span>
+                              )}
+                            </span>
                           )}
                         </td>
                         <td className="py-2 px-2 text-right text-xs text-red-600 font-medium">
