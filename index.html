@@ -6107,6 +6107,71 @@ const [isEvent, setIsEvent] = useState(false);
 {/* Site Information Tab */}
 {activeTab === 'site' && (
   <div className="space-y-4">
+    {/* ── Saved sites for this customer ──────────────────────────────────
+        Picking from the list keeps the site spelled identically on every
+        job, which is what makes PO requests group correctly and the WTN
+        permit and SIC code auto-fill. Only appears when the customer
+        actually has sites saved; typing an address by hand still works. */}
+    {(() => {
+      const mc = customers?.find(c => (c.name || c.companyName) === formData.customerName);
+      const sites = getCustomerSites(mc);
+      if (sites.length === 0) return null;
+
+      // Match on postcode plus address so an edited address doesn't leave
+      // the dropdown showing a site that's no longer selected.
+      const norm = v => String(v || '').replace(/\s+/g, '').toLowerCase();
+      const current = sites.find(s =>
+        norm(s.postcode) === norm(formData.sitePostcode) &&
+        norm(s.address).startsWith(norm(formData.siteAddress1).slice(0, 12))
+      );
+
+      return (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <label className="block text-sm font-medium text-blue-900 mb-1">
+            Choose a saved site
+            <span className="font-normal text-blue-700 ml-1">
+              ({sites.length} on file for {formData.customerName})
+            </span>
+          </label>
+          <select
+            value={current ? (current.id || current.siteName) : ''}
+            onChange={(e) => {
+              const id = e.target.value;
+              if (!id) return;
+              const site = sites.find(s => (s.id || s.siteName) === id);
+              if (!site) return;
+              // Line 1 is capped at 50 characters to match Sage's address
+              // field, so overflow spills into line 2 rather than being cut.
+              const split = splitOverflowFromLine1(site.address || '', '');
+              setFormData({
+                ...formData,
+                siteAddress1: split.line1,
+                siteAddress2: split.line2,
+                sitePostcode: site.postcode || '',
+                siteCity: site.city || formData.siteCity || '',
+              });
+              setShowAddressSuggestions(false);
+            }}
+            className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm bg-white"
+          >
+            <option value="">
+              {current ? siteLabel(current) : '\u2014 Select a site, or type an address below \u2014'}
+            </option>
+            {sites.map(s => (
+              <option key={s.id || s.siteName} value={s.id || s.siteName}>
+                {siteLabel(s)}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-blue-700 mt-2">
+            {current
+              ? 'Matched to a saved site. Its permit, CBDU and SIC code will fill in on the WTN.'
+              : 'Not one of the saved sites \u2014 fine for a one-off, but use the list where you can so the site name stays consistent across jobs and PO requests.'}
+          </p>
+        </div>
+      );
+    })()}
+
     <div className="relative">
       <label className="block text-sm font-medium text-gray-700 mb-1">Site Address *</label>
       {/* fix32k — line 1/2 capped at 50 chars to match Sage's address_line limit.
@@ -12285,12 +12350,32 @@ function buildPoRequestPdfDoc(job, ctx) {
   const site = [job.siteAddress1 || job.site_address1, job.siteCity || job.site_city,
                 job.sitePostcode || job.site_postcode].filter(Boolean).join(', ');
 
-  const detailRows = [
-    ['Our job number', job.jobNumber || job.job_number || '\u2014'],
-    ['Job type', job.jobType || job.job_type || '\u2014'],
-    ['Site', site || '\u2014'],
-    ['Date of works', fmtDate(job.jobDate || job.job_date)],
-  ];
+  const coveredJobs = Array.isArray(job.poJobs) && job.poJobs.length > 0 ? job.poJobs : [job];
+  const isMulti = coveredJobs.length > 1;
+
+  const detailRows = isMulti
+    ? (() => {
+        const sites = new Set(coveredJobs.map(j =>
+          [j.siteAddress1 || j.site_address1, j.sitePostcode || j.site_postcode].filter(Boolean).join(', ')));
+        const dates = coveredJobs.map(j => new Date(j.jobDate || j.job_date))
+          .filter(d => !isNaN(d.getTime())).sort((a, b) => a - b);
+        const rows = [
+          ['Jobs covered', coveredJobs.length + ' jobs across ' + sites.size + ' site' + (sites.size === 1 ? '' : 's')],
+          ['Job numbers', coveredJobs.map(j => j.jobNumber || j.job_number).filter(Boolean).join(', ')],
+        ];
+        if (dates.length > 0) {
+          rows.push(['Dates of works', dates.length > 1 && dates[0].getTime() !== dates[dates.length - 1].getTime()
+            ? fmtDate(dates[0]) + ' to ' + fmtDate(dates[dates.length - 1])
+            : fmtDate(dates[0])]);
+        }
+        return rows;
+      })()
+    : [
+        ['Our job number', job.jobNumber || job.job_number || '\u2014'],
+        ['Job type', job.jobType || job.job_type || '\u2014'],
+        ['Site', site || '\u2014'],
+        ['Date of works', fmtDate(job.jobDate || job.job_date)],
+      ];
   if (job.disposalSiteName) detailRows.push(['Disposal facility', job.disposalSiteName]);
   if (job.ticketReference) detailRows.push(['Weighbridge ticket', job.ticketReference]);
   if (job.wtnReference) detailRows.push(['Waste Transfer Note', job.wtnReference]);
@@ -12307,30 +12392,96 @@ function buildPoRequestPdfDoc(job, ctx) {
   y = doc.lastAutoTable.finalY + 3;
 
   // ══ WHAT'S BEING CHARGED ══════════════════════════════════════════════
-  heading('Amount to be raised');
+  //
+  // A single PO can cover several jobs across different sites — the council
+  // work runs across 17 of them. The customer needs to see which load came
+  // from which site so they can allocate the cost, so the table is grouped by
+  // site with a subtotal per site, then one total for the PO.
+  //
+  // job.poJobs is the list of jobs this request covers. A single-job request
+  // is just a list of one, so there's only one code path.
+  const poJobs = Array.isArray(job.poJobs) && job.poJobs.length > 0
+    ? job.poJobs
+    : [job];
 
-  const items = Array.isArray(job.lineItems) ? job.lineItems
-    : (Array.isArray(job.line_items) ? job.line_items : []);
+  const multiJob = poJobs.length > 1;
 
-  const rows = items.map(i => {
-    const qty = parseFloat(i.quantity) || 0;
-    const price = parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0;
-    const name = i.product_name && i.description && i.product_name !== i.description
-      ? i.product_name + '\n' + i.description
-      : (i.description || i.product_name || 'Service');
-    return [name, qty + (i.unit ? ' ' + unitLabel(i.unit) : ''), money(price), money(qty * price)];
-  });
+  heading(multiJob ? 'Amount to be raised \u2014 ' + poJobs.length + ' jobs' : 'Amount to be raised');
 
-  // Fall back to the job-level figures for jobs with no line items.
-  if (rows.length === 0) {
-    const qty = parseFloat(job.quantity) || 1;
-    const price = parseFloat(job.customerUnitPrice) || 0;
-    rows.push([
-      job.jobType || 'Service',
-      qty + (job.unit ? ' ' + unitLabel(job.unit) : ''),
-      money(price),
-      money(parseFloat(job.customerFinalPrice) || qty * price),
-    ]);
+  const siteOf = (j) => [j.siteAddress1 || j.site_address1, j.siteCity || j.site_city,
+                         j.sitePostcode || j.site_postcode].filter(Boolean).join(', ') || 'Site not recorded';
+
+  const linesOf = (j) => {
+    const items = Array.isArray(j.lineItems) ? j.lineItems
+      : (Array.isArray(j.line_items) ? j.line_items : []);
+    if (items.length > 0) return items;
+    // Jobs with no line items still need a row.
+    return [{
+      product_name: j.jobType || j.job_type || 'Service',
+      quantity: parseFloat(j.quantity) || 1,
+      unit: j.unit,
+      customer_price: parseFloat(j.customerUnitPrice) || 0,
+      _flatTotal: parseFloat(j.customerFinalPrice) || 0,
+    }];
+  };
+
+  const lineNet = (i) => (i._flatTotal != null && i._flatTotal > 0)
+    ? i._flatTotal
+    : (parseFloat(i.quantity) || 0) * (parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0);
+
+  // Group the jobs by site, preserving the order sites first appear.
+  const bySite = [];
+  for (const j of poJobs) {
+    const site = siteOf(j);
+    let group = bySite.find(g => g.site === site);
+    if (!group) { group = { site: site, jobs: [] }; bySite.push(group); }
+    group.jobs.push(j);
+  }
+
+  const body = [];
+  let net = 0;
+
+  for (const group of bySite) {
+    let siteNet = 0;
+
+    if (multiJob) {
+      body.push([{
+        content: group.site,
+        colSpan: 5,
+        styles: { fillColor: [232, 243, 235], textColor: GREEN, fontStyle: 'bold', fontSize: 8.5 },
+      }]);
+    }
+
+    for (const j of group.jobs) {
+      for (const i of linesOf(j)) {
+        const amount = lineNet(i);
+        siteNet += amount;
+        const desc = i.product_name && i.description && i.product_name !== i.description
+          ? i.product_name + '\n' + i.description
+          : (i.description || i.product_name || 'Service');
+        body.push([
+          j.jobNumber || j.job_number || '\u2014',
+          desc,
+          (parseFloat(i.quantity) || 0) + (i.unit ? ' ' + unitLabel(i.unit) : ''),
+          money(parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0),
+          money(amount),
+        ]);
+      }
+    }
+
+    net += siteNet;
+
+    // Only worth a subtotal when there's more than one site to compare.
+    if (multiJob && bySite.length > 1) {
+      body.push([{
+        content: 'Subtotal \u2014 ' + group.site,
+        colSpan: 4,
+        styles: { halign: 'right', fontStyle: 'bold', fillColor: [248, 250, 249] },
+      }, {
+        content: money(siteNet),
+        styles: { halign: 'right', fontStyle: 'bold', fillColor: [248, 250, 249] },
+      }]);
+    }
   }
 
   doc.autoTable({
@@ -12338,27 +12489,24 @@ function buildPoRequestPdfDoc(job, ctx) {
     theme: 'plain',
     styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 2.0, bottom: 2.0, left: 2, right: 2 }, textColor: INK },
     headStyles: { fillColor: GREEN, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5 },
-    alternateRowStyles: { fillColor: [250, 250, 250] },
-    head: [['Description', 'Quantity', 'Rate', 'Net']],
-    body: rows,
+    head: [['Job', 'Description', 'Quantity', 'Rate', 'Net']],
+    body: body,
     columnStyles: {
-      0: { cellWidth: CW - 88 },
-      1: { cellWidth: 26, halign: 'center' },
-      2: { cellWidth: 30, halign: 'right' },
-      3: { cellWidth: 32, halign: 'right' },
+      0: { cellWidth: 24 },
+      1: { cellWidth: CW - 24 - 26 - 28 - 30 },
+      2: { cellWidth: 26, halign: 'center' },
+      3: { cellWidth: 28, halign: 'right' },
+      4: { cellWidth: 30, halign: 'right' },
     },
     margin: { left: M, right: M },
   });
   y = doc.lastAutoTable.finalY + 5;
 
   // ══ TOTALS ════════════════════════════════════════════════════════════
-  const net = items.length > 0
-    ? items.reduce((s, i) => s + (parseFloat(i.quantity) || 0) *
-        (parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0), 0)
-    : (parseFloat(job.customerFinalPrice) || 0);
   const vatRate = job.vatRate === 0 ? 0 : (parseFloat(job.vatRate) || 20);
   const vat = net * (vatRate / 100);
 
+  need(34);
   const boxW = 82, boxX = M + CW - boxW;
   setFont('normal', 9.5, INK);
   doc.text('Net', boxX, y);
@@ -12497,6 +12645,42 @@ const TWS_COMPANY = {
   fallbackAddress: '10 Park Plaza, Battlefield Enterprise Park, Shrewsbury, SY1 3AF',
 };
 window.TWS_COMPANY = TWS_COMPANY;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER SITE ADDRESSES
+//
+// Customers can have a list of waste sites saved against them (Customers →
+// edit → Compliance → Waste Sites), each with its own permit, CBDU and SIC
+// code. Councils run a lot of these — 17 in one case — and typing the address
+// afresh on every job means the same site ends up spelled three ways, which
+// then breaks grouping on PO requests and reporting.
+//
+// Stored as JSON, sometimes already parsed and sometimes still a string.
+// ─────────────────────────────────────────────────────────────────────────────
+function getCustomerSites(customer) {
+  if (!customer) return [];
+  const raw = customer.siteAddresses || customer.site_addresses;
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// A site's display label — name first, falling back to the address.
+function siteLabel(site) {
+  if (!site) return '';
+  const name = site.siteName || site.name;
+  const addr = [site.address, site.postcode].filter(Boolean).join(', ');
+  if (name && addr) return name + ' \u2014 ' + addr;
+  return name || addr || 'Unnamed site';
+}
+
+window.getCustomerSites = getCustomerSites;
+window.siteLabel = siteLabel;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LINE ITEM UNITS
@@ -13178,6 +13362,11 @@ const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, on
   const [poSending, setPoSending] = useState(false);
   const [poEmailOptions, setPoEmailOptions] = useState([]);
   const [poSageLoading, setPoSageLoading] = useState(false);
+  // One PO can cover several jobs across different sites — the council work
+  // runs across 17 of them. These hold the other candidate jobs and which of
+  // them this request should include.
+  const [poCandidates, setPoCandidates] = useState([]);
+  const [poSelectedIds, setPoSelectedIds] = useState([]);
   // Reset when navigating between jobs so the editor doesn't follow you.
   React.useEffect(() => { setCapEditorOpen(false); setPoModalOpen(false); }, [job && job.id]);
 
@@ -13188,6 +13377,35 @@ const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, on
     setPoNote(job.poRequestNote || job.po_request_note || '');
     setPoRecipient(job.poRequestSentTo || job.po_request_sent_to || '');
     setPoEmailOptions([]);
+    setPoSelectedIds([job.id]);
+
+    // Other jobs for the same customer that could go on the same PO: no PO
+    // number yet, not cancelled, and not already covered by a different
+    // request. Sorted by site so the list reads the way the document will.
+    (() => {
+      const others = (jobs || []).filter(j => {
+        if (j.id === job.id) return false;
+        if ((j.customerName || '') !== (job.customerName || '')) return false;
+        if (j.isCancelled || j.status === 'CANCELLED' || j.status === 'EVENT') return false;
+        if (j.customerPO) return false;
+        const theirRef = j.poRequestRef || j.po_request_ref;
+        const ourRef = job.poRequestRef || job.po_request_ref;
+        if (theirRef && theirRef !== ourRef) return false;
+        return true;
+      });
+      const siteKey = j => [j.siteAddress1, j.sitePostcode].filter(Boolean).join(', ');
+      others.sort((a, b) => siteKey(a).localeCompare(siteKey(b)) ||
+        String(a.jobNumber || '').localeCompare(String(b.jobNumber || '')));
+      setPoCandidates(others);
+
+      // If this job is already part of a multi-job request, re-tick the rest
+      // of that request rather than starting from scratch.
+      const ourRef = job.poRequestRef || job.po_request_ref;
+      if (ourRef) {
+        const sameRef = others.filter(j => (j.poRequestRef || j.po_request_ref) === ourRef);
+        if (sameRef.length > 0) setPoSelectedIds([job.id, ...sameRef.map(j => j.id)]);
+      }
+    })();
 
     // A PO request belongs with accounts rather than the site contact, so
     // gather every address we know of and offer them as one-click chips.
@@ -13827,20 +14045,34 @@ console.log(JSON.stringify(invoiceData, null, 2));
           customer is asked to raise is the figure we'll invoice. Sent from
           the logged-in user's Gmail, same route as quotes and WTNs. */}
       {poModalOpen && (() => {
+        // Every job this request covers, in the order the document lists
+        // them: this job first, then the ticked siblings.
+        const coveredJobs = [job].concat(
+          poCandidates.filter(j => poSelectedIds.includes(j.id))
+        );
+
+        const jobNet = (j) => {
+          const li = Array.isArray(j.lineItems) ? j.lineItems : [];
+          return li.length > 0
+            ? li.reduce((s, i) => s + (parseFloat(i.quantity) || 0) *
+                (parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0), 0)
+            : (parseFloat(j.customerFinalPrice) || 0);
+        };
+
         const poJob = {
           ...job,
           ticketReference: poTicketRef || job.ticketReference || '',
           poRequestNote: poNote,
           poRequestRef: 'POR-' + (job.jobNumber || job.job_number || ''),
+          poJobs: coveredJobs,
         };
-        const items = Array.isArray(job.lineItems) ? job.lineItems : [];
-        const net = items.length > 0
-          ? items.reduce((s, i) => s + (parseFloat(i.quantity) || 0) *
-              (parseFloat(i.customer_price || i.unit_price || i.price || 0) || 0), 0)
-          : (parseFloat(job.customerFinalPrice) || 0);
+
+        const net = coveredJobs.reduce((s, j) => s + jobNet(j), 0);
         const vatRate = job.vatRate === 0 ? 0 : (parseFloat(job.vatRate) || 20);
         const gross = net * (1 + vatRate / 100);
         const fmt = n => '\u00A3' + Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const siteOfJob = (j) => [j.siteAddress1, j.siteCity, j.sitePostcode].filter(Boolean).join(', ') || 'Site not recorded';
+        const siteCount = new Set(coveredJobs.map(siteOfJob)).size;
 
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
@@ -13878,22 +14110,82 @@ console.log(JSON.stringify(invoiceData, null, 2));
                   <div className="text-2xl font-bold text-green-800 mt-1">{fmt(gross)}</div>
                   <div className="text-xs text-gray-500 mt-1">
                     {fmt(net)} net plus {vatRate}% VAT
+                    {coveredJobs.length > 1 && (
+                      <span> · {coveredJobs.length} jobs across {siteCount} site{siteCount === 1 ? '' : 's'}</span>
+                    )}
                   </div>
-                  {items.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
-                      {items.map((i, n) => (
-                        <div key={n} className="flex justify-between text-xs text-gray-600">
-                          <span>{i.product_name || i.description} · {i.quantity} {formatUnit(getLineItemUnit(i, job))}</span>
-                          <span>{fmt((parseFloat(i.quantity) || 0) * (parseFloat(i.customer_price) || 0))}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+
+                  <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
+                    {coveredJobs.map(j => (
+                      <div key={j.id} className="flex justify-between text-xs text-gray-600 gap-3">
+                        <span className="truncate">
+                          <span className="font-mono">{j.jobNumber}</span>
+                          {coveredJobs.length > 1 && <span className="text-gray-400"> · {siteOfJob(j)}</span>}
+                        </span>
+                        <span className="whitespace-nowrap">{fmt(jobNet(j))}</span>
+                      </div>
+                    ))}
+                  </div>
+
                   <p className="text-xs text-gray-400 mt-3">
-                    Taken from the job's line items. If the weighbridge figure differs,
-                    close this, correct the quantity on the job, then come back.
+                    Taken from each job's line items. If a weighbridge figure differs,
+                    close this, correct the quantity on that job, then come back.
                   </p>
                 </div>
+
+                {/* ── Other jobs that could go on the same PO ──────────────
+                    The council tip several loads from different sites against
+                    one order, so a request often needs to cover more than the
+                    job it was opened from. */}
+                {poCandidates.length > 0 && (
+                  <div className="border border-gray-200 rounded-lg">
+                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Include other jobs on this PO</p>
+                        <p className="text-xs text-gray-500">
+                          {poCandidates.length} other job{poCandidates.length === 1 ? '' : 's'} for {job.customerName} with no PO yet.
+                          The document groups them by site.
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button"
+                          onClick={() => setPoSelectedIds([job.id, ...poCandidates.map(j => j.id)])}
+                          className="px-2.5 py-1 text-xs border border-gray-300 rounded-lg hover:bg-white">
+                          Select all
+                        </button>
+                        <button type="button"
+                          onClick={() => setPoSelectedIds([job.id])}
+                          className="px-2.5 py-1 text-xs border border-gray-300 rounded-lg hover:bg-white">
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                    <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
+                      {poCandidates.map(j => {
+                        const ticked = poSelectedIds.includes(j.id);
+                        return (
+                          <label key={j.id}
+                            className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer text-sm ${ticked ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                            <input type="checkbox" checked={ticked}
+                              onChange={e => setPoSelectedIds(prev => e.target.checked
+                                ? [...prev, j.id]
+                                : prev.filter(id => id !== j.id))} />
+                            <span className="flex-1 min-w-0">
+                              <span className="font-mono text-xs text-gray-700">{j.jobNumber}</span>
+                              <span className="text-gray-500 text-xs"> · {siteOfJob(j)}</span>
+                              <span className="block text-xs text-gray-400">
+                                {j.jobDate ? new Date(j.jobDate).toLocaleDateString('en-GB') : 'No date'}
+                                {j.jobType ? ' · ' + j.jobType : ''}
+                                {(j.poRequestedAt || j.po_requested_at) ? ' · already requested' : ''}
+                              </span>
+                            </span>
+                            <span className="text-xs text-gray-600 whitespace-nowrap">{fmt(jobNet(j))}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Send to *</label>
@@ -13975,9 +14267,14 @@ console.log(JSON.stringify(invoiceData, null, 2));
                       const body = [
                         'Dear ' + (job.customerContact || job.customerName || 'Sir/Madam') + ',',
                         '',
-                        'Please find attached a purchase order request for job ' + (job.jobNumber || '') + '.',
+                        coveredJobs.length > 1
+                          ? 'Please find attached a purchase order request covering ' + coveredJobs.length +
+                            ' jobs across ' + siteCount + ' site' + (siteCount === 1 ? '' : 's') + '.'
+                          : 'Please find attached a purchase order request for job ' + (job.jobNumber || '') + '.',
                         '',
-                        'Site: ' + [job.siteAddress1, job.sitePostcode].filter(Boolean).join(', '),
+                        coveredJobs.length > 1
+                          ? 'Jobs: ' + coveredJobs.map(j => j.jobNumber).join(', ')
+                          : 'Site: ' + [job.siteAddress1, job.sitePostcode].filter(Boolean).join(', '),
                         'PO value required: ' + fmt(gross) + ' (' + fmt(net) + ' net plus ' + vatRate + '% VAT)',
                         poTicketRef ? 'Weighbridge ticket: ' + poTicketRef : null,
                         '',
@@ -14006,8 +14303,9 @@ console.log(JSON.stringify(invoiceData, null, 2));
                       const result = await res.json();
                       if (!res.ok) throw new Error(result.error || 'Gmail send failed');
 
-                      // Record it on the job so the button turns green and
-                      // nobody sends a second request by accident.
+                      // Record the request against every job it covers, all
+                      // sharing one reference. That reference is what lets the
+                      // PO number later be applied to the whole set at once.
                       try {
                         await window.supabase.from('jobs').update({
                           po_requested_at: new Date().toISOString(),
@@ -14016,13 +14314,16 @@ console.log(JSON.stringify(invoiceData, null, 2));
                           po_request_note: poNote || null,
                           po_request_sent_by: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || null,
                           ticket_reference: poTicketRef || null,
-                        }).eq('id', job.id);
+                        }).in('id', coveredJobs.map(j => j.id));
                         if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
                       } catch (saveErr) {
-                        console.warn('[PO request] sent but not recorded on the job:', saveErr);
+                        console.warn('[PO request] sent but not recorded on the jobs:', saveErr);
                       }
 
-                      alert('\u2705 PO request sent to ' + poRecipient.trim() + '\n\nAttached as ' + generated.filename + '.');
+                      alert('\u2705 PO request sent to ' + poRecipient.trim() +
+                        '\n\nCovers ' + coveredJobs.length + ' job' + (coveredJobs.length === 1 ? '' : 's') +
+                        (siteCount > 1 ? ' across ' + siteCount + ' sites' : '') +
+                        '.\nAttached as ' + generated.filename + '.');
                       setPoModalOpen(false);
                     } catch (err) {
                       console.error('[PO request] send failed:', err);
@@ -14842,6 +15143,14 @@ console.log(JSON.stringify(invoiceData, null, 2));
               const poReceived = job.customerPO || job.customer_po;
               if (!sentAt && !poReceived) return null;
 
+              // Other jobs covered by the same request, found via the shared
+              // reference. One PO can span several sites, and nobody wants to
+              // type the number onto five jobs by hand.
+              const siblings = ref
+                ? (jobs || []).filter(j => j.id !== job.id && (j.poRequestRef || j.po_request_ref) === ref)
+                : [];
+              const siblingsMissingPo = siblings.filter(j => !(j.customerPO || j.customer_po));
+
               const when = sentAt ? new Date(sentAt) : null;
               const whenStr = when && !isNaN(when.getTime())
                 ? when.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) +
@@ -14874,6 +15183,11 @@ console.log(JSON.stringify(invoiceData, null, 2));
                           </div>
                           {sentTo && <div>To: {sentTo}</div>}
                           {sentBy && <div>By: {sentBy}</div>}
+                          {siblings.length > 0 && (
+                            <div>
+                              Covers {siblings.length + 1} jobs: {[job, ...siblings].map(j => j.jobNumber).join(', ')}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className={`text-sm mt-1.5 ${sub}`}>
@@ -14884,7 +15198,37 @@ console.log(JSON.stringify(invoiceData, null, 2));
                       {!done && (
                         <p className="text-xs text-amber-600 mt-2">
                           Add the PO number to the job once it arrives — it appears on the invoice.
+                          {siblings.length > 0 && ' You can then copy it to the other ' + siblings.length + ' job' + (siblings.length === 1 ? '' : 's') + ' in one click.'}
                         </p>
+                      )}
+
+                      {done && siblingsMissingPo.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-green-200">
+                          <p className="text-sm text-green-800">
+                            {siblingsMissingPo.length} other job{siblingsMissingPo.length === 1 ? '' : 's'} on this
+                            request {siblingsMissingPo.length === 1 ? 'has' : 'have'} no PO number yet.
+                          </p>
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Copy PO ' + poReceived + ' to ' + siblingsMissingPo.length +
+                                  ' other job' + (siblingsMissingPo.length === 1 ? '' : 's') + '?')) return;
+                              try {
+                                const { error } = await window.supabase
+                                  .from('jobs')
+                                  .update({ customer_po: poReceived })
+                                  .in('id', siblingsMissingPo.map(j => j.id));
+                                if (error) throw error;
+                                if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
+                                alert('PO ' + poReceived + ' applied to ' + siblingsMissingPo.length + ' job' +
+                                  (siblingsMissingPo.length === 1 ? '' : 's') + '.');
+                              } catch (e) {
+                                alert('Could not apply the PO: ' + e.message);
+                              }
+                            }}
+                            className="mt-2 px-3 py-1.5 bg-green-700 text-white rounded-lg text-xs font-medium hover:bg-green-800">
+                            Apply PO {poReceived} to {siblingsMissingPo.length} other job{siblingsMissingPo.length === 1 ? '' : 's'}
+                          </button>
+                        </div>
                       )}
                     </div>
                     <button
