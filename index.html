@@ -5353,6 +5353,8 @@ const [isEvent, setIsEvent] = useState(false);
           // Horizontal scrolling for the products table. It's wider than the modal
   // once the Tipping Site column is in, and the native scrollbar is hard to
   // grab, so the arrows above the table drive it instead.
+  // True while a site is being saved to the customer from the job form.
+  const [savingSite, setSavingSite] = React.useState(false);
   const productScrollRef = React.useRef(null);
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
   const [canScrollRight, setCanScrollRight] = React.useState(false);
@@ -6256,7 +6258,9 @@ const [isEvent, setIsEvent] = useState(false);
     {(() => {
       const mc = customers?.find(c => (c.name || c.companyName) === formData.customerName);
       const sites = getCustomerSites(mc);
-      if (sites.length === 0) return null;
+      // Show the panel even with no sites yet, so the first one can be saved
+      // from here rather than only from the customer record.
+      if (!mc) return null;
 
       // Match on postcode plus address so an edited address doesn't leave
       // the dropdown showing a site that's no longer selected.
@@ -6269,12 +6273,12 @@ const [isEvent, setIsEvent] = useState(false);
       return (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <label className="block text-sm font-medium text-blue-900 mb-1">
-            Choose a saved site
+            {sites.length > 0 ? 'Choose a saved site' : 'No saved sites yet'}
             <span className="font-normal text-blue-700 ml-1">
               ({sites.length} on file for {formData.customerName})
             </span>
           </label>
-          <select
+          {sites.length > 0 && <select
             value={current ? (current.id || current.siteName) : ''}
             onChange={(e) => {
               const id = e.target.value;
@@ -6303,12 +6307,56 @@ const [isEvent, setIsEvent] = useState(false);
                 {siteLabel(s)}
               </option>
             ))}
-          </select>
+          </select>}
           <p className="text-xs text-blue-700 mt-2">
             {current
               ? 'Matched to a saved site. Its permit, CBDU and SIC code will fill in on the WTN.'
               : 'Not one of the saved sites \u2014 fine for a one-off, but use the list where you can so the site name stays consistent across jobs and PO requests.'}
           </p>
+
+          {/* Offer to save the typed address as a site, so it's on the list
+              next time without anyone opening the customer record. */}
+          {!current && (formData.siteAddress1 || '').trim() && (formData.sitePostcode || '').trim() && (
+            <button
+              type="button"
+              disabled={savingSite}
+              onClick={async () => {
+                if (!mc) { alert('Select a customer first.'); return; }
+                const name = (formData.siteAddress1 || '').split(',')[0].trim();
+                const label = window.prompt(
+                  'Save this as a site for ' + formData.customerName + '.\n\nName it:',
+                  name
+                );
+                if (label === null) return;
+                setSavingSite(true);
+                try {
+                  const next = sites.concat([{
+                    id: 'job-' + Date.now(),
+                    siteName: (label || name).trim(),
+                    address: [formData.siteAddress1, formData.siteCity].filter(Boolean).join(', '),
+                    postcode: formData.sitePostcode,
+                    permitNumber: '',
+                    cbduNumber: '',
+                    sicCode: '',
+                  }]);
+                  const { error } = await window.supabase
+                    .from('customers')
+                    .update({ site_addresses: next })
+                    .eq('id', mc.id);
+                  if (error) throw error;
+                  if (window.loadCustomersFromSupabase) await window.loadCustomersFromSupabase();
+                  alert('Saved. It will be on the list for ' + formData.customerName + ' from now on.\n\nAdd the permit, CBDU and SIC codes in Customers \u2192 Compliance \u2192 Waste Sites when you get a moment \u2014 those fill in on the WTN.');
+                } catch (e) {
+                  alert('Could not save the site: ' + e.message);
+                } finally {
+                  setSavingSite(false);
+                }
+              }}
+              className="mt-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingSite ? 'Saving\u2026' : '+ Save as a site for ' + formData.customerName}
+            </button>
+          )}
         </div>
       );
     })()}
@@ -12627,13 +12675,15 @@ function buildPoRequestPdfDoc(job, ctx) {
   // of the customer's sites. The job's own address is the fallback.
   const jobSiteOf = (j) => [j.siteAddress1 || j.site_address1, j.siteCity || j.site_city,
                             j.sitePostcode || j.site_postcode].filter(Boolean).join(', ');
+  // Address comes from the line where it was copied at pick time, otherwise
+  // from the customer's saved sites looked up by name.
+  const siteLookup = ctx.siteLookup || {};
   const lineSiteOf = (i, j) => {
     const nm = i && (i.site_name || i.siteName);
-    const ad = i && (i.site_address || i.siteAddress);
     if (nm && String(nm).trim()) {
-      return ad && String(ad).trim()
-        ? String(nm).trim() + ' \u2014 ' + String(ad).trim()
-        : String(nm).trim();
+      const name = String(nm).trim();
+      const ad = (i.site_address || i.siteAddress || siteLookup[name.toLowerCase()] || '').trim();
+      return ad ? name + ' \u2014 ' + ad : name;
     }
     return jobSiteOf(j) || 'Site not recorded';
   };
@@ -12838,7 +12888,31 @@ async function generatePoRequestPdf(job, user) {
   if (!(window.jspdf && window.jspdf.jsPDF)) {
     throw new Error('The PDF library has not loaded. Check your connection and reload the page.');
   }
+
+  // Look up the customer's saved sites so a line that only carries a site
+  // name still gets its full address on the document. Lines saved before the
+  // address was copied across, and sites whose address was filled in later,
+  // both work this way.
+  let siteLookup = {};
+  try {
+    const { data } = await window.supabase
+      .from('customers')
+      .select('site_addresses')
+      .eq('name', job.customerName || job.customer_name)
+      .limit(1);
+    const raw = (data || [])[0] && (data[0].site_addresses);
+    const list = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
+    for (const site of (list || [])) {
+      const nm = (site.siteName || site.name || '').trim();
+      const ad = [site.address, site.postcode].filter(Boolean).join(', ');
+      if (nm && ad) siteLookup[nm.toLowerCase()] = ad;
+    }
+  } catch (e) {
+    console.warn('[PO request] could not load site addresses:', e);
+  }
+
   const ctx = {
+    siteLookup: siteLookup,
     jsPDF: window.jspdf.jsPDF,
     logoDataUrl: await loadLogoDataUrl(),
     company: {
