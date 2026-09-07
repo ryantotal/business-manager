@@ -13065,12 +13065,12 @@ const TWS_CREDIT_TERMS = [
     '3.2 Failure to pay on time may result in suspension of services or deliveries, withdrawal of credit facilities, and immediate demand for full settlement of outstanding balances.',
   ]},
   { h: '4. Credit limit and review', p: [
-    '4.1 The Customer\u2019s credit limit will be set out in writing upon account approval.',
+    '4.1 The Customer’s credit limit will be set out in writing upon account approval.',
     '4.2 The Company may review and adjust the credit limit at any time.',
     '4.3 The Company reserves the right to request additional financial information, trade references, or guarantees before approving or continuing a credit facility.',
   ]},
   { h: '5. Termination and suspension', p: [
-    '5.1 The Company may suspend or terminate the Customer\u2019s credit account at any time if payment terms are not adhered to, the credit limit is exceeded, the Customer becomes insolvent, bankrupt or enters administration or liquidation, or the Company at its sole discretion considers the Customer to present a credit risk.',
+    '5.1 The Company may suspend or terminate the Customer’s credit account at any time if payment terms are not adhered to, the credit limit is exceeded, the Customer becomes insolvent, bankrupt or enters administration or liquidation, or the Company at its sole discretion considers the Customer to present a credit risk.',
     '5.2 Upon termination, all outstanding sums shall become immediately payable.',
   ]},
   { h: '6. Credit checks and references', p: [
@@ -13087,7 +13087,7 @@ const TWS_CREDIT_TERMS = [
     '8.2 Any disputes arising shall be subject to the exclusive jurisdiction of the courts of England and Wales.',
   ]},
   { h: '9. General', p: [
-    '9.1 The Company\u2019s failure to enforce any provision shall not constitute a waiver of that provision.',
+    '9.1 The Company’s failure to enforce any provision shall not constitute a waiver of that provision.',
     '9.2 Any variations to these Terms must be agreed in writing and signed by a Director of the Company.',
   ]},
 ];
@@ -13105,6 +13105,26 @@ const TWS_SERVICES = [
   { key: 'contaminated',     label: 'Contaminated soil disposal',  note: 'Consignment notes included' },
   { key: 'soil_testing',     label: 'Soil testing',                note: 'Sampling and analysis before disposal' },
 ];
+
+// Defined at module scope, not inside the form. Declaring components inside a
+// component body creates a new component type on every render, which makes
+// React unmount and remount every input — losing focus after each keystroke.
+const CREDIT_GREEN = '#1a5c2a';
+
+const CreditH = ({ children }) => (
+  <div style={{ marginTop: 26, marginBottom: 12 }}>
+    <div style={{ color: CREDIT_GREEN, fontWeight: 700, fontSize: 13, letterSpacing: '.04em', textTransform: 'uppercase' }}>{children}</div>
+    <div style={{ height: 2, background: CREDIT_GREEN, marginTop: 4 }} />
+  </div>
+);
+
+const CreditL = ({ children }) => (
+  <label className="block text-xs font-medium text-gray-600 mb-1">{children}</label>
+);
+
+const CreditI = (props) => (
+  <input {...props} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+);
 
 const CreditApplicationForm = ({ token }) => {
   const [loading, setLoading]   = React.useState(true);
@@ -13197,22 +13217,10 @@ const CreditApplicationForm = ({ token }) => {
     }
   };
 
-  const G = '#1a5c2a';
-  const H = ({ children }) => (
-    <div style={{ marginTop: 26, marginBottom: 12 }}>
-      <div style={{ color: G, fontWeight: 700, fontSize: 13, letterSpacing: '.04em', textTransform: 'uppercase' }}>{children}</div>
-      <div style={{ height: 2, background: G, marginTop: 4 }} />
-    </div>
-  );
-  const L = ({ children }) => (
-    <label className="block text-xs font-medium text-gray-600 mb-1">{children}</label>
-  );
-  const I = (props) => (
-    <input {...props} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-  );
+  const G = CREDIT_GREEN;
 
   if (loading) {
-    return <div className="max-w-3xl mx-auto p-8 text-center text-gray-500">Loading\u2026</div>;
+    return <div className="max-w-3xl mx-auto p-8 text-center text-gray-500">Loading…</div>;
   }
 
   if (error) {
@@ -13229,13 +13237,13 @@ const CreditApplicationForm = ({ token }) => {
   if (done) {
     return (
       <div className="max-w-lg mx-auto mt-16 bg-white border border-gray-200 rounded-xl p-8 text-center">
-        <div style={{ color: G, fontSize: 40, lineHeight: 1 }}>\u2713</div>
+        <div style={{ color: G, fontSize: 40, lineHeight: 1 }}>✓</div>
         <h1 className="text-xl font-semibold text-gray-900 mt-3">Application received</h1>
         <p className="text-sm text-gray-600 mt-2">
           Thanks. We'll review it and come back to you within two working days.
         </p>
         <p className="text-xs text-gray-400 mt-4">
-          {localStorage.getItem('companyName') || 'Total Waste Services Ltd'} \u00b7 {TWS_COMPANY.phone}
+          {localStorage.getItem('companyName') || 'Total Waste Services Ltd'} · {TWS_COMPANY.phone}
         </p>
       </div>
     );
@@ -13274,33 +13282,33 @@ const CreditApplicationForm = ({ token }) => {
             limit once we've reviewed the application, usually within two working days.
           </div>
 
-          <H>Your company</H>
+          <CreditH>Your company</CreditH>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><L>Registered company name *</L><I value={f.companyName} onChange={e => set('companyName', e.target.value)} /></div>
-            <div><L>Trading name, if different</L><I value={f.tradingName} onChange={e => set('tradingName', e.target.value)} placeholder="Leave blank if the same" /></div>
-            <div><L>Company registration no.</L><I value={f.companyNumber} onChange={e => set('companyNumber', e.target.value)} placeholder="12345678" /></div>
-            <div><L>VAT number</L><I value={f.vatNumber} onChange={e => set('vatNumber', e.target.value)} placeholder="GB123456789" /></div>
-            <div><L>Nature of business</L><I value={f.natureOfBusiness} onChange={e => set('natureOfBusiness', e.target.value)} placeholder="Groundworks and civils" /></div>
-            <div><L>Years trading</L><I value={f.yearsTrading} onChange={e => set('yearsTrading', e.target.value)} /></div>
+            <div><CreditL>Registered company name *</CreditL><CreditI value={f.companyName} onChange={e => set('companyName', e.target.value)} /></div>
+            <div><CreditL>Trading name, if different</CreditL><CreditI value={f.tradingName} onChange={e => set('tradingName', e.target.value)} placeholder="Leave blank if the same" /></div>
+            <div><CreditL>Company registration no.</CreditL><CreditI value={f.companyNumber} onChange={e => set('companyNumber', e.target.value)} placeholder="12345678" /></div>
+            <div><CreditL>VAT number</CreditL><CreditI value={f.vatNumber} onChange={e => set('vatNumber', e.target.value)} placeholder="GB123456789" /></div>
+            <div><CreditL>Nature of business</CreditL><CreditI value={f.natureOfBusiness} onChange={e => set('natureOfBusiness', e.target.value)} placeholder="Groundworks and civils" /></div>
+            <div><CreditL>Years trading</CreditL><CreditI value={f.yearsTrading} onChange={e => set('yearsTrading', e.target.value)} /></div>
           </div>
 
-          <H>Registered address</H>
+          <CreditH>Registered address</CreditH>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2"><L>Address *</L><I value={f.regAddress1} onChange={e => set('regAddress1', e.target.value)} /></div>
-            <div><L>Town</L><I value={f.regTown} onChange={e => set('regTown', e.target.value)} /></div>
-            <div><L>Postcode *</L><I value={f.regPostcode} onChange={e => set('regPostcode', e.target.value)} /></div>
+            <div className="sm:col-span-2"><CreditL>Address *</CreditL><CreditI value={f.regAddress1} onChange={e => set('regAddress1', e.target.value)} /></div>
+            <div><CreditL>Town</CreditL><CreditI value={f.regTown} onChange={e => set('regTown', e.target.value)} /></div>
+            <div><CreditL>Postcode *</CreditL><CreditI value={f.regPostcode} onChange={e => set('regPostcode', e.target.value)} /></div>
           </div>
 
-          <H>Accounts contact</H>
+          <CreditH>Accounts contact</CreditH>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><L>Name</L><I value={f.accountsName} onChange={e => set('accountsName', e.target.value)} /></div>
-            <div><L>Email for invoices *</L><I type="email" value={f.accountsEmail} onChange={e => set('accountsEmail', e.target.value)} placeholder="accounts@company.co.uk" /></div>
-            <div><L>Telephone</L><I value={f.accountsPhone} onChange={e => set('accountsPhone', e.target.value)} /></div>
+            <div><CreditL>Name</CreditL><CreditI value={f.accountsName} onChange={e => set('accountsName', e.target.value)} /></div>
+            <div><CreditL>Email for invoices *</CreditL><CreditI type="email" value={f.accountsEmail} onChange={e => set('accountsEmail', e.target.value)} placeholder="accounts@company.co.uk" /></div>
+            <div><CreditL>Telephone</CreditL><CreditI value={f.accountsPhone} onChange={e => set('accountsPhone', e.target.value)} /></div>
             <div>
-              <L>Do you require a PO on every job?</L>
+              <CreditL>Do you require a PO on every job?</CreditL>
               <select value={f.poRequired} onChange={e => set('poRequired', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                <option value="">Select\u2026</option>
+                <option value="">Select…</option>
                 <option value="yes">Yes, on every job</option>
                 <option value="sometimes">Sometimes, we'll tell you</option>
                 <option value="no">No</option>
@@ -13308,11 +13316,25 @@ const CreditApplicationForm = ({ token }) => {
             </div>
           </div>
 
-          <H>Which services do you need?</H>
-          <p className="text-xs text-gray-500 -mt-1 mb-3">
-            Tick anything you're likely to use. It helps us price you properly, and you may not
-            know we cover all of it.
-          </p>
+          <CreditH>Which services do you need?</CreditH>
+          <div className="flex items-start justify-between gap-3 flex-wrap -mt-1 mb-3">
+            <p className="text-xs text-gray-500 flex-1 min-w-[16rem]">
+              Tick anything you're likely to use. It helps us price you properly, and you may not
+              know we cover all of it.
+            </p>
+            <div className="flex gap-2">
+              <button type="button"
+                onClick={() => setF(prev => ({ ...prev, services: TWS_SERVICES.map(x => x.key) }))}
+                className="px-2.5 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50">
+                Select all
+              </button>
+              <button type="button"
+                onClick={() => setF(prev => ({ ...prev, services: [] }))}
+                className="px-2.5 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50">
+                Clear
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {TWS_SERVICES.map(s => {
               const on = f.services.includes(s.key);
@@ -13330,17 +13352,17 @@ const CreditApplicationForm = ({ token }) => {
             })}
           </div>
           <div className="mt-3">
-            <L>Anything else you need that isn't listed?</L>
-            <I value={f.servicesOther} onChange={e => set('servicesOther', e.target.value)} />
+            <CreditL>Anything else you need that isn't listed?</CreditL>
+            <CreditI value={f.servicesOther} onChange={e => set('servicesOther', e.target.value)} />
           </div>
 
-          <H>Credit requested</H>
+          <CreditH>Credit requested</CreditH>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><L>Credit limit sought</L><I value={f.creditLimit} onChange={e => set('creditLimit', e.target.value)} placeholder="\u00a310,000" /></div>
-            <div><L>Estimated monthly spend</L><I value={f.monthlySpend} onChange={e => set('monthlySpend', e.target.value)} placeholder="\u00a34,000" /></div>
+            <div><CreditL>Credit limit sought</CreditL><CreditI value={f.creditLimit} onChange={e => set('creditLimit', e.target.value)} placeholder="£10,000" /></div>
+            <div><CreditL>Estimated monthly spend</CreditL><CreditI value={f.monthlySpend} onChange={e => set('monthlySpend', e.target.value)} placeholder="£4,000" /></div>
           </div>
 
-          <H>Trade references</H>
+          <CreditH>Trade references</CreditH>
           <p className="text-xs text-gray-500 -mt-1 mb-3">
             Three suppliers who currently give you credit. We'll contact them directly.
           </p>
@@ -13348,15 +13370,15 @@ const CreditApplicationForm = ({ token }) => {
             <div key={n} className="border border-gray-200 rounded-lg p-3 mb-3">
               <div className="text-xs text-gray-500 mb-2">Reference {n}</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <I placeholder="Company" value={f['ref' + n + 'Company']} onChange={e => set('ref' + n + 'Company', e.target.value)} />
-                <I placeholder="Contact name" value={f['ref' + n + 'Contact']} onChange={e => set('ref' + n + 'Contact', e.target.value)} />
-                <I placeholder="Email" value={f['ref' + n + 'Email']} onChange={e => set('ref' + n + 'Email', e.target.value)} />
-                <I placeholder="Telephone" value={f['ref' + n + 'Phone']} onChange={e => set('ref' + n + 'Phone', e.target.value)} />
+                <CreditI placeholder="Company" value={f['ref' + n + 'Company']} onChange={e => set('ref' + n + 'Company', e.target.value)} />
+                <CreditI placeholder="Contact name" value={f['ref' + n + 'Contact']} onChange={e => set('ref' + n + 'Contact', e.target.value)} />
+                <CreditI placeholder="Email" value={f['ref' + n + 'Email']} onChange={e => set('ref' + n + 'Email', e.target.value)} />
+                <CreditI placeholder="Telephone" value={f['ref' + n + 'Phone']} onChange={e => set('ref' + n + 'Phone', e.target.value)} />
               </div>
             </div>
           ))}
 
-          <H>Terms &amp; conditions</H>
+          <CreditH>Terms &amp; conditions</CreditH>
           <p className="text-xs text-gray-500 -mt-1 mb-3">
             Please read these before signing. You can also{' '}
             <a href={TWS_CREDIT_TERMS_URL} target="_blank" rel="noopener noreferrer"
@@ -13366,7 +13388,7 @@ const CreditApplicationForm = ({ token }) => {
                style={{ maxHeight: 260, overflowY: 'auto' }}>
             <p className="text-xs text-gray-600 mb-3" style={{ lineHeight: 1.6 }}>
               These Terms &amp; Conditions govern the operation of any credit account held with
-              Total Waste Services Ltd (\u201cthe Company\u201d). By applying for and using a credit
+              Total Waste Services Ltd (“the Company”). By applying for and using a credit
               account, the Customer agrees to be bound by these Terms &amp; Conditions.
             </p>
             {TWS_CREDIT_TERMS.map(sec => (
@@ -13379,7 +13401,7 @@ const CreditApplicationForm = ({ token }) => {
             ))}
           </div>
 
-          <H>Declaration</H>
+          <CreditH>Declaration</CreditH>
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <p className="text-sm text-gray-700" style={{ lineHeight: 1.6 }}>
               Invoices are <strong>strictly payable within 30 days</strong> of the invoice date, by
@@ -13405,9 +13427,9 @@ const CreditApplicationForm = ({ token }) => {
               </span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-              <div><L>Full name *</L><I value={f.signName} onChange={e => set('signName', e.target.value)} /></div>
-              <div><L>Position</L><I value={f.signPosition} onChange={e => set('signPosition', e.target.value)} placeholder="Director" /></div>
-              <div><L>Date</L><I value={new Date().toLocaleDateString('en-GB')} readOnly /></div>
+              <div><CreditL>Full name *</CreditL><CreditI value={f.signName} onChange={e => set('signName', e.target.value)} /></div>
+              <div><CreditL>Position</CreditL><CreditI value={f.signPosition} onChange={e => set('signPosition', e.target.value)} placeholder="Director" /></div>
+              <div><CreditL>Date</CreditL><CreditI value={new Date().toLocaleDateString('en-GB')} readOnly /></div>
             </div>
           </div>
 
@@ -13415,7 +13437,7 @@ const CreditApplicationForm = ({ token }) => {
             <button onClick={submit} disabled={saving}
               className="px-5 py-2.5 rounded-lg text-white text-sm font-medium disabled:opacity-50"
               style={{ background: G }}>
-              {saving ? 'Submitting\u2026' : 'Submit application'}
+              {saving ? 'Submitting…' : 'Submit application'}
             </button>
             <span className="text-xs text-gray-500">
               We'll email you a copy and come back within two working days.
@@ -17379,6 +17401,391 @@ Total Waste Services Ltd`);
 };
         // Customers View Component
 
+
+          // All credit applications, in one place. Reached from the Customers
+          // header so a form can go out before the company exists as a
+          // customer — which is the normal case for a new account.
+          const CreditApplicationsPanel = ({ user, onClose, onCustomerCreated }) => {
+            const [apps, setApps] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+            const [sending, setSending] = React.useState(false);
+            const [company, setCompany] = React.useState('');
+            const [email, setEmail] = React.useState('');
+            const [filter, setFilter] = React.useState('open');
+            const [creating, setCreating] = React.useState(null);
+
+            const load = React.useCallback(async () => {
+              setLoading(true);
+              try {
+                const { data } = await window.supabase
+                  .from('credit_applications')
+                  .select('*')
+                  .neq('status', 'draft')
+                  .order('created_at', { ascending: false });
+                setApps(data || []);
+              } catch (e) {
+                console.warn('[Credit] load failed:', e.message);
+              } finally { setLoading(false); }
+            }, []);
+            React.useEffect(() => { load(); }, [load]);
+
+            const portalBase = localStorage.getItem('portalUrl') || 'https://portal.totalwasteservicesltd.com';
+            const linkFor = (t) => portalBase.replace(/\/+$/, '') + '/?credit=' + t;
+
+            const sendLink = async () => {
+              if (!company.trim()) { alert('Enter the company name.'); return; }
+              if (!email.trim())   { alert('Enter an email address to send it to.'); return; }
+              if (!user || !user.id) { alert('No logged-in user found. Please sign out and back in.'); return; }
+              setSending(true);
+              try {
+                const token = (window.crypto && window.crypto.randomUUID)
+                  ? window.crypto.randomUUID()
+                  : (Date.now().toString(36) + Math.random().toString(36).slice(2, 14));
+                const ref = 'CA-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random() * 9000) + 1000);
+
+                const { error: insErr } = await window.supabase
+                  .from('credit_applications')
+                  .insert([{
+                    token: token,
+                    reference: ref,
+                    customer_name: company.trim(),
+                    sent_to: email.trim(),
+                    sent_by: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email,
+                    sent_by_user_id: user.id,
+                    sent_by_email: user.email || null,
+                    status: 'draft',
+                  }]);
+                if (insErr) throw insErr;
+
+                const body = [
+                  'Dear Sir/Madam,',
+                  '',
+                  'Thanks for your interest in opening a credit account with us.',
+                  '',
+                  'Please complete our short application form here:',
+                  linkFor(token),
+                  '',
+                  'It takes about five minutes. You will need your company registration and VAT',
+                  'numbers, and three trade references.',
+                  '',
+                  'Accounts are strictly settled 30 days from the date of invoice. Our credit',
+                  'account terms are shown on the form. We will confirm your limit within two',
+                  'working days of receiving it.',
+                  '',
+                  'Kind regards,',
+                  [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services Ltd',
+                  localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+                ].join('\n');
+
+                const res = await fetch('/api/gmail?action=send', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    user_id: user.id,
+                    to: email.trim(),
+                    subject: 'Credit account application ' + ref + ' \u2014 ' +
+                             (localStorage.getItem('companyName') || 'Total Waste Services Ltd'),
+                    body: body,
+                    fromName: ([user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services') + ' - Total Waste Services',
+                  }),
+                });
+                const result = await res.json();
+                if (!res.ok) {
+                  try { await window.supabase.from('credit_applications').delete().eq('token', token); } catch (x) {}
+                  throw new Error(describeError(result.error) || 'Gmail send failed');
+                }
+
+                await window.supabase.from('credit_applications')
+                  .update({ status: 'sent' }).eq('token', token);
+
+                alert('\u2705 Application form sent to ' + email.trim() + '.');
+                setCompany(''); setEmail('');
+                await load();
+              } catch (e) {
+                console.error('[Credit] send failed:', e);
+                const msg = describeError(e);
+                if (/Gmail not connected|reconnect|token expired/i.test(msg)) {
+                  alert('Could not send: your Gmail account is not connected.\n\nGo to Admin \u2192 User Management and connect it, then try again.');
+                } else {
+                  alert('Could not send the application:\n\n' + msg);
+                }
+              } finally { setSending(false); }
+            };
+
+            const setStatus = async (app, status) => {
+              let limit = null;
+              if (status === 'approved') {
+                limit = window.prompt('Credit limit approved (leave blank if none set):', app.approved_limit || '');
+                if (limit === null) return;
+              }
+              try {
+                await window.supabase.from('credit_applications').update({
+                  status: status,
+                  decided_at: new Date().toISOString(),
+                  decided_by: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email,
+                  approved_limit: status === 'approved' ? (limit || null) : null,
+                }).eq('id', app.id);
+                await load();
+              } catch (e) { alert('Could not update: ' + describeError(e)); }
+            };
+
+            // Build a customer from what they filled in, rather than retyping
+            // it. Only offered once approved.
+            const createCustomer = async (app) => {
+              const d = app.form_data || {};
+              const name = (d.companyName || app.customer_name || '').trim();
+              if (!name) { alert('No company name on this application.'); return; }
+
+              const { data: existing } = await window.supabase
+                .from('customers').select('id, name').ilike('name', name).limit(1);
+              if (existing && existing.length > 0) {
+                alert('A customer called "' + existing[0].name + '" already exists.\n\nUpdate that record by hand instead.');
+                return;
+              }
+
+              const limitNumber = parseFloat(String(app.approved_limit || '').replace(/[^0-9.]/g, '')) || 0;
+              if (!confirm('Create a customer record for ' + name + '?\n\n' +
+                  'Credit limit ' + (limitNumber ? '\u00a3' + limitNumber.toLocaleString('en-GB') : '\u00a30') +
+                  ', 30 day terms.')) return;
+
+              setCreating(app.id);
+              try {
+                const { error } = await window.supabase.from('customers').insert([{
+                  name: name,
+                  email: d.accountsEmail || app.sent_to || '',
+                  phone: d.accountsPhone || '',
+                  vat_number: d.vatNumber || '',
+                  company_number: d.companyNumber || '',
+                  address: [d.regAddress1, d.regTown, d.regPostcode].filter(Boolean).join('\n'),
+                  city: d.regTown || '',
+                  postcode: d.regPostcode || '',
+                  credit_limit: limitNumber,
+                  credit_days: 30,
+                  account_status: 'Active',
+                  additional_emails: d.accountsEmail || '',
+                  primary_contact: d.accountsName || d.signName || '',
+                  site_addresses: JSON.stringify([]),
+                  notes: [
+                    'Created from credit application ' + (app.reference || '') + '.',
+                    d.tradingName ? 'Trading as: ' + d.tradingName : null,
+                    d.natureOfBusiness ? 'Business: ' + d.natureOfBusiness : null,
+                    d.yearsTrading ? 'Years trading: ' + d.yearsTrading : null,
+                    d.poRequired ? 'PO required: ' + d.poRequired : null,
+                    (d.services || []).length ? 'Services wanted: ' + (d.services || []).map(k => {
+                      const svc = TWS_SERVICES.find(x => x.key === k); return svc ? svc.label : k;
+                    }).join(', ') : null,
+                    d.servicesOther ? 'Also asked about: ' + d.servicesOther : null,
+                  ].filter(Boolean).join('\n'),
+                }]);
+                if (error) throw error;
+
+                await window.supabase.from('credit_applications')
+                  .update({ customer_created: true }).eq('id', app.id);
+
+                if (window.loadCustomersFromSupabase) await window.loadCustomersFromSupabase();
+                if (onCustomerCreated) onCustomerCreated();
+                await load();
+                alert('\u2705 Customer created for ' + name + '.\n\nCheck the record and add anything the form did not cover \u2014 site addresses, account manager, business type.');
+              } catch (e) {
+                alert('Could not create the customer: ' + describeError(e));
+              } finally { setCreating(null); }
+            };
+
+            const statusChip = (st) => {
+              const map = {
+                sent:      ['bg-blue-100 text-blue-800', 'Awaiting the customer'],
+                submitted: ['bg-amber-100 text-amber-800', 'Needs a decision'],
+                approved:  ['bg-green-100 text-green-800', 'Approved'],
+                declined:  ['bg-red-100 text-red-800', 'Declined'],
+              };
+              const pair = map[st] || ['bg-gray-100 text-gray-700', st];
+              return <span className={'px-2 py-0.5 rounded text-xs font-medium ' + pair[0]}>{pair[1]}</span>;
+            };
+
+            const shown = apps.filter(a => filter === 'all'
+              ? true
+              : (a.status === 'sent' || a.status === 'submitted'));
+            const needing = apps.filter(a => a.status === 'submitted').length;
+
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+                   onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+                  <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white rounded-t-xl">
+                    <div>
+                      <h3 className="text-lg font-semibold">Credit applications</h3>
+                      <p className="text-xs text-gray-500">
+                        {needing > 0
+                          ? needing + ' waiting for a decision'
+                          : 'Send a form to anyone \u2014 they don\u2019t need to be a customer yet'}
+                      </p>
+                    </div>
+                    <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  <div className="p-6 space-y-5">
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <p className="text-sm font-medium text-gray-700 mb-1">Send an application form</p>
+                      <p className="text-xs text-gray-500 mb-3">
+                        No customer record needed. Once it comes back and you approve it, you can
+                        create the customer from what they filled in.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input type="text" value={company} onChange={e => setCompany(e.target.value)}
+                          placeholder="Company name"
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                        <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                          placeholder="accounts@company.co.uk"
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                      </div>
+                      <button onClick={sendLink} disabled={sending}
+                        className="mt-2 px-4 py-2 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-50">
+                        {sending ? 'Sending\u2026' : 'Send form'}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setFilter('open')}
+                        className={'px-3 py-1.5 rounded-lg text-xs font-medium border ' +
+                          (filter === 'open' ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}>
+                        Open
+                      </button>
+                      <button onClick={() => setFilter('all')}
+                        className={'px-3 py-1.5 rounded-lg text-xs font-medium border ' +
+                          (filter === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}>
+                        All
+                      </button>
+                      <span className="text-xs text-gray-400 ml-1">{shown.length} shown</span>
+                    </div>
+
+                    {loading ? (
+                      <p className="text-sm text-gray-500">Loading\u2026</p>
+                    ) : shown.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        {filter === 'open' ? 'Nothing outstanding.' : 'No applications yet.'}
+                      </p>
+                    ) : shown.map(app => {
+                      const d = app.form_data || {};
+                      const services = Array.isArray(d.services) ? d.services : [];
+                      const dash = '\u2014';
+                      const v = (x) => (x && String(x).trim()) ? x : dash;
+                      const address = [d.regAddress1, d.regTown, d.regPostcode]
+                        .filter(x => x && String(x).trim()).join(', ');
+                      const poLabel = { yes: 'Yes, on every job',
+                                        sometimes: 'Sometimes, they\u2019ll tell us',
+                                        no: 'No' }[d.poRequired] || dash;
+                      return (
+                        <div key={app.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                          <div className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between gap-2 flex-wrap">
+                            <div className="min-w-0">
+                              <span className="font-medium text-sm">{d.companyName || app.customer_name}</span>
+                              <span className="font-mono text-xs text-gray-500 ml-2">{app.reference}</span>
+                              <span className="block text-xs text-gray-500">
+                                Sent {new Date(app.created_at).toLocaleDateString('en-GB')} to {app.sent_to}
+                                {app.sent_by ? ' by ' + app.sent_by : ''}
+                              </span>
+                            </div>
+                            {statusChip(app.status)}
+                          </div>
+
+                          {app.status === 'sent' && (
+                            <div className="px-4 py-3 text-sm text-gray-600">
+                              Waiting for them to fill it in.
+                              <button
+                                onClick={() => { navigator.clipboard.writeText(linkFor(app.token)); alert('Link copied.'); }}
+                                className="ml-2 text-blue-600 hover:underline text-xs">Copy the link</button>
+                            </div>
+                          )}
+
+                          {(app.status === 'submitted' || app.status === 'approved' || app.status === 'declined') && (
+                            <div className="px-4 py-3 space-y-2 text-sm">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                                <div><span className="text-gray-500">Trading as:</span> {v(d.tradingName)}</div>
+                                <div><span className="text-gray-500">Company no:</span> {v(d.companyNumber)}</div>
+                                <div><span className="text-gray-500">VAT:</span> {v(d.vatNumber)}</div>
+                                <div><span className="text-gray-500">Years trading:</span> {v(d.yearsTrading)}</div>
+                                <div><span className="text-gray-500">Nature of business:</span> {v(d.natureOfBusiness)}</div>
+                                <div><span className="text-gray-500">PO required:</span> {poLabel}</div>
+                                <div className="sm:col-span-2"><span className="text-gray-500">Registered address:</span> {address || dash}</div>
+                                <div className="sm:col-span-2"><span className="text-gray-500">Accounts:</span> {[d.accountsName, d.accountsEmail, d.accountsPhone].filter(Boolean).join(' \u00b7 ') || dash}</div>
+                                <div><span className="text-gray-500">Limit sought:</span> <strong>{v(d.creditLimit)}</strong></div>
+                                <div><span className="text-gray-500">Monthly spend:</span> {v(d.monthlySpend)}</div>
+                              </div>
+
+                              {services.length > 0 && (
+                                <div className="pt-2">
+                                  <div className="text-gray-500 text-xs mb-1">Services wanted</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {services.map(k => {
+                                      const svc = TWS_SERVICES.find(x => x.key === k);
+                                      return <span key={k} className="px-2 py-0.5 bg-green-50 border border-green-200 rounded text-xs text-green-800">{svc ? svc.label : k}</span>;
+                                    })}
+                                    {d.servicesOther && <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{d.servicesOther}</span>}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="pt-2">
+                                <div className="text-gray-500 text-xs mb-1">Trade references</div>
+                                {[1,2,3].some(n => d['ref'+n+'Company'])
+                                  ? [1,2,3].map(n => d['ref'+n+'Company'] ? (
+                                      <div key={n} className="text-xs text-gray-700">
+                                        {[d['ref'+n+'Company'], d['ref'+n+'Contact'], d['ref'+n+'Email'], d['ref'+n+'Phone']]
+                                          .filter(x => x && String(x).trim()).join(' \u00b7 ')}
+                                      </div>
+                                    ) : null)
+                                  : <div className="text-xs text-amber-600">None given</div>}
+                              </div>
+
+                              <div className="pt-2 text-xs text-gray-500">
+                                Signed by {v(d.signName)}{d.signPosition ? ', ' + d.signPosition : ''}
+                                {app.submitted_at ? ' on ' + new Date(app.submitted_at).toLocaleDateString('en-GB') : ''}
+                              </div>
+                              {d.acceptTerms && (
+                                <div className="text-xs text-green-700">
+                                  \u2713 Accepted the Credit Account Terms &amp; Conditions, and authorised
+                                  credit reference and trade reference checks
+                                </div>
+                              )}
+
+                              {app.status === 'submitted' && (
+                                <div className="flex gap-2 pt-3">
+                                  <button onClick={() => setStatus(app, 'approved')}
+                                    className="px-3 py-1.5 bg-green-700 text-white rounded-lg text-xs font-medium hover:bg-green-800">Approve</button>
+                                  <button onClick={() => setStatus(app, 'declined')}
+                                    className="px-3 py-1.5 border border-red-300 text-red-700 rounded-lg text-xs font-medium hover:bg-red-50">Decline</button>
+                                </div>
+                              )}
+
+                              {app.status === 'approved' && (
+                                <div className="pt-3 border-t border-gray-100 mt-2">
+                                  <div className="text-sm text-green-800 mb-2">
+                                    Approved{app.approved_limit ? ' \u2014 limit ' + app.approved_limit : ''}
+                                    {app.decided_by ? ' by ' + app.decided_by : ''}
+                                  </div>
+                                  {app.customer_created ? (
+                                    <div className="text-xs text-gray-500">Customer record created.</div>
+                                  ) : (
+                                    <button onClick={() => createCustomer(app)} disabled={creating === app.id}
+                                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
+                                      {creating === app.id ? 'Creating\u2026' : '+ Create customer from this application'}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
           // Send and review a customer's credit account application. The link
           // goes to a public form; what comes back lands here for a decision.
           const CreditAccountPanel = ({ customer, user, onClose }) => {
@@ -17657,6 +18064,19 @@ Total Waste Services Ltd`);
           const [selectedCustomer, setSelectedCustomer] = useState(null);
           const [editingCustomer, setEditingCustomer] = useState(null);
           const [creditFor, setCreditFor] = useState(null);
+          const [showCreditApps, setShowCreditApps] = useState(false);
+          // Badge on the header button, so a submitted application doesn't
+          // sit unnoticed.
+          const [creditPending, setCreditPending] = useState(0);
+          React.useEffect(() => {
+            (async () => {
+              try {
+                const { data } = await window.supabase
+                  .from('credit_applications').select('id').eq('status', 'submitted');
+                setCreditPending((data || []).length);
+              } catch (e) { /* the table may not exist yet */ }
+            })();
+          }, [showCreditApps]);
           const [searchQuery, setSearchQuery] = useState('');
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
           const [filters, setFilters] = useState({
@@ -17916,6 +18336,22 @@ const { error } = await window.supabase
                   <p className="text-gray-600">{displayCustomers.length} customers found</p>
                 </div>
                 <div className="flex items-center space-x-2">
+                {/* Credit applications. Sits here rather than only on a customer
+                    record because a credit application is usually the first
+                    contact with a company — before they're a customer at all. */}
+                <button
+                  onClick={() => setShowCreditApps(true)}
+                  className="relative flex items-center px-3 py-2 sm:px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm sm:text-base"
+                >
+                  <LucideIcon icon="FileText" size={16} className="mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Credit applications</span>
+                  <span className="sm:hidden">Credit</span>
+                  {creditPending > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-xs font-semibold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                      {creditPending}
+                    </span>
+                  )}
+                </button>
                 <button 
   onClick={onAddCustomer}
   className="flex items-center px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm sm:text-base"
@@ -18344,6 +18780,13 @@ const { error } = await window.supabase
                 </div>
               )}
 
+              {showCreditApps && (
+                <CreditApplicationsPanel
+                  user={user}
+                  onClose={() => setShowCreditApps(false)}
+                  onCustomerCreated={() => { if (onRefreshCustomers) onRefreshCustomers(); }}
+                />
+              )}
               {creditFor && (
 
                 <CreditAccountPanel customer={creditFor} user={user} onClose={() => setCreditFor(null)} />
