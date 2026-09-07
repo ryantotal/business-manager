@@ -5151,6 +5151,20 @@ const [isEvent, setIsEvent] = useState(false);
 
 
    const handleSubmit = async () => {
+    // A customer who requires a PO on every job should not get one raised
+    // without it by accident. Not a hard block — occasionally the work has to
+    // start while the number is chased — but it has to be a decision.
+    try {
+      const mc = customers?.find(c => (c.name || c.companyName) === formData.customerName);
+      const req = (mc && (mc.poRequired || mc.po_required)) || '';
+      if (req === 'yes' && !String(formData.customerPO || '').trim()) {
+        const go = confirm(
+          formData.customerName + ' requires a purchase order on every job, and this one has no ' +
+          'PO number.\n\nSave it anyway?\n\nYou will not be able to invoice until the number is added.');
+        if (!go) return;
+      }
+    } catch (e) { /* never block saving because of this check */ }
+
   // ── Derive job-level quantity and unit from the line items ───────────
   // The job row still has `quantity` and `unit` columns, and plenty of things
   // read them: the dashboard's quantity reporting, the "Qty: 400 tonnes" shown
@@ -5705,16 +5719,46 @@ const [isEvent, setIsEvent] = useState(false);
                 </div>
               ) : null;
             })()}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Customer PO Number</label>
-              <input
-                type="text"
-                value={formData.customerPO}
-                onChange={(e) => setFormData({...formData, customerPO: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                placeholder="Customer purchase order"
-              />
-            </div>
+            {(() => {
+              // What this customer said about purchase orders, from their
+              // record. Without this the answer they gave on the credit
+              // application sits unread until an invoice gets queried.
+              const mc = customers?.find(c => (c.name || c.companyName) === formData.customerName);
+              const req = (mc && (mc.poRequired || mc.po_required)) || '';
+              const missing = !String(formData.customerPO || '').trim();
+              const mustHave = req === 'yes';
+
+              return (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Customer PO Number
+                    {mustHave && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.customerPO}
+                    onChange={(e) => setFormData({...formData, customerPO: e.target.value})}
+                    className={`w-full px-3 py-2 border rounded-lg ${
+                      mustHave && missing ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}
+                    placeholder={mustHave ? 'Required by this customer' : 'Customer purchase order'}
+                  />
+                  {mustHave && missing && (
+                    <p className="text-xs text-amber-700 mt-1">
+                      {formData.customerName} requires a PO on every job. Get the number before
+                      the work goes ahead, or you will not be able to invoice.
+                    </p>
+                  )}
+                  {req === 'sometimes' && missing && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      This customer sometimes requires a PO — worth checking.
+                    </p>
+                  )}
+                  {mustHave && !missing && (
+                    <p className="text-xs text-green-700 mt-1">PO recorded.</p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -13373,6 +13417,79 @@ function formatMoney(n) {
 
 window.formatMoney = formatMoney;
 
+// Credit applications waiting for a decision, shown across the top for every
+// user. Self-contained on purpose: it does its own query and holds its own
+// state, so it doesn't depend on which component the header happens to live
+// in. Renders nothing when there's nothing outstanding.
+const CreditBanner = ({ onReview }) => {
+  const [apps, setApps] = React.useState([]);
+  const [dismissed, setDismissed] = React.useState([]);
+
+  const check = React.useCallback(async () => {
+    try {
+      const { data } = await window.supabase
+        .from('credit_applications')
+        .select('id, customer_name, form_data')
+        .eq('status', 'submitted');
+      setApps(data || []);
+    } catch (e) {
+      // Table may not exist yet; the banner just stays hidden.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    check();
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') check();
+    }, 5 * 60 * 1000);
+    window.addEventListener('credit-apps-changed', check);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('credit-apps-changed', check);
+    };
+  }, [check]);
+
+  const outstanding = apps.filter(a => !dismissed.includes(a.id));
+  if (outstanding.length === 0) return null;
+
+  const names = outstanding
+    .map(a => (a.form_data && a.form_data.companyName) || a.customer_name)
+    .filter(Boolean);
+  const nameText = names.length === 0 ? ''
+    : names.length <= 2 ? names.join(' and ')
+    : names.slice(0, 2).join(', ') + ' and ' + (names.length - 2) + ' more';
+
+  return (
+    <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2.5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <LucideIcon icon="Clock" size={18} className="text-amber-600 flex-shrink-0" />
+          <span className="text-sm text-amber-900">
+            <strong>{outstanding.length} credit application{outstanding.length === 1 ? '' : 's'}</strong>
+            {outstanding.length === 1 ? ' is' : ' are'} waiting for a decision
+            {nameText ? ' — ' + nameText : ''}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => { if (onReview) onReview(); }}
+            className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700"
+          >
+            Review
+          </button>
+          <button
+            onClick={() => setDismissed(prev => prev.concat(outstanding.map(a => a.id)))}
+            className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg"
+            title="Hide these until a new one arrives"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Errors from Supabase are plain objects, not Error instances, so String(e)
 // renders as "[object Object]". Pull out whatever detail is actually there.
 // Tells the header banner to re-check straight away. Without it the banner
@@ -13451,6 +13568,24 @@ const TWS_CREDIT_TERMS_URL =
 // go straight onto their account instead of being retyped as free text.
 // Credit bands. The customer picks a range; you set the exact figure when
 // you approve, so nothing depends on interpreting what they typed.
+// Whether a customer insists on a purchase order. Set from their credit
+// application, editable on the customer record, and enforced when a job is
+// raised — otherwise the answer they gave on the form is just a note nobody
+// reads until the invoice is queried.
+const PO_REQUIREMENTS = [
+  { value: '',          label: 'Not known' },
+  { value: 'yes',       label: 'Yes \u2014 on every job' },
+  { value: 'sometimes', label: 'Sometimes \u2014 they will tell us' },
+  { value: 'no',        label: 'No' },
+];
+
+function poRequirementLabel(v) {
+  const found = PO_REQUIREMENTS.find(x => x.value === (v || ''));
+  return found ? found.label : 'Not known';
+}
+
+window.poRequirementLabel = poRequirementLabel;
+
 const TWS_CREDIT_BANDS = [
   'Up to \u00a31,000',
   '\u00a31,000 to \u00a32,500',
@@ -17995,7 +18130,9 @@ Total Waste Services Ltd`);
 
               setCreating(app.id);
               try {
-                const { error } = await window.supabase.from('customers').insert([{
+                // Split so a column the database hasn't got yet costs you a
+                // field rather than the whole customer record.
+                const core = {
                   name: name,
                   email: d.accountsEmail || app.sent_to || '',
                   phone: d.accountsPhone || '',
@@ -18009,9 +18146,6 @@ Total Waste Services Ltd`);
                   account_status: 'Active',
                   additional_emails: d.accountsEmail || '',
                   primary_contact: d.accountsName || d.signName || '',
-                  // Straight onto the record now the form offers the same list.
-                  business_type: TWS_BUSINESS_TYPES.includes(d.natureOfBusiness)
-                    ? d.natureOfBusiness : 'Other',
                   site_addresses: JSON.stringify([]),
                   notes: (() => {
                     const lines = [
@@ -18052,7 +18186,26 @@ Total Waste Services Ltd`);
                     lines.push('', 'A PDF of the completed application is filed under Documents.');
                     return lines.filter(x => x !== null).join('\n');
                   })(),
-                }]);
+                };
+
+                const optional = {
+                  // Newer columns. If the database hasn't got them the insert is
+                  // retried without them and you're told what was left out.
+                  business_type: TWS_BUSINESS_TYPES.includes(d.natureOfBusiness)
+                    ? d.natureOfBusiness : 'Other',
+                  po_required: d.poRequired || '',
+                };
+
+                let error = null;
+                let droppedFields = [];
+                ({ error } = await window.supabase.from('customers')
+                  .insert([Object.assign({}, core, optional)]));
+
+                if (error && /schema cache|column .* does not exist|PGRST204/i.test(
+                      (error.message || '') + ' ' + (error.code || ''))) {
+                  droppedFields = ['business type', 'PO requirement'];
+                  ({ error } = await window.supabase.from('customers').insert([core]));
+                }
                 if (error) throw error;
 
                 // File the completed application as a PDF against the
@@ -18108,6 +18261,9 @@ Total Waste Services Ltd`);
                 if (onCustomerCreated) onCustomerCreated(name);
                 await load();
                 alert('\u2705 Customer created for ' + name + '.' +
+                  (droppedFields.length > 0
+                    ? '\n\nNote: ' + droppedFields.join(' and ') + ' could not be saved because those columns are missing from the database. Run customer_columns.sql, then set them by hand on this customer.'
+                    : '') +
                   (filedUrl ? '\n\nThe completed application has been filed as a PDF under Documents.' : '') +
                   '\n\nCheck the record and add anything the form did not cover \u2014 site addresses, account manager, business type.');
               } catch (e) {
@@ -21977,57 +22133,6 @@ info@totalwasteservicesltd.com`;
 
         // Main Application
         const App = () => {
-          // Credit applications awaiting a decision, shown as a banner across
-          // the top for every user. Polled rather than pushed — a few minutes'
-          // delay is fine for this, and it costs one small query.
-          const [pendingCreditApps, setPendingCreditApps] = React.useState(0);
-          const [creditAppNames, setCreditAppNames] = React.useState('');
-          // Which applications have been dismissed. Keyed to the actual ids,
-          // so hiding the banner silences those specific applications and
-          // nothing else — a new one always shows.
-          const [dismissedCreditIds, setDismissedCreditIds] = React.useState([]);
-          const [creditAppIds, setCreditAppIds] = React.useState([]);
-          const creditBannerDismissed = creditAppIds.length > 0 &&
-            creditAppIds.every(id => dismissedCreditIds.includes(id));
-
-          React.useEffect(() => {
-            let cancelled = false;
-            const check = async () => {
-              try {
-                const { data } = await window.supabase
-                  .from('credit_applications')
-                  .select('id, customer_name, form_data')
-                  .eq('status', 'submitted');
-                if (cancelled) return;
-                const rows = data || [];
-                setPendingCreditApps(rows.length);
-                setCreditAppIds(rows.map(r => r.id));
-                const names = rows
-                  .map(r => (r.form_data && r.form_data.companyName) || r.customer_name)
-                  .filter(Boolean);
-                setCreditAppNames(
-                  names.length === 0 ? '' :
-                  names.length <= 2 ? names.join(' and ') :
-                  names.slice(0, 2).join(', ') + ' and ' + (names.length - 2) + ' more'
-                );
-              } catch (e) {
-                // The table may not exist yet; the banner just stays hidden.
-              }
-            };
-            check();
-            const id = setInterval(() => {
-              if (document.visibilityState === 'visible') check();
-            }, 5 * 60 * 1000);
-            // Re-check the moment an application is approved, declined or
-            // deleted, so the banner clears immediately.
-            window.addEventListener('credit-apps-changed', check);
-            return () => {
-              cancelled = true;
-              clearInterval(id);
-              window.removeEventListener('credit-apps-changed', check);
-            };
-          }, []);
-
           // Load company settings on app start
           const [deleteConfirmation, setDeleteConfirmation] = useState({ show: false, jobId: null, jobNumber: '' });
 useEffect(() => {
@@ -25608,6 +25713,7 @@ siteNotes: job.site_notes || job.siteNotes || '',
               primary_contact: customer.primaryContact || '',
               company_number: customer.companyNumber || '',
               site_addresses: JSON.stringify(customer.siteAddresses || []),
+              po_required: customer.poRequired || '',
               account_manager: customer.accountManager || '',
               preferred_contact_method: customer.preferredContactMethod || 'Email',
               special_requirements: customer.specialRequirements || '',
@@ -26414,37 +26520,9 @@ const CollectionCalendarModal = () => {
     </div>
   </div>
 
-  {/* Credit applications waiting for a decision. Shown to everyone, on every
-      tab, because an application sitting unnoticed holds up an account. */}
-  {pendingCreditApps > 0 && !creditBannerDismissed && (
-    <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2.5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <LucideIcon icon="Clock" size={18} className="text-amber-600 flex-shrink-0" />
-          <span className="text-sm text-amber-900">
-            <strong>{pendingCreditApps} credit application{pendingCreditApps === 1 ? '' : 's'}</strong>
-            {pendingCreditApps === 1 ? ' is' : ' are'} waiting for a decision
-            {creditAppNames ? ' \u2014 ' + creditAppNames : ''}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={() => setActiveTab('customers')}
-            className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700"
-          >
-            Review
-          </button>
-          <button
-            onClick={() => setDismissedCreditIds(prev => Array.from(new Set(prev.concat(creditAppIds))))}
-            className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg"
-            title="Hide until next sign-in"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      </div>
-    </div>
-  )}
+  {/* Credit applications waiting for a decision. Self-contained, so it works
+      wherever the header happens to be rendered from. */}
+  <CreditBanner onReview={() => setActiveTab('customers')} />
 
   {/* Desktop tabs */}
   <div className="hidden sm:block px-6">
@@ -27800,6 +27878,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               creditRating: c.creditRating || c.credit_rating || 'B',
               accountStatus: c.accountStatus || c.account_status || 'Active',
               businessType: c.businessType || c.business_type || 'Construction Company',
+              poRequired: c.poRequired ?? c.po_required ?? '',
               phone: c.phone || '',
               mobile: c.mobile || '',
               email: c.email || '',
@@ -28672,6 +28751,29 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <input type="date" value={formData.dateRegistered} onChange={(e) => setFormData({...formData, dateRegistered: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* PO requirement sits with the financial settings, since
+                      it governs whether we can invoice. */}
+                  {activeTab === 'financial' && (
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Purchase order required?
+                      </label>
+                      <select
+                        value={formData.poRequired || ''}
+                        onChange={(e) => setFormData({ ...formData, poRequired: e.target.value })}
+                        className="w-full sm:w-72 px-3 py-2 border border-gray-300 rounded-lg"
+                      >
+                        {PO_REQUIREMENTS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Set to "on every job" and the job form will prompt for a PO number
+                        before the job can be saved.
+                      </p>
                     </div>
                   )}
 
