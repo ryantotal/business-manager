@@ -13030,8 +13030,346 @@ window.generatePoRequestPdf = generatePoRequestPdf;
 // The services offered, shown as tick boxes. Doubles as a prompt — plenty of
 // customers only know us for skips.
 
+// ═══════════════════════════════════════════════════════════════════════════
+// COMPLETED CREDIT APPLICATION — PDF
+//
+// A record of exactly what the customer declared and agreed to, on our
+// letterhead, filed against their account. If an account later goes bad this
+// is the document you hand to a solicitor or a credit insurer: what they told
+// us about themselves, who signed it, when, and what terms they accepted.
+//
+// Deliberately reproduces the submitted values verbatim rather than whatever
+// the customer record says now — the point is what was declared at the time.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function buildCreditApplicationPdfDoc(app, ctx) {
+  ctx = ctx || {};
+  const company = ctx.company || {};
+  const d = app.form_data || {};
+  const jsPDFCtor = ctx.jsPDF || (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF);
+  if (!jsPDFCtor) throw new Error('jsPDF is not loaded');
+
+  const doc = new jsPDFCtor({ unit: 'mm', format: 'a4', compress: true });
+
+  const GREEN    = [26, 92, 42];
+  const GREEN_LT = [232, 243, 235];
+  const INK      = [17, 24, 39];
+  const MUTED    = [107, 114, 128];
+  const RULE     = [209, 213, 219];
+
+  const PAGE_W = doc.internal.pageSize.getWidth();
+  const PAGE_H = doc.internal.pageSize.getHeight();
+  const M  = 16;
+  const CW = PAGE_W - M * 2;
+  let y = M;
+
+  const setFont = (style, size, colour) => {
+    doc.setFont('helvetica', style || 'normal');
+    doc.setFontSize(size || 10);
+    const c = colour || INK;
+    doc.setTextColor(c[0], c[1], c[2]);
+  };
+
+  const need = (h) => {
+    if (y + h > PAGE_H - 20) { doc.addPage(); y = M; return true; }
+    return false;
+  };
+
+  const heading = (label) => {
+    y += 3;
+    need(14);
+    setFont('bold', 10, GREEN);
+    doc.text(String(label).toUpperCase(), M, y);
+    y += 1.8;
+    doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+    doc.setLineWidth(0.4);
+    doc.line(M, y, M + CW, y);
+    y += 5;
+  };
+
+  const fmtDate = (v) => {
+    if (!v) return '\u2014';
+    const dt = new Date(v);
+    return isNaN(dt.getTime()) ? '\u2014'
+      : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
+  const val = (v) => (v && String(v).trim()) ? String(v).trim() : '\u2014';
+
+  // Two-column field rows.
+  const fields = (rows) => {
+    doc.autoTable({
+      startY: y,
+      theme: 'plain',
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 1.4, bottom: 1.4, left: 0, right: 2 }, textColor: INK },
+      columnStyles: { 0: { cellWidth: 46, fontStyle: 'bold' }, 1: { cellWidth: CW - 46 } },
+      body: rows,
+      margin: { left: M, right: M },
+    });
+    y = doc.lastAutoTable.finalY + 2;
+  };
+
+  // ══ LETTERHEAD ════════════════════════════════════════════════════════
+  doc.setFillColor(GREEN[0], GREEN[1], GREEN[2]);
+  doc.rect(0, 0, PAGE_W, 3, 'F');
+  y = M + 2;
+  let headerBottom = y;
+  let addrTop = y;
+
+  if (ctx.logoDataUrl) {
+    try {
+      const props = doc.getImageProperties(ctx.logoDataUrl);
+      const ratio = Math.min(46 / props.width, 18 / props.height);
+      doc.addImage(ctx.logoDataUrl, M, y, props.width * ratio, props.height * ratio);
+      addrTop = y + props.height * ratio + 3.5;
+    } catch (e) {
+      setFont('bold', 15, GREEN);
+      doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
+      addrTop = y + 11;
+    }
+  } else {
+    setFont('bold', 15, GREEN);
+    doc.text(company.name || 'Total Waste Services Ltd', M, y + 7);
+    addrTop = y + 11;
+  }
+
+  if (company.address) {
+    setFont('normal', 8, MUTED);
+    for (const line of doc.splitTextToSize(String(company.address), 70)) {
+      doc.text(line, M, addrTop);
+      addrTop += 3.4;
+    }
+    if (company.phone) { doc.text('T: ' + company.phone, M, addrTop); addrTop += 3.4; }
+  }
+  headerBottom = Math.max(headerBottom, addrTop);
+
+  const rx = PAGE_W - M;
+  setFont('bold', 16, GREEN);
+  doc.text('CREDIT ACCOUNT APPLICATION', rx, y + 7, { align: 'right' });
+  setFont('bold', 10, INK);
+  doc.text(val(app.reference), rx, y + 13, { align: 'right' });
+  setFont('normal', 8.5, MUTED);
+  doc.text('Submitted: ' + fmtDate(app.submitted_at), rx, y + 18, { align: 'right' });
+  headerBottom = Math.max(headerBottom, y + 20);
+
+  y = headerBottom + 4;
+  doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+  doc.setLineWidth(0.3);
+  doc.line(M, y, M + CW, y);
+  y += 6;
+
+  // ══ OUTCOME ═══════════════════════════════════════════════════════════
+  const decided = app.status === 'approved' || app.status === 'declined';
+  if (decided) {
+    const approved = app.status === 'approved';
+    doc.setFillColor(GREEN_LT[0], GREEN_LT[1], GREEN_LT[2]);
+    doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(M, y, CW, 14, 1.5, 1.5, 'FD');
+    setFont('bold', 10, GREEN);
+    doc.text(approved
+      ? 'Approved' + (app.approved_limit ? ' \u2014 credit limit ' + app.approved_limit : '')
+      : 'Declined', M + 4, y + 6);
+    setFont('normal', 8.5, INK);
+    doc.text(
+      (app.decided_by ? 'By ' + app.decided_by : 'Decision recorded') +
+      (app.decided_at ? ' on ' + fmtDate(app.decided_at) : '') +
+      '. Payment terms 30 days from invoice date.',
+      M + 4, y + 10.5);
+    y += 19;
+  }
+
+  // ══ THE APPLICANT ═════════════════════════════════════════════════════
+  heading('Applicant');
+  fields([
+    ['Registered name', val(d.companyName || app.customer_name)],
+    ['Trading name', val(d.tradingName)],
+    ['Company registration', val(d.companyNumber)],
+    ['VAT number', val(d.vatNumber)],
+    ['Nature of business', val(d.natureOfBusiness)],
+    ['Years trading', val(d.yearsTrading)],
+    ['Registered address', [d.regAddress1, d.regTown, d.regPostcode].filter(Boolean).join(', ') || '\u2014'],
+  ]);
+
+  // ══ ACCOUNTS CONTACT ══════════════════════════════════════════════════
+  heading('Accounts contact');
+  const poLabel = { yes: 'Yes, on every job', sometimes: 'Sometimes \u2014 they will tell us', no: 'No' }[d.poRequired] || '\u2014';
+  fields([
+    ['Name', val(d.accountsName)],
+    ['Email for invoices', val(d.accountsEmail)],
+    ['Telephone', val(d.accountsPhone)],
+    ['Purchase order required', poLabel],
+  ]);
+
+  // ══ CREDIT REQUESTED ══════════════════════════════════════════════════
+  heading('Credit requested');
+  fields([
+    ['Limit sought', val(d.creditLimit)],
+    ['Estimated monthly spend', val(d.monthlySpend)],
+  ]);
+
+  // ══ SERVICES ══════════════════════════════════════════════════════════
+  const services = Array.isArray(d.services) ? d.services : [];
+  if (services.length > 0 || d.servicesOther) {
+    heading('Services requested');
+    setFont('normal', 9.5, INK);
+    const names = services.map(k => {
+      const svc = (ctx.services || []).find(x => x.key === k);
+      return svc ? svc.label : k;
+    });
+    if (d.servicesOther) names.push(d.servicesOther + ' (other)');
+    for (const line of doc.splitTextToSize(names.join(', '), CW)) {
+      need(6); setFont('normal', 9.5, INK);
+      doc.text(line, M, y); y += 4.4;
+    }
+    y += 2;
+  }
+
+  // ══ TRADE REFERENCES ══════════════════════════════════════════════════
+  heading('Trade references given');
+  const refRows = [];
+  for (const n of [1, 2, 3]) {
+    if (!d['ref' + n + 'Company']) continue;
+    refRows.push([
+      String(n),
+      val(d['ref' + n + 'Company']),
+      val(d['ref' + n + 'Contact']),
+      val(d['ref' + n + 'Email']),
+      val(d['ref' + n + 'Phone']),
+    ]);
+  }
+  if (refRows.length === 0) {
+    setFont('normal', 9.5, MUTED);
+    doc.text('None given.', M, y);
+    y += 6;
+  } else {
+    doc.autoTable({
+      startY: y,
+      theme: 'plain',
+      styles: { font: 'helvetica', fontSize: 8.5, cellPadding: { top: 2, bottom: 2, left: 2, right: 2 }, textColor: INK },
+      headStyles: { fillColor: GREEN, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: [250, 250, 250] },
+      head: [['', 'Company', 'Contact', 'Email', 'Telephone']],
+      body: refRows,
+      columnStyles: {
+        0: { cellWidth: 7 },
+        1: { cellWidth: 42 },
+        2: { cellWidth: 32 },
+        3: { cellWidth: CW - 7 - 42 - 32 - 27 },
+        4: { cellWidth: 27 },
+      },
+      margin: { left: M, right: M },
+    });
+    y = doc.lastAutoTable.finalY + 3;
+  }
+
+  // ══ DECLARATION ═══════════════════════════════════════════════════════
+  need(52);
+  heading('Declaration made by the applicant');
+
+  doc.setFillColor(250, 250, 250);
+  doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+  doc.setLineWidth(0.3);
+  const decTop = y;
+  doc.roundedRect(M, y, CW, 40, 1.5, 1.5, 'FD');
+
+  setFont('normal', 8.8, INK);
+  let dy = y + 6;
+  const declaration = [
+    'Invoices are strictly payable within 30 days of the invoice date, by BACS. I confirm I am',
+    'authorised to apply for credit on behalf of the company named above, and that the information',
+    'given is accurate to the best of my knowledge.',
+    '',
+    'I authorise Total Waste Services Ltd to make enquiries with credit reference agencies, and to',
+    'contact the trade references given above.',
+  ];
+  for (const line of declaration) {
+    doc.text(line, M + 4, dy);
+    dy += 4.2;
+  }
+
+  const ty = dy + 1.5;
+  if (d.acceptTerms) {
+    // Hand-drawn tick. The built-in Helvetica has no tick glyph, so a typed
+    // one comes out as a stray mark.
+    doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]);
+    doc.setLineWidth(0.7);
+    doc.line(M + 4, ty - 1.4, M + 5.3, ty - 0.1);
+    doc.line(M + 5.3, ty - 0.1, M + 7.6, ty - 3.6);
+    setFont('bold', 9, GREEN);
+    doc.text('Credit Account Terms & Conditions accepted', M + 9.5, ty);
+  } else {
+    setFont('bold', 9, [163, 45, 45]);
+    doc.text('Credit Account Terms & Conditions NOT accepted', M + 4, ty);
+  }
+
+  y = decTop + 45;
+
+  need(24);
+  fields([
+    ['Signed by', val(d.signName)],
+    ['Position', val(d.signPosition)],
+    ['Date submitted', fmtDate(app.submitted_at)],
+    ['Submitted from', val(app.sent_to)],
+  ]);
+
+  // ══ AUDIT TRAIL ═══════════════════════════════════════════════════════
+  // The part that matters if this is ever produced as evidence: how the form
+  // reached them, and that it was them who completed it.
+  need(30);
+  heading('Audit trail');
+  setFont('normal', 8.5, MUTED);
+  const trail = [
+    'Application form issued to ' + val(app.sent_to) +
+      (app.sent_by ? ' by ' + app.sent_by : '') +
+      (app.created_at ? ' on ' + fmtDate(app.created_at) : '') + '.',
+    'Completed and submitted' + (app.submitted_at ? ' on ' + fmtDate(app.submitted_at) : '') +
+      ' via a unique single-use link.',
+  ];
+  if (d.termsUrl) trail.push('Terms accepted: ' + d.termsUrl);
+  if (decided) {
+    trail.push((app.status === 'approved' ? 'Approved' : 'Declined') +
+      (app.decided_by ? ' by ' + app.decided_by : '') +
+      (app.decided_at ? ' on ' + fmtDate(app.decided_at) : '') + '.');
+  }
+  for (const t of trail) {
+    for (const line of doc.splitTextToSize(t, CW)) {
+      need(6); setFont('normal', 8.5, MUTED);
+      doc.text(line, M, y); y += 3.8;
+    }
+  }
+
+  // ══ FOOTER ════════════════════════════════════════════════════════════
+  const footerBits = [
+    company.name,
+    company.companyNo ? 'Reg. No. ' + company.companyNo : null,
+    company.vat ? 'VAT No. ' + company.vat : null,
+    company.carrierReg ? 'Waste Carrier ' + company.carrierReg : null,
+  ].filter(Boolean).join('  |  ');
+
+  const pages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+    doc.setLineWidth(0.3);
+    doc.line(M, PAGE_H - 12, M + CW, PAGE_H - 12);
+    setFont('normal', 7, MUTED);
+    doc.text(doc.splitTextToSize(footerBits, CW - 24)[0] || '', M, PAGE_H - 8);
+    doc.text('Page ' + p + ' of ' + pages, M + CW, PAGE_H - 8, { align: 'right' });
+  }
+
+  return doc;
+}
+
 // Errors from Supabase are plain objects, not Error instances, so String(e)
 // renders as "[object Object]". Pull out whatever detail is actually there.
+// Tells the header banner to re-check straight away. Without it the banner
+// keeps its five-minute-old count after something is approved or deleted.
+function notifyCreditChanged() {
+  try { window.dispatchEvent(new CustomEvent('credit-apps-changed')); } catch (e) {}
+}
+window.notifyCreditChanged = notifyCreditChanged;
+
 function describeError(e) {
   if (!e) return 'Unknown error';
   if (typeof e === 'string') return e;
@@ -17526,12 +17864,22 @@ Total Waste Services Ltd`);
                   approved_limit: status === 'approved' ? (limit || null) : null,
                 }).eq('id', app.id);
                 await load();
+                notifyCreditChanged();
+
+                // Approving and then setting the customer up are the same job,
+                // so run straight into it rather than making them find the
+                // button afterwards.
+                if (status === 'approved' && !app.customer_created) {
+                  await createCustomer({ ...app, approved_limit: limit || null }, true);
+                }
               } catch (e) { alert('Could not update: ' + describeError(e)); }
             };
 
             // Build a customer from what they filled in, rather than retyping
             // it. Only offered once approved.
-            const createCustomer = async (app) => {
+            // chained = called straight after approving, so the wording
+            // acknowledges that rather than appearing out of nowhere.
+            const createCustomer = async (app, chained) => {
               const d = app.form_data || {};
               const name = (d.companyName || app.customer_name || '').trim();
               if (!name) { alert('No company name on this application.'); return; }
@@ -17544,9 +17892,10 @@ Total Waste Services Ltd`);
               }
 
               const limitNumber = parseFloat(String(app.approved_limit || '').replace(/[^0-9.]/g, '')) || 0;
-              if (!confirm('Create a customer record for ' + name + '?\n\n' +
-                  'Credit limit ' + (limitNumber ? '\u00a3' + limitNumber.toLocaleString('en-GB') : '\u00a30') +
-                  ', 30 day terms.')) return;
+              const msg = (chained ? 'Approved. Set ' + name + ' up as a customer now?' : 'Create a customer record for ' + name + '?') +
+                  '\n\nCredit limit ' + (limitNumber ? '\u00a3' + limitNumber.toLocaleString('en-GB') : '\u00a30') +
+                  ', 30 day terms.';
+              if (!confirm(msg)) return;
 
               setCreating(app.id);
               try {
@@ -17565,30 +17914,121 @@ Total Waste Services Ltd`);
                   additional_emails: d.accountsEmail || '',
                   primary_contact: d.accountsName || d.signName || '',
                   site_addresses: JSON.stringify([]),
-                  notes: [
-                    'Created from credit application ' + (app.reference || '') + '.',
-                    d.tradingName ? 'Trading as: ' + d.tradingName : null,
-                    d.natureOfBusiness ? 'Business: ' + d.natureOfBusiness : null,
-                    d.yearsTrading ? 'Years trading: ' + d.yearsTrading : null,
-                    d.poRequired ? 'PO required: ' + d.poRequired : null,
-                    (d.services || []).length ? 'Services wanted: ' + (d.services || []).map(k => {
-                      const svc = TWS_SERVICES.find(x => x.key === k); return svc ? svc.label : k;
-                    }).join(', ') : null,
-                    d.servicesOther ? 'Also asked about: ' + d.servicesOther : null,
-                  ].filter(Boolean).join('\n'),
+                  notes: (() => {
+                    const lines = [
+                      'Created from credit application ' + (app.reference || '') +
+                        ' on ' + new Date().toLocaleDateString('en-GB') + '.',
+                      d.tradingName ? 'Trading as: ' + d.tradingName : null,
+                      d.natureOfBusiness ? 'Business: ' + d.natureOfBusiness : null,
+                      d.yearsTrading ? 'Years trading: ' + d.yearsTrading : null,
+                      d.poRequired ? 'PO required: ' + ({ yes: 'Yes, on every job',
+                        sometimes: 'Sometimes \u2014 they will tell us', no: 'No' }[d.poRequired] || d.poRequired) : null,
+                      (d.services || []).length ? 'Services wanted: ' + (d.services || []).map(k => {
+                        const svc = TWS_SERVICES.find(x => x.key === k); return svc ? svc.label : k;
+                      }).join(', ') : null,
+                      d.servicesOther ? 'Also asked about: ' + d.servicesOther : null,
+                    ];
+
+                    // Trade references belong on the record — they're the thing
+                    // you'd go looking for later, and they were only ever
+                    // visible inside the application before.
+                    const refs = [1, 2, 3]
+                      .filter(n => d['ref' + n + 'Company'])
+                      .map(n => '  ' + n + '. ' + [d['ref' + n + 'Company'], d['ref' + n + 'Contact'],
+                                                   d['ref' + n + 'Email'], d['ref' + n + 'Phone']]
+                             .filter(x => x && String(x).trim()).join(' \u00b7 '));
+                    if (refs.length > 0) {
+                      lines.push('', 'Trade references given:', ...refs);
+                    }
+
+                    if (d.signName) {
+                      lines.push('', 'Application signed by ' + d.signName +
+                        (d.signPosition ? ', ' + d.signPosition : '') +
+                        (app.submitted_at ? ' on ' + new Date(app.submitted_at).toLocaleDateString('en-GB') : ''));
+                    }
+                    if (d.acceptTerms) {
+                      lines.push('Accepted the Credit Account Terms & Conditions and authorised credit and trade reference checks.');
+                    }
+                    lines.push('', 'A PDF of the completed application is filed under Documents.');
+                    return lines.filter(x => x !== null).join('\n');
+                  })(),
                 }]);
                 if (error) throw error;
 
+                // File the completed application as a PDF against the
+                // customer. If the account later goes bad, this is the
+                // evidence: what they declared, who signed it, when, and the
+                // terms they accepted. Kept as a document rather than only a
+                // database row so it can be produced or emailed as-is.
+                let filedUrl = null;
+                try {
+                  const pdfCtx = {
+                    jsPDF: window.jspdf && window.jspdf.jsPDF,
+                    logoDataUrl: await loadLogoDataUrl(),
+                    services: TWS_SERVICES,
+                    company: {
+                      name:       localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+                      address:    localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress,
+                      phone:      TWS_COMPANY.phone,
+                      vat:        TWS_COMPANY.vat,
+                      companyNo:  TWS_COMPANY.companyNo,
+                      carrierReg: TWS_COMPANY.carrierReg,
+                    },
+                  };
+                  const pdf = buildCreditApplicationPdfDoc(app, pdfCtx);
+                  const blob = pdf.output('blob');
+                  const safe = (name + '-' + (app.reference || '')).replace(/[^A-Za-z0-9._-]/g, '_');
+                  const path = 'credit/' + Date.now() + '_' + safe + '.pdf';
+
+                  const { error: upErr } = await window.supabase.storage
+                    .from('documents').upload(path, blob, { contentType: 'application/pdf' });
+                  if (upErr) throw upErr;
+
+                  const { data: { publicUrl } } = window.supabase.storage
+                    .from('documents').getPublicUrl(path);
+                  filedUrl = publicUrl;
+
+                  await window.supabase.from('documents').insert([{
+                    name: 'Credit application ' + (app.reference || '') + ' \u2014 ' + name,
+                    file_path: path,
+                    file_url: publicUrl,
+                    file_type: 'application/pdf',
+                    file_size: blob.size,
+                    category: 'CREDIT_APPLICATION',
+                    customer_name: name,
+                  }]);
+                } catch (pdfErr) {
+                  console.warn('[Credit] could not file the application PDF:', pdfErr);
+                }
+
                 await window.supabase.from('credit_applications')
-                  .update({ customer_created: true }).eq('id', app.id);
+                  .update({ customer_created: true, filed_pdf_url: filedUrl }).eq('id', app.id);
 
                 if (window.loadCustomersFromSupabase) await window.loadCustomersFromSupabase();
                 if (onCustomerCreated) onCustomerCreated();
                 await load();
-                alert('\u2705 Customer created for ' + name + '.\n\nCheck the record and add anything the form did not cover \u2014 site addresses, account manager, business type.');
+                alert('\u2705 Customer created for ' + name + '.' +
+                  (filedUrl ? '\n\nThe completed application has been filed as a PDF under Documents.' : '') +
+                  '\n\nCheck the record and add anything the form did not cover \u2014 site addresses, account manager, business type.');
               } catch (e) {
                 alert('Could not create the customer: ' + describeError(e));
               } finally { setCreating(null); }
+            };
+
+            // Remove an application that's gone nowhere — a wrong address, a
+            // test, or an enquiry that never came back.
+            const removeApp = async (app) => {
+              const label = (app.form_data && app.form_data.companyName) || app.customer_name;
+              if (!confirm('Delete the credit application for ' + label + '?\n\n' +
+                  'Reference ' + (app.reference || '') + '. This cannot be undone, and any link ' +
+                  'already sent will stop working.')) return;
+              try {
+                const { error } = await window.supabase
+                  .from('credit_applications').delete().eq('id', app.id);
+                if (error) throw error;
+                await load();
+                notifyCreditChanged();
+              } catch (e) { alert('Could not delete: ' + describeError(e)); }
             };
 
             const statusChip = (st) => {
@@ -17602,9 +18042,13 @@ Total Waste Services Ltd`);
               return <span className={'px-2 py-0.5 rounded text-xs font-medium ' + pair[0]}>{pair[1]}</span>;
             };
 
+            // "Open" means anything still needing action: awaiting the
+            // customer, awaiting a decision, or approved with no customer
+            // record yet. Approving used to make a row vanish mid-task.
             const shown = apps.filter(a => filter === 'all'
               ? true
-              : (a.status === 'sent' || a.status === 'submitted'));
+              : (a.status === 'sent' || a.status === 'submitted' ||
+                 (a.status === 'approved' && !a.customer_created)));
             const needing = apps.filter(a => a.status === 'submitted').length;
 
             return (
@@ -17687,15 +18131,34 @@ Total Waste Services Ltd`);
                                 {app.sent_by ? ' by ' + app.sent_by : ''}
                               </span>
                             </div>
-                            {statusChip(app.status)}
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {statusChip(app.status)}
+                              <button
+                                onClick={() => removeApp(app)}
+                                title="Delete this application"
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
                           </div>
 
                           {app.status === 'sent' && (
-                            <div className="px-4 py-3 text-sm text-gray-600">
-                              Waiting for them to fill it in.
-                              <button
-                                onClick={() => { navigator.clipboard.writeText(linkFor(app.token)); alert('Link copied.'); }}
-                                className="ml-2 text-blue-600 hover:underline text-xs">Copy the link</button>
+                            <div className="px-4 py-3 text-sm text-gray-600 flex items-center justify-between gap-2 flex-wrap">
+                              <span>
+                                Waiting for them to fill it in.
+                                <button
+                                  onClick={() => { navigator.clipboard.writeText(linkFor(app.token)); alert('Link copied.'); }}
+                                  className="ml-2 text-blue-600 hover:underline text-xs">Copy the link</button>
+                              </span>
+                              {(() => {
+                                const days = Math.floor((Date.now() - new Date(app.created_at)) / 86400000);
+                                return days >= 14 ? (
+                                  <span className="text-xs text-amber-600">
+                                    Sent {days} days ago — probably worth chasing or deleting
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
                           )}
 
@@ -17766,7 +18229,38 @@ Total Waste Services Ltd`);
                                     {app.decided_by ? ' by ' + app.decided_by : ''}
                                   </div>
                                   {app.customer_created ? (
-                                    <div className="text-xs text-gray-500">Customer record created.</div>
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                      <span className="text-xs text-gray-500">Customer record created.</span>
+                                      {app.filed_pdf_url ? (
+                                        <a href={app.filed_pdf_url} target="_blank" rel="noopener noreferrer"
+                                           className="text-xs text-blue-600 hover:underline">
+                                          View the filed application
+                                        </a>
+                                      ) : (
+                                        <button
+                                          onClick={async () => {
+                                            // Older applications were approved before the PDF
+                                            // was filed automatically; this catches those up.
+                                            try {
+                                              const pdf = buildCreditApplicationPdfDoc(app, {
+                                                jsPDF: window.jspdf && window.jspdf.jsPDF,
+                                                logoDataUrl: await loadLogoDataUrl(),
+                                                services: TWS_SERVICES,
+                                                company: {
+                                                  name: localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+                                                  address: localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress,
+                                                  phone: TWS_COMPANY.phone, vat: TWS_COMPANY.vat,
+                                                  companyNo: TWS_COMPANY.companyNo, carrierReg: TWS_COMPANY.carrierReg,
+                                                },
+                                              });
+                                              pdf.save((app.reference || 'credit-application') + '.pdf');
+                                            } catch (e) { alert('Could not build the PDF: ' + describeError(e)); }
+                                          }}
+                                          className="text-xs text-blue-600 hover:underline">
+                                          Download the application
+                                        </button>
+                                      )}
+                                    </div>
                                   ) : (
                                     <button onClick={() => createCustomer(app)} disabled={creating === app.id}
                                       className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
@@ -17788,282 +18282,10 @@ Total Waste Services Ltd`);
 
           // Send and review a customer's credit account application. The link
           // goes to a public form; what comes back lands here for a decision.
-          const CreditAccountPanel = ({ customer, user, onClose }) => {
-            const [apps, setApps] = React.useState([]);
-            const [loading, setLoading] = React.useState(true);
-            const [sending, setSending] = React.useState(false);
-            const [email, setEmail] = React.useState(customer.email || '');
-
-            const custName = customer.companyName || customer.name;
-
-            const load = React.useCallback(async () => {
-              setLoading(true);
-              try {
-                const { data } = await window.supabase
-                  .from('credit_applications')
-                  .select('*')
-                  .eq('customer_name', custName)
-                  .neq('status', 'draft')
-                  .order('created_at', { ascending: false });
-                setApps(data || []);
-              } catch (e) {
-                console.warn('[Credit] load failed:', e.message);
-              } finally { setLoading(false); }
-            }, [custName]);
-            React.useEffect(() => { load(); }, [load]);
-
-            const portalBase = localStorage.getItem('portalUrl') || 'https://portal.totalwasteservicesltd.com';
-            const linkFor = (t) => portalBase.replace(/\/+$/, '') + '/?credit=' + t;
-
-            const sendLink = async () => {
-              if (!email.trim()) { alert('Enter an email address to send it to.'); return; }
-              if (!user || !user.id) { alert('No logged-in user found. Please sign out and back in.'); return; }
-              setSending(true);
-              try {
-                const token = (window.crypto && window.crypto.randomUUID)
-                  ? window.crypto.randomUUID()
-                  : (Date.now().toString(36) + Math.random().toString(36).slice(2, 14));
-                const ref = 'CA-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random() * 9000) + 1000);
-
-                // Created as 'draft' so a failed send doesn't leave a record
-                // claiming the customer has a link they never received.
-                const { error: insErr } = await window.supabase
-                  .from('credit_applications')
-                  .insert([{
-                    token: token,
-                    reference: ref,
-                    customer_name: custName,
-                    sent_to: email.trim(),
-                    sent_by: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email,
-                    status: 'draft',
-                  }]);
-                if (insErr) throw insErr;
-
-                const body = [
-                  'Dear ' + (customer.contactName || custName || 'Sir/Madam') + ',',
-                  '',
-                  'Thanks for your interest in opening a credit account with us.',
-                  '',
-                  'Please complete our short application form here:',
-                  linkFor(token),
-                  '',
-                  'It takes about five minutes. You will need your company registration and VAT',
-                  'numbers, and three trade references.',
-                  '',
-                  'Accounts are strictly settled 30 days from the date of invoice. Our credit',
-                  'account terms are linked from the form. We will confirm your limit within two',
-                  'working days of receiving it.',
-                  '',
-                  'Kind regards,',
-                  [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services Ltd',
-                  localStorage.getItem('companyName') || 'Total Waste Services Ltd',
-                ].join('\n');
-
-                const res = await fetch('/api/gmail?action=send', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    user_id: user.id,
-                    to: email.trim(),
-                    subject: 'Credit account application ' + ref + ' \u2014 ' +
-                             (localStorage.getItem('companyName') || 'Total Waste Services Ltd'),
-                    body: body,
-                    fromName: ([user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services') + ' - Total Waste Services',
-                  }),
-                });
-                const result = await res.json();
-                if (!res.ok) {
-                  // The email didn't go. Remove the half-created record rather
-                  // than leaving a token nobody has.
-                  try { await window.supabase.from('credit_applications').delete().eq('token', token); } catch (x) {}
-                  throw new Error(describeError(result.error) || 'Gmail send failed');
-                }
-
-                // Only now is it genuinely sent.
-                await window.supabase.from('credit_applications')
-                  .update({ status: 'sent' }).eq('token', token);
-
-                alert('\u2705 Application link sent to ' + email.trim() + '.');
-                await load();
-              } catch (e) {
-                console.error('[Credit] send failed:', e);
-                const msg = describeError(e);
-                if (/Gmail not connected|reconnect|token expired/i.test(msg)) {
-                  alert('Could not send: your Gmail account is not connected.\n\nGo to Admin \u2192 User Management and connect it, then try again.');
-                } else if (/credit_applications|could not find the table/i.test(msg)) {
-                  alert('The credit_applications table has not been created yet.\n\nRun credit_applications.sql in Supabase, then try again.\n\nDetail: ' + msg);
-                } else {
-                  alert('Could not send the application:\n\n' + msg);
-                }
-              } finally { setSending(false); }
-            };
-
-            const setStatus = async (app, status) => {
-              let limit = null;
-              if (status === 'approved') {
-                limit = window.prompt('Credit limit approved (leave blank if none set):', app.approved_limit || '');
-                if (limit === null) return;
-              }
-              try {
-                await window.supabase.from('credit_applications').update({
-                  status: status,
-                  decided_at: new Date().toISOString(),
-                  decided_by: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email,
-                  approved_limit: status === 'approved' ? (limit || null) : null,
-                }).eq('id', app.id);
-                await load();
-              } catch (e) { alert('Could not update: ' + describeError(e)); }
-            };
-
-            const statusChip = (st) => {
-              const map = {
-                sent:      ['bg-blue-100 text-blue-800', 'Sent \u2014 awaiting the customer'],
-                submitted: ['bg-amber-100 text-amber-800', 'Submitted \u2014 needs a decision'],
-                approved:  ['bg-green-100 text-green-800', 'Approved'],
-                declined:  ['bg-red-100 text-red-800', 'Declined'],
-              };
-              const pair = map[st] || ['bg-gray-100 text-gray-700', st];
-              return <span className={'px-2 py-0.5 rounded text-xs font-medium ' + pair[0]}>{pair[1]}</span>;
-            };
-
-            return (
-              <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-                   onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-                <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                  <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white rounded-t-xl">
-                    <div>
-                      <h3 className="text-lg font-semibold">Credit account</h3>
-                      <p className="text-xs text-gray-500">{custName}</p>
-                    </div>
-                    <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
-                      <X size={20} />
-                    </button>
-                  </div>
-
-                  <div className="p-6 space-y-5">
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <p className="text-sm font-medium text-gray-700 mb-1">Send an application form</p>
-                      <p className="text-xs text-gray-500 mb-3">
-                        They get a link to a form on our letterhead. No login needed.
-                      </p>
-                      <div className="flex gap-2 flex-wrap">
-                        <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                          placeholder="accounts@customer.co.uk"
-                          className="flex-1 min-w-[14rem] px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                        <button onClick={sendLink} disabled={sending}
-                          className="px-4 py-2 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-50">
-                          {sending ? 'Sending\u2026' : 'Send form'}
-                        </button>
-                      </div>
-                    </div>
-
-                    {loading ? (
-                      <p className="text-sm text-gray-500">Loading…</p>
-                    ) : apps.length === 0 ? (
-                      <p className="text-sm text-gray-500">No applications yet.</p>
-                    ) : apps.map(app => {
-                      const d = app.form_data || {};
-                      const services = Array.isArray(d.services) ? d.services : [];
-                      return (
-                        <div key={app.id} className="border border-gray-200 rounded-lg overflow-hidden">
-                          <div className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between gap-2 flex-wrap">
-                            <div>
-                              <span className="font-mono text-sm">{app.reference}</span>
-                              <span className="text-xs text-gray-500 ml-2">
-                                Sent {new Date(app.created_at).toLocaleDateString('en-GB')} to {app.sent_to}
-                              </span>
-                            </div>
-                            {statusChip(app.status)}
-                          </div>
-
-                          {app.status === 'sent' && (
-                            <div className="px-4 py-3 text-sm text-gray-600">
-                              Waiting for them to fill it in.
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(linkFor(app.token));
-                                  alert('Link copied.');
-                                }}
-                                className="ml-2 text-blue-600 hover:underline text-xs">Copy the link</button>
-                            </div>
-                          )}
-
-                          {(app.status === 'submitted' || app.status === 'approved' || app.status === 'declined') && (
-                            <div className="px-4 py-3 space-y-2 text-sm">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-                                <div><span className="text-gray-500">Company:</span> {d.companyName || '\u2014'}</div>
-                                <div><span className="text-gray-500">Company no:</span> {d.companyNumber || '\u2014'}</div>
-                                <div><span className="text-gray-500">VAT:</span> {d.vatNumber || '\u2014'}</div>
-                                <div><span className="text-gray-500">Years trading:</span> {d.yearsTrading || '\u2014'}</div>
-                                <div><span className="text-gray-500">Limit sought:</span> <strong>{d.creditLimit || '\u2014'}</strong></div>
-                                <div><span className="text-gray-500">Monthly spend:</span> {d.monthlySpend || '\u2014'}</div>
-                                <div className="sm:col-span-2"><span className="text-gray-500">Accounts:</span> {d.accountsName || ''} {d.accountsEmail ? '\u00b7 ' + d.accountsEmail : ''}</div>
-                                <div className="sm:col-span-2"><span className="text-gray-500">PO required:</span> {d.poRequired || '\u2014'}</div>
-                              </div>
-
-                              {services.length > 0 && (
-                                <div className="pt-2">
-                                  <div className="text-gray-500 text-xs mb-1">Services wanted</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {services.map(k => {
-                                      const svc = TWS_SERVICES.find(x => x.key === k);
-                                      return <span key={k} className="px-2 py-0.5 bg-green-50 border border-green-200 rounded text-xs text-green-800">{svc ? svc.label : k}</span>;
-                                    })}
-                                    {d.servicesOther && <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{d.servicesOther}</span>}
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="pt-2">
-                                <div className="text-gray-500 text-xs mb-1">Trade references</div>
-                                {[1,2,3].map(n => d['ref'+n+'Company'] ? (
-                                  <div key={n} className="text-xs text-gray-700">
-                                    {d['ref'+n+'Company']} · {d['ref'+n+'Contact'] || ''} · {d['ref'+n+'Email'] || ''} · {d['ref'+n+'Phone'] || ''}
-                                  </div>
-                                ) : null)}
-                              </div>
-
-                              <div className="pt-2 text-xs text-gray-500">
-                                Signed by {d.signName || '\u2014'}{d.signPosition ? ', ' + d.signPosition : ''}
-                                {app.submitted_at ? ' on ' + new Date(app.submitted_at).toLocaleDateString('en-GB') : ''}
-                              </div>
-                              {d.acceptTerms && (
-                                <div className="text-xs text-green-700">
-                                  ✓ Accepted the Credit Account Terms &amp; Conditions, and authorised
-                                  credit reference and trade reference checks
-                                </div>
-                              )}
-
-                              {app.status === 'submitted' && (
-                                <div className="flex gap-2 pt-3">
-                                  <button onClick={() => setStatus(app, 'approved')}
-                                    className="px-3 py-1.5 bg-green-700 text-white rounded-lg text-xs font-medium hover:bg-green-800">Approve</button>
-                                  <button onClick={() => setStatus(app, 'declined')}
-                                    className="px-3 py-1.5 border border-red-300 text-red-700 rounded-lg text-xs font-medium hover:bg-red-50">Decline</button>
-                                </div>
-                              )}
-                              {app.status === 'approved' && app.approved_limit && (
-                                <div className="pt-2 text-sm text-green-800">
-                                  Approved limit: <strong>{app.approved_limit}</strong>
-                                  {app.decided_by ? ' \u00b7 by ' + app.decided_by : ''}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            );
-          };
-
           const CustomersView = ({ customers, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onRefreshCustomers, user }) => {
           const { hasPermission } = useAuth();
           const [selectedCustomer, setSelectedCustomer] = useState(null);
           const [editingCustomer, setEditingCustomer] = useState(null);
-          const [creditFor, setCreditFor] = useState(null);
           const [showCreditApps, setShowCreditApps] = useState(false);
           // Badge on the header button, so a submitted application doesn't
           // sit unnoticed.
@@ -18676,16 +18898,6 @@ const { error } = await window.supabase
                         <p className="text-gray-600">{selectedCustomer.businessType}</p>
                       </div>
                       <div className="flex items-center space-x-2">
-                        {/* Credit account application — creates a row, emails the
-                            customer a link to a public form, and shows the status
-                            once they've filled it in. */}
-                        <button
-                          onClick={() => setCreditFor(selectedCustomer)}
-                          className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 whitespace-nowrap"
-                          title="Send or review a credit account application"
-                        >
-                          Credit account
-                        </button>
                         {hasPermission('customers:update') && (
                           <button
                             onClick={() => setEditingCustomer(selectedCustomer)}
@@ -18786,11 +18998,6 @@ const { error } = await window.supabase
                   onClose={() => setShowCreditApps(false)}
                   onCustomerCreated={() => { if (onRefreshCustomers) onRefreshCustomers(); }}
                 />
-              )}
-              {creditFor && (
-
-                <CreditAccountPanel customer={creditFor} user={user} onClose={() => setCreditFor(null)} />
-
               )}
 
               {editingCustomer && (
@@ -21664,6 +21871,13 @@ info@totalwasteservicesltd.com`;
           const [pendingCreditApps, setPendingCreditApps] = React.useState(0);
           const [creditAppNames, setCreditAppNames] = React.useState('');
           const [creditBannerDismissed, setCreditBannerDismissed] = React.useState(false);
+          const lastCreditCount = React.useRef(0);
+          React.useEffect(() => {
+            // A new application should reappear even if someone hid the last
+            // one. Dismissal only silences the applications you've seen.
+            if (pendingCreditApps > lastCreditCount.current) setCreditBannerDismissed(false);
+            lastCreditCount.current = pendingCreditApps;
+          }, [pendingCreditApps]);
 
           React.useEffect(() => {
             let cancelled = false;
@@ -21692,7 +21906,14 @@ info@totalwasteservicesltd.com`;
             const id = setInterval(() => {
               if (document.visibilityState === 'visible') check();
             }, 5 * 60 * 1000);
-            return () => { cancelled = true; clearInterval(id); };
+            // Re-check the moment an application is approved, declined or
+            // deleted, so the banner clears immediately.
+            window.addEventListener('credit-apps-changed', check);
+            return () => {
+              cancelled = true;
+              clearInterval(id);
+              window.removeEventListener('credit-apps-changed', check);
+            };
           }, []);
 
           // Load company settings on app start
