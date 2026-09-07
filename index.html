@@ -2067,7 +2067,7 @@ return (
                                   <span className="block text-xs text-gray-500">
                                     {doc.file_size ? Math.round(doc.file_size / 1024) + ' KB' : 'Document'}
                                     {exp && exp.state !== 'expired' && (
-                                      <span> \u00b7 Valid to {exp.date.toLocaleDateString('en-GB')}</span>
+                                      <span> · Valid to {exp.date.toLocaleDateString('en-GB')}</span>
                                     )}
                                   </span>
                                 </span>
@@ -17661,7 +17661,7 @@ Total Waste Services Ltd`);
                     </div>
 
                     {loading ? (
-                      <p className="text-sm text-gray-500">Loading\u2026</p>
+                      <p className="text-sm text-gray-500">Loading…</p>
                     ) : shown.length === 0 ? (
                       <p className="text-sm text-gray-500">
                         {filter === 'open' ? 'Nothing outstanding.' : 'No applications yet.'}
@@ -17745,7 +17745,7 @@ Total Waste Services Ltd`);
                               </div>
                               {d.acceptTerms && (
                                 <div className="text-xs text-green-700">
-                                  \u2713 Accepted the Credit Account Terms &amp; Conditions, and authorised
+                                  ✓ Accepted the Credit Account Terms &amp; Conditions, and authorised
                                   credit reference and trade reference checks
                                 </div>
                               )}
@@ -17958,7 +17958,7 @@ Total Waste Services Ltd`);
                     </div>
 
                     {loading ? (
-                      <p className="text-sm text-gray-500">Loading\u2026</p>
+                      <p className="text-sm text-gray-500">Loading…</p>
                     ) : apps.length === 0 ? (
                       <p className="text-sm text-gray-500">No applications yet.</p>
                     ) : apps.map(app => {
@@ -18018,7 +18018,7 @@ Total Waste Services Ltd`);
                                 <div className="text-gray-500 text-xs mb-1">Trade references</div>
                                 {[1,2,3].map(n => d['ref'+n+'Company'] ? (
                                   <div key={n} className="text-xs text-gray-700">
-                                    {d['ref'+n+'Company']} \u00b7 {d['ref'+n+'Contact'] || ''} \u00b7 {d['ref'+n+'Email'] || ''} \u00b7 {d['ref'+n+'Phone'] || ''}
+                                    {d['ref'+n+'Company']} · {d['ref'+n+'Contact'] || ''} · {d['ref'+n+'Email'] || ''} · {d['ref'+n+'Phone'] || ''}
                                   </div>
                                 ) : null)}
                               </div>
@@ -18029,7 +18029,7 @@ Total Waste Services Ltd`);
                               </div>
                               {d.acceptTerms && (
                                 <div className="text-xs text-green-700">
-                                  \u2713 Accepted the Credit Account Terms &amp; Conditions, and authorised
+                                  ✓ Accepted the Credit Account Terms &amp; Conditions, and authorised
                                   credit reference and trade reference checks
                                 </div>
                               )}
@@ -20079,13 +20079,13 @@ const loadUsers = async () => {
                                         {doc.file_name}
                                         {doc.file_size ? ' \u00b7 ' + Math.round(doc.file_size / 1024) + ' KB' : ''}
                                         {exp && exp.state === 'expired' && (
-                                          <span className="text-red-600 font-medium"> \u00b7 Expired {exp.date.toLocaleDateString('en-GB')}</span>
+                                          <span className="text-red-600 font-medium"> · Expired {exp.date.toLocaleDateString('en-GB')}</span>
                                         )}
                                         {exp && exp.state === 'soon' && (
-                                          <span className="text-amber-600 font-medium"> \u00b7 Expires in {exp.days} day{exp.days === 1 ? '' : 's'}</span>
+                                          <span className="text-amber-600 font-medium"> · Expires in {exp.days} day{exp.days === 1 ? '' : 's'}</span>
                                         )}
                                         {exp && exp.state === 'ok' && (
-                                          <span> \u00b7 Valid to {exp.date.toLocaleDateString('en-GB')}</span>
+                                          <span> · Valid to {exp.date.toLocaleDateString('en-GB')}</span>
                                         )}
                                       </div>
                                     </div>
@@ -21658,6 +21658,43 @@ info@totalwasteservicesltd.com`;
 
         // Main Application
         const App = () => {
+          // Credit applications awaiting a decision, shown as a banner across
+          // the top for every user. Polled rather than pushed — a few minutes'
+          // delay is fine for this, and it costs one small query.
+          const [pendingCreditApps, setPendingCreditApps] = React.useState(0);
+          const [creditAppNames, setCreditAppNames] = React.useState('');
+          const [creditBannerDismissed, setCreditBannerDismissed] = React.useState(false);
+
+          React.useEffect(() => {
+            let cancelled = false;
+            const check = async () => {
+              try {
+                const { data } = await window.supabase
+                  .from('credit_applications')
+                  .select('customer_name, form_data')
+                  .eq('status', 'submitted');
+                if (cancelled) return;
+                const rows = data || [];
+                setPendingCreditApps(rows.length);
+                const names = rows
+                  .map(r => (r.form_data && r.form_data.companyName) || r.customer_name)
+                  .filter(Boolean);
+                setCreditAppNames(
+                  names.length === 0 ? '' :
+                  names.length <= 2 ? names.join(' and ') :
+                  names.slice(0, 2).join(', ') + ' and ' + (names.length - 2) + ' more'
+                );
+              } catch (e) {
+                // The table may not exist yet; the banner just stays hidden.
+              }
+            };
+            check();
+            const id = setInterval(() => {
+              if (document.visibilityState === 'visible') check();
+            }, 5 * 60 * 1000);
+            return () => { cancelled = true; clearInterval(id); };
+          }, []);
+
           // Load company settings on app start
           const [deleteConfirmation, setDeleteConfirmation] = useState({ show: false, jobId: null, jobNumber: '' });
 useEffect(() => {
@@ -26043,6 +26080,38 @@ const CollectionCalendarModal = () => {
       </div>
     </div>
   </div>
+
+  {/* Credit applications waiting for a decision. Shown to everyone, on every
+      tab, because an application sitting unnoticed holds up an account. */}
+  {pendingCreditApps > 0 && !creditBannerDismissed && (
+    <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2.5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <LucideIcon icon="Clock" size={18} className="text-amber-600 flex-shrink-0" />
+          <span className="text-sm text-amber-900">
+            <strong>{pendingCreditApps} credit application{pendingCreditApps === 1 ? '' : 's'}</strong>
+            {pendingCreditApps === 1 ? ' is' : ' are'} waiting for a decision
+            {creditAppNames ? ' \u2014 ' + creditAppNames : ''}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setActiveTab('customers')}
+            className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700"
+          >
+            Review
+          </button>
+          <button
+            onClick={() => setCreditBannerDismissed(true)}
+            className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg"
+            title="Hide until next sign-in"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
 
   {/* Desktop tabs */}
   <div className="hidden sm:block px-6">
