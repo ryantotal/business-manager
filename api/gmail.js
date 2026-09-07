@@ -200,8 +200,12 @@ export default async function handler(req, res) {
   if (action === 'send') {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     const { user_id, to, subject, body, pdfBase64, pdfFilename, fromName } = req.body;
-    if (!user_id || !to || !subject || !pdfBase64) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    // An attachment is optional. Requiring pdfBase64 here blocked plain
+    // messages — the credit account application sends a link with no document,
+    // and was rejected before it ever reached buildEmail. buildEmail already
+    // only adds an attachment part when pdfBase64 is present.
+    if (!user_id || !to || !subject) {
+      return res.status(400).json({ error: 'Missing required fields: user_id, to and subject are needed' });
     }
     try {
       const supabase = createClient(
