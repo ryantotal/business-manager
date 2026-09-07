@@ -13361,6 +13361,18 @@ function buildCreditApplicationPdfDoc(app, ctx) {
   return doc;
 }
 
+// Display form: £5,000
+//
+// Deliberately no "5k" style parsing anywhere. Shorthand can't be read safely
+// because "2" might mean £2, £2,000 or £2 million, so the customer picks a
+// band and you type an exact figure when approving.
+function formatMoney(n) {
+  if (n === null || n === undefined || isNaN(n)) return '';
+  return '\u00a3' + Number(n).toLocaleString('en-GB');
+}
+
+window.formatMoney = formatMoney;
+
 // Errors from Supabase are plain objects, not Error instances, so String(e)
 // renders as "[object Object]". Pull out whatever detail is actually there.
 // Tells the header banner to re-check straight away. Without it the banner
@@ -13435,6 +13447,35 @@ const TWS_CREDIT_TERMS = [
 const TWS_CREDIT_TERMS_URL =
   'https://ykpbnrjlqlhckmgcoulv.supabase.co/storage/v1/object/public/documents/1759346443172_Credit%20Account%20Terms%20%26%20Conditions.pdf';
 
+// The same list the customer record uses, so what they pick on the form can
+// go straight onto their account instead of being retyped as free text.
+// Credit bands. The customer picks a range; you set the exact figure when
+// you approve, so nothing depends on interpreting what they typed.
+const TWS_CREDIT_BANDS = [
+  'Up to \u00a31,000',
+  '\u00a31,000 to \u00a32,500',
+  '\u00a32,500 to \u00a35,000',
+  '\u00a35,000 to \u00a310,000',
+  '\u00a310,000 to \u00a325,000',
+  '\u00a325,000 to \u00a350,000',
+  'Over \u00a350,000',
+];
+
+const TWS_SPEND_BANDS = [
+  'Up to \u00a3500 a month',
+  '\u00a3500 to \u00a31,000 a month',
+  '\u00a31,000 to \u00a32,500 a month',
+  '\u00a32,500 to \u00a35,000 a month',
+  '\u00a35,000 to \u00a310,000 a month',
+  'Over \u00a310,000 a month',
+];
+
+const TWS_BUSINESS_TYPES = [
+  'Construction Company', 'Main Contractor', 'Sub Contractor', 'Property Developer',
+  'Demolition Contractor', 'Civil Engineering', 'House Builder', 'Local Authority',
+  'Facilities Management', 'Retail', 'Other',
+];
+
 const TWS_SERVICES = [
   { key: 'waste_management', label: 'Waste management',            note: 'Skip hire, 4 to 16 yard and roll-on roll-off' },
   { key: 'muckaway_grab',    label: 'Muck away and grab hire',     note: 'Clean, mixed and clay soils, hardcore' },
@@ -13473,7 +13514,7 @@ const CreditApplicationForm = ({ token }) => {
   const [logo, setLogo]         = React.useState('');
   const [f, setF] = React.useState({
     companyName: '', tradingName: '', companyNumber: '', vatNumber: '',
-    natureOfBusiness: '', yearsTrading: '',
+    natureOfBusiness: '', natureOfBusinessOther: '', yearsTrading: '',
     regAddress1: '', regTown: '', regPostcode: '',
     accountsName: '', accountsEmail: '', accountsPhone: '', poRequired: '',
     creditLimit: '', monthlySpend: '',
@@ -13626,7 +13667,25 @@ const CreditApplicationForm = ({ token }) => {
             <div><CreditL>Trading name, if different</CreditL><CreditI value={f.tradingName} onChange={e => set('tradingName', e.target.value)} placeholder="Leave blank if the same" /></div>
             <div><CreditL>Company registration no.</CreditL><CreditI value={f.companyNumber} onChange={e => set('companyNumber', e.target.value)} placeholder="12345678" /></div>
             <div><CreditL>VAT number</CreditL><CreditI value={f.vatNumber} onChange={e => set('vatNumber', e.target.value)} placeholder="GB123456789" /></div>
-            <div><CreditL>Nature of business</CreditL><CreditI value={f.natureOfBusiness} onChange={e => set('natureOfBusiness', e.target.value)} placeholder="Groundworks and civils" /></div>
+            <div>
+              <CreditL>Nature of business</CreditL>
+              <select
+                value={f.natureOfBusiness}
+                onChange={e => set('natureOfBusiness', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="">Select…</option>
+                {TWS_BUSINESS_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              {f.natureOfBusiness === 'Other' && (
+                <CreditI
+                  value={f.natureOfBusinessOther || ''}
+                  onChange={e => set('natureOfBusinessOther', e.target.value)}
+                  placeholder="Tell us what you do"
+                  maxLength={60}
+                />
+              )}
+            </div>
             <div><CreditL>Years trading</CreditL><CreditI value={f.yearsTrading} onChange={e => set('yearsTrading', e.target.value)} /></div>
           </div>
 
@@ -13696,8 +13755,30 @@ const CreditApplicationForm = ({ token }) => {
 
           <CreditH>Credit requested</CreditH>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><CreditL>Credit limit sought</CreditL><CreditI value={f.creditLimit} onChange={e => set('creditLimit', e.target.value)} placeholder="£10,000" /></div>
-            <div><CreditL>Estimated monthly spend</CreditL><CreditI value={f.monthlySpend} onChange={e => set('monthlySpend', e.target.value)} placeholder="£4,000" /></div>
+            {/* Bands rather than a typed figure: "2" could mean £2, £2,000 or
+                £2 million, and there's no safe way to guess. */}
+            <div>
+              <CreditL>Credit limit sought</CreditL>
+              <select
+                value={f.creditLimit}
+                onChange={e => set('creditLimit', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="">Select…</option>
+                {TWS_CREDIT_BANDS.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div>
+              <CreditL>Estimated monthly spend</CreditL>
+              <select
+                value={f.monthlySpend}
+                onChange={e => set('monthlySpend', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="">Select…</option>
+                {TWS_SPEND_BANDS.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
           </div>
 
           <CreditH>Trade references</CreditH>
@@ -17853,8 +17934,23 @@ Total Waste Services Ltd`);
             const setStatus = async (app, status) => {
               let limit = null;
               if (status === 'approved') {
-                limit = window.prompt('Credit limit approved (leave blank if none set):', app.approved_limit || '');
-                if (limit === null) return;
+                const asked = (app.form_data && app.form_data.creditLimit) || '';
+                // Asked for in pounds and nothing else — no shorthand, so
+                // there's nothing to misread.
+                const raw = window.prompt(
+                  'Credit limit to approve, in pounds.' +
+                  (asked ? '\n\nThey asked for: ' + asked : '') +
+                  '\n\nEnter the number only, e.g. 5000. Leave blank for no limit.',
+                  '');
+                if (raw === null) return;
+                const cleaned = String(raw).replace(/[\u00a3,\s]/g, '').trim();
+                if (cleaned === '') {
+                  limit = null;
+                } else {
+                  const n = parseFloat(cleaned);
+                  if (isNaN(n) || n < 0) { alert('That is not a number. Enter the amount in pounds, e.g. 5000.'); return; }
+                  limit = formatMoney(Math.round(n));
+                }
               }
               try {
                 await window.supabase.from('credit_applications').update({
@@ -17913,13 +18009,17 @@ Total Waste Services Ltd`);
                   account_status: 'Active',
                   additional_emails: d.accountsEmail || '',
                   primary_contact: d.accountsName || d.signName || '',
+                  // Straight onto the record now the form offers the same list.
+                  business_type: TWS_BUSINESS_TYPES.includes(d.natureOfBusiness)
+                    ? d.natureOfBusiness : 'Other',
                   site_addresses: JSON.stringify([]),
                   notes: (() => {
                     const lines = [
                       'Created from credit application ' + (app.reference || '') +
                         ' on ' + new Date().toLocaleDateString('en-GB') + '.',
                       d.tradingName ? 'Trading as: ' + d.tradingName : null,
-                      d.natureOfBusiness ? 'Business: ' + d.natureOfBusiness : null,
+                      d.natureOfBusiness ? 'Business: ' + d.natureOfBusiness +
+                        (d.natureOfBusinessOther ? ' \u2014 ' + d.natureOfBusinessOther : '') : null,
                       d.yearsTrading ? 'Years trading: ' + d.yearsTrading : null,
                       d.poRequired ? 'PO required: ' + ({ yes: 'Yes, on every job',
                         sometimes: 'Sometimes \u2014 they will tell us', no: 'No' }[d.poRequired] || d.poRequired) : null,
@@ -18005,7 +18105,7 @@ Total Waste Services Ltd`);
                   .update({ customer_created: true, filed_pdf_url: filedUrl }).eq('id', app.id);
 
                 if (window.loadCustomersFromSupabase) await window.loadCustomersFromSupabase();
-                if (onCustomerCreated) onCustomerCreated();
+                if (onCustomerCreated) onCustomerCreated(name);
                 await load();
                 alert('\u2705 Customer created for ' + name + '.' +
                   (filedUrl ? '\n\nThe completed application has been filed as a PDF under Documents.' : '') +
@@ -18996,7 +19096,19 @@ const { error } = await window.supabase
                 <CreditApplicationsPanel
                   user={user}
                   onClose={() => setShowCreditApps(false)}
-                  onCustomerCreated={() => { if (onRefreshCustomers) onRefreshCustomers(); }}
+                  onCustomerCreated={(newName) => {
+                    // Close the applications panel and open the customer that
+                    // was just created — approving, creating and checking the
+                    // record are one job, not three.
+                    if (onRefreshCustomers) onRefreshCustomers();
+                    setShowCreditApps(false);
+                    setTimeout(() => {
+                      const made = (customers || []).find(c =>
+                        (c.companyName || c.name || '').toLowerCase() === String(newName || '').toLowerCase());
+                      if (made) setSelectedCustomer(made);
+                      else setSearchQuery(newName || '');
+                    }, 400);
+                  }}
                 />
               )}
 
@@ -21870,14 +21982,13 @@ info@totalwasteservicesltd.com`;
           // delay is fine for this, and it costs one small query.
           const [pendingCreditApps, setPendingCreditApps] = React.useState(0);
           const [creditAppNames, setCreditAppNames] = React.useState('');
-          const [creditBannerDismissed, setCreditBannerDismissed] = React.useState(false);
-          const lastCreditCount = React.useRef(0);
-          React.useEffect(() => {
-            // A new application should reappear even if someone hid the last
-            // one. Dismissal only silences the applications you've seen.
-            if (pendingCreditApps > lastCreditCount.current) setCreditBannerDismissed(false);
-            lastCreditCount.current = pendingCreditApps;
-          }, [pendingCreditApps]);
+          // Which applications have been dismissed. Keyed to the actual ids,
+          // so hiding the banner silences those specific applications and
+          // nothing else — a new one always shows.
+          const [dismissedCreditIds, setDismissedCreditIds] = React.useState([]);
+          const [creditAppIds, setCreditAppIds] = React.useState([]);
+          const creditBannerDismissed = creditAppIds.length > 0 &&
+            creditAppIds.every(id => dismissedCreditIds.includes(id));
 
           React.useEffect(() => {
             let cancelled = false;
@@ -21885,11 +21996,12 @@ info@totalwasteservicesltd.com`;
               try {
                 const { data } = await window.supabase
                   .from('credit_applications')
-                  .select('customer_name, form_data')
+                  .select('id, customer_name, form_data')
                   .eq('status', 'submitted');
                 if (cancelled) return;
                 const rows = data || [];
                 setPendingCreditApps(rows.length);
+                setCreditAppIds(rows.map(r => r.id));
                 const names = rows
                   .map(r => (r.form_data && r.form_data.companyName) || r.customer_name)
                   .filter(Boolean);
@@ -26323,7 +26435,7 @@ const CollectionCalendarModal = () => {
             Review
           </button>
           <button
-            onClick={() => setCreditBannerDismissed(true)}
+            onClick={() => setDismissedCreditIds(prev => Array.from(new Set(prev.concat(creditAppIds))))}
             className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg"
             title="Hide until next sign-in"
           >
@@ -27745,6 +27857,32 @@ window.location.href = '/#sage-integration';  // Keep this line!
           });
 
           const [activeTab, setActiveTab] = useState('company');
+          // Documents filed against this customer — the credit application PDF
+          // and anything uploaded here. Loaded when the tab is opened rather
+          // than on every customer edit.
+          const [custDocs, setCustDocs] = useState([]);
+          const [custDocsLoading, setCustDocsLoading] = useState(false);
+          const [custDocUploading, setCustDocUploading] = useState(false);
+
+          const loadCustDocs = React.useCallback(async () => {
+            const name = formData.companyName;
+            if (!name) return;
+            setCustDocsLoading(true);
+            try {
+              const { data } = await window.supabase
+                .from('documents')
+                .select('*')
+                .eq('customer_name', name)
+                .order('created_at', { ascending: false });
+              setCustDocs(data || []);
+            } catch (e) {
+              console.warn('[Customer documents] load failed:', e.message);
+            } finally { setCustDocsLoading(false); }
+          }, [formData.companyName]);
+
+          React.useEffect(() => {
+            if (activeTab === 'documents') loadCustDocs();
+          }, [activeTab, loadCustDocs]);
           const [saving, setSaving] = useState(false);
 
           // Site addresses state
@@ -28275,7 +28413,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 
                 {/* Tab Navigation */}
                 <div className="flex border-b border-gray-200 overflow-x-auto">
-                  {['company', 'contact', 'financial', 'compliance', 'notes'].map(tab => (
+                  {['company', 'contact', 'financial', 'compliance', 'notes', 'documents'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => handleTabChange(tab)}
@@ -28286,6 +28424,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       {tab === 'financial' && 'Financial'}
                       {tab === 'compliance' && 'Compliance & Licensing'}
                       {tab === 'notes' && 'Notes'}
+                      {tab === 'documents' && 'Documents'}
                     </button>
                   ))}
                 </div>
@@ -28533,6 +28672,85 @@ window.location.href = '/#sage-integration';  // Keep this line!
                           <input type="date" value={formData.dateRegistered} onChange={(e) => setFormData({...formData, dateRegistered: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Documents Tab — anything filed against this customer,
+                      including the completed credit application. */}
+                  {activeTab === 'documents' && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                          <h4 className="font-medium text-gray-800">Documents on file</h4>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            Credit applications and anything else filed against this customer.
+                          </p>
+                        </div>
+                        <label className={`px-3 py-2 rounded-lg text-sm font-medium cursor-pointer ${custDocUploading ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                          {custDocUploading ? 'Uploading\u2026' : '+ Upload'}
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={custDocUploading}
+                            onChange={async (e) => {
+                              const file = e.target.files && e.target.files[0];
+                              if (!file) return;
+                              e.target.value = '';
+                              const label = window.prompt('What is this document?', file.name.replace(/\.[^.]+$/, ''));
+                              if (label === null) return;
+                              setCustDocUploading(true);
+                              try {
+                                const safe = file.name.replace(/[^A-Za-z0-9._-]/g, '_');
+                                const path = 'customer/' + Date.now() + '_' + safe;
+                                const { error: upErr } = await window.supabase.storage
+                                  .from('documents').upload(path, file);
+                                if (upErr) throw upErr;
+                                const { data: { publicUrl } } = window.supabase.storage
+                                  .from('documents').getPublicUrl(path);
+                                const { error: insErr } = await window.supabase.from('documents').insert([{
+                                  name: label || file.name,
+                                  file_path: path,
+                                  file_url: publicUrl,
+                                  file_type: file.type || 'application/octet-stream',
+                                  file_size: file.size,
+                                  category: 'CUSTOMER',
+                                  customer_name: formData.companyName,
+                                }]);
+                                if (insErr) throw insErr;
+                                await loadCustDocs();
+                              } catch (err) {
+                                alert('Could not upload: ' + (err.message || err));
+                              } finally { setCustDocUploading(false); }
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      {custDocsLoading ? (
+                        <p className="text-sm text-gray-500">Loading…</p>
+                      ) : custDocs.length === 0 ? (
+                        <p className="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
+                          Nothing filed against this customer yet.
+                        </p>
+                      ) : (
+                        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+                          {custDocs.map(doc => (
+                            <div key={doc.id} className="flex items-center gap-3 px-3 py-2.5">
+                              <FileText size={18} className="text-blue-600 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-800 truncate">{doc.name}</div>
+                                <div className="text-xs text-gray-500">
+                                  {doc.category === 'CREDIT_APPLICATION' ? 'Credit application' : 'Document'}
+                                  {doc.file_size ? ' \u00b7 ' + Math.round(doc.file_size / 1024) + ' KB' : ''}
+                                  {doc.created_at ? ' \u00b7 ' + new Date(doc.created_at).toLocaleDateString('en-GB') : ''}
+                                </div>
+                              </div>
+                              <a href={doc.file_url} target="_blank" rel="noopener noreferrer"
+                                 className="text-xs text-blue-600 hover:underline flex-shrink-0">Open</a>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
