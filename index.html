@@ -13030,6 +13030,18 @@ window.generatePoRequestPdf = generatePoRequestPdf;
 // The services offered, shown as tick boxes. Doubles as a prompt — plenty of
 // customers only know us for skips.
 
+// Errors from Supabase are plain objects, not Error instances, so String(e)
+// renders as "[object Object]". Pull out whatever detail is actually there.
+function describeError(e) {
+  if (!e) return 'Unknown error';
+  if (typeof e === 'string') return e;
+  const parts = [e.message, e.details, e.hint].filter(Boolean);
+  if (e.code) parts.push('(code ' + e.code + ')');
+  if (parts.length > 0) return parts.join(' \u2014 ');
+  try { return JSON.stringify(e); } catch (x) { return String(e); }
+}
+window.describeError = describeError;
+
 // Credit account terms, shown in full on the application form. Kept here so
 // the customer reads them in place rather than following a link they may
 // ignore. Clause 9.1 of the original ("apply in addition to the Company's
@@ -13178,7 +13190,8 @@ const CreditApplicationForm = ({ token }) => {
       if (e) throw e;
       setDone(true);
     } catch (err) {
-      alert('Could not submit: ' + err.message);
+      console.error('[Credit] submit failed:', err);
+      alert('Could not submit:\n\n' + describeError(err));
     } finally {
       setSaving(false);
     }
@@ -17383,6 +17396,7 @@ Total Waste Services Ltd`);
                   .from('credit_applications')
                   .select('*')
                   .eq('customer_name', custName)
+                  .neq('status', 'draft')
                   .order('created_at', { ascending: false });
                 setApps(data || []);
               } catch (e) {
@@ -17404,6 +17418,8 @@ Total Waste Services Ltd`);
                   : (Date.now().toString(36) + Math.random().toString(36).slice(2, 14));
                 const ref = 'CA-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random() * 9000) + 1000);
 
+                // Created as 'draft' so a failed send doesn't leave a record
+                // claiming the customer has a link they never received.
                 const { error: insErr } = await window.supabase
                   .from('credit_applications')
                   .insert([{
@@ -17412,7 +17428,7 @@ Total Waste Services Ltd`);
                     customer_name: custName,
                     sent_to: email.trim(),
                     sent_by: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email,
-                    status: 'sent',
+                    status: 'draft',
                   }]);
                 if (insErr) throw insErr;
 
@@ -17449,16 +17465,28 @@ Total Waste Services Ltd`);
                   }),
                 });
                 const result = await res.json();
-                if (!res.ok) throw new Error(result.error || 'Gmail send failed');
+                if (!res.ok) {
+                  // The email didn't go. Remove the half-created record rather
+                  // than leaving a token nobody has.
+                  try { await window.supabase.from('credit_applications').delete().eq('token', token); } catch (x) {}
+                  throw new Error(describeError(result.error) || 'Gmail send failed');
+                }
+
+                // Only now is it genuinely sent.
+                await window.supabase.from('credit_applications')
+                  .update({ status: 'sent' }).eq('token', token);
 
                 alert('\u2705 Application link sent to ' + email.trim() + '.');
                 await load();
               } catch (e) {
-                const msg = e.message || String(e);
+                console.error('[Credit] send failed:', e);
+                const msg = describeError(e);
                 if (/Gmail not connected|reconnect|token expired/i.test(msg)) {
                   alert('Could not send: your Gmail account is not connected.\n\nGo to Admin \u2192 User Management and connect it, then try again.');
+                } else if (/credit_applications|could not find the table/i.test(msg)) {
+                  alert('The credit_applications table has not been created yet.\n\nRun credit_applications.sql in Supabase, then try again.\n\nDetail: ' + msg);
                 } else {
-                  alert('Could not send the application: ' + msg);
+                  alert('Could not send the application:\n\n' + msg);
                 }
               } finally { setSending(false); }
             };
@@ -17477,7 +17505,7 @@ Total Waste Services Ltd`);
                   approved_limit: status === 'approved' ? (limit || null) : null,
                 }).eq('id', app.id);
                 await load();
-              } catch (e) { alert('Could not update: ' + e.message); }
+              } catch (e) { alert('Could not update: ' + describeError(e)); }
             };
 
             const statusChip = (st) => {
