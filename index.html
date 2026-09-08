@@ -5525,7 +5525,7 @@ const [isEvent, setIsEvent] = useState(false);
                 
                {/* Tab Navigation - Only show for jobs, not events */}
 {!isEvent && (
-  <div className="flex border-b border-gray-200 overflow-x-auto">
+  <div className="flex flex-wrap sm:flex-nowrap border-b border-gray-200 sm:overflow-x-auto">
     <button
       onClick={() => setActiveTab('details')}
       className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'details' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
@@ -28870,7 +28870,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 </div>
                 
                 {/* Tab Navigation */}
-                <div className="flex border-b border-gray-200 overflow-x-auto">
+                <div className="flex flex-wrap sm:flex-nowrap border-b border-gray-200 sm:overflow-x-auto">
                   {['company', 'contact', 'financial', 'compliance', 'notes', 'documents'].map(tab => (
                     <button
                       key={tab}
@@ -30552,7 +30552,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
                 </div>
 
                 {/* Tab Navigation */}
-                <div className="flex border-b border-gray-200 overflow-x-auto">
+                <div className="flex flex-wrap sm:flex-nowrap border-b border-gray-200 sm:overflow-x-auto">
                   {tabs.map(tab => (
                     <button
                       key={tab}
