@@ -11480,22 +11480,19 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           {(() => {
-            // Service description first — it is what heads the PDF and what
-            // actually distinguishes one quote from another. Then the line
-            // items. The old value (wasteType/jobType) is kept as a last
-            // resort, but the Type column already shows it.
-            const scope = String(quote.scopeDescription || '').trim();
+            // The line items, deliberately not quote.scopeDescription. That is
+            // the service description paragraph from the PDF, and it opens the
+            // same way on nearly every quote ("This quotation covers the
+            // collection and licensed disposal of..."), so it made every row
+            // look identical — the opposite of what this column is for.
             const items = Array.isArray(quote.lineItems) ? quote.lineItems : [];
-            const fromItems = items
+            const text = items
               .filter(i => !i.optional)
               .map(i => String(i.description || i.product_name || '').trim())
               .filter(Boolean)
-              .join(', ');
-            const text = scope || fromItems ||
-              quote.wasteType || quote.aggregateType || quote.jobType || '-';
-            // First line only: scope descriptions run to a paragraph.
-            const firstLine = text.split('\n')[0].trim() || text;
-            return <span title={text} className="block max-w-[260px] truncate">{firstLine}</span>;
+              .join(', ')
+              || quote.wasteType || quote.aggregateType || quote.jobType || '-';
+            return <span title={text} className="block max-w-[260px] truncate">{text}</span>;
           })()}
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
