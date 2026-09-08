@@ -18230,9 +18230,15 @@ Total Waste Services Ltd`);
                     }),
                   });
                   const sageResult = await res.json();
-                  if (!res.ok) throw new Error(describeError(sageResult.error) || 'Sage rejected the customer');
-                  sageId = sageResult.id || sageResult.contact_id ||
-                           (sageResult.contact && sageResult.contact.id) || null;
+                  console.log('[Credit] Sage response:', res.status, sageResult);
+                  if (!res.ok) {
+                    const detail = sageResult.details
+                      ? '\n\nSage said: ' + JSON.stringify(sageResult.details, null, 2) : '';
+                    throw new Error((describeError(sageResult.error) || 'Sage returned an error') + detail);
+                  }
+                  // The endpoint returns sage_id. Reading anything else meant the
+                  // contact was created but never linked to the local record.
+                  sageId = sageResult.sage_id || null;
                 } catch (sageErr) {
                   console.warn('[Credit] Sage push failed:', sageErr);
                   sageProblem = describeError(sageErr);
@@ -18594,15 +18600,29 @@ Total Waste Services Ltd`);
           // Badge on the header button, so a submitted application doesn't
           // sit unnoticed.
           const [creditPending, setCreditPending] = useState(0);
+          const refreshCreditPending = React.useCallback(async () => {
+            try {
+              const { data } = await window.supabase
+                .from('credit_applications').select('id').eq('status', 'submitted');
+              setCreditPending((data || []).length);
+            } catch (e) { /* the table may not exist yet */ }
+          }, []);
+
           React.useEffect(() => {
-            (async () => {
-              try {
-                const { data } = await window.supabase
-                  .from('credit_applications').select('id').eq('status', 'submitted');
-                setCreditPending((data || []).length);
-              } catch (e) { /* the table may not exist yet */ }
-            })();
-          }, [showCreditApps]);
+            // Polled and event-driven, same as the banner. Previously this only
+            // re-ran when the panel opened, so the badge sat on a stale count
+            // long after the applications had been dealt with — which is what
+            // made it look like the banner was broken.
+            refreshCreditPending();
+            const id = setInterval(() => {
+              if (document.visibilityState === 'visible') refreshCreditPending();
+            }, 5 * 60 * 1000);
+            window.addEventListener('credit-apps-changed', refreshCreditPending);
+            return () => {
+              clearInterval(id);
+              window.removeEventListener('credit-apps-changed', refreshCreditPending);
+            };
+          }, [refreshCreditPending, showCreditApps]);
           const [searchQuery, setSearchQuery] = useState('');
           const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
           const [filters, setFilters] = useState({
