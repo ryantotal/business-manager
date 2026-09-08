@@ -18124,6 +18124,118 @@ Total Waste Services Ltd`);
               } finally { setSending(false); }
             };
 
+            // Tell the applicant what was decided. Sent through the deciding
+            // user's own Gmail, same as the application link, so a reply goes
+            // back to a person rather than a shared inbox.
+            //
+            // Deliberately asks first: Approve and Decline are two small
+            // buttons next to each other, and an email to a customer is not
+            // something to fire off on a mis-click. Answering no still records
+            // the decision — it only skips the email.
+            const sendDecisionEmail = async (app, status, limit) => {
+              const d = app.form_data || {};
+              const to = (d.accountsEmail || app.sent_to || '').trim();
+              const companyName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
+              const signOff = [user.firstName, user.lastName].filter(Boolean).join(' ') || companyName;
+              const greetName = (d.accountsName || d.signName || '').trim();
+              const greeting = greetName ? 'Dear ' + greetName + ',' : 'Dear Sir/Madam,';
+              const approved = status === 'approved';
+
+              if (!to) {
+                alert('Decision saved.\n\nNo email address on this application, so nothing was sent.');
+                return;
+              }
+              if (!user || !user.id) {
+                alert('Decision saved, but no logged-in user was found, so no email was sent.');
+                return;
+              }
+
+              const what = approved
+                ? 'Email ' + to + ' to confirm the account is open' +
+                  (limit ? ' with a ' + limit + ' limit?' : '?')
+                : 'Email ' + to + ' to say we cannot open a credit account, but that we can work on pro forma?';
+              if (!confirm(what)) return;
+
+              const body = (approved ? [
+                greeting,
+                '',
+                'Thank you for your credit account application.',
+                '',
+                limit
+                  ? 'We are pleased to confirm that your credit account is now open, with a credit limit of ' + limit + '.'
+                  : 'We are pleased to confirm that your credit account is now open.',
+                '',
+                'Accounts are strictly settled 30 days from the date of invoice.',
+                '',
+                'If you have any questions about your account, please reply to this email',
+                'or give us a call.',
+                '',
+                'Kind regards,',
+                signOff,
+                companyName,
+              ] : [
+                greeting,
+                '',
+                'Thank you for your credit account application, and for the time you took',
+                'to complete it.',
+                '',
+                'Unfortunately we are not able to open a credit account for you at this time.',
+                '',
+                'This does not stop us working together. We would be glad to carry out work',
+                'for you on a pro forma basis, where the job is paid for in advance. Quotes,',
+                'bookings and paperwork all work in exactly the same way.',
+                '',
+                'If you would like to go ahead on that basis, or to discuss the decision,',
+                'please reply to this email or give us a call and we will be happy to talk',
+                'it through.',
+                '',
+                'Kind regards,',
+                signOff,
+                companyName,
+              ]).join('\n');
+
+              try {
+                const res = await fetch('/api/gmail?action=send', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    user_id: user.id,
+                    to: to,
+                    subject: (approved ? 'Credit account approved' : 'Your credit account application') +
+                             (app.reference ? ' \u2014 ' + app.reference : '') + ' \u2014 ' + companyName,
+                    body: body,
+                    fromName: ([user.firstName, user.lastName].filter(Boolean).join(' ') || 'Total Waste Services') + ' - Total Waste Services',
+                  }),
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(describeError(result.error) || 'Gmail send failed');
+
+                // Best effort — a database without this column should not turn
+                // a sent email into an error on screen.
+                try {
+                  await window.supabase.from('credit_applications')
+                    .update({ decision_emailed_at: new Date().toISOString(), decision_emailed_to: to })
+                    .eq('id', app.id);
+                } catch (x) { console.warn('[Credit] could not record the decision email:', x); }
+
+                alert('\u2705 Sent to ' + to + '.');
+                await load();
+              } catch (e) {
+                // The decision is already saved at this point, so say so
+                // plainly rather than implying the whole thing failed.
+                console.error('[Credit] decision email failed:', e);
+                const msg = describeError(e);
+                if (/Gmail not connected|reconnect|token expired/i.test(msg)) {
+                  alert('The decision was saved, but the email could not be sent:\n\n' +
+                        'Your Gmail account is not connected. Go to Admin \u2192 User Management,' +
+                        ' connect it, then email them yourself.');
+                } else {
+                  alert('The decision was saved, but the email could not be sent:\n\n' + msg +
+                        '\n\nEmail them yourself, or try the decision again once it is working.');
+                }
+              }
+            };
+
             const setStatus = async (app, status) => {
               let limit = null;
               if (status === 'approved') {
@@ -18154,6 +18266,11 @@ Total Waste Services Ltd`);
                 }).eq('id', app.id);
                 await load();
                 notifyCreditChanged();
+
+                // Ask about the email before the customer-setup run, so the
+                // applicant hears back even if setting the record up is
+                // abandoned half way.
+                await sendDecisionEmail(app, status, limit);
 
                 // Approving and then setting the customer up are the same job,
                 // so run straight into it rather than making them find the
@@ -18644,6 +18761,12 @@ Total Waste Services Ltd`);
                                   <div className="text-sm text-green-800 mb-2">
                                     Approved{app.approved_limit ? ' \u2014 limit ' + app.approved_limit : ''}
                                     {app.decided_by ? ' by ' + app.decided_by : ''}
+                                  </div>
+                                  <div className="text-xs text-gray-500 mb-2">
+                                    {app.decision_emailed_at
+                                      ? 'Applicant emailed ' + new Date(app.decision_emailed_at).toLocaleDateString('en-GB') +
+                                        (app.decision_emailed_to ? ' at ' + app.decision_emailed_to : '')
+                                      : 'Applicant not emailed.'}
                                   </div>
                                   {app.customer_created ? (
                                     <div className="flex items-center gap-3 flex-wrap">
