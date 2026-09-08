@@ -8295,7 +8295,7 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                   {job.status === 'COLLECTED' ? 'COLLECTED' : 
                    job.isCompleted ? 'COMPLETED' : 
                    job.isCancelled ? 'CANCELLED' : 
-                   job.status.replace('_', ' ')}
+                   (job.status || '').replace('_', ' ')}
                 </span>
               </div>
 
@@ -8334,16 +8334,21 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                 </div>
               )}
               
-              {currentjob.invoiceNumber && (
-  <div className="mt-2 text-xs text-gray-500">
-    Invoice: {currentjob.invoiceNumber}
-    {currentjob.sage_si_number && (
-      <span className="ml-2 text-blue-600 font-medium">
-        | SI: {currentJob.sage_si_number}
-      </span>
-    )}
-  </div>
-)}
+              {/* This block referenced currentJob/currentjob, which exists in
+                  FullPageJobView but not here — the prop is `job`. It threw on
+                  every render, and since a render error takes the whole app
+                  down, the page went white rather than the card breaking.
+                  It never showed because the card view had no button to reach it. */}
+              {job.invoiceNumber && (
+                <div className="mt-2 text-xs text-gray-500">
+                  Invoice: {job.invoiceNumber}
+                  {job.sage_si_number && (
+                    <span className="ml-2 text-blue-600 font-medium">
+                      | SI: {job.sage_si_number}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           );
         };
@@ -9383,9 +9388,11 @@ const shortenCompanyName = (name) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
           const [showJobSidebar, setShowJobSidebar] = useState(false);
-          const [viewMode, setViewMode] = useState(() =>
-            // Cards on a phone, table on a desktop.
-            (typeof window !== 'undefined' && window.innerWidth < 640) ? 'grid' : 'list');
+          // Stays 'list' on every screen size. The list view already contains a
+          // purpose-built mobile card layout behind sm:hidden, so jobs never
+          // needed the grid — and 'grid' routes to JobCard, which had gone
+          // unrendered for long enough to rot.
+          const [viewMode, setViewMode] = useState('list');
           const [visibleCount, setVisibleCount] = useState(150); // fix32w: render this many job rows at a time (Load more reveals the rest)
           const [currentMonth, setCurrentMonth] = useState(new Date());
           const [expandedDays, setExpandedDays] = useState({});
