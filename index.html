@@ -18827,6 +18827,20 @@ Total Waste Services Ltd`);
           const [selectedCustomer, setSelectedCustomer] = useState(null);
           const [editingCustomer, setEditingCustomer] = useState(null);
           const [showCreditApps, setShowCreditApps] = useState(false);
+
+          // Opened from the banner's Review button, which lives in the header
+          // and has no way to reach this state directly.
+          React.useEffect(() => {
+            const open = () => {
+              try { window.__openCreditApps = false; } catch (e) {}
+              setShowCreditApps(true);
+            };
+            // Mounting because Review just switched to this tab: the event has
+            // already fired, so pick the request up from the flag instead.
+            if (typeof window !== 'undefined' && window.__openCreditApps) open();
+            window.addEventListener('open-credit-apps', open);
+            return () => window.removeEventListener('open-credit-apps', open);
+          }, []);
           // Badge on the header button, so a submitted application doesn't
           // sit unnoticed.
           const [creditPending, setCreditPending] = useState(0);
@@ -21729,6 +21743,7 @@ const DocumentsView = ({ user }) => {
       const { data, error } = await window.supabase
         .from('documents')
         .select('*')
+        .is('customer_name', null)
         .order('created_at', { ascending: false });
       
       if (error) {
@@ -26829,7 +26844,13 @@ const CollectionCalendarModal = () => {
 
   {/* Credit applications waiting for a decision. Self-contained, so it works
       wherever the header happens to be rendered from. */}
-  <CreditBanner onReview={() => setActiveTab('customers')} />
+  <CreditBanner onReview={() => {
+    try {
+      window.__openCreditApps = true;
+      window.dispatchEvent(new CustomEvent('open-credit-apps'));
+    } catch (e) { /* the tab switch below still happens */ }
+    setActiveTab('customers');
+  }} />
 
   {/* Desktop tabs */}
   <div className="hidden sm:block px-6">
