@@ -13453,13 +13453,50 @@ const CreditBanner = ({ onReview }) => {
 
   React.useEffect(() => {
     check();
+
+    // A customer submitting the form does not touch this browser, so nothing
+    // local can tell the banner to look again. Before this, the only prompt to
+    // re-check was the five-minute tick — which is why logging out and back in
+    // looked like the only thing that made the banner work. It was not broken,
+    // it was just up to five minutes behind.
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') check();
-    }, 5 * 60 * 1000);
+    }, 60 * 1000);
+
+    const onVisible = () => { if (document.visibilityState === 'visible') check(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', check);
     window.addEventListener('credit-apps-changed', check);
+
+    // Realtime, the same pattern as the portal job requests channel above.
+    // Requires the table to be in the publication:
+    //   alter publication supabase_realtime add table credit_applications;
+    // If that has not been run the channel just errors and the polling and
+    // focus checks still cover it, a minute late at worst.
+    let channel = null;
+    try {
+      channel = window.supabase
+        .channel('credit-applications-watch')
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'credit_applications' },
+          () => { notifyCreditChanged(); })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('[CreditBanner] listening for credit application changes');
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[CreditBanner] realtime unavailable, falling back to polling. Status:', status);
+          }
+        });
+    } catch (e) {
+      console.warn('[CreditBanner] realtime subscribe failed, falling back to polling:', e);
+    }
+
     return () => {
       clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', check);
       window.removeEventListener('credit-apps-changed', check);
+      if (channel) { try { window.supabase.removeChannel(channel); } catch (e) { /* ignore */ } }
     };
   }, [check]);
 
@@ -18686,10 +18723,19 @@ Total Waste Services Ltd`);
             refreshCreditPending();
             const id = setInterval(() => {
               if (document.visibilityState === 'visible') refreshCreditPending();
-            }, 5 * 60 * 1000);
+            }, 60 * 1000);
+            const onVisible = () => {
+              if (document.visibilityState === 'visible') refreshCreditPending();
+            };
+            document.addEventListener('visibilitychange', onVisible);
+            window.addEventListener('focus', refreshCreditPending);
+            // The realtime channel in CreditBanner dispatches this event, so the
+            // badge follows the banner without a second subscription.
             window.addEventListener('credit-apps-changed', refreshCreditPending);
             return () => {
               clearInterval(id);
+              document.removeEventListener('visibilitychange', onVisible);
+              window.removeEventListener('focus', refreshCreditPending);
               window.removeEventListener('credit-apps-changed', refreshCreditPending);
             };
           }, [refreshCreditPending, showCreditApps]);
