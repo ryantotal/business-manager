@@ -11797,8 +11797,11 @@ function buildQuotePdfDoc(quote, ctx) {
     const qty   = parseFloat(item.quantity) || 1;
     const price = parseFloat(item.customer_price || item.unit_price || item.price || 0) || 0;
     const desc  = item.description || item.product_name || 'Service';
+    // Joined on one line rather than stacked. The product name is really a
+    // category (Disposal, Transport, Consignment note) and the description
+    // usually repeats it, so two lines read as a duplicate.
     const name  = item.product_name && item.description && item.product_name !== item.description
-      ? item.product_name + '\n' + item.description
+      ? item.product_name + ' \u2014 ' + item.description
       : desc;
     return {
       name: name,
