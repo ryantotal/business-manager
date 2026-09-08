@@ -13704,6 +13704,7 @@ const CreditApplicationForm = ({ token }) => {
     if (!f.regPostcode.trim())    missing.push('Postcode');
     if (!f.accountsEmail.trim())  missing.push('Accounts email');
     if (!f.signName.trim())       missing.push('Your name in the declaration');
+    if (!f.signPosition.trim())   missing.push('Your position in the declaration');
     if (!f.acceptTerms)           missing.push('Accepting the Credit Account Terms & Conditions');
     if (missing.length > 0) {
       alert('Please fill in:\n\n' + missing.map(m => '\u2022 ' + m).join('\n'));
@@ -13982,7 +13983,11 @@ const CreditApplicationForm = ({ token }) => {
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
               <div><CreditL>Full name *</CreditL><CreditI value={f.signName} onChange={e => set('signName', e.target.value)} /></div>
-              <div><CreditL>Position</CreditL><CreditI value={f.signPosition} onChange={e => set('signPosition', e.target.value)} placeholder="Director" /></div>
+              <div>
+                <CreditL>Position *</CreditL>
+                <CreditI value={f.signPosition} onChange={e => set('signPosition', e.target.value)}
+                  placeholder="Director" maxLength={60} />
+              </div>
               <div><CreditL>Date</CreditL><CreditI value={new Date().toLocaleDateString('en-GB')} readOnly /></div>
             </div>
           </div>
@@ -18196,6 +18201,45 @@ Total Waste Services Ltd`);
                   po_required: d.poRequired || '',
                 };
 
+                // Push to Sage first, exactly as the customer form does. If it
+                // fails we still create the record locally and say so, rather
+                // than losing the customer.
+                let sageId = null;
+                let sageProblem = null;
+                try {
+                  const res = await fetch('/api/sage-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'createContact',
+                      contactType: 'CUSTOMER',
+                      name: name,
+                      email: d.accountsEmail || app.sent_to || '',
+                      address: d.regAddress1 || '',
+                      addressLine2: '',
+                      city: d.regTown || '',
+                      postcode: d.regPostcode || '',
+                      vatNumber: d.vatNumber || '',
+                      creditLimit: limitNumber,
+                      creditDays: 30,
+                      mainContact: {
+                        name: d.accountsName || d.signName || '',
+                        email: d.accountsEmail || '',
+                        telephone: d.accountsPhone || '',
+                      },
+                    }),
+                  });
+                  const sageResult = await res.json();
+                  if (!res.ok) throw new Error(describeError(sageResult.error) || 'Sage rejected the customer');
+                  sageId = sageResult.id || sageResult.contact_id ||
+                           (sageResult.contact && sageResult.contact.id) || null;
+                } catch (sageErr) {
+                  console.warn('[Credit] Sage push failed:', sageErr);
+                  sageProblem = describeError(sageErr);
+                }
+
+                core.sage_id = sageId;
+
                 let error = null;
                 let droppedFields = [];
                 ({ error } = await window.supabase.from('customers')
@@ -18261,6 +18305,10 @@ Total Waste Services Ltd`);
                 if (onCustomerCreated) onCustomerCreated(name);
                 await load();
                 alert('\u2705 Customer created for ' + name + '.' +
+                  (sageId
+                    ? '\n\nAlso created in Sage.'
+                    : '\n\nNOT created in Sage: ' + (sageProblem || 'no id returned') +
+                      '\nAdd them in Sage by hand, or open the customer and save it again to retry.') +
                   (droppedFields.length > 0
                     ? '\n\nNote: ' + droppedFields.join(' and ') + ' could not be saved because those columns are missing from the database. Run customer_columns.sql, then set them by hand on this customer.'
                     : '') +
