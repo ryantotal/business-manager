@@ -1612,40 +1612,6 @@ return (
             }
           };
 
-          // Auto-refresh portal jobs every 30 seconds while logged in.
-          // Without this, customers wouldn't see status changes (Scheduled → Completed,
-          // newly published WTNs, invoice numbers etc.) until they manually hit refresh.
-          // Pauses when the tab is hidden to save battery on mobile, AND while the booking
-          // modal is open so a re-render mid-typing can't disrupt the user.
-          React.useEffect(() => {
-            if (!portalUser?.customer) return;
-            if (showPortalBooking) return; // pause while form is open
-            let interval = null;
-            const start = () => {
-              if (interval) return;
-              interval = setInterval(() => {
-                if (!document.hidden) refreshPortalJobs();
-              }, 30000);
-            };
-            const stop = () => {
-              if (interval) { clearInterval(interval); interval = null; }
-            };
-            const onVisibility = () => {
-              if (document.hidden) {
-                stop();
-              } else {
-                refreshPortalJobs(); // immediate refresh on tab focus
-                start();
-              }
-            };
-            start();
-            document.addEventListener('visibilitychange', onVisibility);
-            return () => {
-              stop();
-              document.removeEventListener('visibilitychange', onVisibility);
-            };
-          }, [portalUser?.customer, showPortalBooking]);
-
           const handlePortalBookingSubmit = async (bookingData) => {
             setPortalBookingSaving(true);
             try {
@@ -1746,6 +1712,45 @@ return (
             });
           }, []);
           const clearSelection = React.useCallback(() => setSelectedJobIds(new Set()), []);
+
+          // Auto-refresh portal jobs every 30 seconds while logged in.
+          // Kept below the useState block on purpose: the dependency array is
+          // evaluated during render, so reading showPortalBooking from above the
+          // declaration is a temporal dead zone error unless Babel's env preset
+          // happens to rewrite const to var. Do not move this back up.
+          // Without this, customers wouldn't see status changes (Scheduled → Completed,
+          // newly published WTNs, invoice numbers etc.) until they manually hit refresh.
+          // Pauses when the tab is hidden to save battery on mobile, AND while the booking
+          // modal is open so a re-render mid-typing can't disrupt the user.
+          React.useEffect(() => {
+            if (!portalUser?.customer) return;
+            if (showPortalBooking) return; // pause while form is open
+            let interval = null;
+            const start = () => {
+              if (interval) return;
+              interval = setInterval(() => {
+                if (!document.hidden) refreshPortalJobs();
+              }, 30000);
+            };
+            const stop = () => {
+              if (interval) { clearInterval(interval); interval = null; }
+            };
+            const onVisibility = () => {
+              if (document.hidden) {
+                stop();
+              } else {
+                refreshPortalJobs(); // immediate refresh on tab focus
+                start();
+              }
+            };
+            start();
+            document.addEventListener('visibilitychange', onVisibility);
+            return () => {
+              stop();
+              document.removeEventListener('visibilitychange', onVisibility);
+            };
+          }, [portalUser?.customer, showPortalBooking]);
+
 
           // Build one multi-page PDF containing every WTN on every selected
           // job, using the same generator as the emailed and portal copies.
@@ -13427,13 +13432,22 @@ const CreditBanner = ({ onReview }) => {
 
   const check = React.useCallback(async () => {
     try {
-      const { data } = await window.supabase
+      const { data, error } = await window.supabase
         .from('credit_applications')
         .select('id, customer_name, form_data')
         .eq('status', 'submitted');
+      // Supabase reports failures on `error`, not by throwing, so the previous
+      // version could not tell "nothing submitted" from "the query failed" and
+      // stayed hidden either way. The badge selects only `id`, which is why it
+      // could show a count while this stayed blank.
+      if (error) {
+        console.error('[CreditBanner] query failed:', error.message || error, error);
+        return;
+      }
+      console.log('[CreditBanner] submitted applications:', (data || []).length);
       setApps(data || []);
     } catch (e) {
-      // Table may not exist yet; the banner just stays hidden.
+      console.error('[CreditBanner] query threw:', e);
     }
   }, []);
 
@@ -31313,7 +31327,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                     this quote. Use the box below to tell it anything else that matters.
                     {hasQuoteWording && (
                       <span className="block mt-1 font-medium">
-                        There's already wording on this quote \u2014 "Add to what's there"
+                        There's already wording on this quote — "Add to what's there"
                         keeps all of it and works your note in.
                       </span>
                     )}
