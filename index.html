@@ -17972,6 +17972,8 @@ Total Waste Services Ltd`);
             const [email, setEmail] = React.useState('');
             const [filter, setFilter] = React.useState('open');
             const [creating, setCreating] = React.useState(null);
+            // Step-by-step progress while a customer is being set up.
+            const [progress, setProgress] = React.useState(null);
 
             const load = React.useCallback(async () => {
               setLoading(true);
@@ -18134,6 +18136,7 @@ Total Waste Services Ltd`);
               if (!confirm(msg)) return;
 
               setCreating(app.id);
+              setProgress({ step: 0, name: name });
               try {
                 // Split so a column the database hasn't got yet costs you a
                 // field rather than the whole customer record.
@@ -18201,6 +18204,7 @@ Total Waste Services Ltd`);
                   po_required: d.poRequired || '',
                 };
 
+                setProgress({ step: 1, name: name });
                 // Push to Sage first, exactly as the customer form does. If it
                 // fails we still create the record locally and say so, rather
                 // than losing the customer.
@@ -18246,6 +18250,7 @@ Total Waste Services Ltd`);
 
                 core.sage_id = sageId;
 
+                setProgress({ step: 2, name: name, sageOk: !!sageId });
                 let error = null;
                 let droppedFields = [];
                 ({ error } = await window.supabase.from('customers')
@@ -18258,6 +18263,7 @@ Total Waste Services Ltd`);
                 }
                 if (error) throw error;
 
+                setProgress({ step: 3, name: name, sageOk: !!sageId });
                 // File the completed application as a PDF against the
                 // customer. If the account later goes bad, this is the
                 // evidence: what they declared, who signed it, when, and the
@@ -18322,7 +18328,7 @@ Total Waste Services Ltd`);
                   '\n\nCheck the record and add anything the form did not cover \u2014 site addresses, account manager, business type.');
               } catch (e) {
                 alert('Could not create the customer: ' + describeError(e));
-              } finally { setCreating(null); }
+              } finally { setCreating(null); setProgress(null); }
             };
 
             // Remove an application that's gone nowhere — a wrong address, a
@@ -18361,9 +18367,59 @@ Total Waste Services Ltd`);
                  (a.status === 'approved' && !a.customer_created)));
             const needing = apps.filter(a => a.status === 'submitted').length;
 
+            const STEPS = [
+              'Starting',
+              'Creating the customer in Sage',
+              'Saving the customer record',
+              'Filing the application PDF',
+            ];
+
             return (
               <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-                   onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+                   onClick={e => { if (e.target === e.currentTarget && !progress) onClose(); }}>
+
+                {/* Blocks the panel while a customer is being set up, so nobody
+                    clicks away mid-way and ends up with a half-made record. */}
+                {progress && (
+                  <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+                      <h4 className="text-base font-semibold text-gray-900">
+                        Setting up {progress.name}
+                      </h4>
+                      <p className="text-xs text-gray-500 mt-1 mb-4">
+                        This takes a few seconds. Please don't close this window.
+                      </p>
+                      <div className="space-y-2.5">
+                        {STEPS.slice(1).map((label, i) => {
+                          const stepNo = i + 1;
+                          const done = progress.step > stepNo;
+                          const active = progress.step === stepNo;
+                          return (
+                            <div key={label} className="flex items-center gap-2.5 text-sm">
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${
+                                done ? 'bg-green-600 text-white'
+                                     : active ? 'bg-blue-600 text-white'
+                                     : 'bg-gray-200 text-gray-400'}`}>
+                                {done ? '✓' : stepNo}
+                              </span>
+                              <span className={done ? 'text-gray-500' : active ? 'text-gray-900 font-medium' : 'text-gray-400'}>
+                                {label}
+                                {active && '…'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {progress.step >= 2 && progress.sageOk === false && (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-3">
+                          Sage did not accept the customer. Carrying on with the local record —
+                          you'll get the reason when this finishes.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
                   <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white rounded-t-xl">
                     <div>
