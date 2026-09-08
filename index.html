@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="TWS Portal">
@@ -239,6 +239,15 @@
       /* Tables scroll horizontally */
       .overflow-x-auto {
         -webkit-overflow-scrolling: touch;
+      }
+      /* Wide tables that have no scrolling wrapper of their own. Without this
+         they push the page sideways, and because html/body hide the overflow
+         the far columns simply cannot be reached. */
+      .mobile-scroll-table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
       }
       /* Hide desktop table headers that don't fit */
       table th, table td {
@@ -2298,7 +2307,7 @@ return (
                                         {lineItems.length > 0 && (
                                           <div className="col-span-2 sm:col-span-3">
                                             <div className="text-gray-400 uppercase tracking-wide mb-2">Products & Services</div>
-                                            <table className="w-full text-xs border border-gray-200 rounded">
+                                            <table className="w-full text-xs border border-gray-200 rounded mobile-scroll-table">
                                               <thead className="bg-gray-50">
                                                 <tr>
                                                   <th className="px-3 py-2 text-left font-medium text-gray-500">Product / Service</th>
@@ -6186,7 +6195,7 @@ const [isEvent, setIsEvent] = useState(false);
                 </table>
               </div>
               <div className="mt-4 border-t pt-4">
-                <div className="grid grid-cols-5 gap-4 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
                   <div className="text-center">
                     <div className="text-gray-600">Total Items</div>
                     <div className="font-semibold">{formData.lineItems.length}</div>
@@ -9374,7 +9383,9 @@ const shortenCompanyName = (name) => {
           const { hasPermission } = useAuth();
           const [selectedJob, setSelectedJob] = useState(null);
           const [showJobSidebar, setShowJobSidebar] = useState(false);
-          const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
+          const [viewMode, setViewMode] = useState(() =>
+            // Cards on a phone, table on a desktop.
+            (typeof window !== 'undefined' && window.innerWidth < 640) ? 'grid' : 'list');
           const [visibleCount, setVisibleCount] = useState(150); // fix32w: render this many job rows at a time (Load more reveals the rest)
           const [currentMonth, setCurrentMonth] = useState(new Date());
           const [expandedDays, setExpandedDays] = useState({});
@@ -10489,8 +10500,16 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
     </div>
     <div className="flex items-center justify-end gap-2">
       <button
+        onClick={() => setViewMode('grid')}
+        className={`p-2 rounded ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
+        title="Card view"
+      >
+        <LucideIcon icon="Grid" size={16} />
+      </button>
+      <button
         onClick={() => setViewMode('list')}
         className={`p-2 rounded ${viewMode === 'list' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
+        title="Table view"
       >
         <Layout size={16} />
       </button>
@@ -11015,7 +11034,7 @@ job.status.replace('_', ' ')}
   <div className="mb-6">
     <h4 className="text-lg font-semibold mb-4 text-gray-800">Products & Services</h4>
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <table className="w-full">
+      <table className="w-full mobile-scroll-table">
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
             <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Product/Service</th>
@@ -11401,7 +11420,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quote Number & Date</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product/Service</th>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Postcode</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
@@ -11460,7 +11479,24 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
   quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
-          {quote.wasteType || quote.aggregateType || quote.jobType || '-'}
+          {(() => {
+            // Service description first — it is what heads the PDF and what
+            // actually distinguishes one quote from another. Then the line
+            // items. The old value (wasteType/jobType) is kept as a last
+            // resort, but the Type column already shows it.
+            const scope = String(quote.scopeDescription || '').trim();
+            const items = Array.isArray(quote.lineItems) ? quote.lineItems : [];
+            const fromItems = items
+              .filter(i => !i.optional)
+              .map(i => String(i.description || i.product_name || '').trim())
+              .filter(Boolean)
+              .join(', ');
+            const text = scope || fromItems ||
+              quote.wasteType || quote.aggregateType || quote.jobType || '-';
+            // First line only: scope descriptions run to a paragraph.
+            const firstLine = text.split('\n')[0].trim() || text;
+            return <span title={text} className="block max-w-[260px] truncate">{firstLine}</span>;
+          })()}
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
   quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
@@ -14754,7 +14790,7 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
       {/* Linked jobs list */}
       {expanded && (
         <div className="mt-3 bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full text-xs">
+          <table className="w-full text-xs mobile-scroll-table">
             <thead className="bg-gray-50 text-gray-500 uppercase">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Job</th>
@@ -17773,7 +17809,6 @@ Total Waste Services Ltd`);
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-gray-200 text-xs">
-                          <th className="text-left py-2 px-2 font-medium text-gray-700">Product/Service</th>
                           <th className="text-left py-2 px-2 font-medium text-gray-700">Description</th>
                           <th className="text-center py-2 px-2 font-medium text-gray-700">Qty</th>
                           <th className="text-right py-2 px-2 font-medium text-gray-700">Unit Price</th>
@@ -17788,11 +17823,12 @@ Total Waste Services Ltd`);
                           return (
                             <tr key={item.id || index} className="border-b border-gray-100">
                               <td className="py-2 px-2">
-                                <div className="font-medium text-xs">{item.product_name || item.name}</div>
+                                <div className="font-medium text-xs">
+                                  {item.product_name && item.description && item.product_name !== item.description
+                                  ? item.product_name + ' \u2014 ' + item.description
+                                  : (item.description || item.product_name || item.name || '-')}
+                                </div>
                                 <div className="text-xs text-gray-500">Code: {item.item_code || 'N/A'}</div>
-                              </td>
-                              <td className="py-2 px-2 text-gray-600 text-xs">
-                                {item.description || '-'}
                               </td>
                               <td className="py-2 px-2 text-center text-xs">
                                 {item.quantity || 1}
@@ -17819,7 +17855,11 @@ Total Waste Services Ltd`);
                       
                       return (
                         <div key={item.id || index} className="border border-gray-200 rounded p-2 text-xs">
-                          <div className="font-medium">{item.product_name || item.name}</div>
+                          <div className="font-medium">
+                            {item.product_name && item.description && item.product_name !== item.description
+                              ? item.product_name + ' \u2014 ' + item.description
+                              : (item.description || item.product_name || item.name || '-')}
+                          </div>
                           <div className="text-gray-500">Code: {item.item_code || 'N/A'}</div>
                           <div className="grid grid-cols-2 gap-1 mt-1">
                             <div>Qty: <span className="font-medium">{item.quantity || 1} {formatUnit(getLineItemUnit(item, quote))}</span></div>
@@ -18880,7 +18920,9 @@ Total Waste Services Ltd`);
             };
           }, [refreshCreditPending, showCreditApps]);
           const [searchQuery, setSearchQuery] = useState('');
-          const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
+          const [viewMode, setViewMode] = useState(() =>
+            // Cards on a phone, table on a desktop.
+            (typeof window !== 'undefined' && window.innerWidth < 640) ? 'grid' : 'list');
           const [filters, setFilters] = useState({
             businessType: '',
             creditRating: '',
@@ -19616,7 +19658,9 @@ const { error } = await window.supabase
           const [selectedSupplier, setSelectedSupplier] = useState(null);
           const [editingSupplier, setEditingSupplier] = useState(null);
           const [searchQuery, setSearchQuery] = useState('');
-          const [viewMode, setViewMode] = useState('list'); // CHANGED: default to 'list' instead of 'grid'
+          const [viewMode, setViewMode] = useState(() =>
+            // Cards on a phone, table on a desktop.
+            (typeof window !== 'undefined' && window.innerWidth < 640) ? 'grid' : 'list');
           const [filters, setFilters] = useState({
             service: '',
             rating: '',
@@ -21610,7 +21654,7 @@ const loadUsers = async () => {
       <div>
         <h4 className="font-medium mb-3">Synced Products ({products.length})</h4>
         <div className="bg-white border border-gray-200 rounded-lg max-h-96 overflow-y-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-gray-200 mobile-scroll-table">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
@@ -22268,7 +22312,7 @@ info@totalwasteservicesltd.com`;
                                 {lineItems.length > 0 && (
                                   <div className="col-span-3">
                                     <div className="text-gray-400 uppercase tracking-wide mb-2">Products &amp; Services</div>
-                                    <table className="w-full text-xs border border-gray-200 rounded">
+                                    <table className="w-full text-xs border border-gray-200 rounded mobile-scroll-table">
                                       <thead className="bg-gray-50">
                                         <tr>
                                           <th className="px-3 py-2 text-left font-medium text-gray-500">Product / Service</th>
@@ -32066,7 +32110,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                     </table>
                   </div>
                   <div className="mt-4 border-t pt-4">
-                    <div className="grid grid-cols-5 gap-4 text-sm">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
                       <div className="text-center">
                         <div className="text-gray-600">Total Items</div>
                         <div className="font-semibold">{formData.lineItems.length}</div>
