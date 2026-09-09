@@ -687,7 +687,11 @@ const SearchableDropdown = ({
   placeholder = "Select...", 
   displayField = "name",
   valueField = "name",
-  className = ""
+  className = "",
+  // Off by default, so every existing use behaves exactly as before. When on,
+  // anything typed can be kept as-is rather than having to match an option.
+  allowCustom = false,
+  customHint = "Use this name"
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -716,6 +720,15 @@ const SearchableDropdown = ({
   };
 
   const selectedOption = options.find(opt => opt[valueField] === value);
+  // A value that matches no option is still a real value — show it rather than
+  // falling back to the placeholder, which made the field look empty.
+  const shownLabel = selectedOption ? selectedOption[displayField] : (value || placeholder);
+  // Only badge it where free text is actually allowed. Elsewhere a value can
+  // fail to match simply because the options have not loaded yet, and a
+  // "not on file" flash on an ordinary dropdown would be alarming nonsense.
+  const isCustomValue = allowCustom && !selectedOption && !!value;
+  const trimmedSearch = searchTerm.trim();
+  const exactMatch = options.some(o => String(o[displayField] || '').toLowerCase() === trimmedSearch.toLowerCase());
 
   return (
     <div className="relative">
@@ -725,7 +738,12 @@ const SearchableDropdown = ({
       >
         <div className="flex items-center justify-between">
           <span className={value ? 'text-gray-900' : 'text-gray-500'}>
-            {selectedOption ? selectedOption[displayField] : placeholder}
+            {shownLabel}
+            {isCustomValue && (
+              <span className="ml-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                not on file
+              </span>
+            )}
           </span>
           <ChevronDown size={16} className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`} />
         </div>
@@ -744,8 +762,19 @@ const SearchableDropdown = ({
             />
           </div>
           <div className="max-h-48 overflow-y-auto">
+       {allowCustom && trimmedSearch && !exactMatch && (
+         <div
+           className="px-3 py-2 hover:bg-amber-50 cursor-pointer text-sm border-b border-gray-100 bg-amber-50/40"
+           onClick={() => { onChange(trimmedSearch); setIsOpen(false); setSearchTerm(''); }}
+         >
+           <span className="text-gray-500">{customHint}: </span>
+           <span className="font-medium text-gray-900">{trimmedSearch}</span>
+         </div>
+       )}
        {filteredProducts.length === 0 ? (
-  <div className="px-3 py-2 text-gray-500 text-sm">No options found</div>
+  <div className="px-3 py-2 text-gray-500 text-sm">
+    {allowCustom && trimmedSearch ? 'No match — use the name above.' : 'No options found'}
+  </div>
 ) : (
   filteredProducts.map((option, index) => (
     <div
@@ -7884,6 +7913,26 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                         const emailsToSend = wtnFields.selectedEmails?.length > 0 ? wtnFields.selectedEmails : (wtnFields.recipientEmail ? [wtnFields.recipientEmail] : []);
                         if (emailsToSend.length === 0) { alert('Please enter a customer email address.'); return; }
                         if (wtnTotalPct !== 100) { alert('Recycling percentages must total 100%.'); return; }
+                        // EWC and SIC are statutory content on a transfer note.
+                        // Checked here rather than on save because notes are only
+                        // issued on request — this is the moment one leaves the
+                        // building. A warning, not a block: a note going out with
+                        // a gap beats no note at all.
+                        {
+                          const blank = v => !String(v == null ? '' : v).trim();
+                          const missing = [];
+                          if (blank(wtnFields.listOfWasteCode))   missing.push('EWC code (List of Waste)');
+                          if (blank(wtnFields.transferorSicCode)) missing.push('Transferor SIC code');
+                          if (blank(wtnFields.transferorName))    missing.push('Transferor name');
+                          if (blank(wtnFields.wasteDescription))  missing.push('Waste description');
+                          if (missing.length > 0) {
+                            const ok = confirm(
+                              'This transfer note is missing:\n\n  \u2022 ' + missing.join('\n  \u2022 ') +
+                              '\n\nThese are required on a waste transfer note. Send anyway?'
+                            );
+                            if (!ok) return;
+                          }
+                        }
                         setWtnSending(true);
                         try {
                           // ── WTN email: real PDF attachment via Gmail ──────────
@@ -31807,6 +31856,9 @@ By approving this quotation and authorising us to commence services, you acknowl
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
                   <SearchableDropdown
+                    allowCustom
+                    customHint="Quote for"
+                    placeholder="Search customers, or type a new name"
                     options={customers.map(c => ({
                       ...c,
                       name: c.companyName || c.name
