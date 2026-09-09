@@ -249,6 +249,62 @@
         -webkit-overflow-scrolling: touch;
         max-width: 100%;
       }
+      /* Wide editing tables become one card per row. */
+      .stack-on-mobile,
+      .stack-on-mobile tbody,
+      .stack-on-mobile tr,
+      .stack-on-mobile td {
+        display: block;
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+      }
+      .stack-on-mobile thead { display: none; }
+      .stack-on-mobile tr {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+      }
+      .stack-on-mobile td {
+        padding: 6px 0 !important;
+        border: 0 !important;
+      }
+      .stack-on-mobile td::before {
+        content: '';
+        display: block;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #6b7280;
+        margin-bottom: 3px;
+      }
+      /* Column order is fixed in both tables, so the labels come from position
+         rather than from an attribute added to every single cell. The quote
+         form has no tipping site column, so rule 9 simply never matches there. */
+      .stack-on-mobile td:nth-child(1)::before { content: 'Product / service'; }
+      .stack-on-mobile td:nth-child(2)::before { content: 'Description'; }
+      .stack-on-mobile td:nth-child(3)::before { content: 'Qty'; }
+      .stack-on-mobile td:nth-child(4)::before { content: 'Unit'; }
+      .stack-on-mobile td:nth-child(5)::before { content: 'Cost \00a3'; }
+      .stack-on-mobile td:nth-child(6)::before { content: 'RRP \00a3'; }
+      .stack-on-mobile td:nth-child(7)::before { content: 'Profit'; }
+      .stack-on-mobile td:nth-child(8)::before { content: 'Actions'; }
+      .stack-on-mobile td:nth-child(9)::before { content: 'Tipping site'; }
+      /* These inputs are sized to fit table columns (w-16, w-20, w-24). Once
+         stacked there is a full row to use. */
+      .stack-on-mobile input,
+      .stack-on-mobile select,
+      .stack-on-mobile textarea {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      /* Actions sit side by side rather than stacked once the row is full width. */
+      .stack-on-mobile td:nth-child(8) > div {
+        flex-direction: row !important;
+      }
       /* Hide desktop table headers that don't fit */
       table th, table td {
         padding: 6px 8px !important;
@@ -5936,7 +5992,7 @@ const [isEvent, setIsEvent] = useState(false);
             <div className="mt-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
               <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                 <h3 className="text-xl font-semibold">Selected Products & Services</h3>
-                <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-2">
                   <span className="text-xs text-gray-500 hidden sm:inline">Scroll for more columns</span>
                   <button
                     type="button"
@@ -5965,7 +6021,7 @@ const [isEvent, setIsEvent] = useState(false);
                 </div>
               </div>
               <div className="overflow-x-auto" ref={productScrollRef} onScroll={updateProductScroll}>
-                <table className="w-full border border-gray-300 rounded-lg bg-white">
+                <table className="w-full border border-gray-300 rounded-lg bg-white stack-on-mobile">
                   <thead className="bg-gray-100">
                     <tr>
                       <th className="px-4 py-3 text-left font-medium w-44">Product/Service</th>
@@ -31957,7 +32013,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                 <div className="mt-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
                   <h3 className="text-xl font-semibold mb-6">Selected Products & Services</h3>
                   <div className="overflow-x-auto">
-                    <table className="w-full border border-gray-300 rounded-lg bg-white">
+                    <table className="w-full border border-gray-300 rounded-lg bg-white stack-on-mobile">
                       <thead className="bg-gray-100">
                         <tr>
                           <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
