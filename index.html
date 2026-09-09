@@ -1367,8 +1367,8 @@ return (
             // The owner account is never restricted.
             if (user.isSuperAdmin) return true;
             const permissions = {
-              ADMIN: ['dashboard:view', 'jobs:create', 'jobs:read', 'jobs:update', 'jobs:delete', 'customers:create', 'customers:read', 'customers:update', 'customers:delete', 'suppliers:create', 'suppliers:read', 'suppliers:update', 'suppliers:delete', 'admin:access', 'quotes:create', 'quotes:read', 'quotes:update', 'quotes:delete'],
-              MANAGER: ['dashboard:view', 'jobs:create', 'jobs:read', 'jobs:update', 'jobs:delete', 'customers:create', 'customers:read', 'customers:update', 'customers:delete', 'suppliers:create', 'suppliers:read', 'suppliers:update', 'suppliers:delete', 'quotes:create', 'quotes:read', 'quotes:update'],
+              ADMIN: ['dashboard:financials', 'jobs:create', 'jobs:read', 'jobs:update', 'jobs:delete', 'customers:create', 'customers:read', 'customers:update', 'customers:delete', 'suppliers:create', 'suppliers:read', 'suppliers:update', 'suppliers:delete', 'admin:access', 'quotes:create', 'quotes:read', 'quotes:update', 'quotes:delete'],
+              MANAGER: [ 'jobs:create', 'jobs:read', 'jobs:update', 'jobs:delete', 'customers:create', 'customers:read', 'customers:update', 'customers:delete', 'suppliers:create', 'suppliers:read', 'suppliers:update', 'suppliers:delete', 'quotes:create', 'quotes:read', 'quotes:update'],
               BROKER: ['jobs:create', 'jobs:read', 'jobs:update', 'customers:read', 'suppliers:read', 'quotes:create', 'quotes:read']
             };
             const base = permissions[user.role] || [];
@@ -8695,7 +8695,7 @@ const DayStrip = React.memo(({ days, jobsByDate, todayString, selectedDay, jobCo
 
 // Dashboard Component - COMPLETE WITH FILTERS AND SEARCH
 const Dashboard = ({ jobs, customers, suppliers, products }) => {
-  const { user } = useAuth();  // fix32v: needed to gate financial reports by role
+  const { user, hasPermission } = useAuth();  // fix32v: needed to gate financial reports by role
   // State for filters
   const [dateRange, setDateRange] = useState('all');
   const [startDate, setStartDate] = useState(null);
@@ -8831,7 +8831,7 @@ const [groupByProduct, setGroupByProduct] = useState(false);
       </div>
 
       {/* fix32v: Managers/Brokers see only the Staff Holidays widget below; every financial report (margins, profit, cost, turnover) is Admin-only */}
-      {(user?.role === 'ADMIN') && (<>
+      {hasPermission('dashboard:financials') && (<>
       {/* Report 1: Products Sold with Margins */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-4">
@@ -20544,6 +20544,11 @@ const handleApplySync = async () => {
 
 // Simple Admin Panel
         const AdminPanel = ({ user }) => {
+          // The user list below maps with a variable also called `user`, which
+          // shadows this prop inside the loop. Alias it so the badges can ask
+          // "is the person looking at this an owner?" rather than accidentally
+          // asking it about the row being drawn.
+          const currentUser = user;
           const { wasteTypes, updateWasteTypes, addWasteType, deleteWasteType } = useWasteTypes();
           const [configSection, setConfigSection] = useState('general');
           const [companyName, setCompanyName] = useState('Total Waste Services');
@@ -20851,6 +20856,11 @@ const loadUsers = async () => {
           lastName: nameParts.slice(1).join(' ') || '',
           role: u.role,
           phone: u.phone || '',
+          isSuperAdmin: u.is_super_admin === true,
+          // Used to show at a glance whether anyone is restricted.
+          deniedCount: Array.isArray((u.permission_overrides || {}).denied)
+            ? u.permission_overrides.denied.length
+            : 0,
         };
       }));
     }
@@ -20873,6 +20883,58 @@ const loadUsers = async () => {
     ? [{ id: 'audit', name: 'Audit Log', icon: 'Layout' }]
     : [])
 ];
+
+          // What an owner can switch on and off, in plain words.
+          const EDITABLE_PERMISSIONS = [
+            { id: 'dashboard:financials', label: 'Dashboard reports',
+              hint: 'Turnover, margins, profit. The holiday board stays either way.' },
+            { id: 'jobs:delete',      label: 'Delete jobs' },
+            { id: 'customers:delete', label: 'Delete customers' },
+            { id: 'suppliers:delete', label: 'Delete suppliers' },
+            { id: 'quotes:delete',    label: 'Delete quotes' },
+            { id: 'jobs:update',      label: 'Edit jobs' },
+            { id: 'customers:update', label: 'Edit customers' },
+            { id: 'suppliers:update', label: 'Edit suppliers' },
+            { id: 'admin:access',     label: 'Admin area' },
+          ];
+          const [permUser, setPermUser] = useState(null);
+          const [permDenied, setPermDenied] = useState([]);
+          const [permSaving, setPermSaving] = useState(false);
+
+          const openPermissions = async (u) => {
+            try {
+              const { data } = await window.supabase
+                .from('users').select('permission_overrides').eq('id', u.id).maybeSingle();
+              const denied = (data && data.permission_overrides && Array.isArray(data.permission_overrides.denied))
+                ? data.permission_overrides.denied : [];
+              setPermDenied(denied);
+            } catch (e) {
+              setPermDenied([]);
+            }
+            setPermUser(u);
+          };
+
+          const savePermissions = async () => {
+            if (!permUser) return;
+            setPermSaving(true);
+            try {
+              const { error } = await window.supabase
+                .from('users')
+                .update({ permission_overrides: { denied: permDenied } })
+                .eq('id', permUser.id);
+              if (error) throw error;
+              // Recorded, including who changed it — an owner is audited too.
+              logAudit(user, 'permissions_changed', 'user', permUser.id,
+                       permUser.email, { denied: permDenied });
+              await loadUsers();
+              setPermUser(null);
+              alert('Saved. It takes effect the next time they sign in.');
+            } catch (e) {
+              alert('Could not save: ' + (e.message || e));
+            } finally {
+              setPermSaving(false);
+            }
+          };
 
           const [auditRows, setAuditRows] = useState([]);
           const loadAuditLog = React.useCallback(async () => {
@@ -21563,6 +21625,19 @@ const loadUsers = async () => {
                                     )}
                                   </div>
                                   <div className="flex items-center space-x-3">
+                                    {currentUser?.isSuperAdmin && user.isSuperAdmin && (
+                                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-700">
+                                        OWNER
+                                      </span>
+                                    )}
+                                    {currentUser?.isSuperAdmin && !user.isSuperAdmin && user.deniedCount > 0 && (
+                                      <span
+                                        className="px-2 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-800"
+                                        title={user.deniedCount + ' permission(s) removed'}
+                                      >
+                                        RESTRICTED
+                                      </span>
+                                    )}
                                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                                       user.role === 'ADMIN' ? 'bg-red-100 text-red-700' :
                                       user.role === 'MANAGER' ? 'bg-blue-100 text-blue-700' :
@@ -21570,6 +21645,15 @@ const loadUsers = async () => {
                                     }`}>
                                       {user.role}
                                     </span>
+                                    {currentUser?.isSuperAdmin && !user.isSuperAdmin && (
+                                      <button
+                                        onClick={() => openPermissions(user)}
+                                        className="text-purple-600 hover:text-purple-800"
+                                        title="Permissions"
+                                      >
+                                        <LucideIcon icon="Lock" size={16} />
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => setEditingUser(user)}
                                       className="text-blue-600 hover:text-blue-800"
@@ -21589,6 +21673,66 @@ const loadUsers = async () => {
                               ))}
                             </div>
                           </>
+                        )}
+
+                        {permUser && currentUser?.isSuperAdmin && (
+                          <div className="bg-purple-50 border border-purple-200 p-4 rounded-lg">
+                            <div className="flex items-start justify-between mb-1">
+                              <h4 className="font-medium">
+                                Permissions for {permUser.firstName} {permUser.lastName}
+                              </h4>
+                              <button
+                                onClick={() => setPermUser(null)}
+                                className="text-gray-500 hover:text-gray-700"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-600 mb-3">
+                              Ticked means allowed. Their role badge does not change, and they are
+                              not told. Takes effect the next time they sign in.
+                            </p>
+                            <div className="space-y-2">
+                              {EDITABLE_PERMISSIONS.map(p => {
+                                const allowed = permDenied.indexOf(p.id) === -1;
+                                return (
+                                  <label key={p.id} className="flex items-start gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={allowed}
+                                      onChange={() => setPermDenied(prev =>
+                                        allowed ? prev.concat([p.id]) : prev.filter(x => x !== p.id)
+                                      )}
+                                      className="mt-0.5"
+                                    />
+                                    <span>
+                                      <span className={allowed ? 'text-gray-900' : 'text-gray-500 line-through'}>
+                                        {p.label}
+                                      </span>
+                                      {p.hint && (
+                                        <span className="block text-xs text-gray-500">{p.hint}</span>
+                                      )}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <div className="flex gap-2 mt-4">
+                              <button
+                                onClick={savePermissions}
+                                disabled={permSaving}
+                                className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm disabled:opacity-50"
+                              >
+                                {permSaving ? 'Saving...' : 'Save permissions'}
+                              </button>
+                              <button
+                                onClick={() => setPermDenied([])}
+                                className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                              >
+                                Allow everything
+                              </button>
+                            </div>
+                          </div>
                         )}
 
                         {editingUser && (
@@ -24687,9 +24831,7 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
             { id: 'suppliers', name: 'Suppliers', icon: 'Truck' },
             { id: 'supplierMap', name: 'Supplier Map', icon: 'MapPin' },
             { id: 'quotes', name: 'Quotes', icon: 'FileText' },
-            ...(hasPermission('dashboard:view')
-              ? [{ id: 'dashboard', name: 'Dashboard', icon: 'BarChart3' }]
-              : []),
+            { id: 'dashboard', name: 'Dashboard', icon: 'BarChart3' },
             { id: 'documents', name: 'Documents', icon: 'FileText' },
             { id: 'portal', name: 'Customer Portal', icon: 'Users' },
             ...(user.role === 'ADMIN' ? [{ id: 'admin', name: 'Admin', icon: 'Settings' }] : [])
@@ -27508,9 +27650,7 @@ onClick={() => {
                   { id: 'jobs', label: 'Jobs', icon: 'Grid' },
                   { id: 'customers', label: 'Customers', icon: 'Users' },
                   { id: 'suppliers', label: 'Suppliers', icon: 'Truck' },
-                  ...(hasPermission('dashboard:view')
-                    ? [{ id: 'dashboard', label: 'Dashboard', icon: 'BarChart3' }]
-                    : []),
+                  { id: 'dashboard', label: 'Dashboard', icon: 'BarChart3' },
                   { id: '_more', label: 'More', icon: 'Menu' },
                 ].map(item => {
                   const isMore = item.id === '_more';
