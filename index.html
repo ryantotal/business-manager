@@ -11660,7 +11660,8 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
             >
               <Edit3 size={16} />
             </button>
-            {(quote.status === 'PENDING' || quote.status === 'SENT') && !expired ? (
+            {(quote.status === 'ACCEPTED' ||
+              ((quote.status === 'PENDING' || quote.status === 'SENT') && !expired)) ? (
               <button
                 onClick={() => onConvertToJob(quote)}
                 className="text-green-600 hover:text-green-900"
@@ -17735,7 +17736,8 @@ Total Waste Services Ltd`);
                 </button>
               </>
             )}
-            {(quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired && (
+            {(quote.status === 'ACCEPTED' ||
+              ((quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired)) && (
               <button
                 onClick={() => onConvertToJob(quote)}
                 className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
