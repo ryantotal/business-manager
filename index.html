@@ -803,7 +803,55 @@ const [postcodePrices, setPostcodePrices] = useState([]);
 const [loadingPrices, setLoadingPrices] = useState(false);
 const [postcodeOptions, setPostcodeOptions] = useState([]);
 
-  // Smart filtering based on job type and waste type
+  // What has actually been used on jobs of this type, most-used first.
+  // Cached per job type on the module so switching tabs does not re-query.
+  const [frequentNames, setFrequentNames] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const key = String(jobType || '').trim();
+    if (!key) { setFrequentNames([]); return; }
+    if (window.__productUsageCache && window.__productUsageCache[key]) {
+      setFrequentNames(window.__productUsageCache[key]);
+      return;
+    }
+    (async () => {
+      try {
+        const { data, error } = await window.supabase
+          .from('jobs')
+          .select('line_items')
+          .eq('job_type', key)
+          .not('line_items', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(300);
+        if (error) throw error;
+        const counts = {};
+        (data || []).forEach(row => {
+          let items = row.line_items;
+          if (typeof items === 'string') {
+            try { items = JSON.parse(items); } catch (e) { items = null; }
+          }
+          if (!Array.isArray(items)) return;
+          items.forEach(it => {
+            const name = String((it && it.product_name) || '').trim();
+            if (name) counts[name] = (counts[name] || 0) + 1;
+          });
+        });
+        const ranked = Object.keys(counts)
+          .filter(n => counts[n] > 1)   // used once is not a pattern
+          .sort((a, b) => counts[b] - counts[a])
+          .slice(0, 5);
+        window.__productUsageCache = window.__productUsageCache || {};
+        window.__productUsageCache[key] = ranked;
+        if (!cancelled) setFrequentNames(ranked);
+      } catch (e) {
+        console.warn('[SageProductSelector] could not work out frequently used products:', e);
+        if (!cancelled) setFrequentNames([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [jobType]);
+
 const getFilteredProducts = () => {
   if (products.length === 0) {
     return [];
@@ -829,10 +877,19 @@ const getFilteredProducts = () => {
     });
   }
 
-// Sort alphabetically by name
+  // Frequently used first (in usage order), everything else alphabetical.
+  // While searching, plain alphabetical — the search term is the ranking.
+  const rank = (name) => {
+    const i = frequentNames.indexOf(String(name || '').trim());
+    return i === -1 ? 999 : i;
+  };
   return filtered.sort((a, b) => {
     const aName = (a.name || '').toString();
     const bName = (b.name || '').toString();
+    if (!searchTerm) {
+      const ra = rank(aName), rb = rank(bName);
+      if (ra !== rb) return ra - rb;
+    }
     return aName.localeCompare(bName);
   });
 };
@@ -1144,7 +1201,10 @@ return (
           <div className="p-3 text-gray-500 text-sm">No products match your search</div>
         ) : (
           filteredProducts.map((product, index) => {
-            const isRecommended = index < 3 && !searchTerm;
+            // Earned, not positional: this product has actually been used on
+            // more than one job of this type.
+            const isRecommended = !searchTerm &&
+              frequentNames.indexOf(String(product.name || '').trim()) !== -1;
             return (
               <div
                 key={product.id}
@@ -1159,7 +1219,7 @@ return (
                       {product.name}
                       {isRecommended && (
                         <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
-                          Recommended
+                          Often used
                         </span>
                       )}
                     </div>
