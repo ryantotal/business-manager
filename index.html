@@ -1342,6 +1342,11 @@ return (
       // the company number when they haven't got one.
       phone: data.phone || '',
       role: data.role,
+      // Owner-level account. Only these can see or change the restrictions
+      // below, so an ADMIN cannot lift their own.
+      isSuperAdmin: data.is_super_admin === true,
+      // Per-user exceptions on top of the role: { denied: [...], granted: [...] }
+      permissionOverrides: data.permission_overrides || {},
       gmailConnected: !!tokenRow,
       gmailEmail: tokenRow?.user_email || ''
     });
@@ -1356,14 +1361,25 @@ return (
             setUser(null);
           };
 
+
           const hasPermission = (permission) => {
             if (!user) return false;
+            // The owner account is never restricted.
+            if (user.isSuperAdmin) return true;
             const permissions = {
-              ADMIN: ['jobs:create', 'jobs:read', 'jobs:update', 'jobs:delete', 'customers:create', 'customers:read', 'customers:update', 'customers:delete', 'suppliers:create', 'suppliers:read', 'suppliers:update', 'suppliers:delete', 'admin:access', 'quotes:create', 'quotes:read', 'quotes:update', 'quotes:delete'],
-              MANAGER: ['jobs:create', 'jobs:read', 'jobs:update', 'jobs:delete', 'customers:create', 'customers:read', 'customers:update', 'customers:delete', 'suppliers:create', 'suppliers:read', 'suppliers:update', 'suppliers:delete', 'quotes:create', 'quotes:read', 'quotes:update'],
+              ADMIN: ['dashboard:view', 'jobs:create', 'jobs:read', 'jobs:update', 'jobs:delete', 'customers:create', 'customers:read', 'customers:update', 'customers:delete', 'suppliers:create', 'suppliers:read', 'suppliers:update', 'suppliers:delete', 'admin:access', 'quotes:create', 'quotes:read', 'quotes:update', 'quotes:delete'],
+              MANAGER: ['dashboard:view', 'jobs:create', 'jobs:read', 'jobs:update', 'jobs:delete', 'customers:create', 'customers:read', 'customers:update', 'customers:delete', 'suppliers:create', 'suppliers:read', 'suppliers:update', 'suppliers:delete', 'quotes:create', 'quotes:read', 'quotes:update'],
               BROKER: ['jobs:create', 'jobs:read', 'jobs:update', 'customers:read', 'suppliers:read', 'quotes:create', 'quotes:read']
             };
-            return permissions[user.role]?.includes(permission) || false;
+            const base = permissions[user.role] || [];
+            const overrides = user.permissionOverrides || {};
+            const denied  = Array.isArray(overrides.denied)  ? overrides.denied  : [];
+            const granted = Array.isArray(overrides.granted) ? overrides.granted : [];
+            // Denied wins over granted and over the role, so a restriction
+            // cannot be undone by also appearing in the granted list.
+            if (denied.indexOf(permission) !== -1) return false;
+            if (granted.indexOf(permission) !== -1) return true;
+            return base.indexOf(permission) !== -1;
           };
 
           return (
@@ -13627,6 +13643,25 @@ function buildCreditApplicationPdfDoc(app, ctx) {
 // Deliberately no "5k" style parsing anywhere. Shorthand can't be read safely
 // because "2" might mean £2, £2,000 or £2 million, so the customer picks a
 // band and you type an exact figure when approving.
+// Records who did what. Deliberately fire-and-forget — see note above.
+async function logAudit(user, action, entity, entityId, label, details) {
+  try {
+    await window.supabase.from('audit_log').insert({
+      user_id: user && user.id ? user.id : null,
+      user_email: (user && user.email) || 'unknown',
+      user_name: user ? [user.firstName, user.lastName].filter(Boolean).join(' ') : 'unknown',
+      action: action,
+      entity: entity,
+      entity_id: entityId == null ? null : String(entityId),
+      entity_label: label || '',
+      details: details || null
+    });
+  } catch (e) {
+    console.warn('[audit] could not record ' + action + ' on ' + entity + ':', e);
+  }
+}
+window.logAudit = logAudit;
+
 function formatMoney(n) {
   if (n === null || n === undefined || isNaN(n)) return '';
   return '\u00a3' + Number(n).toLocaleString('en-GB');
@@ -20832,8 +20867,31 @@ const loadUsers = async () => {
   { id: 'appearance', name: 'Appearance', icon: 'Palette' },
   { id: 'users', name: 'User Management', icon: 'Users' },
   { id: 'sage', name: 'Sage Integration', icon: 'Package' },
-  { id: 'products', name: 'Products & Services', icon: 'Package' }
+  { id: 'products', name: 'Products & Services', icon: 'Package' },
+  // Owner accounts only. Someone who can edit the log is not audited by it.
+  ...(user && user.isSuperAdmin
+    ? [{ id: 'audit', name: 'Audit Log', icon: 'Layout' }]
+    : [])
 ];
+
+          const [auditRows, setAuditRows] = useState([]);
+          const loadAuditLog = React.useCallback(async () => {
+            try {
+              const { data, error } = await window.supabase
+                .from('audit_log')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(200);
+              if (error) throw error;
+              setAuditRows(data || []);
+            } catch (e) {
+              console.warn('[audit] could not load the log:', e);
+              setAuditRows([]);
+            }
+          }, []);
+          useEffect(() => {
+            if (configSection === 'audit' && user?.isSuperAdmin) loadAuditLog();
+          }, [configSection, user, loadAuditLog]);
 
           const handleAddType = () => {
             if (newType && editingJobType) {
@@ -21616,6 +21674,69 @@ const loadUsers = async () => {
                         )}
                       </div>
                     )}
+                    {configSection === 'audit' && user?.isSuperAdmin && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">Audit Log</h3>
+                            <p className="text-sm text-gray-600">
+                              Deletions and blocked attempts, newest first. Only owner accounts can see this.
+                            </p>
+                          </div>
+                          <button
+                            onClick={loadAuditLog}
+                            className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
+                          >
+                            Refresh
+                          </button>
+                        </div>
+                        {auditRows.length === 0 ? (
+                          <p className="text-sm text-gray-500">
+                            Nothing recorded yet. Entries appear here as they happen.
+                          </p>
+                        ) : (
+                          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+                            <table className="w-full text-sm mobile-scroll-table">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">When</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Who</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Action</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">What</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {auditRows.map(row => (
+                                  <tr key={row.id} className="border-t border-gray-100">
+                                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">
+                                      {row.created_at ? new Date(row.created_at).toLocaleString('en-GB') : '-'}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <div className="text-gray-900">{row.user_name || 'unknown'}</div>
+                                      <div className="text-xs text-gray-500">{row.user_email}</div>
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                      <span className={`px-2 py-1 rounded-full text-xs ${
+                                        row.action === 'delete_blocked'
+                                          ? 'bg-amber-100 text-amber-800'
+                                          : 'bg-red-100 text-red-800'
+                                      }`}>
+                                        {row.action === 'delete_blocked' ? 'blocked' : row.action}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <div className="text-gray-900">{row.entity} {row.entity_label}</div>
+                                      <div className="text-xs text-gray-500">{row.entity_id}</div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
     {configSection === 'sage' && (
   <div className="space-y-6">
     <h3 className="text-lg font-semibold">Sage 50 Cloud Integration</h3>
@@ -22702,7 +22823,7 @@ useEffect(() => {
   
   loadGlobalSettings();
 }, []);
-          const { user, logout } = useAuth();
+          const { user, logout, hasPermission } = useAuth();
           const [activeTab, setActiveTab] = useState('jobs');
           const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
           const [recurringNotifications, setRecurringNotifications] = useState([]);
@@ -24566,7 +24687,9 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
             { id: 'suppliers', name: 'Suppliers', icon: 'Truck' },
             { id: 'supplierMap', name: 'Supplier Map', icon: 'MapPin' },
             { id: 'quotes', name: 'Quotes', icon: 'FileText' },
-            { id: 'dashboard', name: 'Dashboard', icon: 'BarChart3' },
+            ...(hasPermission('dashboard:view')
+              ? [{ id: 'dashboard', name: 'Dashboard', icon: 'BarChart3' }]
+              : []),
             { id: 'documents', name: 'Documents', icon: 'FileText' },
             { id: 'portal', name: 'Customer Portal', icon: 'Users' },
             ...(user.role === 'ADMIN' ? [{ id: 'admin', name: 'Admin', icon: 'Settings' }] : [])
@@ -25813,6 +25936,11 @@ const handleExchange = async (job) => {
   console.log('Collection job:', job);
 };
    const handleDeleteJob = async (jobId) => {
+    if (!hasPermission('jobs:delete')) {
+      logAudit(user, 'delete_blocked', 'job', jobId, '', { reason: 'no permission' });
+      alert('You do not have permission to delete this. Ask an administrator.');
+      return;
+    }
   try {
     // First, get the job to check if it was created from a quote
     const jobToDelete = jobs.find(job => job.id === jobId);
@@ -26358,6 +26486,11 @@ siteNotes: job.site_notes || job.siteNotes || '',
           };
 
           const handleDeleteCustomer = async (customerId) => {
+    if (!hasPermission('customers:delete')) {
+      logAudit(user, 'delete_blocked', 'customer', customerId, '', { reason: 'no permission' });
+      alert('You do not have permission to delete this. Ask an administrator.');
+      return;
+    }
             try {
               const { error } = await window.supabase
                 .from('customers')
@@ -26503,6 +26636,11 @@ const saveSupplierToDatabase = async (supplier) => {
           };
 
           const handleDeleteSupplier = async (supplierId) => {
+    if (!hasPermission('suppliers:delete')) {
+      logAudit(user, 'delete_blocked', 'supplier', supplierId, '', { reason: 'no permission' });
+      alert('You do not have permission to delete this. Ask an administrator.');
+      return;
+    }
             try {
               const { error } = await window.supabase
                 .from('suppliers')
@@ -26661,6 +26799,11 @@ const handleDuplicateQuote = (quoteTemplate) => {
 };
 
 const handleDeleteQuote = async (quoteId) => {
+    if (!hasPermission('quotes:delete')) {
+      logAudit(user, 'delete_blocked', 'quote', quoteId, '', { reason: 'no permission' });
+      alert('You do not have permission to delete this. Ask an administrator.');
+      return;
+    }
   if (confirm('Are you sure you want to delete this quote?')) {
     try {
       const { error } = await window.supabase
@@ -27365,7 +27508,9 @@ onClick={() => {
                   { id: 'jobs', label: 'Jobs', icon: 'Grid' },
                   { id: 'customers', label: 'Customers', icon: 'Users' },
                   { id: 'suppliers', label: 'Suppliers', icon: 'Truck' },
-                  { id: 'dashboard', label: 'Dashboard', icon: 'BarChart3' },
+                  ...(hasPermission('dashboard:view')
+                    ? [{ id: 'dashboard', label: 'Dashboard', icon: 'BarChart3' }]
+                    : []),
                   { id: '_more', label: 'More', icon: 'Menu' },
                 ].map(item => {
                   const isMore = item.id === '_more';
