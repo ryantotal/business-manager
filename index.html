@@ -26807,14 +26807,28 @@ const handleRejectQuote = async (quote) => {
 
    const handleConvertQuoteToJob = async (quote) => {
   try {
-    // Generate new job number
-    // Get the highest job number from existing jobs
-const currentYear = new Date().getFullYear();
-const yearJobs = jobs.filter(j => j.jobNumber && j.jobNumber.startsWith(`TWS-${currentYear}`));
-const lastJobNumber = yearJobs.length > 0 
-  ? Math.max(...yearJobs.map(j => parseInt(j.jobNumber.split('-')[2]) || 0))
-  : 0;
-const jobNumber = `TWS-${currentYear}-${String(lastJobNumber + 1).padStart(4, '0')}`;
+    // Job number from the same source as every other way of creating a job.
+    //
+    // This used to build its own `TWS-<year>-0001` format, which looked like a
+    // quote number and belonged to no sequence — it only ever counted jobs that
+    // already used that format, so it could not see the real TWS-#### series at
+    // all. Converted jobs ended up in a parallel numbering scheme of their own.
+    let jobNumber;
+    try {
+      const { data: rpcNumber, error: rpcError } = await window.supabase.rpc('get_next_job_number');
+      if (rpcError || !rpcNumber) throw new Error('RPC unavailable');
+      jobNumber = rpcNumber;
+    } catch (e) {
+      // Same fallback the recurring-job path uses: highest existing number + 1.
+      const { data: allJobs } = await window.supabase.from('jobs').select('job_number');
+      const maxNum = allJobs && allJobs.length
+        ? Math.max(...allJobs.map(j => {
+            const parts = (j.job_number || '').split('-');
+            return parseInt(parts[parts.length - 1]) || 0;
+          }))
+        : 1000;
+      jobNumber = `TWS-${maxNum + 1}`;
+    }
     
     // Create job from quote - matching exact fields that handleAddJob expects
     const newJob = {
