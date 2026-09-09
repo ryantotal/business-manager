@@ -1361,6 +1361,53 @@ return (
             setUser(null);
           };
 
+          // Permissions were read once at login and then never again, so a
+          // change only landed after signing out and back in. This re-reads the
+          // signed-in user's own row and updates them in place — no sign-out,
+          // no reload, nothing on screen to notice beyond a control appearing
+          // or disappearing.
+          //
+          // Only ever reads the row belonging to whoever is signed in.
+          useEffect(() => {
+            if (!user || !user.id) return;
+            let stopped = false;
+            const refresh = async () => {
+              try {
+                const { data, error } = await window.supabase
+                  .from('users')
+                  .select('role, is_super_admin, permission_overrides')
+                  .eq('id', user.id)
+                  .maybeSingle();
+                if (error || !data || stopped) return;
+                const next = {
+                  role: data.role,
+                  isSuperAdmin: data.is_super_admin === true,
+                  permissionOverrides: data.permission_overrides || {}
+                };
+                // Only touch state when something actually changed, otherwise
+                // every poll would re-render the whole app.
+                const changed =
+                  next.role !== user.role ||
+                  next.isSuperAdmin !== user.isSuperAdmin ||
+                  JSON.stringify(next.permissionOverrides) !== JSON.stringify(user.permissionOverrides || {});
+                if (changed) setUser(prev => (prev ? { ...prev, ...next } : prev));
+              } catch (e) {
+                // Never break the session over this — worst case the change
+                // lands at the next sign-in, which is the old behaviour.
+              }
+            };
+            const id = setInterval(refresh, 60000);
+            const onFocus = () => refresh();
+            window.addEventListener('focus', onFocus);
+            document.addEventListener('visibilitychange', onFocus);
+            return () => {
+              stopped = true;
+              clearInterval(id);
+              window.removeEventListener('focus', onFocus);
+              document.removeEventListener('visibilitychange', onFocus);
+            };
+          }, [user]);
+
 
           const hasPermission = (permission) => {
             if (!user) return false;
