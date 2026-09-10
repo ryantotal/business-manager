@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -141,6 +141,37 @@
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Create the Supabase client here, before the application script.
+
+         Why this sits at the top of the page rather than next to the rest of
+         the start-up code further down:
+
+         The app used to be compiled in the browser by @babel/standalone, which
+         deferred the whole application block until after this page's
+         ordinary scripts had run. The client was therefore always ready
+         before the app mounted. Compiling the JSX at deploy time turned that
+         block into an ordinary script, so it now runs FIRST — before the old
+         initialisation further down the page — and the earliest data loads saw
+         the bare supabase-js library instead of a client. That surfaced as a
+         run of console errors reading "window.supabase.from is not a function".
+         It was intermittent: whichever loads happened to fire a moment later
+         succeeded, because by then the client existed.
+
+         Creating the client here restores the original ordering, and works the
+         same way under both the built output and the in-browser Babel path. -->
+    <script>
+      (function () {
+        if (typeof window.supabase === 'undefined' || typeof window.supabase.createClient !== 'function') {
+          console.error('Supabase library not loaded!');
+          return;
+        }
+        var SUPABASE_URL = 'https://ykpbnrjlqlhckmgcoulv.supabase.co';
+        var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrcGJucmpscWxoY2ttZ2NvdWx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI4MzE0OTAsImV4cCI6MjA2ODQwNzQ5MH0.YSt9xxYSskCp98iJDN0iQ5nNDRbI_EQWNnImcBxVBRU';
+        // Replaces the library global with the client, which is what the rest
+        // of the application expects window.supabase to be.
+        window.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <!-- Real PDF generation for quotes. jsPDF draws text natively, so the
@@ -1420,6 +1451,29 @@ return (
                 if (!sessionData || !sessionData.session) return;
                 const { data } = await window.supabase.rpc('current_staff_profile');
                 if (cancelled || !data) return;
+
+                // Restoring a session has to do the same Gmail lookup that
+                // login() does. Without it, a page refresh always reported
+                // Gmail as disconnected — the only way to correct it was to
+                // sign out and back in, which took the login() path instead.
+                let gmailRow = null;
+                try {
+                  const { data: tokenRow } = await window.supabase
+                    .from('user_gmail_tokens')
+                    .select('user_email')
+                    .eq('user_id', data.id)
+                    .maybeSingle();
+                  gmailRow = tokenRow || null;
+                } catch (gmailErr) {
+                  // A failed lookup should not cost the user their session;
+                  // they simply see Gmail as disconnected, as before.
+                  console.warn('[Auth] Gmail connection check failed on restore:', gmailErr);
+                }
+                if (cancelled) return;
+
+                window._gmailConnected = !!gmailRow;
+                window._gmailEmail = gmailRow?.user_email || '';
+
                 setUser({
                   id: data.id,
                   email: data.email,
@@ -1429,8 +1483,8 @@ return (
                   role: data.role,
                   isSuperAdmin: data.is_super_admin === true,
                   permissionOverrides: data.permission_overrides || {},
-                  gmailConnected: false,
-                  gmailEmail: ''
+                  gmailConnected: !!gmailRow,
+                  gmailEmail: gmailRow?.user_email || ''
                 });
               } catch (e) {
                 // No session, or it has expired — the login screen is correct.
@@ -2852,6 +2906,7 @@ return (
               {wtnModalJob && (
                 <WtnPortalModal
                   job={wtnModalJob}
+                  portalToken={portalUser?.token}
                   onClose={() => setWtnModalJob(null)}
                   logoUrl={portalUser?.logoUrl || localStorage.getItem('companyLogo')}
                   companyName={portalUser?.companyName || localStorage.getItem('companyName')}
@@ -3082,7 +3137,7 @@ return (
 
         // Job Form Component
 // ── EWC Code Picker ───────────────────────────────────────────────────────
-const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp }) => {
+const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp, portalToken }) => {
   // Phase 2: prefer job.wtns (array from the new wtns table). Fall back to
   // legacy job.wtn_data / job.wtnData for any code path that hasn't yet
   // been migrated.
@@ -3143,8 +3198,18 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
 
     (async () => {
       try {
-        const { data: supp } = await window.supabase
-          .from('suppliers').select('*').eq('name', supplierName).single();
+        let supp;
+        if (portalToken) {
+          // A customer looking at their own note. The database scopes the
+          // lookup to their session rather than trusting a name from here.
+          const { data: ctx } = await window.supabase
+            .rpc('portal_wtn_context', { p_token: portalToken, p_supplier_name: supplierName });
+          supp = ctx && ctx.supplier;
+        } else {
+          const { data } = await window.supabase
+            .from('suppliers').select('*').eq('name', supplierName).single();
+          supp = data;
+        }
         if (!supp) return;
         // Look up the specific site if one was selected, otherwise default to first site
         const sites = (() => {
@@ -3198,6 +3263,28 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp })
     // on customer_name. Falls back to the legacy jobs.wtn_data path on error.
     (async () => {
       try {
+        // A customer viewing their own note gets the previous one from the
+        // session, already scoped to their jobs. Only staff fall through to
+        // the table queries below.
+        if (portalToken) {
+          const { data: ctx } = await window.supabase
+            .rpc('portal_wtn_context', { p_token: portalToken, p_supplier_name: null });
+          if (ctx && ctx.previous) {
+            const prevRow = mapWtnRowToCamel(ctx.previous);
+            // Same merge rule as the staff path below: only fill a field that
+            // is genuinely empty, never overwrite what is already on the note.
+            setWtnData(w => ({
+              ...w,
+              transferorPermitNumber: w.transferorPermitNumber && w.transferorPermitNumber !== '\u2014'
+                ? w.transferorPermitNumber
+                : (prevRow.transferorPermitNumber || w.transferorPermitNumber || ''),
+              transferorSignature: w.transferorSignature && w.transferorSignature !== '(signed)' && w.transferorSignature !== '\u2014'
+                ? w.transferorSignature
+                : (prevRow.transferorSignature || w.transferorSignature || ''),
+            }));
+          }
+          return;
+        }
         // Find recent jobs for this customer that have a sent WTN
         const { data: customerJobs } = await window.supabase
           .from('jobs')
@@ -18513,6 +18600,16 @@ Total Waste Services Ltd`);
                 alert('Decision saved.\n\nNo email address on this application, so nothing was sent.');
                 return;
               }
+              // Gmail rejects the whole send with "Invalid To header" if the
+              // address is malformed, which is opaque from here. Check it
+              // ourselves and say what is wrong with it.
+              if (!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(to)) {
+                alert('Decision saved, but the email was not sent.\n\n' +
+                      'The address on this application is not one Gmail will accept:\n\n  ' +
+                      to + '\n\nEdit it on the customer record and email them yourself, ' +
+                      'or fix it and re-run the decision.');
+                return;
+              }
               if (!user || !user.id) {
                 alert('Decision saved, but no logged-in user was found, so no email was sent.');
                 return;
@@ -33417,16 +33514,13 @@ if (urlParams.get('sage_success') === 'true') {
     }
 }
 
-// Wait for Supabase to load
-if (typeof window.supabase === 'undefined') {
-    console.error('Supabase library not loaded!');
-    alert('Supabase library not loaded!');
-} else {
-    // Initialize Supabase
-    const SUPABASE_URL = 'https://ykpbnrjlqlhckmgcoulv.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrcGJucmpscWxoY2ttZ2NvdWx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI4MzE0OTAsImV4cCI6MjA2ODQwNzQ5MH0.YSt9xxYSskCp98iJDN0iQ5nNDRbI_EQWNnImcBxVBRU';
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    window.supabase = supabase;
+    // The client is created near the top of the page, before the application
+    // script runs. This guard now checks for the client rather than the library.
+    if (typeof window.supabase === 'undefined' || typeof window.supabase.from !== 'function') {
+      console.error('Supabase client not initialised!');
+      alert('Supabase client not initialised!');
+    } else {
+      const supabase = window.supabase;
 
     // ── Diagnostic: inspect a Sage contact's address/VAT setup ────────────
     // Usage from browser console:
