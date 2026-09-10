@@ -1911,64 +1911,35 @@ return (
           const handlePortalBookingSubmit = async (bookingData) => {
             setPortalBookingSaving(true);
             try {
-              const custName = portalUser.customer.company_name || portalUser.customer.name;
-
-              // Generate job_number — try the canonical RPC first (same as admin), fall back
-              // to the max-and-increment query. job_number is NOT NULL on the jobs table.
-              let newJobNumber;
-              try {
-                const { data: jobNumData, error: jobNumError } = await window.supabase.rpc('get_next_job_number');
-                if (!jobNumError && jobNumData) {
-                  newJobNumber = jobNumData;
-                } else {
-                  throw new Error('RPC failed');
-                }
-              } catch (e) {
-                const { data: allJobs } = await window.supabase.from('jobs').select('job_number');
-                const maxNum = allJobs ? Math.max(...allJobs.map(j => {
-                  const parts = (j.job_number || '').split('-');
-                  return parseInt(parts[parts.length - 1]) || 0;
-                })) : 1000;
-                newJobNumber = `TWS-${maxNum + 1}`;
-              }
-
-              // Carry through context from the original job so the admin pipeline has
-              // the supplier/line items/etc. the customer actually received last time.
-              // The team will review and adjust before confirming.
+              // The whole booking is handed to the database, which decides the
+              // job number, whose name it goes under, and copies the supplier
+              // and line items from the origin job. A customer can say what
+              // they want and where — not what it costs, whose it is, or that
+              // it is already done.
               const origin = portalBookingData; // the job being reordered
               const reorderNote = origin?.job_number
-                ? `🔄 Reorder of ${origin.job_number}` + (bookingData.notes ? `\n\n${bookingData.notes}` : '')
+                ? `\u{1F504} Reorder of ${origin.job_number}` + (bookingData.notes ? `\n\n${bookingData.notes}` : '')
                 : (bookingData.notes || '');
 
-              const jobData = {
-                job_number: newJobNumber,
-                customer_name: custName,
-                job_type: bookingData.jobType,
-                waste_type: bookingData.wasteType || null,
-                skip_size: bookingData.skipSize || null,
-                aggregate_type: bookingData.aggregateType || null,
-                quantity: parseInt(bookingData.quantity) || 1,
-                unit: bookingData.unit || 'skip',
-                site_address1: bookingData.siteAddress1 || '',
-                site_address2: bookingData.siteAddress2 || '',
-                site_city: bookingData.siteCity || '',
-                site_postcode: bookingData.sitePostcode || '',
-                job_date: bookingData.preferredDate || null,
-                delivery_date: bookingData.preferredDate || null,
-                notes: reorderNote,
-                status: 'REQUESTED',
-                is_completed: false,
-                customer_po: bookingData.poNumber || '',
-                created_at: new Date().toISOString(),
-                portal_requested: true,
-                portal_requested_at: new Date().toISOString(),
-                portal_requested_by: portalUser.customer.email || custName,
-                // Pre-populate from the origin job so the team has the supplier/line items
-                // they previously used. They can change anything before confirming.
-                supplier_name: origin?.supplier_name || null,
-                line_items: origin?.line_items || null,
-              };
-              const { error } = await window.supabase.from('jobs').insert([jobData]);
+              const { error } = await window.supabase.rpc('portal_create_booking', {
+                p_token: portalUser.token,
+                p_origin_job_id: origin?.id || null,
+                p_booking: {
+                  jobType: bookingData.jobType,
+                  wasteType: bookingData.wasteType || null,
+                  skipSize: bookingData.skipSize || null,
+                  aggregateType: bookingData.aggregateType || null,
+                  quantity: bookingData.quantity,
+                  unit: bookingData.unit || 'skip',
+                  siteAddress1: bookingData.siteAddress1 || '',
+                  siteAddress2: bookingData.siteAddress2 || '',
+                  siteCity: bookingData.siteCity || '',
+                  sitePostcode: bookingData.sitePostcode || '',
+                  preferredDate: bookingData.preferredDate || null,
+                  notes: reorderNote,
+                  poNumber: bookingData.poNumber || ''
+                }
+              });
               if (error) throw error;
               await refreshPortalJobs();
               setShowPortalBooking(false);
