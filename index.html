@@ -1373,6 +1373,45 @@ return (
           // Supabase keeps the session in the browser, so a reload no longer
           // means signing in again. Pick the profile back up on start.
           const [restoring, setRestoring] = useState(true);
+          // Arriving with ?portal=<token> means an owner opened this customer's
+          // portal from the admin screen. Same code path the customer uses, so
+          // what is on screen is genuinely what they see.
+          useEffect(() => {
+            const linkToken = new URLSearchParams(window.location.search).get('portal');
+            if (!linkToken) return;
+            let stop = false;
+            (async () => {
+              try {
+                const { data: customer } = await window.supabase
+                  .rpc('portal_me', { p_token: linkToken });
+                if (stop || !customer) {
+                  setPortalError('That portal link has expired. Open it again from the Customers screen.');
+                  return;
+                }
+                const { data: jobs } = await window.supabase
+                  .rpc('portal_jobs', { p_token: linkToken });
+                const { data: info } = await window.supabase.rpc('portal_company_info');
+                if (stop) return;
+                setPortalUser({
+                  company: customer.name,
+                  customer,
+                  token: linkToken,
+                  viewingAsOwner: true,
+                  logoUrl: (info && info.logo_url) || null,
+                  companyName: (info && info.company_name) || null
+                });
+                setPortalJobs((jobs || []).map(j => ({
+                  ...j,
+                  wtns: j.wtns || [],
+                  wtnData: (j.wtns && j.wtns[0]) || j.wtn_data || null
+                })));
+              } catch (e) {
+                console.warn('[Portal] could not open from link:', e);
+              }
+            })();
+            return () => { stop = true; };
+          }, []);
+
           useEffect(() => {
             let cancelled = false;
             (async () => {
@@ -2175,6 +2214,11 @@ return (
             return (
               <React.Fragment>
               <div className="min-h-screen bg-gray-50">
+                {portalUser?.viewingAsOwner && (
+                  <div className="bg-amber-100 border-b border-amber-300 text-amber-900 px-4 py-2 text-sm text-center">
+                    Viewing as {portalUser.company} — exactly what they see. This link lasts 30 minutes.
+                  </div>
+                )}
                 {/* Portal Header */}
                 <div className="bg-green-700 text-white px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 sm:gap-4 min-w-0">
@@ -23075,9 +23119,22 @@ info@totalwasteservicesltd.com`;
                             💾 Save
                           </button>
                         )}
-                        <button onClick={() => setPortalPreviewCustomer(cName)}
+                        <button onClick={async () => {
+                          try {
+                            const { data: token, error } = await window.supabase
+                              .rpc('owner_portal_session', { p_customer_id: customer.id });
+                            if (error || !token) throw new Error(error?.message || 'Could not open the portal');
+                            // Recorded: opening a customer's portal is worth a trail.
+                            if (window.logAudit) {
+                              window.logAudit(null, 'portal_opened', 'customer', customer.id, cName, null);
+                            }
+                            window.open('/?portal=' + encodeURIComponent(token), '_blank');
+                          } catch (e) {
+                            alert('Could not open their portal: ' + (e.message || e));
+                          }
+                        }}
                           className="px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-200">
-                          👁 Preview
+                          👁 Open their portal
                         </button>
                         {(creds || hasExisting) && (
                           <button onClick={() => {
