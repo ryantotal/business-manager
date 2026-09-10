@@ -23119,28 +23119,9 @@ info@totalwasteservicesltd.com`;
                             💾 Save
                           </button>
                         )}
-                        <button onClick={async () => {
-                          // Navigates this tab rather than opening one. Safari
-                          // blocks or silently drops a late navigation on a tab
-                          // opened before an await, and a new tab is not worth
-                          // fighting for — the back button returns you here.
-                          try {
-                            const { data: token, error } = await window.supabase
-                              .rpc('owner_portal_session', { p_customer_id: customer.id });
-                            if (error || !token) throw new Error(error?.message || 'Could not open the portal');
-                            if (window.logAudit) {
-                              window.logAudit(null, 'portal_opened', 'customer', customer.id, cName, null);
-                            }
-                            // Absolute: a blank tab has no base address, so a
-                            // relative path has nothing to resolve against.
-                            window.location.href =
-                              window.location.origin + '/?portal=' + encodeURIComponent(token);
-                          } catch (e) {
-                            alert('Could not open their portal: ' + (e.message || e));
-                          }
-                        }}
+                        <button onClick={() => setPortalPreviewCustomer(cName)}
                           className="px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-200">
-                          👁 Open their portal
+                          👁 Preview
                         </button>
                         {(creds || hasExisting) && (
                           <button onClick={() => {
