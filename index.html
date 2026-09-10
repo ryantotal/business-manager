@@ -23120,10 +23120,10 @@ info@totalwasteservicesltd.com`;
                           </button>
                         )}
                         <button onClick={async () => {
-                          // Opened synchronously so the browser still counts it
-                          // as coming from the click; filled in once the session
-                          // token arrives.
-                          const tab = window.open('', '_blank');
+                          // Navigates this tab rather than opening one. Safari
+                          // blocks or silently drops a late navigation on a tab
+                          // opened before an await, and a new tab is not worth
+                          // fighting for — the back button returns you here.
                           try {
                             const { data: token, error } = await window.supabase
                               .rpc('owner_portal_session', { p_customer_id: customer.id });
@@ -23133,10 +23133,9 @@ info@totalwasteservicesltd.com`;
                             }
                             // Absolute: a blank tab has no base address, so a
                             // relative path has nothing to resolve against.
-                            const url = window.location.origin + '/?portal=' + encodeURIComponent(token);
-                            if (tab) { tab.location = url; } else { window.location.href = url; }
+                            window.location.href =
+                              window.location.origin + '/?portal=' + encodeURIComponent(token);
                           } catch (e) {
-                            if (tab) tab.close();
                             alert('Could not open their portal: ' + (e.message || e));
                           }
                         }}
