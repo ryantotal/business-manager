@@ -23131,7 +23131,9 @@ info@totalwasteservicesltd.com`;
                             if (window.logAudit) {
                               window.logAudit(null, 'portal_opened', 'customer', customer.id, cName, null);
                             }
-                            const url = '/?portal=' + encodeURIComponent(token);
+                            // Absolute: a blank tab has no base address, so a
+                            // relative path has nothing to resolve against.
+                            const url = window.location.origin + '/?portal=' + encodeURIComponent(token);
                             if (tab) { tab.location = url; } else { window.location.href = url; }
                           } catch (e) {
                             if (tab) tab.close();
