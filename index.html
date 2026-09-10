@@ -14071,13 +14071,13 @@ const CreditApplicationForm = ({ token }) => {
   React.useEffect(() => {
     (async () => {
       try {
-        const { data, error: e } = await window.supabase
-          .from('credit_applications')
-          .select('*')
-          .eq('token', token)
-          .limit(1);
+        // The database matches the token and hands back only what this form
+        // needs. A submitted or decided application returns its status without
+        // the answers — those include trade references and a signed
+        // declaration, and there is nothing left for the visitor to fill in.
+        const { data: row, error: e } = await window.supabase
+          .rpc('credit_app_by_token', { p_token: token });
         if (e) throw e;
-        const row = (data || [])[0];
         if (!row) { setError('This link is not valid. Please ask us for a new one.'); return; }
         if (row.status === 'submitted' || row.status === 'approved' || row.status === 'declined') {
           setDone(true); setRecord(row); return;
@@ -14112,16 +14112,15 @@ const CreditApplicationForm = ({ token }) => {
     }
     setSaving(true);
     try {
-      const { error: e } = await window.supabase
-        .from('credit_applications')
-        .update({
-          status: 'submitted',
-          submitted_at: new Date().toISOString(),
-          // Store the terms URL alongside the answers, so there's a record of
-          // which version of the document was accepted.
-          form_data: Object.assign({}, f, { termsUrl: TWS_CREDIT_TERMS_URL }),
-        })
-        .eq('token', token);
+      // The token is the credential. Nothing else about the row can be set
+      // from here, and an application that has already been decided cannot be
+      // reopened by re-using an old link.
+      const { error: e } = await window.supabase.rpc('credit_app_submit', {
+        p_token: token,
+        // The terms URL is stored with the answers, so there is a record of
+        // which version of the document was accepted.
+        p_form: Object.assign({}, f, { termsUrl: TWS_CREDIT_TERMS_URL })
+      });
       if (e) throw e;
       setDone(true);
     } catch (err) {
@@ -14430,6 +14429,21 @@ window.TWS_SERVICES = TWS_SERVICES;
 // ─────────────────────────────────────────────────────────────────────────────
 async function loadCompanyDocuments() {
   try {
+    // Staff manage these, so they need to see inactive and expired ones too.
+    // A visitor on a credit application form gets the published list through a
+    // function instead, and never reads the table.
+    let signedIn = false;
+    try {
+      const { data: sess } = await window.supabase.auth.getSession();
+      signedIn = !!(sess && sess.session);
+    } catch (e) { signedIn = false; }
+
+    if (!signedIn) {
+      const { data, error } = await window.supabase.rpc('public_company_documents');
+      if (error) throw error;
+      return data || [];
+    }
+
     const { data, error } = await window.supabase
       .from('company_documents')
       .select('*')
