@@ -20,25 +20,62 @@ async function refreshAccessToken(refreshToken) {
 //     ├── multipart/alternative   (the covering message)
 //     │     ├── text/plain
 //     │     └── text/html
-//     └── application/pdf         (the attachment)
+//     └── application/pdf         (the attachment, or several)
 //
 // The previous version used multipart/alternative as the OUTER container.
 // That MIME type means "the same message in two formats, plain and HTML" and
 // cannot carry an attachment at all — which is why the quote was being spliced
 // into the message body as HTML instead of attached. multipart/mixed is the
 // type that carries attachments.
-function buildEmail({ to, subject, body, fromEmail, fromName, pdfBase64, pdfFilename }) {
-  const safeName = String(pdfFilename || 'document.pdf').replace(/["\\\r\n]/g, '');
+//
+// ── Cc and multiple attachments ───────────────────────────────────────────
+// `cc` is optional and adds a Cc header. Gmail takes its recipients from the
+// headers of the raw message, so a Cc header is all that is needed.
+//
+// Attachments now arrive one of two ways, and both work at the same time:
+//   pdfBase64 + pdfFilename   the original single-PDF form. Every existing
+//                             caller (quotes, WTNs, credit decisions) still
+//                             uses this and is unaffected.
+//   attachments: [ { filename, mimeType, base64 } ]
+//                             a list, any file type. Used when sending company
+//                             documents from the Documents tab.
+function buildEmail({ to, cc, subject, body, fromEmail, fromName, pdfBase64, pdfFilename, attachments }) {
+  // Header injection guard: a filename or address containing a quote,
+  // backslash or newline could otherwise break out of its header.
+  const clean = (s) => String(s || '').replace(/["\\\r\n]/g, '');
+
   const plainBody = String(body || '');
+
+  // Collapse both forms into one list so the MIME building below has a single
+  // thing to loop over.
+  const files = [];
+  if (Array.isArray(attachments)) {
+    attachments.forEach((a) => {
+      if (a && a.base64) {
+        files.push({
+          filename: clean(a.filename || 'document'),
+          mimeType: clean(a.mimeType || 'application/octet-stream'),
+          base64: a.base64,
+        });
+      }
+    });
+  }
+  if (pdfBase64) {
+    files.push({
+      filename: clean(pdfFilename || 'document.pdf'),
+      mimeType: 'application/pdf',
+      base64: pdfBase64,
+    });
+  }
 
   const htmlBody =
     '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;line-height:1.5;max-width:620px">' +
     '<div style="white-space:pre-wrap">' +
       plainBody.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
     '</div>' +
-    (pdfBase64
+    (files.length
       ? '<p style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:13px">' +
-        '\uD83D\uDCCE Attached: ' + safeName + '</p>'
+        '\uD83D\uDCCE Attached: ' + files.map((f) => f.filename).join(', ') + '</p>'
       : '') +
     '</div>';
 
@@ -63,7 +100,17 @@ function buildEmail({ to, subject, body, fromEmail, fromName, pdfBase64, pdfFile
 
   const lines = [
     'From: ' + encodeHeader(fromName) + ' <' + fromEmail + '>',
-    'To: ' + to,
+    'To: ' + clean(to),
+  ];
+
+  // Only emit a Cc header when there is actually something in it. An empty
+  // "Cc: " header is malformed and some gateways reject the whole message.
+  const ccClean = clean(cc).trim().replace(/^,|,$/g, '').trim();
+  if (ccClean) {
+    lines.push('Cc: ' + ccClean);
+  }
+
+  lines.push(
     'Subject: ' + encodeHeader(subject),
     'MIME-Version: 1.0',
     'Content-Type: multipart/mixed; boundary="' + mixed + '"',
@@ -84,21 +131,21 @@ function buildEmail({ to, subject, body, fromEmail, fromName, pdfBase64, pdfFile
     b64(htmlBody),
     '',
     '--' + alt + '--',
-    '',
-  ];
+    ''
+  );
 
-  // Attachment is optional, so this function can also send a plain message.
-  if (pdfBase64) {
+  // Attachments are optional, so this function can also send a plain message.
+  files.forEach((f) => {
     lines.push(
       '--' + mixed,
-      'Content-Type: application/pdf; name="' + safeName + '"',
+      'Content-Type: ' + f.mimeType + '; name="' + f.filename + '"',
       'Content-Transfer-Encoding: base64',
-      'Content-Disposition: attachment; filename="' + safeName + '"',
+      'Content-Disposition: attachment; filename="' + f.filename + '"',
       '',
-      wrap(pdfBase64),
+      wrap(f.base64),
       ''
     );
-  }
+  });
 
   lines.push('--' + mixed + '--');
 
@@ -196,14 +243,14 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── SEND: send email with PDF attachment ──────────────────────────────────
+  // ── SEND: send email with attachments ─────────────────────────────────────
   if (action === 'send') {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-    const { user_id, to, subject, body, pdfBase64, pdfFilename, fromName } = req.body;
+    const { user_id, to, cc, subject, body, pdfBase64, pdfFilename, fromName, attachments } = req.body;
     // An attachment is optional. Requiring pdfBase64 here blocked plain
     // messages — the credit account application sends a link with no document,
     // and was rejected before it ever reached buildEmail. buildEmail already
-    // only adds an attachment part when pdfBase64 is present.
+    // only adds attachment parts when there is something to attach.
     if (!user_id || !to || !subject) {
       return res.status(400).json({ error: 'Missing required fields: user_id, to and subject are needed' });
     }
@@ -241,12 +288,14 @@ export default async function handler(req, res) {
       // which is why nothing ever arrived as an actual attached file.
       const rawEmail = buildEmail({
         to,
+        cc,
         subject,
         body,
         fromEmail: tokenRow.user_email,
         fromName: fromName || 'Total Waste Services',
         pdfBase64,
         pdfFilename: pdfFilename || 'Quotation.pdf',
+        attachments,
       });
 
       const sendRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
