@@ -23120,16 +23120,21 @@ info@totalwasteservicesltd.com`;
                           </button>
                         )}
                         <button onClick={async () => {
+                          // Opened synchronously so the browser still counts it
+                          // as coming from the click; filled in once the session
+                          // token arrives.
+                          const tab = window.open('', '_blank');
                           try {
                             const { data: token, error } = await window.supabase
                               .rpc('owner_portal_session', { p_customer_id: customer.id });
                             if (error || !token) throw new Error(error?.message || 'Could not open the portal');
-                            // Recorded: opening a customer's portal is worth a trail.
                             if (window.logAudit) {
                               window.logAudit(null, 'portal_opened', 'customer', customer.id, cName, null);
                             }
-                            window.open('/?portal=' + encodeURIComponent(token), '_blank');
+                            const url = '/?portal=' + encodeURIComponent(token);
+                            if (tab) { tab.location = url; } else { window.location.href = url; }
                           } catch (e) {
+                            if (tab) tab.close();
                             alert('Could not open their portal: ' + (e.message || e));
                           }
                         }}
@@ -33398,6 +33403,20 @@ By approving this quotation and authorising us to commence services, you acknowl
           const creditToken = new URLSearchParams(window.location.search).get('credit');
           if (creditToken) {
             return <CreditApplicationForm token={creditToken} />;
+          }
+
+          // An owner opening a customer's portal. Checked before the staff app,
+          // because a signed-in owner would otherwise land on their own admin
+          // screen and never see the customer's view at all.
+          const portalToken = new URLSearchParams(window.location.search).get('portal');
+          if (portalToken) {
+            return (
+              <WasteTypesProvider>
+                <AuthProvider>
+                  <LoginScreen />
+                </AuthProvider>
+              </WasteTypesProvider>
+            );
           }
           return (
             <WasteTypesProvider>
