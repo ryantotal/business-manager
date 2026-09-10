@@ -3,140 +3,171 @@
 // Creating a login and changing someone else's password both require the
 // service role key, which must never reach the browser. So they happen here.
 //
-// Every request is checked twice: the caller must present a valid session, and
-// that session must belong to an owner account. Being signed in is not enough —
-// otherwise any member of staff could reset the owner's password.
+// Runs on the edge runtime deliberately: Hobby plans allow only 12 Node.js
+// serverless functions and the Sage endpoints already use them all. Edge has a
+// separate allowance. The trade-off is no npm packages, so the Supabase calls
+// below are plain fetch() against its REST and Auth endpoints.
 //
-// Needs SUPABASE_SERVICE_ROLE_KEY and SUPABASE_URL set in the Vercel project.
+// Every request is checked twice: the caller must present a valid session, and
+// that session must belong to an owner account. Being signed in is not enough,
+// or any member of staff could reset the owner's password.
+//
+// Needs SUPABASE_SERVICE_ROLE_KEY and SUPABASE_URL in the Vercel project.
 
-const { createClient } = require('@supabase/supabase-js');
+export const config = { runtime: 'edge' };
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-module.exports = async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    return res.status(500).json({ error: 'Server is not configured for account administration.' });
-  }
-
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
-    auth: { autoRefreshToken: false, persistSession: false }
+const json = (body, status) =>
+  new Response(JSON.stringify(body), {
+    status: status || 200,
+    headers: { 'Content-Type': 'application/json' }
   });
 
-  // --- who is asking, and are they allowed? --------------------------------
-  const authHeader = req.headers.authorization || '';
+// Any call made with the service key. Bypasses every rule in the database,
+// which is exactly why it only ever runs after the owner check below.
+const admin = (path, options) =>
+  fetch(SUPABASE_URL + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SERVICE_KEY,
+      Authorization: 'Bearer ' + SERVICE_KEY,
+      ...(options && options.headers ? options.headers : {})
+    }
+  });
+
+export default async function handler(req) {
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    return json({ error: 'Server is not configured for account administration.' }, 500);
+  }
+
+  // --- who is asking? ------------------------------------------------------
+  const authHeader = req.headers.get('authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  if (!token) return res.status(401).json({ error: 'Not signed in.' });
+  if (!token) return json({ error: 'Not signed in.' }, 401);
 
-  const { data: caller, error: callerError } = await admin.auth.getUser(token);
-  if (callerError || !caller || !caller.user) {
-    return res.status(401).json({ error: 'Session not recognised.' });
+  const meRes = await fetch(SUPABASE_URL + '/auth/v1/user', {
+    headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + token }
+  });
+  if (!meRes.ok) return json({ error: 'Session not recognised.' }, 401);
+  const me = await meRes.json();
+  if (!me || !me.email) return json({ error: 'Session not recognised.' }, 401);
+
+  // --- and are they allowed? -----------------------------------------------
+  const profRes = await admin(
+    '/rest/v1/users?select=is_super_admin&email=eq.' + encodeURIComponent(me.email)
+  );
+  const profile = profRes.ok ? await profRes.json() : [];
+  if (!profile[0] || profile[0].is_super_admin !== true) {
+    return json({ error: 'Only the account owner can do this.' }, 403);
   }
 
-  const { data: callerProfile } = await admin
-    .from('users')
-    .select('is_super_admin')
-    .ilike('email', caller.user.email)
-    .maybeSingle();
-
-  if (!callerProfile || callerProfile.is_super_admin !== true) {
-    return res.status(403).json({ error: 'Only the account owner can do this.' });
-  }
-
-  const { action, email, name, role, phone, password, userId } = req.body || {};
+  let body = {};
+  try { body = await req.json(); } catch (e) { body = {}; }
+  const { action, email, name, role, phone, password, userId } = body;
 
   try {
     // --- create a member of staff ------------------------------------------
     if (action === 'create') {
       if (!email || !password || !name) {
-        return res.status(400).json({ error: 'Name, email and password are required.' });
+        return json({ error: 'Name, email and password are required.' }, 400);
       }
       if (String(password).length < 8) {
-        return res.status(400).json({ error: 'Use at least 8 characters.' });
+        return json({ error: 'Use at least 8 characters.' }, 400);
       }
 
-      const { data: created, error: createError } = await admin.auth.admin.createUser({
-        email: String(email).trim(),
-        password: password,
-        email_confirm: true
+      const createRes = await admin('/auth/v1/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: String(email).trim(),
+          password: password,
+          email_confirm: true
+        })
       });
-      if (createError) return res.status(400).json({ error: createError.message });
-
-      const { error: profileError } = await admin.from('users').insert([{
-        email: String(email).trim(),
-        name: name,
-        role: role || 'BROKER',
-        phone: phone || null
-      }]);
-
-      if (profileError) {
-        // A login with no profile can sign in but has no permissions and no
-        // identity in the app. Undo rather than leave that lying around.
-        await admin.auth.admin.deleteUser(created.user.id);
-        return res.status(400).json({ error: 'Could not create the profile: ' + profileError.message });
+      const created = await createRes.json();
+      if (!createRes.ok) {
+        return json({ error: created.msg || created.message || 'Could not create the login.' }, 400);
       }
 
-      return res.status(200).json({ ok: true });
+      const profileRes = await admin('/rest/v1/users', {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          email: String(email).trim(),
+          name: name,
+          role: role || 'BROKER',
+          phone: phone || null
+        })
+      });
+
+      if (!profileRes.ok) {
+        // A login with no profile can sign in but has no identity in the app.
+        // Undo rather than leave that lying around.
+        await admin('/auth/v1/admin/users/' + created.id, { method: 'DELETE' });
+        const err = await profileRes.text();
+        return json({ error: 'Could not create the profile: ' + err }, 400);
+      }
+
+      return json({ ok: true });
     }
 
     // --- set someone's password --------------------------------------------
     if (action === 'reset-password') {
-      if (!userId || !password) {
-        return res.status(400).json({ error: 'User and password are required.' });
-      }
-      if (String(password).length < 8) {
-        return res.status(400).json({ error: 'Use at least 8 characters.' });
-      }
+      if (!userId || !password) return json({ error: 'User and password are required.' }, 400);
+      if (String(password).length < 8) return json({ error: 'Use at least 8 characters.' }, 400);
 
-      const { data: target, error: targetError } = await admin
-        .from('users').select('email').eq('id', userId).maybeSingle();
-      if (targetError || !target) return res.status(404).json({ error: 'User not found.' });
+      const targetRes = await admin('/rest/v1/users?select=email&id=eq.' + encodeURIComponent(userId));
+      const target = targetRes.ok ? await targetRes.json() : [];
+      if (!target[0]) return json({ error: 'User not found.' }, 404);
 
-      // The auth account is matched by email, which is the only link between
-      // the two tables.
-      const { data: list, error: listError } = await admin.auth.admin.listUsers();
-      if (listError) return res.status(500).json({ error: listError.message });
+      // The auth account is matched by email — the only link between the two.
+      const listRes = await admin('/auth/v1/admin/users?per_page=200');
+      const list = await listRes.json();
       const authUser = (list.users || []).find(
-        u => (u.email || '').toLowerCase() === String(target.email).toLowerCase()
+        u => (u.email || '').toLowerCase() === String(target[0].email).toLowerCase()
       );
-      if (!authUser) {
-        return res.status(404).json({ error: 'No login exists for ' + target.email + ' yet.' });
-      }
+      if (!authUser) return json({ error: 'No login exists for ' + target[0].email + ' yet.' }, 404);
 
-      const { error: updateError } = await admin.auth.admin.updateUserById(authUser.id, {
-        password: password
+      const updRes = await admin('/auth/v1/admin/users/' + authUser.id, {
+        method: 'PUT',
+        body: JSON.stringify({ password: password })
       });
-      if (updateError) return res.status(400).json({ error: updateError.message });
-
-      return res.status(200).json({ ok: true });
+      if (!updRes.ok) {
+        const err = await updRes.json().catch(() => ({}));
+        return json({ error: err.msg || 'Could not set the password.' }, 400);
+      }
+      return json({ ok: true });
     }
 
     // --- remove a member of staff ------------------------------------------
     if (action === 'delete') {
-      if (!userId) return res.status(400).json({ error: 'User is required.' });
+      if (!userId) return json({ error: 'User is required.' }, 400);
 
-      const { data: target } = await admin
-        .from('users').select('email, is_super_admin').eq('id', userId).maybeSingle();
-      if (!target) return res.status(404).json({ error: 'User not found.' });
-      if (target.is_super_admin === true) {
-        return res.status(400).json({ error: 'Owner accounts cannot be deleted here.' });
+      const targetRes = await admin(
+        '/rest/v1/users?select=email,is_super_admin&id=eq.' + encodeURIComponent(userId)
+      );
+      const target = targetRes.ok ? await targetRes.json() : [];
+      if (!target[0]) return json({ error: 'User not found.' }, 404);
+      if (target[0].is_super_admin === true) {
+        return json({ error: 'Owner accounts cannot be deleted here.' }, 400);
       }
 
-      const { data: list } = await admin.auth.admin.listUsers();
+      const listRes = await admin('/auth/v1/admin/users?per_page=200');
+      const list = await listRes.json();
       const authUser = (list.users || []).find(
-        u => (u.email || '').toLowerCase() === String(target.email).toLowerCase()
+        u => (u.email || '').toLowerCase() === String(target[0].email).toLowerCase()
       );
-      if (authUser) await admin.auth.admin.deleteUser(authUser.id);
-      await admin.from('users').delete().eq('id', userId);
+      if (authUser) await admin('/auth/v1/admin/users/' + authUser.id, { method: 'DELETE' });
+      await admin('/rest/v1/users?id=eq.' + encodeURIComponent(userId), { method: 'DELETE' });
 
-      return res.status(200).json({ ok: true });
+      return json({ ok: true });
     }
 
-    return res.status(400).json({ error: 'Unknown action.' });
+    return json({ error: 'Unknown action.' }, 400);
   } catch (e) {
-    return res.status(500).json({ error: e.message || String(e) });
+    return json({ error: e.message || String(e) }, 500);
   }
-};
+}
