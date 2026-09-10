@@ -46,7 +46,16 @@ const admin = (path, options) =>
 export default async function handler(req) {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   if (!SUPABASE_URL || !SERVICE_KEY || !ANON_KEY) {
-    return json({ error: 'Server is not configured for account administration.' }, 500);
+    // Name the missing ones. Reports presence only — no values are exposed,
+    // and "which variable is unset" is not a secret worth protecting when the
+    // alternative is guessing.
+    const missing = [];
+    if (!SUPABASE_URL) missing.push('SUPABASE_URL');
+    if (!SERVICE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+    if (!ANON_KEY) missing.push('SUPABASE_ANON_KEY');
+    return json({
+      error: 'Server is not configured. Missing in Vercel: ' + missing.join(', ')
+    }, 500);
   }
 
   // --- who is asking? ------------------------------------------------------
