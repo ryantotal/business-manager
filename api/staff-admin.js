@@ -66,9 +66,18 @@ export default async function handler(req) {
   const meRes = await fetch(SUPABASE_URL + '/auth/v1/user', {
     headers: { apikey: ANON_KEY, Authorization: 'Bearer ' + token }
   });
-  if (!meRes.ok) return json({ error: 'Session not recognised.' }, 401);
+  if (!meRes.ok) {
+    // Pass Supabase's own reason back rather than swallowing it. Guessing at
+    // this from the outside has cost more time than showing it ever will.
+    const detail = await meRes.text().catch(() => '');
+    return json({
+      error: 'Session not recognised (' + meRes.status + '): ' + detail.slice(0, 200)
+    }, 401);
+  }
   const me = await meRes.json();
-  if (!me || !me.email) return json({ error: 'Session not recognised.' }, 401);
+  if (!me || !me.email) {
+    return json({ error: 'Session recognised but it carried no email address.' }, 401);
+  }
 
   // --- and are they allowed? -----------------------------------------------
   const profRes = await admin(
