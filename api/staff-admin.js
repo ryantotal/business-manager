@@ -16,8 +16,13 @@
 
 export const config = { runtime: 'edge' };
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
+// A trailing slash would produce a double slash in every path below.
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Verifying somebody's session token has to be done with the anon key, not the
+// service key — Supabase rejects the pairing of a service key with a user's
+// bearer token. Not a secret: it is already public in index.html.
+const ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 const json = (body, status) =>
   new Response(JSON.stringify(body), {
@@ -40,7 +45,7 @@ const admin = (path, options) =>
 
 export default async function handler(req) {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-  if (!SUPABASE_URL || !SERVICE_KEY) {
+  if (!SUPABASE_URL || !SERVICE_KEY || !ANON_KEY) {
     return json({ error: 'Server is not configured for account administration.' }, 500);
   }
 
@@ -50,7 +55,7 @@ export default async function handler(req) {
   if (!token) return json({ error: 'Not signed in.' }, 401);
 
   const meRes = await fetch(SUPABASE_URL + '/auth/v1/user', {
-    headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + token }
+    headers: { apikey: ANON_KEY, Authorization: 'Bearer ' + token }
   });
   if (!meRes.ok) return json({ error: 'Session not recognised.' }, 401);
   const me = await meRes.json();
