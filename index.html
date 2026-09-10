@@ -1308,12 +1308,10 @@ return (
   setIsLoading(true);
   try {
     const { data, error } = await window.supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .eq('password', password)
-      .single();
-    
+      .rpc('verify_staff_login', { p_email: email, p_password: password });
+
+    // The function returns the profile on success and null on any failure, so
+    // a wrong password and an unknown email are indistinguishable from here.
     if (error || !data) {
       throw new Error('Invalid credentials');
     }
@@ -1749,24 +1747,19 @@ return (
             setLoadingPortal(true);
             setPortalError('');
             try {
-              // Look up customer by PIN only first
-              const { data: customers, error: custErr } = await window.supabase
-                .from('customers')
-                .select('*')
-                .eq('portal_pin', portalPin.trim())
-                .limit(1);
+              // Checked inside the database. The passcode is compared against a
+              // hash there, and the customer row comes back with the passcode
+              // fields stripped out.
+              const { data: customer, error: custErr } = await window.supabase
+                .rpc('portal_login', {
+                  p_pin: portalPin.trim(),
+                  p_passcode: portalPasscode.trim()
+                });
 
-              if (custErr || !customers || customers.length === 0) {
-                setPortalError('PIN not recognised. Please contact your account manager.');
-                setLoadingPortal(false);
-                return;
-              }
-
-              const customer = customers[0];
-
-              // Check passcode
-              if (!customer.portal_passcode || customer.portal_passcode !== portalPasscode.trim()) {
-                setPortalError('Incorrect passcode. Please contact your account manager.');
+              if (custErr || !customer) {
+                // One message for both cases on purpose — saying which half was
+                // wrong tells someone guessing which PINs exist.
+                setPortalError('PIN or passcode not recognised. Please contact your account manager.');
                 setLoadingPortal(false);
                 return;
               }
@@ -20946,6 +20939,32 @@ const loadUsers = async () => {
             { id: 'suppliers:update', label: 'Edit suppliers' },
             { id: 'admin:access',     label: 'Admin area' },
           ];
+          const [newPassword, setNewPassword] = useState('');
+          const [savingPassword, setSavingPassword] = useState(false);
+
+          // Hashing happens in the database — the browser cannot do it, and the
+          // plain value is never written to the row.
+          const resetPassword = async (target) => {
+            const pw = newPassword.trim();
+            if (!target || !pw) return;
+            if (pw.length < 6) { alert('Use at least 6 characters.'); return; }
+            if (!confirm('Set a new password for ' + target.firstName + '? They will need it next time they sign in.')) return;
+            setSavingPassword(true);
+            try {
+              const { error } = await window.supabase
+                .rpc('set_staff_password', { p_user_id: target.id, p_password: pw });
+              if (error) throw error;
+              // Recorded, but never the password itself.
+              logAudit(user, 'password_reset', 'user', target.id, target.email, null);
+              setNewPassword('');
+              alert('Password set for ' + target.firstName + '.');
+            } catch (e) {
+              alert('Could not set the password: ' + (e.message || e));
+            } finally {
+              setSavingPassword(false);
+            }
+          };
+
           const [permUser, setPermUser] = useState(null);
           const [permDenied, setPermDenied] = useState([]);
           const [permSaving, setPermSaving] = useState(false);
@@ -21051,17 +21070,30 @@ const loadUsers = async () => {
   try {
     const fullName = `${newUserData.firstName} ${newUserData.lastName || ''}`.trim();
     
+    // Insert without a password, then have the database hash and store it.
+    // Hashing cannot happen in the browser, and the plain value must not be
+    // written to the row even briefly.
     const { data, error } = await window.supabase
       .from('users')
       .insert([{
         email: newUserData.email,
-        password: newUserData.password,
         name: fullName,
         role: newUserData.role
       }])
       .select();
-    
+
     if (error) throw error;
+
+    const createdId = data && data[0] && data[0].id;
+    if (createdId) {
+      const { error: pwError } = await window.supabase
+        .rpc('set_staff_password', { p_user_id: createdId, p_password: newUserData.password });
+      if (pwError) {
+        // Leaving an account with no password would let anyone claim it later.
+        await window.supabase.from('users').delete().eq('id', createdId);
+        throw new Error('Could not set the password, so the user was not created: ' + pwError.message);
+      }
+    }
     
     await loadUsers(); // Refresh the list
     setNewUserData({
@@ -21842,6 +21874,36 @@ const loadUsers = async () => {
                                   to show the office number instead.
                                 </p>
                               </div>
+                              <div className="sm:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Set a new password
+                                  <span className="ml-2 text-xs font-normal text-gray-500">
+                                    leave blank to keep the current one
+                                  </span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={newPassword}
+                                    onChange={(e) => setNewPassword(e.target.value)}
+                                    placeholder="New password"
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => resetPassword(editingUser)}
+                                    disabled={!newPassword.trim() || savingPassword}
+                                    className="px-3 py-2 bg-gray-800 text-white rounded-lg text-sm disabled:opacity-40"
+                                  >
+                                    {savingPassword ? 'Setting...' : 'Set password'}
+                                  </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Shown in plain text so you can read it out to them. It is hashed
+                                  before it is stored and cannot be read back afterwards.
+                                </p>
+                              </div>
+
                               <div className="sm:col-span-2">
                                 {editingUser.isSuperAdmin ? (
                                   <p className="text-sm text-purple-700 bg-purple-50 border border-purple-200 rounded-lg p-3">
