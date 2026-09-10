@@ -1789,13 +1789,13 @@ return (
               // Checked inside the database. The passcode is compared against a
               // hash there, and the customer row comes back with the passcode
               // fields stripped out.
-              const { data: customer, error: custErr } = await window.supabase
+              const { data: session, error: custErr } = await window.supabase
                 .rpc('portal_login', {
                   p_pin: portalPin.trim(),
                   p_passcode: portalPasscode.trim()
                 });
 
-              if (custErr || !customer) {
+              if (custErr || !session || !session.token) {
                 // One message for both cases on purpose — saying which half was
                 // wrong tells someone guessing which PINs exist.
                 setPortalError('PIN or passcode not recognised. Please contact your account manager.');
@@ -1803,26 +1803,26 @@ return (
                 return;
               }
 
-              // Load this customer's jobs
-              // fix25 — Supabase's default row cap is 1000. Long-tenure
-              // customers were getting truncated to the first 1000 jobs.
-              // Raise the ceiling well above any realistic per-customer
-              // job count.
+              const customer = session.customer;
+              const token = session.token;
+
+              // Jobs come back already scoped to this customer, with their
+              // transfer notes attached, so there is no separate enrichment
+              // round trip and no way to ask for somebody else's.
               const { data: jobs } = await window.supabase
-                .from('jobs')
-                .select('*')
-                .eq('customer_name', customer.company_name || customer.name)
-                .order('created_at', { ascending: false })
-                .range(0, 49999);
+                .rpc('portal_jobs', { p_token: token });
 
-              // Fetch company settings for logo etc
-              const { data: settings } = await window.supabase
-                .from('company_settings')
-                .select('setting_name, setting_value');
-              const logoSetting = settings?.find(s => s.setting_name === 'logo_url')?.setting_value || null;
-              const nameSetting = settings?.find(s => s.setting_name === 'company_name')?.setting_value || null;
+              const { data: info } = await window.supabase.rpc('portal_company_info');
+              const logoSetting = (info && info.logo_url) || null;
+              const nameSetting = (info && info.company_name) || null;
 
-              setPortalUser({ company: customer.company_name || customer.name, customer, logoUrl: logoSetting, companyName: nameSetting });
+              setPortalUser({
+                company: customer.company_name || customer.name,
+                customer,
+                token,
+                logoUrl: logoSetting,
+                companyName: nameSetting
+              });
               // Phase 2 fix: enrich jobs with WTNs from the new wtns table on
               // INITIAL login too, not just on refresh. Without this, the
               // portal shows only 1 WTN per job (from legacy wtn_data) until
@@ -1830,13 +1830,13 @@ return (
               // ticks. Enrichment must happen before the user lands on the
               // jobs list otherwise multi-line WTNs don't show their full
               // count and only the first note renders in the modal.
-              try {
-                const enriched = await enrichJobsWithWtns(jobs || []);
-                setPortalJobs(enriched);
-              } catch (e) {
-                console.warn('[Portal] initial enrichment failed, falling back to un-enriched jobs:', e);
-                setPortalJobs(jobs || []);
-              }
+              // portal_jobs already attaches the wtns array, so the legacy
+              // shim is applied here rather than by a second query.
+              setPortalJobs((jobs || []).map(j => ({
+                ...j,
+                wtns: j.wtns || [],
+                wtnData: (j.wtns && j.wtns[0]) || j.wtn_data || null
+              })));
             } catch (err) {
               setPortalError('An error occurred. Please try again.');
             } finally {
@@ -1845,17 +1845,25 @@ return (
           };
 
           const refreshPortalJobs = async () => {
-            if (!portalUser?.customer) return;
+            if (!portalUser?.token) return;
             try {
-              const { data: jobs } = await window.supabase
-                .from('jobs')
-                .select('*')
-                .eq('customer_name', portalUser.customer.company_name || portalUser.customer.name)
-                .order('created_at', { ascending: false })
-                .range(0, 49999);
-              // Phase 2: attach WTNs from the new table for the portal too.
-              const enriched = await enrichJobsWithWtns(jobs || []);
-              setPortalJobs(enriched);
+              const { data: jobs, error } = await window.supabase
+                .rpc('portal_jobs', { p_token: portalUser.token });
+              // A null result means the session has expired — twelve hours by
+              // default. Send them back to the PIN screen rather than leaving a
+              // stale list on screen looking current.
+              if (error) throw error;
+              if (jobs === null) {
+                setPortalUser(null);
+                setPortalJobs([]);
+                setPortalError('Your session has timed out. Please sign in again.');
+                return;
+              }
+              setPortalJobs((jobs || []).map(j => ({
+                ...j,
+                wtns: j.wtns || [],
+                wtnData: (j.wtns && j.wtns[0]) || j.wtn_data || null
+              })));
             } catch (err) {
               console.error('Portal refresh failed:', err);
             }
