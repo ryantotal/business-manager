@@ -948,90 +948,6 @@ const deriveSupplierName = (lineItems, fallback) => {
 // The customer record used for one-off trade counter work. It is a real row
 // in the customers table, picked from the list like any other. Who the job is
 // actually for goes in the quote's internal reference.
-// Past prices, read off the quotes and jobs already in the system so the
-// sourcing grid does not start empty on every quote.
-//
-// Products are matched on name alone. The same material is bought by the tonne
-// on one line and by the load on the next, and they are still the same product,
-// so the unit is carried alongside each price and shown to the user whenever it
-// differs from the line being priced. Matching on name and unit together would
-// hide a price you have actually had.
-const NO_HISTORY = '\u2014';
-
-const normaliseProductKey = (value) => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
-
-const MONTH_ABBREVIATIONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-const formatPriceMonth = (value) => {
-  if (!value) return '';
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return '';
-  return MONTH_ABBREVIATIONS[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2);
-};
-
-const buildPriceHistory = (jobs, quotes) => {
-  const byProduct = new Map();
-
-  const toPrice = (raw) => {
-    const n = parseFloat(raw);
-    return (!isNaN(n) && n > 0) ? n : null;
-  };
-
-  // Most recent wins. A price with no date loses to one that has a date,
-  // because an undated row is almost always a legacy import.
-  const keepLatest = (current, candidate) => {
-    if (!candidate) return current;
-    if (!current) return candidate;
-    if (!candidate.date) return current;
-    if (!current.date) return candidate;
-    return candidate.date > current.date ? candidate : current;
-  };
-
-  const entryFor = (key) => {
-    if (!byProduct.has(key)) byProduct.set(key, { suppliers: new Map(), sell: null });
-    return byProduct.get(key);
-  };
-
-  const scan = (records) => {
-    (records || []).forEach((rec) => {
-      if (!rec) return;
-      const date = rec.jobDate || rec.job_date || rec.createdDate || rec.created_at || null;
-      const headerSupplier = rec.supplierName || rec.supplier_name || '';
-      readLineItems(rec).forEach((item) => {
-        if (!item) return;
-        const key = normaliseProductKey(item.product_name || item.productName || item.description);
-        if (!key) return;
-        const entry = entryFor(key);
-        const unit = item.unit || '';
-
-        const supplier = String(item.supplier_name || headerSupplier || '').trim();
-        const cost = toPrice(item.supplier_price);
-        if (supplier && supplier !== MULTIPLE_SUPPLIERS && cost !== null) {
-          entry.suppliers.set(supplier, keepLatest(entry.suppliers.get(supplier), { price: cost, unit, date }));
-        }
-
-        const sell = toPrice(item.customer_price);
-        if (sell !== null) entry.sell = keepLatest(entry.sell, { price: sell, unit, date });
-
-        // Prices gathered while sourcing, including the ones not taken. These
-        // are the whole point: a supplier you rang and did not use is still a
-        // supplier you have a price from.
-        (item.sourcing || []).forEach((sourced) => {
-          if (!sourced) return;
-          const name = String(sourced.supplier_name || '').trim();
-          const price = toPrice(sourced.price);
-          if (!name || name === MULTIPLE_SUPPLIERS || price === null) return;
-          entry.suppliers.set(name, keepLatest(entry.suppliers.get(name), { price, unit, date }));
-        });
-      });
-    });
-  };
-
-  scan(jobs);
-  scan(quotes);
-  return byProduct;
-};
-
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
 // Searchable Dropdown Component
@@ -6096,8 +6012,8 @@ const [isEvent, setIsEvent] = useState(false);
           );
 
           return (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 sm:p-4">
+                <div className="bg-white sm:rounded-xl w-full h-full sm:h-[calc(100vh-2rem)] overflow-y-auto mx-auto flex flex-col">
                 <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                   <h2 className="text-xl font-bold">{job ? 'Edit Job' : 'Add New Job'}</h2>
                   <button onClick={onClose}>
@@ -15602,12 +15518,18 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
   );
 };
 
-const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onStop, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh }) => {
+const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onStop, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh, suppliers = [] }) => {
   const { hasPermission } = useAuth();  // fix32z: lets the delete button follow the roles map (Managers can delete)
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [jobAttachments, setJobAttachments] = useState([]);
   const [currentJob, setCurrentJob] = useState(job);
+  // Sourcing panel on the Overview tab. Held here because hooks cannot live
+  // inside the tab's conditional render.
+  const [editingSourcing, setEditingSourcing] = useState(false);
+  const [sourcingDraft, setSourcingDraft] = useState(null);
+  const [savingSourcing, setSavingSourcing] = useState(false);
+  const [newJobSupplier, setNewJobSupplier] = useState('');
   const [showSidebar, setShowSidebar] = useState(false);
   // Opens the tonnage cap editor on the allocation counter. Lives here rather
   // than in the counter because the button that triggers it is in this
@@ -17431,6 +17353,246 @@ console.log(JSON.stringify(invoiceData, null, 2));
 
             </div>
 
+
+{/* ---- Sourcing ---------------------------------------------------------
+    What was quoted and by whom, carried over from the quote. Editable, because
+    the ring-round often happens again on the day: a supplier drops out, someone
+    rings round, and those prices need somewhere to go. Cards rather than a
+    table because it gets read on a phone in a yard.
+
+    Picking a different supplier is deliberately not offered here. The waste
+    transfer note still takes its carrier details from the job header, so
+    switching supplier from this panel would quietly produce a transfer note
+    naming the wrong carrier. That waits for the per-line WTN work. */}
+{(() => {
+  const jobLines = sourcingDraft || readLineItems(job);
+  const bySupplier = new Map();
+
+  jobLines.forEach((item, lineIndex) => {
+    if (!item) return;
+    const label = item.product_name || item.description || 'Item';
+    (item.sourcing || []).forEach((entry, entryIndex) => {
+      if (!entry) return;
+      const name = String(entry.supplier_name || '').trim();
+      if (!name) return;
+      if (!bySupplier.has(name)) {
+        // Matched on the id recorded when the price was taken, falling back to
+        // the name for anything sourced before ids were kept.
+        const onFile = (suppliers || []).find(s => (
+          (entry.supplier_id && (s.id === entry.supplier_id || s.sage_id === entry.supplier_id))
+          || (s.name || s.companyName || '').trim().toLowerCase() === name.toLowerCase()
+        ));
+        bySupplier.set(name, {
+          name, note: '', prices: [], used: false,
+          phone: (onFile && (onFile.phone || onFile.telephone)) || '',
+          onFile: !!onFile
+        });
+      }
+      const record = bySupplier.get(name);
+      if (entry.note && !record.note) record.note = entry.note;
+      const price = parseFloat(entry.price);
+      record.prices.push({
+        label, lineIndex, entryIndex,
+        raw: entry.price,
+        price: (!isNaN(price) && price > 0) ? price : null,
+        unit: item.unit || ''
+      });
+      if (String(item.supplier_name || '').trim() === name) record.used = true;
+    });
+  });
+
+  const suppliersFound = Array.from(bySupplier.values())
+    .filter(s => editingSourcing || s.prices.some(p => p.price !== null) || s.note)
+    .sort((a, b) => (a.used === b.used ? a.name.localeCompare(b.name) : (a.used ? -1 : 1)));
+
+  if (suppliersFound.length === 0 && !editingSourcing) return null;
+
+  const startEditing = () => {
+    setSourcingDraft(JSON.parse(JSON.stringify(readLineItems(job))));
+    setEditingSourcing(true);
+  };
+
+  const editPrice = (lineIndex, entryIndex, value) => {
+    setSourcingDraft(prev => {
+      const next = prev.map(l => ({ ...l, sourcing: [...(l.sourcing || [])] }));
+      next[lineIndex].sourcing[entryIndex] = { ...next[lineIndex].sourcing[entryIndex], price: value };
+      return next;
+    });
+  };
+
+  // A note belongs to the call, so it is written onto every one of that
+  // supplier's entries, the same way the quote does it.
+  const editNote = (supplierName, value) => {
+    setSourcingDraft(prev => prev.map(l => ({
+      ...l,
+      sourcing: (l.sourcing || []).map(e => (
+        e && String(e.supplier_name || '').trim() === supplierName ? { ...e, note: value } : e
+      ))
+    })));
+  };
+
+  const addSupplierRow = () => {
+    const name = String(newJobSupplier || '').trim();
+    if (!name) return;
+    const onFile = (suppliers || []).find(
+      s => (s.name || s.companyName || '').trim().toLowerCase() === name.toLowerCase()
+    );
+    setSourcingDraft(prev => prev.map(l => {
+      const entries = [...(l.sourcing || [])];
+      if (entries.some(e => e && String(e.supplier_name || '').trim() === name)) return l;
+      entries.push({ supplier_name: name, supplier_id: onFile ? onFile.id : null, price: '', note: '', chosen: false });
+      return { ...l, sourcing: entries };
+    }));
+    setNewJobSupplier('');
+  };
+
+  const saveSourcing = async () => {
+    setSavingSourcing(true);
+    try {
+      const { error } = await window.supabase
+        .from('jobs')
+        .update({ line_items: JSON.stringify(sourcingDraft) })
+        .eq('id', job.id);
+      if (error) throw error;
+      setEditingSourcing(false);
+      setSourcingDraft(null);
+      if (onRefresh) await onRefresh();
+    } catch (e) {
+      console.error('Error saving sourcing:', e);
+      alert('Could not save the sourcing prices.\n\n' + (e.message || 'Unknown error') + '\n\nNothing has been changed.');
+    } finally {
+      setSavingSourcing(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200">
+      <div className="bg-gray-50 border-b border-gray-200 px-6 py-4 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Sourcing</h2>
+          <p className="text-sm text-gray-600 mt-0.5">
+            Prices we were given for this job. Never shown to the customer.
+          </p>
+        </div>
+        {!editingSourcing ? (
+          <button
+            onClick={startEditing}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-100"
+          >
+            Edit
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setEditingSourcing(false); setSourcingDraft(null); setNewJobSupplier(''); }}
+              disabled={savingSourcing}
+              className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={saveSourcing}
+              disabled={savingSourcing}
+              className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50"
+            >
+              {savingSourcing ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="p-4 sm:p-6 space-y-3">
+        {suppliersFound.map((s) => (
+          <div
+            key={s.name}
+            className={`rounded-lg border p-4 ${s.used ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}
+          >
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <div className="font-semibold text-gray-900">{s.name}</div>
+                {s.phone && (
+                  <a href={'tel:' + String(s.phone).replace(/\s+/g, '')} className="text-sm text-blue-600 underline">
+                    {s.phone}
+                  </a>
+                )}
+                {!s.onFile && (
+                  <div className="text-xs text-gray-500">Not on the supplier list</div>
+                )}
+              </div>
+              {s.used && (
+                <span className="text-xs font-medium text-green-800 bg-green-100 border border-green-300 rounded px-2 py-0.5">
+                  Used on this job
+                </span>
+              )}
+            </div>
+
+            <div className="mt-2 space-y-1">
+              {s.prices.map((p) => (
+                (p.price === null && !editingSourcing) ? null : (
+                  <div key={p.lineIndex + ':' + p.entryIndex} className="flex justify-between items-center gap-3 text-sm">
+                    <span className="text-gray-700">
+                      {p.label}{p.unit ? ' (per ' + p.unit + ')' : ''}
+                    </span>
+                    {editingSourcing ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={p.raw === 0 || p.raw ? p.raw : ''}
+                        onChange={(e) => editPrice(p.lineIndex, p.entryIndex, e.target.value)}
+                        placeholder="-"
+                        className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
+                    ) : (
+                      <span className="font-medium text-gray-900 whitespace-nowrap">
+                        &pound;{p.price.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                )
+              ))}
+            </div>
+
+            {editingSourcing ? (
+              <textarea
+                value={s.note}
+                onChange={(e) => editNote(s.name, e.target.value)}
+                rows={2}
+                placeholder="Lead time, who you spoke to, anything they could not do"
+                className="mt-2 w-full px-2 py-1 border border-gray-300 rounded text-sm"
+              />
+            ) : (
+              s.note && <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{s.note}</p>
+            )}
+          </div>
+        ))}
+
+        {editingSourcing && (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              list="tws-job-supplier-options"
+              value={newJobSupplier}
+              onChange={(e) => setNewJobSupplier(e.target.value)}
+              placeholder="Add a supplier you have just called"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+            <datalist id="tws-job-supplier-options">
+              {(suppliers || []).map(s => {
+                const label = s.name || s.companyName;
+                return <option key={s.id || label} value={label} />;
+              })}
+            </datalist>
+            <button
+              onClick={addSupplierRow}
+              className="px-4 py-2 bg-green-700 text-white rounded-lg text-sm hover:bg-green-800"
+            >
+              Add
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+})()}
           </div>
         )}
 
@@ -28428,6 +28590,7 @@ onClick={() => {
   <FullPageJobView 
     job={showFullPageJob}
     jobs={jobs}
+    suppliers={suppliers}
     onClose={() => setShowFullPageJob(null)}
     onUpdateDisplay={setShowFullPageJob}
     onRefresh={loadJobsFromSupabase || window.loadJobsFromSupabase}
@@ -28693,8 +28856,7 @@ handlePhoneSearch={handlePhoneSearch}
     suppliers={suppliers}
     sageProducts={sageProducts}  // ADD THIS LINE
     user={user}  // ADD THIS LINE
-    jobs={jobs}
-    quotes={quotes}
+    setSuppliers={setSuppliers}
   />
 )}
             </div>
@@ -32555,22 +32717,20 @@ window.location.href = '/#sage-integration';  // Keep this line!
        // Replace the existing QuoteForm component (around line 7141) with this FULLY TESTED version:
 
 // Quote Form Component - UPDATED TO MATCH JOB FORM LAYOUT
-const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user, jobs = [], quotes = [] }) => {
+const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user, setSuppliers = () => {} }) => {
   // Suppliers currently shown as columns in the price comparison grid, and the
   // box for adding another. Display state only: the prices themselves live on
   // the line items, so nothing here reaches the database.
   const [extraCompareSuppliers, setExtraCompareSuppliers] = useState([]);
   const [newCompareSupplier, setNewCompareSupplier] = useState('');
   const [showCompare, setShowCompare] = useState(true);
+  // Phone numbers being typed on the Sourcing tab, keyed by supplier name, and
+  // whichever one is mid-save. Nothing is written until Save is pressed.
+  const [supplierPhoneDrafts, setSupplierPhoneDrafts] = useState({});
+  const [savingSupplierName, setSavingSupplierName] = useState('');
   // Every past price for every product, gathered once per form rather than once
   // per cell. Jobs and quotes arrive as props so this never touches the database
   // and cannot be caught by RLS on the login screen.
-  // The quote being edited is excluded, otherwise every price you have just
-  // typed comes straight back at you as its own history.
-  const priceHistory = React.useMemo(
-    () => buildPriceHistory(jobs, (quotes || []).filter(q => !quote?.id || q.id !== quote.id)),
-    [jobs, quotes, quote?.id]
-  );
   const [quoteAttachments, setQuoteAttachments] = useState([]);
   const [uploadFile, setUploadFile] = useState(null);
   const [defaultTerms, setDefaultTerms] = useState('');
@@ -33015,8 +33175,8 @@ By approving this quotation and authorising us to commence services, you acknowl
   const timeSlots = ['AM (8:00-12:00)', 'PM (12:00-17:00)'];
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 sm:p-4">
+      <div className="bg-white sm:rounded-xl w-full h-full sm:h-[calc(100vh-2rem)] overflow-y-auto mx-auto flex flex-col">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-xl font-bold">{quote ? 'Edit Quote' : 'Add New Quote'}</h2>
           <button onClick={onClose}>
@@ -33041,6 +33201,14 @@ By approving this quotation and authorising us to commence services, you acknowl
             }`}
           >
             Quote Document
+          </button>
+          <button
+            onClick={() => setActiveTab('sourcing')}
+            className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium ${
+              activeTab === 'sourcing' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'
+            }`}
+          >
+            Sourcing
           </button>
           <button
             onClick={() => setActiveTab('site')}
@@ -33314,6 +33482,337 @@ By approving this quotation and authorising us to commence services, you acknowl
           )}
 
           {/* Quote Details Tab - MATCHING JOB DETAILS */}
+          {/* ---- Sourcing ------------------------------------------------
+              Claire's ring-round, written down. Products down the side,
+              suppliers across the top, prices in the middle, and a note against
+              each supplier for everything that is not a number: lead times, who
+              she spoke to, what they could not do. All of it internal, and all
+              of it kept after a supplier is picked so there is something to fall
+              back on when one lets us down. */}
+          {activeTab === 'sourcing' && (() => {
+            const items = formData.lineItems || [];
+
+            const fromPrices = [];
+            const addColumn = (value) => {
+              const name = String(value || '').trim();
+              if (!name || name === MULTIPLE_SUPPLIERS || fromPrices.includes(name)) return;
+              fromPrices.push(name);
+            };
+            items.forEach(it => {
+              (it.sourcing || []).forEach(e => { if (e) addColumn(e.supplier_name); });
+              addColumn(it.supplier_name);
+            });
+            extraCompareSuppliers.forEach(addColumn);
+            const columns = fromPrices;
+
+            // Suppliers are picked off the list wherever possible, so the id
+            // travels with the price. That is what lets the job screen show a
+            // phone number, and what a per-line waste transfer note will need
+            // when it goes looking for a carrier registration.
+            const supplierOnFile = (name) => (suppliers || []).find(
+              s => (s.name || s.companyName || '').trim().toLowerCase() === String(name || '').trim().toLowerCase()
+            );
+            const supplierIdFor = (name) => {
+              const found = supplierOnFile(name);
+              return found ? found.id : null;
+            };
+
+            const priceFor = (it, supplierName) => {
+              const found = (it.sourcing || []).find(e => e && e.supplier_name === supplierName);
+              return found ? found.price : '';
+            };
+
+            const setPrice = (lineIndex, supplierName, value) => {
+              const updatedItems = [...items];
+              const entries = [...(updatedItems[lineIndex].sourcing || [])];
+              const at = entries.findIndex(e => e && e.supplier_name === supplierName);
+              if (at === -1) entries.push({ supplier_name: supplierName, supplier_id: supplierIdFor(supplierName), price: value, note: '', chosen: false });
+              else entries[at] = { ...entries[at], price: value };
+              updatedItems[lineIndex] = { ...updatedItems[lineIndex], sourcing: entries };
+              setFormData({ ...formData, lineItems: updatedItems });
+            };
+
+            // Choosing a cell sets the line's supplier and cost together, so the
+            // two can never disagree with the price that was actually picked.
+            const choose = (lineIndex, supplierName) => {
+              const updatedItems = [...items];
+              const entries = (updatedItems[lineIndex].sourcing || []).map(e => ({
+                ...e, chosen: e.supplier_name === supplierName
+              }));
+              const picked = entries.find(e => e.supplier_name === supplierName);
+              updatedItems[lineIndex] = {
+                ...updatedItems[lineIndex],
+                sourcing: entries,
+                supplier_name: supplierName,
+                supplier_price: parseFloat(picked && picked.price) || 0
+              };
+              setFormData({ ...formData, lineItems: updatedItems });
+            };
+
+            const setSell = (lineIndex, value) => {
+              const updatedItems = [...items];
+              updatedItems[lineIndex] = { ...updatedItems[lineIndex], customer_price: value };
+              setFormData({ ...formData, lineItems: updatedItems });
+            };
+
+            // A note belongs to the phone call, not to one price, so it is held
+            // against the supplier and copied onto each of that supplier's
+            // entries. That keeps it inside the line items, which means it
+            // travels to the job with everything else and needs no new column.
+            const noteFor = (supplierName) => {
+              for (const it of items) {
+                const found = (it.sourcing || []).find(e => e && e.supplier_name === supplierName && e.note);
+                if (found) return found.note;
+              }
+              return '';
+            };
+
+            const setNote = (supplierName, value) => {
+              const updatedItems = items.map(it => {
+                const entries = [...(it.sourcing || [])];
+                const at = entries.findIndex(e => e && e.supplier_name === supplierName);
+                if (at === -1) entries.push({ supplier_name: supplierName, supplier_id: supplierIdFor(supplierName), price: '', note: value, chosen: false });
+                else entries[at] = { ...entries[at], note: value };
+                return { ...it, sourcing: entries };
+              });
+              setFormData({ ...formData, lineItems: updatedItems });
+            };
+
+            return (
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                  Your ring-round. None of this appears on the customer's quote.
+                  Prices you do not use are kept, so if a supplier drops out the
+                  next best is still here.
+                </div>
+
+                <div className="max-w-sm">
+                  <SearchableDropdown
+                    options={suppliers}
+                    value={newCompareSupplier}
+                    onChange={(name) => {
+                      const picked = String(name || '').trim();
+                      if (picked && !columns.includes(picked)) {
+                        setExtraCompareSuppliers(prev => prev.concat([picked]));
+                      }
+                      setNewCompareSupplier('');
+                    }}
+                    placeholder="Add a supplier you have called"
+                    displayField="name"
+                    valueField="name"
+                    allowCustom={true}
+                    customHint="Not on the list — use this name anyway"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Pick from the supplier list where you can. A supplier off the
+                    list brings its phone number through to the job.
+                  </p>
+                </div>
+
+                {items.length === 0 && (
+                  <p className="text-sm text-gray-500">
+                    Add products on the Quote Details tab first, then come back here to price them.
+                  </p>
+                )}
+
+                {items.length > 0 && columns.length === 0 && (
+                  <p className="text-sm text-gray-500">
+                    Add a supplier above to start writing prices against each product.
+                  </p>
+                )}
+
+                {items.length > 0 && columns.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="border border-gray-200 bg-white text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium sticky left-0 bg-gray-100 min-w-[180px]">
+                            Product
+                          </th>
+                          {columns.map(name => (
+                            <th key={name} className="px-2 py-2 text-left text-xs font-medium min-w-[130px]">
+                              <div className="flex items-center gap-1">
+                                <span className="truncate" title={name}>{name}</span>
+                                {extraCompareSuppliers.includes(name) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setExtraCompareSuppliers(prev => prev.filter(n => n !== name))}
+                                    className="text-gray-400 hover:text-red-600"
+                                    title="Remove column"
+                                  >
+                                    &times;
+                                  </button>
+                                )}
+                              {(() => {
+                                const onFile = supplierOnFile(name);
+                                const phone = onFile && (onFile.phone || onFile.telephone);
+                                if (phone) return <div className="font-normal text-gray-500 truncate">{phone}</div>;
+                                if (!onFile) return <div className="font-normal text-amber-600">not on list</div>;
+                                return null;
+                              })()}
+                              </div>
+                            </th>
+                          ))}
+                          <th className="px-2 py-2 text-left text-xs font-medium min-w-[110px] border-l border-gray-200">
+                            Our price
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((it, lineIndex) => {
+                          const rowUnit = it.unit || '';
+                          return (
+                            <tr key={it.id || lineIndex} className="border-t align-top">
+                              <td className="px-3 py-2 sticky left-0 bg-white">
+                                <div className="font-medium text-xs">{it.product_name || it.description || 'Line ' + (lineIndex + 1)}</div>
+                                {rowUnit && (
+                                  <div className="text-xs text-gray-400">per {rowUnit}</div>
+                                )}
+                                {it.supplier_name && (
+                                  <div className="text-xs text-green-700">using {it.supplier_name}</div>
+                                )}
+                              </td>
+                              {columns.map(name => {
+                                const raw = priceFor(it, name);
+                                const isChosen = it.supplier_name === name;
+                                return (
+                                  <td key={name} className={`px-2 py-2 ${isChosen ? 'bg-green-50' : ''}`}>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={raw === 0 || raw ? raw : ''}
+                                      onChange={(e) => setPrice(lineIndex, name, e.target.value)}
+                                      placeholder="-"
+                                      className="w-20 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => choose(lineIndex, name)}
+                                      className={`block mt-1 text-xs ${isChosen ? 'text-green-700 font-medium' : 'text-blue-600 hover:text-blue-800 underline'}`}
+                                    >
+                                      {isChosen ? 'using' : 'use'}
+                                    </button>
+                                  </td>
+                                );
+                              })}
+                              <td className="px-2 py-2 border-l border-gray-200">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={it.customer_price === 0 || it.customer_price ? it.customer_price : ''}
+                                  onChange={(e) => setSell(lineIndex, e.target.value)}
+                                  placeholder="-"
+                                  className="w-20 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        <tr className="border-t bg-gray-50 align-top">
+                          <td className="px-3 py-2 sticky left-0 bg-gray-50 text-xs font-medium text-gray-700">
+                            Notes on the call
+                          </td>
+                          {columns.map(name => (
+                            <td key={name} className="px-2 py-2">
+                              {(() => {
+                                const onFile = supplierOnFile(name);
+                                const draft = supplierPhoneDrafts[name];
+                                const shown = draft === undefined ? ((onFile && (onFile.phone || onFile.telephone)) || '') : draft;
+                                const changed = draft !== undefined && draft.trim() !== (((onFile && (onFile.phone || onFile.telephone)) || '').trim());
+                                const busy = savingSupplierName === name;
+
+                                const save = async () => {
+                                  setSavingSupplierName(name);
+                                  try {
+                                    if (onFile) {
+                                      const { error } = await window.supabase
+                                        .from('suppliers')
+                                        .update({ phone: shown })
+                                        .eq('id', onFile.id);
+                                      if (error) throw error;
+                                      setSuppliers(prev => prev.map(s => s.id === onFile.id ? { ...s, phone: shown } : s));
+                                    } else {
+                                      // Saved as a draft, so a supplier rung once for a
+                                      // price does not get pushed into Sage as a real
+                                      // account until someone decides it should be.
+                                      const { data, error } = await window.supabase
+                                        .from('suppliers')
+                                        .insert([{ name, phone: shown, is_draft: true }])
+                                        .select()
+                                        .single();
+                                      if (error) throw error;
+                                      if (data) setSuppliers(prev => prev.concat([{ ...data, companyName: data.name, isDraft: true }]));
+                                    }
+                                    setSupplierPhoneDrafts(prev => {
+                                      const next = { ...prev };
+                                      delete next[name];
+                                      return next;
+                                    });
+                                  } catch (e) {
+                                    console.error('Error saving supplier:', e);
+                                    alert('Could not save that supplier.\n\n' + (e.message || 'Unknown error'));
+                                  } finally {
+                                    setSavingSupplierName('');
+                                  }
+                                };
+
+                                return (
+                                  <div className="mb-1">
+                                    <input
+                                      type="tel"
+                                      value={shown}
+                                      onChange={(e) => setSupplierPhoneDrafts(prev => ({ ...prev, [name]: e.target.value }))}
+                                      placeholder="Phone"
+                                      className="w-full min-w-[120px] px-1 py-1 border border-gray-300 rounded text-xs"
+                                    />
+                                    {(!onFile || changed) && (
+                                      <button
+                                        type="button"
+                                        onClick={save}
+                                        disabled={busy || !shown.trim()}
+                                        className="mt-1 text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50 disabled:no-underline"
+                                      >
+                                        {busy ? 'Saving...' : (onFile ? 'Save number' : 'Add to supplier list')}
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                              <textarea
+                                value={noteFor(name)}
+                                onChange={(e) => setNote(name, e.target.value)}
+                                rows={3}
+                                placeholder="Lead time, who you spoke to, anything they could not do"
+                                className="w-full min-w-[120px] px-1 py-1 border border-gray-300 rounded text-xs"
+                              />
+                            </td>
+                          ))}
+                          <td className="px-2 py-2 border-l border-gray-200"></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Notes on this enquiry
+                  </label>
+                  <p className="text-xs text-gray-500 mb-1">
+                    Anything that is not about one supplier. Seen by everyone here, never by the customer.
+                  </p>
+                  <textarea
+                    value={formData.notes || ''}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    rows={4}
+                    placeholder="Access, timings, who asked, anything worth knowing"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
           {activeTab === 'details' && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -33764,255 +34263,6 @@ By approving this quotation and authorising us to commence services, you acknowl
                     })}
                   </datalist>
 
-                  {/* ---- Price comparison -------------------------------------
-                      Products down the side, suppliers across the top, prices in
-                      the middle. The same shape as the sourcing spreadsheet, so
-                      ringing round and jotting numbers works the way it already
-                      does, but the result stays attached to the quote. */}
-                  <div className="mt-4 border-t pt-4">
-                    <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-                      <h4 className="text-sm font-semibold text-gray-900">
-                        Price comparison
-                        <span className="ml-2 font-normal text-gray-500">internal only, never on the customer's quote</span>
-                      </h4>
-                      <button
-                        type="button"
-                        onClick={() => setShowCompare(v => !v)}
-                        className="text-xs text-blue-600 hover:text-blue-800 underline"
-                      >
-                        {showCompare ? 'Hide' : 'Show'}
-                      </button>
-                    </div>
-
-                    {showCompare && (() => {
-                      const items = formData.lineItems || [];
-                      // What this product last cost from each supplier, so the grid
-                      // opens with something in it instead of making you work from
-                      // memory. Matched on product name alone: 6F5 by the tonne and
-                      // 6F5 by the load are the same material, so the unit travels
-                      // with the price and is spelled out when it differs.
-                      const historyFor = (it) => priceHistory.get(normaliseProductKey(it.product_name || it.description)) || null;
-                      // Columns are the suppliers already priced or chosen on this
-                      // quote, then anyone who has priced these products before,
-                      // then any added by hand. Order is stable so cells do not jump
-                      // about as prices are typed in.
-                      const fromPrices = [];
-                      const addColumn = (value) => {
-                        const name = String(value || '').trim();
-                        if (!name || name === MULTIPLE_SUPPLIERS || fromPrices.includes(name)) return;
-                        fromPrices.push(name);
-                      };
-                      items.forEach(it => {
-                        (it.sourcing || []).forEach(e => { if (e) addColumn(e.supplier_name); });
-                        addColumn(it.supplier_name);
-                      });
-                      items.forEach(it => {
-                        const hist = historyFor(it);
-                        if (hist) Array.from(hist.suppliers.keys()).forEach(addColumn);
-                      });
-                      extraCompareSuppliers.forEach(addColumn);
-                      const columns = fromPrices;
-
-                      const priceFor = (it, supplierName) => {
-                        const found = (it.sourcing || []).find(e => e && e.supplier_name === supplierName);
-                        return found ? found.price : '';
-                      };
-
-                      const setPrice = (lineIndex, supplierName, value) => {
-                        const updatedItems = [...items];
-                        const entries = [...(updatedItems[lineIndex].sourcing || [])];
-                        const at = entries.findIndex(e => e && e.supplier_name === supplierName);
-                        if (at === -1) entries.push({ supplier_name: supplierName, price: value, note: '', chosen: false });
-                        else entries[at] = { ...entries[at], price: value };
-                        updatedItems[lineIndex] = { ...updatedItems[lineIndex], sourcing: entries };
-                        setFormData({ ...formData, lineItems: updatedItems });
-                      };
-
-                      // Choosing a cell sets the line's supplier and cost together,
-                      // so the two can never disagree with the price that was picked.
-                      const choose = (lineIndex, supplierName) => {
-                        const updatedItems = [...items];
-                        const entries = (updatedItems[lineIndex].sourcing || []).map(e => ({
-                          ...e, chosen: e.supplier_name === supplierName
-                        }));
-                        const picked = entries.find(e => e.supplier_name === supplierName);
-                        updatedItems[lineIndex] = {
-                          ...updatedItems[lineIndex],
-                          sourcing: entries,
-                          supplier_name: supplierName,
-                          supplier_price: parseFloat(picked && picked.price) || 0
-                        };
-                        setFormData({ ...formData, lineItems: updatedItems });
-                      };
-
-                      // The grey line under each box. The unit is only spelled out
-                      // when the old price was gathered on a different basis from
-                      // the line being priced, so a per-load figure can never be
-                      // mistaken for a per-tonne one.
-                      const describePast = (past, rowUnit) => {
-                        if (!past) return NO_HISTORY;
-                        const differentUnit = past.unit && rowUnit && past.unit !== rowUnit;
-                        const when = formatPriceMonth(past.date);
-                        return 'was ' + past.price.toFixed(2)
-                          + (differentUnit ? '/' + past.unit : '')
-                          + (when ? ' \u00b7 ' + when : '');
-                      };
-
-                      const setSell = (lineIndex, value) => {
-                        const updatedItems = [...items];
-                        updatedItems[lineIndex] = { ...updatedItems[lineIndex], customer_price: value };
-                        setFormData({ ...formData, lineItems: updatedItems });
-                      };
-
-                      return (
-                        <div>
-                          <div className="flex gap-2 mb-2">
-                            <input
-                              type="text"
-                              list="tws-supplier-options"
-                              value={newCompareSupplier}
-                              onChange={(e) => setNewCompareSupplier(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key !== 'Enter') return;
-                                e.preventDefault();
-                                const name = newCompareSupplier.trim();
-                                if (name && !columns.includes(name)) setExtraCompareSuppliers(prev => prev.concat([name]));
-                                setNewCompareSupplier('');
-                              }}
-                              placeholder="Add a supplier to compare"
-                              className="flex-1 sm:flex-none sm:w-64 px-3 py-1.5 border border-gray-300 rounded text-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const name = newCompareSupplier.trim();
-                                if (name && !columns.includes(name)) setExtraCompareSuppliers(prev => prev.concat([name]));
-                                setNewCompareSupplier('');
-                              }}
-                              className="px-3 py-1.5 bg-green-700 text-white rounded text-sm hover:bg-green-800"
-                            >
-                              Add
-                            </button>
-                          </div>
-
-                          {items.length === 0 && (
-                            <p className="text-xs text-gray-500">Add some products first.</p>
-                          )}
-
-                          {items.length > 0 && columns.length === 0 && (
-                            <p className="text-xs text-gray-500">
-                              Add a supplier above to start jotting prices against each product.
-                            </p>
-                          )}
-
-                          {items.length > 0 && columns.length > 0 && (
-                            <div className="overflow-x-auto">
-                              <table className="border border-gray-200 bg-white text-sm">
-                                <thead className="bg-gray-100">
-                                  <tr>
-                                    <th className="px-3 py-2 text-left text-xs font-medium sticky left-0 bg-gray-100 min-w-[180px]">
-                                      Product
-                                    </th>
-                                    {columns.map(name => (
-                                      <th key={name} className="px-2 py-2 text-left text-xs font-medium min-w-[110px]">
-                                        <div className="flex items-center gap-1">
-                                          <span className="truncate" title={name}>{name}</span>
-                                          {extraCompareSuppliers.includes(name) && (
-                                            <button
-                                              type="button"
-                                              onClick={() => setExtraCompareSuppliers(prev => prev.filter(n => n !== name))}
-                                              className="text-gray-400 hover:text-red-600"
-                                              title="Remove column"
-                                            >
-                                              &times;
-                                            </button>
-                                          )}
-                                        </div>
-                                      </th>
-                                    ))}
-                                    <th className="px-2 py-2 text-left text-xs font-medium min-w-[110px] border-l border-gray-200">
-                                      Our price
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {items.map((it, lineIndex) => {
-                                    const hist = historyFor(it);
-                                    const rowUnit = it.unit || '';
-                                    const lastSell = hist ? hist.sell : null;
-                                    return (
-                                      <tr key={it.id || lineIndex} className="border-t align-top">
-                                        <td className="px-3 py-2 sticky left-0 bg-white">
-                                          <div className="font-medium text-xs">{it.product_name || it.description || 'Line ' + (lineIndex + 1)}</div>
-                                          {rowUnit && (
-                                            <div className="text-xs text-gray-400">per {rowUnit}</div>
-                                          )}
-                                          {it.supplier_name && (
-                                            <div className="text-xs text-green-700">
-                                              using {it.supplier_name}
-                                            </div>
-                                          )}
-                                        </td>
-                                        {columns.map(name => {
-                                          const raw = priceFor(it, name);
-                                          const isChosen = it.supplier_name === name;
-                                          const past = hist ? hist.suppliers.get(name) : null;
-                                          return (
-                                            <td
-                                              key={name}
-                                              className={`px-2 py-2 ${isChosen ? 'bg-green-50' : ''}`}
-                                            >
-                                              <input
-                                                type="number"
-                                                step="0.01"
-                                                value={raw === 0 || raw ? raw : ''}
-                                                onChange={(e) => setPrice(lineIndex, name, e.target.value)}
-                                                placeholder="-"
-                                                className="w-20 px-1 py-0.5 border border-gray-300 rounded text-xs"
-                                              />
-                                              <div className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
-                                                {past ? describePast(past, rowUnit) : NO_HISTORY}
-                                              </div>
-                                              <button
-                                                type="button"
-                                                onClick={() => choose(lineIndex, name)}
-                                                className={`block mt-1 text-xs ${isChosen ? 'text-green-700 font-medium' : 'text-blue-600 hover:text-blue-800 underline'}`}
-                                              >
-                                                {isChosen ? 'using' : 'use'}
-                                              </button>
-                                            </td>
-                                          );
-                                        })}
-                                        <td className="px-2 py-2 border-l border-gray-200">
-                                          <input
-                                            type="number"
-                                            step="0.01"
-                                            value={it.customer_price === 0 || it.customer_price ? it.customer_price : ''}
-                                            onChange={(e) => setSell(lineIndex, e.target.value)}
-                                            placeholder="-"
-                                            className="w-20 px-1 py-0.5 border border-gray-300 rounded text-xs"
-                                          />
-                                          <div className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
-                                            {lastSell ? describePast(lastSell, rowUnit) : NO_HISTORY}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-
-                          {columns.length > 0 && items.length > 0 && (
-                            <p className="text-xs text-gray-500 mt-2">
-                              Grey figures are the last price you had from that supplier for the same product. Press "use" to put that supplier and cost on the line.
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
 
                   <div className="mt-4 border-t pt-4">
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
