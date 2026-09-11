@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -709,6 +709,155 @@ function splitOverflowFromLine1(rawLine1, rawLine2) {
   if (newLine2.length > 50) newLine2 = newLine2.slice(0, 50).trim();
   return { line1: newLine1, line2: newLine2 };
 }
+
+// Line items are stored under four different names depending on how old the
+// record is, and sometimes as a JSON string rather than an array. Every reader
+// in this file re-implements that; this is the one place that does it properly.
+const readLineItems = (record) => {
+  if (!record) return [];
+  const candidates = [record.lineItems, record.line_items, record.sageLineItems, record.sage_line_items];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (Array.isArray(candidate)) return candidate;
+    if (typeof candidate === 'string') {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { /* next candidate */ }
+    }
+  }
+  return [];
+};
+
+// Postcodes are compared on the outward part only, ignoring spacing and case,
+// so "hr74tu", "HR7 4TU" and "HR7" all match the same area. That mirrors how
+// the pricing spreadsheet was organised, a tab per outward code.
+const normalisePostcode = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+// "Who can do A in B?" answered from work already done.
+//
+// Historically a job had exactly one supplier, so every line item on it can be
+// attributed to that supplier without ambiguity. That is what makes years of
+// past jobs usable here rather than having to wait for new data.
+//
+// Quotes contribute two kinds of evidence: the line actually used, and the
+// prices recorded against lines that were not used. A supplier who quoted and
+// lost is still a supplier who covers that product in that area, so both count,
+// but they are reported separately because only one of them is a price you
+// know they honoured.
+const findSupplierOptions = ({ jobs = [], quotes = [], product = '', area = '' }) => {
+  const productQuery = String(product || '').trim().toLowerCase();
+  const areaQuery = normalisePostcode(area);
+  if (!productQuery && !areaQuery) return [];
+
+  const matchesProduct = (item) => {
+    if (!productQuery) return true;
+    const haystack = [item.product_name, item.description, item.item_code]
+      .filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(productQuery);
+  };
+
+  const bySupplier = new Map();
+  const record = ({ supplier, price, date, postcode, productName, used }) => {
+    const name = String(supplier || '').trim();
+    if (!name || name === MULTIPLE_SUPPLIERS) return;
+    if (!bySupplier.has(name)) {
+      bySupplier.set(name, {
+        supplierName: name, usedCount: 0, quotedCount: 0,
+        prices: [], lastDate: null, lastPrice: null,
+        postcodes: new Set(), products: new Set()
+      });
+    }
+    const entry = bySupplier.get(name);
+    if (used) entry.usedCount += 1; else entry.quotedCount += 1;
+    const numericPrice = parseFloat(price);
+    if (!isNaN(numericPrice) && numericPrice > 0) {
+      entry.prices.push(numericPrice);
+      // Most recent price wins, which is the one worth ringing them about.
+      if (!entry.lastDate || (date && date > entry.lastDate)) entry.lastPrice = numericPrice;
+    }
+    if (date && (!entry.lastDate || date > entry.lastDate)) entry.lastDate = date;
+    if (postcode) entry.postcodes.add(String(postcode).toUpperCase().trim());
+    if (productName) entry.products.add(productName);
+  };
+
+  const scan = (records, used) => {
+    (records || []).forEach((rec) => {
+      const postcode = rec.sitePostcode || rec.site_postcode || '';
+      if (areaQuery && !normalisePostcode(postcode).startsWith(areaQuery)) return;
+      const headerSupplier = rec.supplierName || rec.supplier_name || '';
+      const date = rec.jobDate || rec.job_date || rec.createdDate || rec.created_at || null;
+
+      readLineItems(rec).forEach((item) => {
+        if (!item || !matchesProduct(item)) return;
+        const lineSupplier = item.supplier_name || headerSupplier;
+        record({
+          supplier: lineSupplier,
+          price: item.supplier_price,
+          date, postcode,
+          productName: item.product_name || item.description,
+          used
+        });
+        // Prices gathered while sourcing this line, including the ones not taken.
+        (item.sourcing || []).forEach((sourced) => {
+          if (!sourced || sourced.chosen) return;
+          record({
+            supplier: sourced.supplier_name,
+            price: sourced.price,
+            date, postcode,
+            productName: item.product_name || item.description,
+            used: false
+          });
+        });
+      });
+    });
+  };
+
+  scan(jobs, true);
+  scan(quotes, false);
+
+  return Array.from(bySupplier.values()).map((entry) => ({
+    supplierName: entry.supplierName,
+    usedCount: entry.usedCount,
+    quotedCount: entry.quotedCount,
+    lastDate: entry.lastDate,
+    lastPrice: entry.lastPrice,
+    lowestPrice: entry.prices.length ? Math.min.apply(null, entry.prices) : null,
+    highestPrice: entry.prices.length ? Math.max.apply(null, entry.prices) : null,
+    postcodes: Array.from(entry.postcodes).slice(0, 6),
+    products: Array.from(entry.products).slice(0, 4)
+  })).sort((a, b) => {
+    // Cheapest known price first; anyone without a price goes last, ranked by
+    // how often you have actually used them.
+    const av = a.lastPrice === null ? Infinity : a.lastPrice;
+    const bv = b.lastPrice === null ? Infinity : b.lastPrice;
+    if (av !== bv) return av - bv;
+    return b.usedCount - a.usedCount;
+  });
+};
+
+// A quote can be sourced from several suppliers at once: the customer asks for
+// a price on ten things and each one comes from whoever is cheapest. The
+// supplier therefore belongs on the line item, not on the quote header.
+//
+// The header value is derived from the lines rather than typed: one name if
+// every line agrees, "Multiple" if they do not. Keeping quotes.supplier_name
+// populated means the quote list, Sage and the job conversion carry on working
+// unchanged; they simply see the word "Multiple" where a single supplier used
+// to be. The fallback covers quotes that have no line items at all, where the
+// header field is still the only place a supplier can be recorded.
+const MULTIPLE_SUPPLIERS = 'Multiple';
+
+const deriveSupplierName = (lineItems, fallback) => {
+  const names = Array.from(new Set(
+    (lineItems || [])
+      .map(i => (i && i.supplier_name) || '')
+      .filter(Boolean)
+  ));
+  if (names.length === 1) return names[0];
+  if (names.length > 1) return MULTIPLE_SUPPLIERS;
+  return fallback || '';
+};
 
 // The customer record used for one-off trade counter work. It is a real row
 // in the customers table, picked from the list like any other. Who the job is
@@ -11808,7 +11957,6 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rejection Reason</th>
-    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
   </tr>
 </thead>
@@ -11914,13 +12062,6 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           {quote.status === 'REJECTED' ? (quote.rejected_reason || '-') : '-'}
-        </td>
-        <td className={`px-6 py-4 whitespace-nowrap ${
-  quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
-  expired ? 'line-through decoration-gray-500' : ''
-}`}>
-          £{quote.totalPrice?.toFixed(2)}
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm">
           <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
@@ -28340,7 +28481,7 @@ onClick={() => {
                   
                 )}
                 {activeTab === 'supplierMap' && (
-                  <SupplierMap suppliers={suppliers} />
+                  <SupplierMap suppliers={suppliers} jobs={jobs} quotes={quotes} />
                 )}
                 {activeTab === 'quotes' && (
   <QuotesView 
@@ -30593,7 +30734,10 @@ window.location.href = '/#sage-integration';  // Keep this line!
         };
 
         // Supplier Map Component
-        const SupplierMap = ({ suppliers }) => {
+        const SupplierMap = ({ suppliers, jobs = [], quotes = [] }) => {
+          const [findProduct, setFindProduct] = React.useState('');
+          const [findArea, setFindArea] = React.useState('');
+          const [findResults, setFindResults] = React.useState(null);
           const mapRef = React.useRef(null);
           const mapInstanceRef = React.useRef(null);
           const markersRef = React.useRef([]);
@@ -31117,8 +31261,114 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const totalWithData = (suppliers || []).filter(s => (s.primaryServices||[]).length > 0 || (s.serviceAreas||[]).length > 0).length;
           const totalSuppliers = (suppliers || []).length;
 
+          const runSupplierSearch = () => {
+            setFindResults(findSupplierOptions({
+              jobs, quotes,
+              product: findProduct,
+              area: findArea
+            }));
+          };
+
           return (
             <div className="space-y-0">
+              {/* Who can do what, where — answered from past jobs and quotes */}
+              <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Who can supply what, where</h3>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={findProduct}
+                    onChange={(e) => setFindProduct(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') runSupplierSearch(); }}
+                    placeholder="Product, e.g. MOT, 6F5, muckaway"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <input
+                    type="text"
+                    value={findArea}
+                    onChange={(e) => setFindArea(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') runSupplierSearch(); }}
+                    placeholder="Area, e.g. HR7"
+                    className="w-full sm:w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <button
+                    onClick={runSupplierSearch}
+                    className="px-4 py-2 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800"
+                  >
+                    Find
+                  </button>
+                  {findResults !== null && (
+                    <button
+                      onClick={() => { setFindResults(null); setFindProduct(''); setFindArea(''); }}
+                      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {findResults !== null && findResults.length === 0 && (
+                  <p className="mt-3 text-sm text-gray-600">
+                    Nothing on record for that. Try a shorter product name, or a wider area such as just the first part of the postcode.
+                  </p>
+                )}
+
+                {findResults !== null && findResults.length > 0 && (
+                  <div className="mt-3 overflow-x-auto">
+                    <p className="text-xs text-gray-500 mb-2">
+                      {findResults.length} supplier{findResults.length === 1 ? '' : 's'} found, cheapest last price first. Prices are what you paid, not what you charged.
+                    </p>
+                    <table className="w-full bg-white border border-gray-200 rounded text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium">Supplier</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium w-24">Last price</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium w-28">Range</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium w-28">History</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium">Seen at</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {findResults.map((result) => (
+                          <tr key={result.supplierName} className="border-t">
+                            <td className="px-3 py-2">
+                              <div className="font-medium">{result.supplierName}</div>
+                              {result.products.length > 0 && (
+                                <div className="text-xs text-gray-500">{result.products.join(', ')}</div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {result.lastPrice === null
+                                ? <span className="text-gray-400">not known</span>
+                                : '\u00a3' + result.lastPrice.toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600">
+                              {result.lowestPrice === null
+                                ? '-'
+                                : (result.lowestPrice === result.highestPrice
+                                    ? '\u00a3' + result.lowestPrice.toFixed(2)
+                                    : '\u00a3' + result.lowestPrice.toFixed(2) + ' to \u00a3' + result.highestPrice.toFixed(2))}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-600">
+                              {result.usedCount > 0 && <div>used {result.usedCount}x</div>}
+                              {result.quotedCount > 0 && <div className="text-gray-500">quoted {result.quotedCount}x</div>}
+                              {result.lastDate && (
+                                <div className="text-gray-400">
+                                  {new Date(result.lastDate).toLocaleDateString('en-GB')}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-600">
+                              {result.postcodes.join(', ') || '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
               {/* Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
@@ -32251,6 +32501,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
 // Quote Form Component - UPDATED TO MATCH JOB FORM LAYOUT
 const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user }) => {
+  // Which line items have their sourcing panel expanded. Display state only —
+  // deliberately not part of formData, so it never reaches the database.
+  const [openSourcing, setOpenSourcing] = useState({});
   const [quoteAttachments, setQuoteAttachments] = useState([]);
   const [uploadFile, setUploadFile] = useState(null);
   const [defaultTerms, setDefaultTerms] = useState('');
@@ -32592,6 +32845,7 @@ By approving this quotation and authorising us to commence services, you acknowl
         deliveryDate: formData.jobDate,
         siteAddress: formData.siteAddress1,
         lineItems: formData.lineItems || [],
+        supplierName: deriveSupplierName(formData.lineItems, formData.supplierName),
         terms_conditions: formData.terms_conditions || defaultTerms,
         scopeDescription: formData.scopeDescription || '',
         internalReference: formData.internalReference || '',
@@ -33073,17 +33327,33 @@ By approving this quotation and authorising us to commence services, you acknowl
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
-                  <SearchableDropdown
-                    options={suppliers.map(s => ({
-                      ...s,
-                      name: s.name || s.companyName
-                    }))}
-                    value={formData.supplierName}
-                    onChange={(value) => setFormData({...formData, supplierName: value})}
-                    placeholder={`Select Supplier (${suppliers.length} available)`}
-                    displayField="name"
-                    valueField="name"
-                  />
+                  {(() => {
+                    const derived = deriveSupplierName(formData.lineItems, null);
+                    if (derived) {
+                      // Derived from the lines, so not editable here. Editing it
+                      // in two places is how the two would drift apart.
+                      return (
+                        <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-700">
+                          {derived === MULTIPLE_SUPPLIERS
+                            ? 'Multiple, set per line below'
+                            : derived}
+                        </div>
+                      );
+                    }
+                    return (
+                      <SearchableDropdown
+                        options={suppliers.map(s => ({
+                          ...s,
+                          name: s.name || s.companyName
+                        }))}
+                        value={formData.supplierName}
+                        onChange={(value) => setFormData({...formData, supplierName: value})}
+                        placeholder={`Select Supplier (${suppliers.length} available)`}
+                        displayField="name"
+                        valueField="name"
+                      />
+                    );
+                  })()}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Reference</label>
@@ -33162,7 +33432,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                           nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
                           tax_code: product.tax_rate_id || 'T1'
                         };
-                        const updatedLineItems = [...(formData.lineItems || []), newLineItem];
+                        const updatedLineItems = [...(formData.lineItems || []), { supplier_name: formData.supplierName === MULTIPLE_SUPPLIERS ? '' : (formData.supplierName || ''), ...newLineItem }];
                         setFormData({...formData, lineItems: updatedLineItems});
                       }}
                       products={sageProducts}
@@ -33180,6 +33450,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                       <thead className="bg-gray-100">
                         <tr>
                           <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
+                          <th className="px-2 py-3 text-left font-medium w-40">Supplier</th>
                           <th className="px-4 py-3 text-left font-medium w-1/3">Description (Editable)</th>
                           <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
                           <th className="px-2 py-3 text-left font-medium w-24">Unit</th>
@@ -33192,8 +33463,33 @@ By approving this quotation and authorising us to commence services, you acknowl
                       <tbody>
                         {formData.lineItems.map((item, index) => {
                           const lineProfit = ((item.customer_price || 0) - (item.supplier_price || 0)) * (item.quantity || 1);
+                          const sourcing = item.sourcing || [];
+                          // Applying a sourced price is the only thing that sets
+                          // the line's supplier and cost together, so the two can
+                          // never disagree with the row that was chosen.
+                          const applySourced = (entryIndex) => {
+                            const updatedItems = [...formData.lineItems];
+                            const entries = (updatedItems[index].sourcing || []).map((e, i) => ({
+                              ...e,
+                              chosen: i === entryIndex
+                            }));
+                            const picked = entries[entryIndex];
+                            updatedItems[index] = {
+                              ...updatedItems[index],
+                              sourcing: entries,
+                              supplier_name: picked.supplier_name || '',
+                              supplier_price: parseFloat(picked.price) || 0
+                            };
+                            setFormData({ ...formData, lineItems: updatedItems });
+                          };
+                          const updateSourcing = (entries) => {
+                            const updatedItems = [...formData.lineItems];
+                            updatedItems[index] = { ...updatedItems[index], sourcing: entries };
+                            setFormData({ ...formData, lineItems: updatedItems });
+                          };
                           return (
-                            <tr key={item.id} className={`border-t hover:bg-gray-50 ${item.optional ? 'bg-amber-50' : item.one_off ? 'bg-amber-50' : ''}`}>
+                            <React.Fragment key={item.id}>
+                            <tr className={`border-t hover:bg-gray-50 ${item.optional ? 'bg-amber-50' : item.one_off ? 'bg-amber-50' : ''}`}>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
                                   {item.product_name}
@@ -33201,6 +33497,41 @@ By approving this quotation and authorising us to commence services, you acknowl
                                   {item.one_off && <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">One-Off</span>}
                                 </div>
                                 <div className="text-xs text-gray-500">{item.item_code}</div>
+                              </td>
+                              <td className="px-2 py-3">
+                                {/* A plain select rather than SearchableDropdown: this cell sits
+                                    inside an overflow-x-auto wrapper, which clips an absolutely
+                                    positioned dropdown. Type-ahead still works in a native select. */}
+                                <select
+                                  value={item.supplier_name || ''}
+                                  onChange={(e) => {
+                                    const updatedItems = [...formData.lineItems];
+                                    updatedItems[index] = { ...updatedItems[index], supplier_name: e.target.value };
+                                    setFormData({ ...formData, lineItems: updatedItems });
+                                  }}
+                                  className={`w-full px-2 py-1 border rounded text-xs ${item.supplier_name ? 'border-gray-300' : 'border-amber-300 bg-amber-50'}`}
+                                >
+                                  <option value="">Not set</option>
+                                  {suppliers.map(s => {
+                                    const supplierLabel = s.name || s.companyName;
+                                    return (
+                                      <option key={s.id || supplierLabel} value={supplierLabel}>
+                                        {supplierLabel}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenSourcing(prev => ({ ...prev, [index]: !prev[index] }))}
+                                  className="mt-1 text-xs text-blue-600 hover:text-blue-800 underline"
+                                >
+                                  {(() => {
+                                    const n = (item.sourcing || []).length;
+                                    if (openSourcing[index]) return 'Hide prices';
+                                    return n > 0 ? 'Prices (' + n + ')' : 'Add prices';
+                                  })()}
+                                </button>
                               </td>
                               <td className="px-4 py-3">
                                 <textarea
@@ -33327,6 +33658,133 @@ By approving this quotation and authorising us to commence services, you acknowl
                                 </div>
                               </td>
                             </tr>
+                            {openSourcing[index] && (
+                              <tr className="border-t bg-blue-50">
+                                <td colSpan={9} className="px-4 py-3">
+                                  <div className="text-xs font-medium text-gray-700 mb-2">
+                                    Prices for {item.product_name || 'this line'}
+                                    <span className="ml-2 font-normal text-gray-500">
+                                      internal only, never on the customer's quote
+                                    </span>
+                                  </div>
+
+                                  {sourcing.length === 0 && (
+                                    <p className="text-xs text-gray-500 mb-2">
+                                      Nothing recorded yet. Add what each supplier quoted, then apply the one you are going with.
+                                    </p>
+                                  )}
+
+                                  {sourcing.length > 0 && (
+                                    <table className="w-full mb-2 bg-white border border-gray-200 rounded">
+                                      <thead className="bg-gray-100">
+                                        <tr>
+                                          <th className="px-2 py-1 text-left text-xs font-medium w-1/3">Supplier</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium w-24">Price</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium">Note</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium w-32"></th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {sourcing
+                                          .map((entry, entryIndex) => ({ entry, entryIndex }))
+                                          .sort((a, b) => {
+                                            // A blank price means not quoted yet, or no reply.
+                                            // Those belong at the bottom, not at the top as if
+                                            // they were free.
+                                            const val = (row) => {
+                                              const n = parseFloat(row.entry.price);
+                                              return isNaN(n) ? Infinity : n;
+                                            };
+                                            return val(a) - val(b);
+                                          })
+                                          .map(({ entry, entryIndex }) => (
+                                            <tr key={entryIndex} className={entry.chosen ? 'bg-green-50' : ''}>
+                                              <td className="px-2 py-1">
+                                                <select
+                                                  value={entry.supplier_name || ''}
+                                                  onChange={(e) => {
+                                                    const entries = [...sourcing];
+                                                    entries[entryIndex] = { ...entries[entryIndex], supplier_name: e.target.value };
+                                                    updateSourcing(entries);
+                                                  }}
+                                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
+                                                >
+                                                  <option value="">Not set</option>
+                                                  {suppliers.map(s => {
+                                                    const supplierLabel = s.name || s.companyName;
+                                                    return (
+                                                      <option key={s.id || supplierLabel} value={supplierLabel}>
+                                                        {supplierLabel}
+                                                      </option>
+                                                    );
+                                                  })}
+                                                </select>
+                                              </td>
+                                              <td className="px-2 py-1">
+                                                <input
+                                                  type="number"
+                                                  step="0.01"
+                                                  value={entry.price === 0 || entry.price ? entry.price : ''}
+                                                  onChange={(e) => {
+                                                    const entries = [...sourcing];
+                                                    entries[entryIndex] = { ...entries[entryIndex], price: e.target.value };
+                                                    updateSourcing(entries);
+                                                  }}
+                                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
+                                                  placeholder="0.00"
+                                                />
+                                              </td>
+                                              <td className="px-2 py-1">
+                                                <input
+                                                  type="text"
+                                                  value={entry.note || ''}
+                                                  onChange={(e) => {
+                                                    const entries = [...sourcing];
+                                                    entries[entryIndex] = { ...entries[entryIndex], note: e.target.value };
+                                                    updateSourcing(entries);
+                                                  }}
+                                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
+                                                  placeholder="min 20t, not till Tuesday, no reply"
+                                                />
+                                              </td>
+                                              <td className="px-2 py-1 whitespace-nowrap">
+                                                {entry.chosen ? (
+                                                  <span className="text-xs font-medium text-green-700">Using this</span>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => applySourced(entryIndex)}
+                                                    disabled={!entry.supplier_name}
+                                                    className="px-2 py-1 bg-green-700 text-white rounded text-xs hover:bg-green-800 disabled:bg-gray-300"
+                                                  >
+                                                    Use
+                                                  </button>
+                                                )}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => updateSourcing(sourcing.filter((_, i) => i !== entryIndex))}
+                                                  className="ml-2 text-xs text-red-600 hover:text-red-800"
+                                                >
+                                                  Remove
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => updateSourcing(sourcing.concat([{ supplier_name: '', price: '', note: '', chosen: false }]))}
+                                    className="px-3 py-1 border border-gray-300 bg-white rounded text-xs hover:bg-gray-50"
+                                  >
+                                    Add a supplier price
+                                  </button>
+                                </td>
+                              </tr>
+                            )}
+                            </React.Fragment>
                           );
                         })}
                       </tbody>
@@ -33426,7 +33884,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                           nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
                           tax_code: product.tax_rate_id || 'T1'
                         };
-                        const updatedLineItems = [...(formData.lineItems || []), newLineItem];
+                        const updatedLineItems = [...(formData.lineItems || []), { supplier_name: formData.supplierName === MULTIPLE_SUPPLIERS ? '' : (formData.supplierName || ''), ...newLineItem }];
                         setFormData({...formData, lineItems: updatedLineItems});
                       }}
                       products={sageProducts}
@@ -33462,7 +33920,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                           nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
                           tax_code: product.tax_rate_id || 'T1'
                         };
-                        const updatedLineItems = [...(formData.lineItems || []), newLineItem];
+                        const updatedLineItems = [...(formData.lineItems || []), { supplier_name: formData.supplierName === MULTIPLE_SUPPLIERS ? '' : (formData.supplierName || ''), ...newLineItem }];
                         setFormData({...formData, lineItems: updatedLineItems});
                       }}
                       products={sageProducts}
@@ -33498,7 +33956,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                           nominal_code: product.nominal_code || 'dc4b88bb472b11e9aac702d5719f235e',
                           tax_code: product.tax_rate_id || 'T1'
                         };
-                        const updatedLineItems = [...(formData.lineItems || []), newLineItem];
+                        const updatedLineItems = [...(formData.lineItems || []), { supplier_name: formData.supplierName === MULTIPLE_SUPPLIERS ? '' : (formData.supplierName || ''), ...newLineItem }];
                         setFormData({...formData, lineItems: updatedLineItems});
                       }}
                       products={sageProducts}
