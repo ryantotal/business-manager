@@ -948,6 +948,90 @@ const deriveSupplierName = (lineItems, fallback) => {
 // The customer record used for one-off trade counter work. It is a real row
 // in the customers table, picked from the list like any other. Who the job is
 // actually for goes in the quote's internal reference.
+// Past prices, read off the quotes and jobs already in the system so the
+// sourcing grid does not start empty on every quote.
+//
+// Products are matched on name alone. The same material is bought by the tonne
+// on one line and by the load on the next, and they are still the same product,
+// so the unit is carried alongside each price and shown to the user whenever it
+// differs from the line being priced. Matching on name and unit together would
+// hide a price you have actually had.
+const NO_HISTORY = '\u2014';
+
+const normaliseProductKey = (value) => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+const MONTH_ABBREVIATIONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const formatPriceMonth = (value) => {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return MONTH_ABBREVIATIONS[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2);
+};
+
+const buildPriceHistory = (jobs, quotes) => {
+  const byProduct = new Map();
+
+  const toPrice = (raw) => {
+    const n = parseFloat(raw);
+    return (!isNaN(n) && n > 0) ? n : null;
+  };
+
+  // Most recent wins. A price with no date loses to one that has a date,
+  // because an undated row is almost always a legacy import.
+  const keepLatest = (current, candidate) => {
+    if (!candidate) return current;
+    if (!current) return candidate;
+    if (!candidate.date) return current;
+    if (!current.date) return candidate;
+    return candidate.date > current.date ? candidate : current;
+  };
+
+  const entryFor = (key) => {
+    if (!byProduct.has(key)) byProduct.set(key, { suppliers: new Map(), sell: null });
+    return byProduct.get(key);
+  };
+
+  const scan = (records) => {
+    (records || []).forEach((rec) => {
+      if (!rec) return;
+      const date = rec.jobDate || rec.job_date || rec.createdDate || rec.created_at || null;
+      const headerSupplier = rec.supplierName || rec.supplier_name || '';
+      readLineItems(rec).forEach((item) => {
+        if (!item) return;
+        const key = normaliseProductKey(item.product_name || item.productName || item.description);
+        if (!key) return;
+        const entry = entryFor(key);
+        const unit = item.unit || '';
+
+        const supplier = String(item.supplier_name || headerSupplier || '').trim();
+        const cost = toPrice(item.supplier_price);
+        if (supplier && supplier !== MULTIPLE_SUPPLIERS && cost !== null) {
+          entry.suppliers.set(supplier, keepLatest(entry.suppliers.get(supplier), { price: cost, unit, date }));
+        }
+
+        const sell = toPrice(item.customer_price);
+        if (sell !== null) entry.sell = keepLatest(entry.sell, { price: sell, unit, date });
+
+        // Prices gathered while sourcing, including the ones not taken. These
+        // are the whole point: a supplier you rang and did not use is still a
+        // supplier you have a price from.
+        (item.sourcing || []).forEach((sourced) => {
+          if (!sourced) return;
+          const name = String(sourced.supplier_name || '').trim();
+          const price = toPrice(sourced.price);
+          if (!name || name === MULTIPLE_SUPPLIERS || price === null) return;
+          entry.suppliers.set(name, keepLatest(entry.suppliers.get(name), { price, unit, date }));
+        });
+      });
+    });
+  };
+
+  scan(jobs);
+  scan(quotes);
+  return byProduct;
+};
+
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
 // Searchable Dropdown Component
@@ -11764,9 +11848,10 @@ job.status.replace('_', ' ')}
           );
         };
 // ADD THE TermsSettings COMPONENT HERE (line 3437):
-const TermsSettings = () => {
-  const [termsContent, setTermsContent] = useState(() => {
-    return localStorage.getItem('quoteTermsConditions') || `TERMS & CONDITIONS
+// Used only when the terms_conditions table has no active row at all, which
+// should only be true on a fresh database. Quotes have their own copy of this
+// text in the PDF builders; this one exists so the editor is never blank.
+const FALLBACK_QUOTE_TERMS = `TERMS & CONDITIONS
 
 1. QUOTATION VALIDITY
 This quotation is valid for 30 days from the date of issue. Haulage costs may be subject to adjustment due to ongoing global economic conditions and fuel price fluctuations.
@@ -11792,45 +11877,122 @@ All waste will be disposed of at licensed facilities.
 Waste transfer notes will be provided upon request.
 
 ACCEPTANCE OF TERMS
-By approving this quotation and authorising us to commence services, you acknowledge and agree to be bound by these Terms & Conditions and our Full Terms and Conditions available at www.totalwasteservicesltd.com. If you have not reviewed the Full Terms and Conditions, you should do so before approval.`
-;
-  });
+By approving this quotation and authorising us to commence services, you acknowledge and agree to be bound by these Terms & Conditions and our Full Terms and Conditions available at www.totalwasteservicesltd.com. If you have not reviewed the Full Terms and Conditions, you should do so before approval.`;
 
-  const handleSave = () => {
-    localStorage.setItem('quoteTermsConditions', termsContent);
-    alert('Terms & Conditions saved successfully!');
+// Edits the active row of the terms_conditions table, which is where the quote
+// form reads its default from. It used to read and write a localStorage key
+// that nothing else looked at, so saving here appeared to work and changed
+// nothing.
+const TermsSettings = () => {
+  const [termsContent, setTermsContent] = useState('');
+  const [activeRowId, setActiveRowId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const loadTerms = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const { data, error } = await window.supabase
+        .from('terms_conditions')
+        .select('id, content')
+        .eq('is_active', true)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        setActiveRowId(data.id);
+        setTermsContent(data.content || '');
+      } else {
+        setActiveRowId(null);
+        setTermsContent(FALLBACK_QUOTE_TERMS);
+      }
+    } catch (e) {
+      console.error('Error loading terms and conditions:', e);
+      setLoadError(e.message || 'Could not read the terms from the database.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Safe as an empty-dependency effect: this component is only mounted once an
+  // admin opens the section, so it cannot run against a logged-out session and
+  // silently come back with nothing. The Try again button covers the rest.
+  useEffect(() => { loadTerms(); }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      if (activeRowId) {
+        const { error } = await window.supabase
+          .from('terms_conditions')
+          .update({ content: termsContent })
+          .eq('id', activeRowId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await window.supabase
+          .from('terms_conditions')
+          .insert([{ content: termsContent, is_active: true }])
+          .select('id')
+          .single();
+        if (error) throw error;
+        if (data) setActiveRowId(data.id);
+      }
+      alert('Terms and conditions saved.\n\nNew quotes will pick these up. Quotes already written keep the wording they were written with.');
+    } catch (e) {
+      console.error('Error saving terms and conditions:', e);
+      alert('Could not save the terms.\n\n' + (e.message || 'Unknown error') + '\n\nNothing has been changed.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Quote Terms & Conditions</h2>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Edit Terms & Conditions for Quote PDFs
-          </label>
-          <textarea
-            value={termsContent}
-            onChange={(e) => setTermsContent(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            rows={20}
-            placeholder="Enter your terms and conditions..."
-          />
-        </div>
-        <div className="flex justify-end space-x-2">
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold">Quote Terms & Conditions</h3>
+        <p className="text-sm text-gray-600 mt-1">
+          The default wording printed at the end of every quote. A quote can still
+          override it on its own Quote Document tab.
+        </p>
+      </div>
+
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm flex items-center justify-between gap-3">
+          <span>{loadError}</span>
           <button
-            onClick={() => setTermsContent(localStorage.getItem('quoteTermsConditions') || '')}
-            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+            onClick={loadTerms}
+            className="px-3 py-1.5 border border-red-300 rounded-lg hover:bg-red-100 whitespace-nowrap"
           >
-            Reset
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-          >
-            Save Terms & Conditions
+            Try again
           </button>
         </div>
+      )}
+
+      <textarea
+        value={loading ? '' : termsContent}
+        onChange={(e) => setTermsContent(e.target.value)}
+        disabled={loading || !!loadError}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-50"
+        rows={20}
+        placeholder={loading ? 'Loading terms and conditions...' : 'Enter your terms and conditions...'}
+      />
+
+      <div className="flex justify-end space-x-2">
+        <button
+          onClick={loadTerms}
+          disabled={loading || saving}
+          className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
+        >
+          Discard changes
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={loading || saving || !!loadError}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save Terms & Conditions'}
+        </button>
       </div>
     </div>
   );
@@ -21258,6 +21420,7 @@ const loadUsers = async () => {
     ? [{ id: 'sage', name: 'Sage Integration', icon: 'Package' }]
     : []),
   { id: 'products', name: 'Products & Services', icon: 'Package' },
+  { id: 'terms', name: 'Quote Terms', icon: 'Layout' },
   // Owner accounts only. Someone who can edit the log is not audited by it.
   ...(user && user.isSuperAdmin
     ? [{ id: 'audit', name: 'Audit Log', icon: 'Layout' }]
@@ -22179,6 +22342,9 @@ const loadUsers = async () => {
                           </div>
                         )}
                       </div>
+                    )}
+                    {configSection === 'terms' && (
+                      <TermsSettings />
                     )}
                     {configSection === 'audit' && user?.isSuperAdmin && (
                       <div className="space-y-4">
@@ -28527,6 +28693,8 @@ handlePhoneSearch={handlePhoneSearch}
     suppliers={suppliers}
     sageProducts={sageProducts}  // ADD THIS LINE
     user={user}  // ADD THIS LINE
+    jobs={jobs}
+    quotes={quotes}
   />
 )}
             </div>
@@ -32387,13 +32555,22 @@ window.location.href = '/#sage-integration';  // Keep this line!
        // Replace the existing QuoteForm component (around line 7141) with this FULLY TESTED version:
 
 // Quote Form Component - UPDATED TO MATCH JOB FORM LAYOUT
-const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user }) => {
+const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user, jobs = [], quotes = [] }) => {
   // Suppliers currently shown as columns in the price comparison grid, and the
   // box for adding another. Display state only: the prices themselves live on
   // the line items, so nothing here reaches the database.
   const [extraCompareSuppliers, setExtraCompareSuppliers] = useState([]);
   const [newCompareSupplier, setNewCompareSupplier] = useState('');
   const [showCompare, setShowCompare] = useState(true);
+  // Every past price for every product, gathered once per form rather than once
+  // per cell. Jobs and quotes arrive as props so this never touches the database
+  // and cannot be caught by RLS on the login screen.
+  // The quote being edited is excluded, otherwise every price you have just
+  // typed comes straight back at you as its own history.
+  const priceHistory = React.useMemo(
+    () => buildPriceHistory(jobs, (quotes || []).filter(q => !quote?.id || q.id !== quote.id)),
+    [jobs, quotes, quote?.id]
+  );
   const [quoteAttachments, setQuoteAttachments] = useState([]);
   const [uploadFile, setUploadFile] = useState(null);
   const [defaultTerms, setDefaultTerms] = useState('');
@@ -33088,6 +33265,51 @@ By approving this quotation and authorising us to commence services, you acknowl
                   </div>
                 </div>
               </div>
+
+              {/* Whether the customer's PDF shows the totals block. Moved here
+                  from Quote Details: it only affects the document, so it belongs
+                  with the rest of the document settings. Default is hidden. */}
+              <div className="border-t pt-5">
+                <label htmlFor="hidePrices" className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    id="hidePrices"
+                    checked={formData.hidePricesOnPDF !== false}
+                    onChange={(e) => setFormData({...formData, hidePricesOnPDF: e.target.checked})}
+                    className="mr-3 h-4 w-4"
+                  />
+                  <span className="text-sm text-gray-700 font-medium">
+                    Hide totals section on PDF (remove subtotal, VAT and grand total)
+                  </span>
+                </label>
+              </div>
+
+              {/* Terms and conditions. These belong on the Quote Document tab
+                  with everything else that ends up on the customer's PDF. They
+                  used to sit halfway down Quote Details, between the totals and
+                  the product picker, where they were only ever in the way. */}
+              <div className="border-t pt-5">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-800">Terms & conditions</h3>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, terms_conditions: defaultTerms })}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+                  >
+                    Load default
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mb-2">
+                  Printed at the end of the quote. Only worth editing if this one needs something different from the standard terms.
+                </p>
+                <textarea
+                  value={formData.terms_conditions || defaultTerms}
+                  onChange={(e) => setFormData({...formData, terms_conditions: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  rows={10}
+                  placeholder="Loading terms and conditions..."
+                />
+              </div>
             </div>
           )}
 
@@ -33564,17 +33786,31 @@ By approving this quotation and authorising us to commence services, you acknowl
 
                     {showCompare && (() => {
                       const items = formData.lineItems || [];
-                      // Columns are whatever suppliers already have a price against
-                      // any line, plus any added by hand, plus the ones already
-                      // chosen on lines. Order is stable so cells do not jump about.
+                      // What this product last cost from each supplier, so the grid
+                      // opens with something in it instead of making you work from
+                      // memory. Matched on product name alone: 6F5 by the tonne and
+                      // 6F5 by the load are the same material, so the unit travels
+                      // with the price and is spelled out when it differs.
+                      const historyFor = (it) => priceHistory.get(normaliseProductKey(it.product_name || it.description)) || null;
+                      // Columns are the suppliers already priced or chosen on this
+                      // quote, then anyone who has priced these products before,
+                      // then any added by hand. Order is stable so cells do not jump
+                      // about as prices are typed in.
                       const fromPrices = [];
+                      const addColumn = (value) => {
+                        const name = String(value || '').trim();
+                        if (!name || name === MULTIPLE_SUPPLIERS || fromPrices.includes(name)) return;
+                        fromPrices.push(name);
+                      };
                       items.forEach(it => {
-                        (it.sourcing || []).forEach(e => {
-                          if (e && e.supplier_name && !fromPrices.includes(e.supplier_name)) fromPrices.push(e.supplier_name);
-                        });
-                        if (it.supplier_name && !fromPrices.includes(it.supplier_name)) fromPrices.push(it.supplier_name);
+                        (it.sourcing || []).forEach(e => { if (e) addColumn(e.supplier_name); });
+                        addColumn(it.supplier_name);
                       });
-                      extraCompareSuppliers.forEach(n => { if (!fromPrices.includes(n)) fromPrices.push(n); });
+                      items.forEach(it => {
+                        const hist = historyFor(it);
+                        if (hist) Array.from(hist.suppliers.keys()).forEach(addColumn);
+                      });
+                      extraCompareSuppliers.forEach(addColumn);
                       const columns = fromPrices;
 
                       const priceFor = (it, supplierName) => {
@@ -33609,13 +33845,23 @@ By approving this quotation and authorising us to commence services, you acknowl
                         setFormData({ ...formData, lineItems: updatedItems });
                       };
 
-                      const cheapestFor = (it) => {
-                        let best = null;
-                        (it.sourcing || []).forEach(e => {
-                          const n = parseFloat(e && e.price);
-                          if (!isNaN(n) && n > 0 && (best === null || n < best)) best = n;
-                        });
-                        return best;
+                      // The grey line under each box. The unit is only spelled out
+                      // when the old price was gathered on a different basis from
+                      // the line being priced, so a per-load figure can never be
+                      // mistaken for a per-tonne one.
+                      const describePast = (past, rowUnit) => {
+                        if (!past) return NO_HISTORY;
+                        const differentUnit = past.unit && rowUnit && past.unit !== rowUnit;
+                        const when = formatPriceMonth(past.date);
+                        return 'was ' + past.price.toFixed(2)
+                          + (differentUnit ? '/' + past.unit : '')
+                          + (when ? ' \u00b7 ' + when : '');
+                      };
+
+                      const setSell = (lineIndex, value) => {
+                        const updatedItems = [...items];
+                        updatedItems[lineIndex] = { ...updatedItems[lineIndex], customer_price: value };
+                        setFormData({ ...formData, lineItems: updatedItems });
                       };
 
                       return (
@@ -33684,15 +33930,23 @@ By approving this quotation and authorising us to commence services, you acknowl
                                         </div>
                                       </th>
                                     ))}
+                                    <th className="px-2 py-2 text-left text-xs font-medium min-w-[110px] border-l border-gray-200">
+                                      Our price
+                                    </th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {items.map((it, lineIndex) => {
-                                    const best = cheapestFor(it);
+                                    const hist = historyFor(it);
+                                    const rowUnit = it.unit || '';
+                                    const lastSell = hist ? hist.sell : null;
                                     return (
-                                      <tr key={it.id || lineIndex} className="border-t">
+                                      <tr key={it.id || lineIndex} className="border-t align-top">
                                         <td className="px-3 py-2 sticky left-0 bg-white">
                                           <div className="font-medium text-xs">{it.product_name || it.description || 'Line ' + (lineIndex + 1)}</div>
+                                          {rowUnit && (
+                                            <div className="text-xs text-gray-400">per {rowUnit}</div>
+                                          )}
                                           {it.supplier_name && (
                                             <div className="text-xs text-green-700">
                                               using {it.supplier_name}
@@ -33701,13 +33955,12 @@ By approving this quotation and authorising us to commence services, you acknowl
                                         </td>
                                         {columns.map(name => {
                                           const raw = priceFor(it, name);
-                                          const num = parseFloat(raw);
-                                          const isBest = best !== null && !isNaN(num) && num === best;
                                           const isChosen = it.supplier_name === name;
+                                          const past = hist ? hist.suppliers.get(name) : null;
                                           return (
                                             <td
                                               key={name}
-                                              className={`px-2 py-2 ${isChosen ? 'bg-green-50' : (isBest ? 'bg-yellow-50' : '')}`}
+                                              className={`px-2 py-2 ${isChosen ? 'bg-green-50' : ''}`}
                                             >
                                               <input
                                                 type="number"
@@ -33717,18 +33970,32 @@ By approving this quotation and authorising us to commence services, you acknowl
                                                 placeholder="-"
                                                 className="w-20 px-1 py-0.5 border border-gray-300 rounded text-xs"
                                               />
-                                              {(
-                                                <button
-                                                  type="button"
-                                                  onClick={() => choose(lineIndex, name)}
-                                                  className={`block mt-1 text-xs ${isChosen ? 'text-green-700 font-medium' : 'text-blue-600 hover:text-blue-800 underline'}`}
-                                                >
-                                                  {isChosen ? 'using' : 'use'}
-                                                </button>
-                                              )}
+                                              <div className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
+                                                {past ? describePast(past, rowUnit) : NO_HISTORY}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => choose(lineIndex, name)}
+                                                className={`block mt-1 text-xs ${isChosen ? 'text-green-700 font-medium' : 'text-blue-600 hover:text-blue-800 underline'}`}
+                                              >
+                                                {isChosen ? 'using' : 'use'}
+                                              </button>
                                             </td>
                                           );
                                         })}
+                                        <td className="px-2 py-2 border-l border-gray-200">
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            value={it.customer_price === 0 || it.customer_price ? it.customer_price : ''}
+                                            onChange={(e) => setSell(lineIndex, e.target.value)}
+                                            placeholder="-"
+                                            className="w-20 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                          />
+                                          <div className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
+                                            {lastSell ? describePast(lastSell, rowUnit) : NO_HISTORY}
+                                          </div>
+                                        </td>
                                       </tr>
                                     );
                                   })}
@@ -33739,7 +34006,7 @@ By approving this quotation and authorising us to commence services, you acknowl
 
                           {columns.length > 0 && items.length > 0 && (
                             <p className="text-xs text-gray-500 mt-2">
-                              Cheapest price on each row is shaded. Press "use" to put that supplier and cost on the line.
+                              Grey figures are the last price you had from that supplier for the same product. Press "use" to put that supplier and cost on the line.
                             </p>
                           )}
                         </div>
@@ -33789,29 +34056,6 @@ By approving this quotation and authorising us to commence services, you acknowl
                   </div>
                 </div>
               )}
-              {/* Hide totals checkbox - DEFAULT CHECKED */}
-<div className="mt-4 p-3 bg-gray-50 rounded-lg flex items-center">
-  <input
-    type="checkbox"
-    id="hidePrices"
-    checked={formData.hidePricesOnPDF !== false}  
-    onChange={(e) => setFormData({...formData, hidePricesOnPDF: e.target.checked})}
-    className="mr-3 h-4 w-4"
-  />
-  <label htmlFor="hidePrices" className="text-sm text-gray-700 font-medium">
-  Hide totals section on PDF (remove subtotal, VAT and grand total)
-</label>
-</div>
-<div className="mt-6 border-t pt-6">
-  <h3 className="text-lg font-semibold mb-3">Terms & Conditions for PDF</h3>
-  <textarea
-    value={formData.terms_conditions || defaultTerms}
-    onChange={(e) => setFormData({...formData, terms_conditions: e.target.value})}
-    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-    rows={10}
-    placeholder="Loading terms and conditions..."
-  />
-</div>
 
               {/* Add other job type product selectors */}
               {formData.jobType === 'Roll-on Roll-off' && (
