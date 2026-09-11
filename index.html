@@ -28857,6 +28857,18 @@ handlePhoneSearch={handlePhoneSearch}
     sageProducts={sageProducts}  // ADD THIS LINE
     user={user}  // ADD THIS LINE
     setSuppliers={setSuppliers}
+    addressSuggestions={addressSuggestions}
+    showAddressSuggestions={showAddressSuggestions}
+    setShowAddressSuggestions={setShowAddressSuggestions}
+    handleAddressSearch={handleAddressSearch}
+    contactSuggestions={contactSuggestions}
+    showContactSuggestions={showContactSuggestions}
+    setShowContactSuggestions={setShowContactSuggestions}
+    handleContactSearch={handleContactSearch}
+    phoneSuggestions={phoneSuggestions}
+    showPhoneSuggestions={showPhoneSuggestions}
+    setShowPhoneSuggestions={setShowPhoneSuggestions}
+    handlePhoneSearch={handlePhoneSearch}
   />
 )}
             </div>
@@ -32717,7 +32729,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
        // Replace the existing QuoteForm component (around line 7141) with this FULLY TESTED version:
 
 // Quote Form Component - UPDATED TO MATCH JOB FORM LAYOUT
-const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user, setSuppliers = () => {} }) => {
+const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user, setSuppliers = () => {}, addressSuggestions = [], showAddressSuggestions, setShowAddressSuggestions = () => {}, handleAddressSearch = () => {}, contactSuggestions = [], showContactSuggestions, setShowContactSuggestions = () => {}, handleContactSearch = () => {}, phoneSuggestions = [], showPhoneSuggestions, setShowPhoneSuggestions = () => {}, handlePhoneSearch = () => {} }) => {
   // Suppliers currently shown as columns in the price comparison grid, and the
   // box for adding another. Display state only: the prices themselves live on
   // the line items, so nothing here reaches the database.
@@ -34060,9 +34072,9 @@ By approving this quotation and authorising us to commence services, you acknowl
                     <table className="w-full border border-gray-300 rounded-lg bg-white stack-on-mobile">
                       <thead className="bg-gray-100">
                         <tr>
-                          <th className="px-4 py-3 text-left font-medium w-1/4">Product/Service</th>
+                          <th className="px-4 py-3 text-left font-medium w-44">Product/Service</th>
                           <th className="px-2 py-3 text-left font-medium w-40">Supplier</th>
-                          <th className="px-4 py-3 text-left font-medium w-1/3">Description (Editable)</th>
+                          <th className="px-4 py-3 text-left font-medium w-72 min-w-[16rem]">Description (Editable)</th>
                           <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
                           <th className="px-2 py-3 text-left font-medium w-24">Unit</th>
                           <th className="px-2 py-3 text-left font-medium w-20">Cost £</th>
@@ -34492,19 +34504,113 @@ By approving this quotation and authorising us to commence services, you acknowl
           {/* Site Information Tab - MATCHING JOB FORM */}
           {activeTab === 'site' && (
             <div className="space-y-4">
-              <div>
+              {/* Saved sites for this customer, exactly as the job form does it.
+                  Picking from the list keeps a site spelled the same way on the
+                  quote, the job and the transfer note, which is what makes the
+                  permit, CBDU and SIC code fill in later. */}
+              {(() => {
+                const mc = customers?.find(c => (c.name || c.companyName) === formData.customerName);
+                if (!mc) return null;
+                const sites = getCustomerSites(mc);
+
+                const norm = v => String(v || '').replace(/\s+/g, '').toLowerCase();
+                const current = sites.find(s =>
+                  norm(s.postcode) === norm(formData.sitePostcode) &&
+                  norm(s.address).startsWith(norm(formData.siteAddress1).slice(0, 12))
+                );
+
+                return (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <label className="block text-sm font-medium text-blue-900 mb-1">
+                      {sites.length > 0 ? 'Choose a saved site' : 'No saved sites yet'}
+                      <span className="font-normal text-blue-700 ml-1">
+                        ({sites.length} on file for {formData.customerName})
+                      </span>
+                    </label>
+                    {sites.length > 0 && (
+                      <select
+                        value={current ? (current.id || current.siteName) : ''}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          if (!id) return;
+                          const site = sites.find(s => (s.id || s.siteName) === id);
+                          if (!site) return;
+                          const split = splitOverflowFromLine1(site.address || '', '');
+                          setFormData({
+                            ...formData,
+                            siteAddress1: split.line1,
+                            siteAddress2: split.line2,
+                            sitePostcode: site.postcode || '',
+                            siteCity: site.city || formData.siteCity || '',
+                          });
+                          setShowAddressSuggestions(false);
+                        }}
+                        className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm bg-white"
+                      >
+                        <option value="">
+                          {current ? siteLabel(current) : '— Select a site, or type an address below —'}
+                        </option>
+                        {sites.map(s => (
+                          <option key={s.id || s.siteName} value={s.id || s.siteName}>
+                            {siteLabel(s)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <p className="text-xs text-blue-700 mt-2">
+                      {current
+                        ? 'Matched to a saved site. Its permit, CBDU and SIC code will carry through to the job.'
+                        : 'Not one of the saved sites — fine for a one-off, but use the list where you can so the site name stays the same across quotes and jobs.'}
+                    </p>
+                  </div>
+                );
+              })()}
+
+              <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Site Address *</label>
-                {/* fix32k — line 1/2 capped at 50 chars to match Sage's
+                {/* Line 1 and 2 capped at 50 characters to match Sage's
                     address_line limit. */}
                 <input
                   type="text"
                   maxLength={50}
                   value={formData.siteAddress1}
-                  onChange={(e) => setFormData({...formData, siteAddress1: e.target.value})}
+                  onChange={(e) => {
+                    setFormData({...formData, siteAddress1: e.target.value});
+                    handleAddressSearch(e.target.value);
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-1"
                   placeholder="Street number and name (max 50 chars)"
                 />
                 <p className="text-xs text-gray-400 mb-2">{(formData.siteAddress1 || '').length}/50</p>
+
+                {showAddressSuggestions && addressSuggestions && addressSuggestions.length > 0 ? (
+                  <div className="absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                    {addressSuggestions.map((suggestion, index) => (
+                      <div
+                        key={index}
+                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                        onClick={() => {
+                          const split = splitOverflowFromLine1(suggestion.address || '', formData.siteAddress2 || '');
+                          setFormData({
+                            ...formData,
+                            siteAddress1: split.line1,
+                            siteAddress2: split.line2,
+                            sitePostcode: suggestion.postcode
+                          });
+                          setShowAddressSuggestions(false);
+                        }}
+                      >
+                        <div className="font-medium">{suggestion.address}</div>
+                        {suggestion.postcode ? (
+                          <div className="text-sm text-gray-600">{suggestion.postcode}</div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div>
                 <input
                   type="text"
                   maxLength={50}
@@ -34531,25 +34637,63 @@ By approving this quotation and authorising us to commence services, you acknowl
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Site Contact Name</label>
                   <input
                     type="text"
                     value={formData.siteContact}
-                    onChange={(e) => setFormData({...formData, siteContact: e.target.value})}
+                    onChange={(e) => {
+                      setFormData({...formData, siteContact: e.target.value});
+                      handleContactSearch(e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     placeholder="On-site contact person"
                   />
+                  {showContactSuggestions && contactSuggestions.length > 0 && (
+                    <div className="absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                      {contactSuggestions.map((contact, index) => (
+                        <div
+                          key={index}
+                          className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                          onClick={() => {
+                            setFormData({...formData, siteContact: contact});
+                            setShowContactSuggestions(false);
+                          }}
+                        >
+                          {contact}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Site Contact Phone</label>
                   <input
                     type="tel"
                     value={formData.sitePhone}
-                    onChange={(e) => setFormData({...formData, sitePhone: e.target.value})}
+                    onChange={(e) => {
+                      setFormData({...formData, sitePhone: e.target.value});
+                      handlePhoneSearch(e.target.value);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     placeholder="Mobile number"
                   />
+                  {showPhoneSuggestions && phoneSuggestions.length > 0 && (
+                    <div className="absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                      {phoneSuggestions.map((phone, index) => (
+                        <div
+                          key={index}
+                          className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                          onClick={() => {
+                            setFormData({...formData, sitePhone: phone});
+                            setShowPhoneSuggestions(false);
+                          }}
+                        >
+                          {phone}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
