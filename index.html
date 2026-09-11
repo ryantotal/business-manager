@@ -32388,9 +32388,12 @@ window.location.href = '/#sage-integration';  // Keep this line!
 
 // Quote Form Component - UPDATED TO MATCH JOB FORM LAYOUT
 const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user }) => {
-  // Which line items have their sourcing panel expanded. Display state only —
-  // deliberately not part of formData, so it never reaches the database.
-  const [openSourcing, setOpenSourcing] = useState({});
+  // Suppliers currently shown as columns in the price comparison grid, and the
+  // box for adding another. Display state only: the prices themselves live on
+  // the line items, so nothing here reaches the database.
+  const [extraCompareSuppliers, setExtraCompareSuppliers] = useState([]);
+  const [newCompareSupplier, setNewCompareSupplier] = useState('');
+  const [showCompare, setShowCompare] = useState(false);
   const [quoteAttachments, setQuoteAttachments] = useState([]);
   const [uploadFile, setUploadFile] = useState(null);
   const [defaultTerms, setDefaultTerms] = useState('');
@@ -33386,39 +33389,18 @@ By approving this quotation and authorising us to commence services, you acknowl
                                 <div className="text-xs text-gray-500">{item.item_code}</div>
                               </td>
                               <td className="px-2 py-3">
-                                {/* A plain select rather than SearchableDropdown: this cell sits
-                                    inside an overflow-x-auto wrapper, which clips an absolutely
-                                    positioned dropdown. Type-ahead still works in a native select. */}
-                                <select
+                                <input
+                                  type="text"
+                                  list="tws-supplier-options"
                                   value={item.supplier_name || ''}
                                   onChange={(e) => {
                                     const updatedItems = [...formData.lineItems];
                                     updatedItems[index] = { ...updatedItems[index], supplier_name: e.target.value };
                                     setFormData({ ...formData, lineItems: updatedItems });
                                   }}
+                                  placeholder="Type to search"
                                   className={`w-full px-2 py-1 border rounded text-xs ${item.supplier_name ? 'border-gray-300' : 'border-amber-300 bg-amber-50'}`}
-                                >
-                                  <option value="">Not set</option>
-                                  {suppliers.map(s => {
-                                    const supplierLabel = s.name || s.companyName;
-                                    return (
-                                      <option key={s.id || supplierLabel} value={supplierLabel}>
-                                        {supplierLabel}
-                                      </option>
-                                    );
-                                  })}
-                                </select>
-                                <button
-                                  type="button"
-                                  onClick={() => setOpenSourcing(prev => ({ ...prev, [index]: !prev[index] }))}
-                                  className="mt-1 text-xs text-blue-600 hover:text-blue-800 underline"
-                                >
-                                  {(() => {
-                                    const n = (item.sourcing || []).length;
-                                    if (openSourcing[index]) return 'Hide prices';
-                                    return n > 0 ? 'Prices (' + n + ')' : 'Add prices';
-                                  })()}
-                                </button>
+                                />
                               </td>
                               <td className="px-4 py-3">
                                 <textarea
@@ -33545,138 +33527,229 @@ By approving this quotation and authorising us to commence services, you acknowl
                                 </div>
                               </td>
                             </tr>
-                            {openSourcing[index] && (
-                              <tr className="border-t bg-blue-50">
-                                <td colSpan={9} className="px-4 py-3">
-                                  <div className="text-xs font-medium text-gray-700 mb-2">
-                                    Prices for {item.product_name || 'this line'}
-                                    <span className="ml-2 font-normal text-gray-500">
-                                      internal only, never on the customer's quote
-                                    </span>
-                                  </div>
-
-                                  {sourcing.length === 0 && (
-                                    <p className="text-xs text-gray-500 mb-2">
-                                      Nothing recorded yet. Add what each supplier quoted, then apply the one you are going with.
-                                    </p>
-                                  )}
-
-                                  {sourcing.length > 0 && (
-                                    <table className="w-full mb-2 bg-white border border-gray-200 rounded">
-                                      <thead className="bg-gray-100">
-                                        <tr>
-                                          <th className="px-2 py-1 text-left text-xs font-medium w-1/3">Supplier</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium w-24">Price</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium">Note</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium w-32"></th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {sourcing
-                                          .map((entry, entryIndex) => ({ entry, entryIndex }))
-                                          .sort((a, b) => {
-                                            // A blank price means not quoted yet, or no reply.
-                                            // Those belong at the bottom, not at the top as if
-                                            // they were free.
-                                            const val = (row) => {
-                                              const n = parseFloat(row.entry.price);
-                                              return isNaN(n) ? Infinity : n;
-                                            };
-                                            return val(a) - val(b);
-                                          })
-                                          .map(({ entry, entryIndex }) => (
-                                            <tr key={entryIndex} className={entry.chosen ? 'bg-green-50' : ''}>
-                                              <td className="px-2 py-1">
-                                                <select
-                                                  value={entry.supplier_name || ''}
-                                                  onChange={(e) => {
-                                                    const entries = [...sourcing];
-                                                    entries[entryIndex] = { ...entries[entryIndex], supplier_name: e.target.value };
-                                                    updateSourcing(entries);
-                                                  }}
-                                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
-                                                >
-                                                  <option value="">Not set</option>
-                                                  {suppliers.map(s => {
-                                                    const supplierLabel = s.name || s.companyName;
-                                                    return (
-                                                      <option key={s.id || supplierLabel} value={supplierLabel}>
-                                                        {supplierLabel}
-                                                      </option>
-                                                    );
-                                                  })}
-                                                </select>
-                                              </td>
-                                              <td className="px-2 py-1">
-                                                <input
-                                                  type="number"
-                                                  step="0.01"
-                                                  value={entry.price === 0 || entry.price ? entry.price : ''}
-                                                  onChange={(e) => {
-                                                    const entries = [...sourcing];
-                                                    entries[entryIndex] = { ...entries[entryIndex], price: e.target.value };
-                                                    updateSourcing(entries);
-                                                  }}
-                                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
-                                                  placeholder="0.00"
-                                                />
-                                              </td>
-                                              <td className="px-2 py-1">
-                                                <input
-                                                  type="text"
-                                                  value={entry.note || ''}
-                                                  onChange={(e) => {
-                                                    const entries = [...sourcing];
-                                                    entries[entryIndex] = { ...entries[entryIndex], note: e.target.value };
-                                                    updateSourcing(entries);
-                                                  }}
-                                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
-                                                  placeholder="min 20t, not till Tuesday, no reply"
-                                                />
-                                              </td>
-                                              <td className="px-2 py-1 whitespace-nowrap">
-                                                {entry.chosen ? (
-                                                  <span className="text-xs font-medium text-green-700">Using this</span>
-                                                ) : (
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => applySourced(entryIndex)}
-                                                    disabled={!entry.supplier_name}
-                                                    className="px-2 py-1 bg-green-700 text-white rounded text-xs hover:bg-green-800 disabled:bg-gray-300"
-                                                  >
-                                                    Use
-                                                  </button>
-                                                )}
-                                                <button
-                                                  type="button"
-                                                  onClick={() => updateSourcing(sourcing.filter((_, i) => i !== entryIndex))}
-                                                  className="ml-2 text-xs text-red-600 hover:text-red-800"
-                                                >
-                                                  Remove
-                                                </button>
-                                              </td>
-                                            </tr>
-                                          ))}
-                                      </tbody>
-                                    </table>
-                                  )}
-
-                                  <button
-                                    type="button"
-                                    onClick={() => updateSourcing(sourcing.concat([{ supplier_name: '', price: '', note: '', chosen: false }]))}
-                                    className="px-3 py-1 border border-gray-300 bg-white rounded text-xs hover:bg-gray-50"
-                                  >
-                                    Add a supplier price
-                                  </button>
-                                </td>
-                              </tr>
-                            )}
+                            {/* The per-line price panel that sat here was replaced by the
+                                comparison grid below the table: same data, but every
+                                product and supplier visible at once rather than one
+                                line at a time. */}
                             </React.Fragment>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
+                  {/* One datalist shared by every supplier box on this form. */}
+                  <datalist id="tws-supplier-options">
+                    {suppliers.map(s => {
+                      const supplierLabel = s.name || s.companyName;
+                      return <option key={s.id || supplierLabel} value={supplierLabel} />;
+                    })}
+                  </datalist>
+
+                  {/* ---- Price comparison -------------------------------------
+                      Products down the side, suppliers across the top, prices in
+                      the middle. The same shape as the sourcing spreadsheet, so
+                      ringing round and jotting numbers works the way it already
+                      does, but the result stays attached to the quote. */}
+                  <div className="mt-4 border-t pt-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                      <h4 className="text-sm font-semibold text-gray-900">
+                        Price comparison
+                        <span className="ml-2 font-normal text-gray-500">internal only, never on the customer's quote</span>
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setShowCompare(v => !v)}
+                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                      >
+                        {showCompare ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+
+                    {showCompare && (() => {
+                      const items = formData.lineItems || [];
+                      // Columns are whatever suppliers already have a price against
+                      // any line, plus any added by hand, plus the ones already
+                      // chosen on lines. Order is stable so cells do not jump about.
+                      const fromPrices = [];
+                      items.forEach(it => {
+                        (it.sourcing || []).forEach(e => {
+                          if (e && e.supplier_name && !fromPrices.includes(e.supplier_name)) fromPrices.push(e.supplier_name);
+                        });
+                        if (it.supplier_name && !fromPrices.includes(it.supplier_name)) fromPrices.push(it.supplier_name);
+                      });
+                      extraCompareSuppliers.forEach(n => { if (!fromPrices.includes(n)) fromPrices.push(n); });
+                      const columns = fromPrices;
+
+                      const priceFor = (it, supplierName) => {
+                        const found = (it.sourcing || []).find(e => e && e.supplier_name === supplierName);
+                        return found ? found.price : '';
+                      };
+
+                      const setPrice = (lineIndex, supplierName, value) => {
+                        const updatedItems = [...items];
+                        const entries = [...(updatedItems[lineIndex].sourcing || [])];
+                        const at = entries.findIndex(e => e && e.supplier_name === supplierName);
+                        if (at === -1) entries.push({ supplier_name: supplierName, price: value, note: '', chosen: false });
+                        else entries[at] = { ...entries[at], price: value };
+                        updatedItems[lineIndex] = { ...updatedItems[lineIndex], sourcing: entries };
+                        setFormData({ ...formData, lineItems: updatedItems });
+                      };
+
+                      // Choosing a cell sets the line's supplier and cost together,
+                      // so the two can never disagree with the price that was picked.
+                      const choose = (lineIndex, supplierName) => {
+                        const updatedItems = [...items];
+                        const entries = (updatedItems[lineIndex].sourcing || []).map(e => ({
+                          ...e, chosen: e.supplier_name === supplierName
+                        }));
+                        const picked = entries.find(e => e.supplier_name === supplierName);
+                        updatedItems[lineIndex] = {
+                          ...updatedItems[lineIndex],
+                          sourcing: entries,
+                          supplier_name: supplierName,
+                          supplier_price: parseFloat(picked && picked.price) || 0
+                        };
+                        setFormData({ ...formData, lineItems: updatedItems });
+                      };
+
+                      const cheapestFor = (it) => {
+                        let best = null;
+                        (it.sourcing || []).forEach(e => {
+                          const n = parseFloat(e && e.price);
+                          if (!isNaN(n) && n > 0 && (best === null || n < best)) best = n;
+                        });
+                        return best;
+                      };
+
+                      return (
+                        <div>
+                          <div className="flex gap-2 mb-2">
+                            <input
+                              type="text"
+                              list="tws-supplier-options"
+                              value={newCompareSupplier}
+                              onChange={(e) => setNewCompareSupplier(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key !== 'Enter') return;
+                                e.preventDefault();
+                                const name = newCompareSupplier.trim();
+                                if (name && !columns.includes(name)) setExtraCompareSuppliers(prev => prev.concat([name]));
+                                setNewCompareSupplier('');
+                              }}
+                              placeholder="Add a supplier to compare"
+                              className="flex-1 sm:flex-none sm:w-64 px-3 py-1.5 border border-gray-300 rounded text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const name = newCompareSupplier.trim();
+                                if (name && !columns.includes(name)) setExtraCompareSuppliers(prev => prev.concat([name]));
+                                setNewCompareSupplier('');
+                              }}
+                              className="px-3 py-1.5 bg-green-700 text-white rounded text-sm hover:bg-green-800"
+                            >
+                              Add
+                            </button>
+                          </div>
+
+                          {items.length === 0 && (
+                            <p className="text-xs text-gray-500">Add some products first.</p>
+                          )}
+
+                          {items.length > 0 && columns.length === 0 && (
+                            <p className="text-xs text-gray-500">
+                              Add a supplier above to start jotting prices against each product.
+                            </p>
+                          )}
+
+                          {items.length > 0 && columns.length > 0 && (
+                            <div className="overflow-x-auto">
+                              <table className="border border-gray-200 bg-white text-sm">
+                                <thead className="bg-gray-100">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left text-xs font-medium sticky left-0 bg-gray-100 min-w-[180px]">
+                                      Product
+                                    </th>
+                                    {columns.map(name => (
+                                      <th key={name} className="px-2 py-2 text-left text-xs font-medium min-w-[110px]">
+                                        <div className="flex items-center gap-1">
+                                          <span className="truncate" title={name}>{name}</span>
+                                          {extraCompareSuppliers.includes(name) && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setExtraCompareSuppliers(prev => prev.filter(n => n !== name))}
+                                              className="text-gray-400 hover:text-red-600"
+                                              title="Remove column"
+                                            >
+                                              &times;
+                                            </button>
+                                          )}
+                                        </div>
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {items.map((it, lineIndex) => {
+                                    const best = cheapestFor(it);
+                                    return (
+                                      <tr key={it.id || lineIndex} className="border-t">
+                                        <td className="px-3 py-2 sticky left-0 bg-white">
+                                          <div className="font-medium text-xs">{it.product_name || it.description || 'Line ' + (lineIndex + 1)}</div>
+                                          {it.supplier_name && (
+                                            <div className="text-xs text-green-700">
+                                              using {it.supplier_name}
+                                            </div>
+                                          )}
+                                        </td>
+                                        {columns.map(name => {
+                                          const raw = priceFor(it, name);
+                                          const num = parseFloat(raw);
+                                          const isBest = best !== null && !isNaN(num) && num === best;
+                                          const isChosen = it.supplier_name === name;
+                                          return (
+                                            <td
+                                              key={name}
+                                              className={`px-2 py-2 ${isChosen ? 'bg-green-50' : (isBest ? 'bg-yellow-50' : '')}`}
+                                            >
+                                              <input
+                                                type="number"
+                                                step="0.01"
+                                                value={raw === 0 || raw ? raw : ''}
+                                                onChange={(e) => setPrice(lineIndex, name, e.target.value)}
+                                                placeholder="-"
+                                                className="w-20 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                              />
+                                              {!isNaN(num) && num > 0 && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => choose(lineIndex, name)}
+                                                  className={`block mt-1 text-xs ${isChosen ? 'text-green-700 font-medium' : 'text-blue-600 hover:text-blue-800 underline'}`}
+                                                >
+                                                  {isChosen ? 'using' : 'use'}
+                                                </button>
+                                              )}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {columns.length > 0 && items.length > 0 && (
+                            <p className="text-xs text-gray-500 mt-2">
+                              Cheapest price on each row is shaded. Press "use" to put that supplier and cost on the line.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
                   <div className="mt-4 border-t pt-4">
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
                       <div className="text-center">
