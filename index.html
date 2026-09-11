@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+      <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -2087,7 +2087,10 @@ return (
           const [portalError, setPortalError] = useState('');
           const [portalUser, setPortalUser] = useState(null);
           const [portalJobs, setPortalJobs] = useState([]);
-          // Company document state removed along with the panel above.
+          const [loadingPortal, setLoadingPortal] = useState(false);
+          // The company document state that sat here was removed along with the
+          // panel it fed. loadingPortal was the line above it and is still used
+          // by the portal sign-in, so it stays.
 
           const handleLogin = async () => {
             try {
