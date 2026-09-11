@@ -710,6 +710,92 @@ function splitOverflowFromLine1(rawLine1, rawLine2) {
   return { line1: newLine1, line2: newLine2 };
 }
 
+// ---------------------------------------------------------------------------
+// Opening stored files
+//
+// Every upload has recorded a public URL of the form
+//   https://<project>.supabase.co/storage/v1/object/public/documents/<path>
+// which works because the bucket is world readable. That is being closed. Once
+// it is, those stored URLs are dead links, and files have to be fetched through
+// a signed URL that expires.
+//
+// The object path is recoverable from the URL itself, so no database backfill
+// is needed: the path is simply the tail of what is already stored.
+// ---------------------------------------------------------------------------
+
+const STORAGE_PUBLIC_PREFIX = '/storage/v1/object/public/documents/';
+const SIGNED_URL_SECONDS = 60 * 60;
+
+const storagePathFromUrl = (url) => {
+  const text = String(url || '');
+  const at = text.indexOf(STORAGE_PUBLIC_PREFIX);
+  if (at === -1) return '';
+  const tail = text.slice(at + STORAGE_PUBLIC_PREFIX.length).split('?')[0];
+  try { return decodeURIComponent(tail); } catch (e) { return tail; }
+};
+
+// Accepts an attachment or document row, or a bare URL string.
+const signedUrlForStoredFile = async (fileLike, portalToken) => {
+  const record = (fileLike && typeof fileLike === 'object') ? fileLike : { file_url: fileLike };
+  const storedUrl = record.file_url || record.url || '';
+  const path = record.file_path || storagePathFromUrl(storedUrl);
+  if (!path) return storedUrl || null;
+
+  // A portal visitor is anonymous to Supabase and cannot sign for itself, so it
+  // asks the server, which checks the portal session before signing.
+  if (portalToken) {
+    try {
+      const res = await fetch('/api/portal-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: portalToken, path })
+      });
+      if (res.ok) {
+        const body = await res.json();
+        if (body && body.url) return body.url;
+      }
+    } catch (e) {
+      console.warn('[storage] portal signing failed, falling back:', e);
+    }
+  }
+
+  try {
+    const { data, error } = await window.supabase.storage
+      .from('documents')
+      .createSignedUrl(path, SIGNED_URL_SECONDS);
+    if (!error && data && data.signedUrl) return data.signedUrl;
+  } catch (e) {
+    console.warn('[storage] could not sign', path, e);
+  }
+
+  // Last resort: whatever was stored. Works while the bucket is still public
+  // and fails visibly rather than silently once it is not.
+  return storedUrl || null;
+};
+
+// Opens a stored file in a new tab.
+//
+// The blank tab is opened synchronously, before any await. Safari blocks
+// window.open once the click that triggered it has finished being handled,
+// which is the same trap that sank the owner portal button.
+const openStoredFile = (fileLike, portalToken) => {
+  const tab = window.open('', '_blank');
+  signedUrlForStoredFile(fileLike, portalToken)
+    .then((url) => {
+      if (!url) {
+        if (tab) tab.close();
+        alert('That file could not be opened. It may have been removed.');
+        return;
+      }
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+    })
+    .catch((err) => {
+      if (tab) tab.close();
+      alert('That file could not be opened: ' + err.message);
+    });
+};
+
 // Line items are stored under four different names depending on how old the
 // record is, and sometimes as a JSON string rather than an array. Every reader
 // in this file re-implements that; this is the one place that does it properly.
@@ -2001,22 +2087,7 @@ return (
           const [portalError, setPortalError] = useState('');
           const [portalUser, setPortalUser] = useState(null);
           const [portalJobs, setPortalJobs] = useState([]);
-          const [loadingPortal, setLoadingPortal] = useState(false);
-          // Our insurance certificates and policies, shown to every customer.
-          // Expired ones are filtered out here rather than in the query, so an
-          // out-of-date certificate is never handed to a customer.
-          const [portalDocs, setPortalDocs] = useState([]);
-          const [showPortalDocs, setShowPortalDocs] = useState(false);
-          React.useEffect(() => {
-            if (!portalUser) return;
-            (async () => {
-              const all = await loadCompanyDocuments();
-              setPortalDocs(all.filter(d => {
-                const exp = documentExpiryState(d);
-                return !exp || exp.state !== 'expired';
-              }));
-            })();
-          }, [portalUser]);
+          // Company document state removed along with the panel above.
 
           const handleLogin = async () => {
             try {
@@ -2509,62 +2580,11 @@ return (
                       { label: 'Scheduled', val: inProgress.length, color: 'orange', filter: 'inprogress' },
                     ];
                     return (<>
-                  {/* ── Our insurance & policies ──────────────────────────
-                      Collapsed by default so it doesn't push the job list
-                      down; customers only need it occasionally, usually when
-                      onboarding us as a supplier. */}
-                  {portalDocs.length > 0 && (
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                      <button
-                        onClick={() => setShowPortalDocs(v => !v)}
-                        className="w-full flex items-center justify-between gap-3 px-3 sm:px-5 py-3 hover:bg-gray-50 text-left"
-                      >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <LucideIcon icon="FileText" size={18} className="text-green-600 flex-shrink-0" />
-                          <span className="font-semibold text-gray-800 text-sm">
-                            Our Insurance &amp; Policies
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            ({portalDocs.length} document{portalDocs.length === 1 ? '' : 's'})
-                          </span>
-                        </span>
-                        <span className="text-gray-400 text-sm flex-shrink-0">{showPortalDocs ? '\u25b2' : '\u25bc'}</span>
-                      </button>
-                      {showPortalDocs && (
-                        <div className="border-t border-gray-200 divide-y divide-gray-100">
-                          <p className="px-3 sm:px-5 py-2.5 text-xs text-gray-500 bg-gray-50">
-                            Our current certificates and policies. Download anything you need
-                            for your own records or supplier onboarding.
-                          </p>
-                          {portalDocs.map(doc => {
-                            const exp = documentExpiryState(doc);
-                            return (
-                              <a
-                                key={doc.id}
-                                href={doc.file_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-3 px-3 sm:px-5 py-3 hover:bg-green-50"
-                              >
-                                <LucideIcon icon="FileText" size={18} className="text-gray-400 flex-shrink-0" />
-                                <span className="flex-1 min-w-0">
-                                  <span className="block text-sm font-medium text-gray-800 truncate">{doc.title}</span>
-                                  <span className="block text-xs text-gray-500">
-                                    {doc.file_size ? Math.round(doc.file_size / 1024) + ' KB' : 'Document'}
-                                    {exp && exp.state !== 'expired' && (
-                                      <span> · Valid to {exp.date.toLocaleDateString('en-GB')}</span>
-                                    )}
-                                  </span>
-                                </span>
-                                <span className="text-xs text-green-700 font-medium flex-shrink-0">Download</span>
-                              </a>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
+                  {/* The insurance and policy documents panel that sat here has
+                      been removed. Customers no longer download these themselves;
+                      the office sends them from the Documents tab when asked, which
+                      keeps a record of who was sent what and means none of it has
+                      to live in a publicly readable storage bucket. */}
                   <div className="grid grid-cols-3 gap-2 sm:gap-4">
                     {cards.map(({ label, val, color, filter }) => (
                       <button key={label} onClick={() => setPortalFilter(portalFilter === filter ? 'all' : filter)}
@@ -2750,7 +2770,7 @@ return (
                                         if (!pa) return null;
                                         const parsed = typeof pa === 'string' ? (() => { try { return JSON.parse(pa); } catch { return []; } })() : (Array.isArray(pa) ? pa : []);
                                         return parsed.map((att, i) => (
-                                          <button key={i} onClick={e => { e.stopPropagation(); window.open(att.file_url, '_blank'); }}
+                                          <button key={i} onClick={e => { e.stopPropagation(); openStoredFile(att, portalUser?.token); }}
                                             className="text-blue-600 hover:text-blue-800 text-xs font-medium flex items-center gap-1">
                                             📎 {att.label || 'Document'}
                                           </button>
@@ -2830,7 +2850,7 @@ return (
                                           if (parsed.length === 0) return null;
                                           return parsed.map((att, i) => (
                                             <div key={i} className="col-span-2 sm:col-span-3">
-                                              <button onClick={() => window.open(att.file_url, '_blank')}
+                                              <button onClick={() => openStoredFile(att, portalUser?.token)}
                                                 className="mt-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
                                                 📎 {att.label || att.file_name || 'View Document'}
                                               </button>
@@ -2981,7 +3001,7 @@ return (
                                       const portalAttachments = (job.portal_attachments || []);
                                       const parsed = typeof portalAttachments === 'string' ? (() => { try { return JSON.parse(portalAttachments); } catch { return []; } })() : (Array.isArray(portalAttachments) ? portalAttachments : []);
                                       return parsed.map((att, i) => (
-                                        <button key={i} onClick={() => window.open(att.file_url, '_blank')}
+                                        <button key={i} onClick={() => openStoredFile(att, portalUser?.token)}
                                           className="mt-2 w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
                                           📎 {att.label || att.file_name || 'View Document'}
                                         </button>
@@ -7339,6 +7359,7 @@ const [isEvent, setIsEvent] = useState(false);
   <div className="flex gap-2">
     <a 
       href={attachment.file_url} 
+      onClick={(e) => { e.preventDefault(); openStoredFile(attachment); }}
       target="_blank" 
       rel="noopener noreferrer"
       className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
@@ -11702,7 +11723,7 @@ job.status.replace('_', ' ')}
         <div key={attachment.id} className="flex items-center bg-white p-2 rounded border">
           <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
           <button
-            onClick={() => window.open(attachment.file_url)}
+            onClick={() => openStoredFile(attachment)}
             className="text-blue-600 hover:text-blue-800 text-sm"
           >
             View
@@ -14660,51 +14681,13 @@ window.TWS_SERVICES = TWS_SERVICES;
 //
 // Same documents for everyone; there's no per-customer visibility.
 // ─────────────────────────────────────────────────────────────────────────────
-async function loadCompanyDocuments() {
-  try {
-    // Staff manage these, so they need to see inactive and expired ones too.
-    // A visitor on a credit application form gets the published list through a
-    // function instead, and never reads the table.
-    let signedIn = false;
-    try {
-      const { data: sess } = await window.supabase.auth.getSession();
-      signedIn = !!(sess && sess.session);
-    } catch (e) { signedIn = false; }
+// loadCompanyDocuments removed. It read the company_documents table, which
+// does not exist, and fell back to public_company_documents() for anonymous
+// visitors. Both callers are gone: company documents are managed on the
+// Documents tab and sent out from there.
 
-    if (!signedIn) {
-      const { data, error } = await window.supabase.rpc('public_company_documents');
-      if (error) throw error;
-      return data || [];
-    }
-
-    const { data, error } = await window.supabase
-      .from('company_documents')
-      .select('*')
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true })
-      .order('title', { ascending: true });
-    if (error) throw error;
-    return data || [];
-  } catch (e) {
-    console.warn('[Company documents] load failed:', e.message);
-    return [];
-  }
-}
-
-// Certificates expire. Flag the ones that have, or are about to, so the
-// office notices before a customer does.
-function documentExpiryState(doc) {
-  if (!doc || !doc.expires_on) return null;
-  const d = new Date(doc.expires_on);
-  if (isNaN(d.getTime())) return null;
-  const days = Math.floor((d - new Date()) / 86400000);
-  if (days < 0)  return { state: 'expired', days: Math.abs(days), date: d };
-  if (days <= 30) return { state: 'soon', days: days, date: d };
-  return { state: 'ok', days: days, date: d };
-}
-
-window.loadCompanyDocuments = loadCompanyDocuments;
-window.documentExpiryState = documentExpiryState;
+// documentExpiryState went with them: expiry flagging existed only for the
+// company documents boxes that have been removed.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPANY IDENTIFIERS
@@ -17534,7 +17517,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
         </div>
         <div className="flex gap-2 flex-shrink-0">
           <button
-            onClick={() => window.open(attachment.file_url)}
+            onClick={() => openStoredFile(attachment)}
             className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
           >
             View
@@ -18584,7 +18567,7 @@ Total Waste Services Ltd`);
                         <span className="text-sm">{attachment.file_name} ({attachment.file_type})</span>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => window.open(attachment.file_url)}
+                            onClick={() => openStoredFile(attachment)}
                             className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
                           >
                             View
@@ -20954,10 +20937,7 @@ const handleApplySync = async () => {
           // by" blocks, VAT and company number in the page footer.
 
           const [portalUrlSetting, setPortalUrlSetting] = useState(localStorage.getItem('portalUrl') || 'https://portal.totalwasteservicesltd.com');
-          // Insurance and policy documents shown to every customer in the portal.
-          const [companyDocs, setCompanyDocs] = useState([]);
-          const [docUploading, setDocUploading] = useState(false);
-          React.useEffect(() => { (async () => setCompanyDocs(await loadCompanyDocuments()))(); }, []);
+          // Company document state removed along with the section below.
           const [editingJobType, setEditingJobType] = useState('');
           const [newType, setNewType] = useState('');
           const [logo, setLogo] = useState(localStorage.getItem('companyLogo') || '');
@@ -21566,121 +21546,12 @@ const loadUsers = async () => {
                           </div>
                         </div>
 
-                        {/* ── Insurance & policy documents ────────────────
-                            Uploaded once here, visible to every customer in
-                            the portal. Saves emailing certificates out one at
-                            a time whenever a customer asks. */}
-                        <div className="border border-purple-200 bg-purple-50 rounded-lg p-4 space-y-3">
-                          <div className="flex items-start justify-between gap-3 flex-wrap">
-                            <div>
-                              <h4 className="font-semibold text-purple-900 text-sm">Insurance & Policy Documents</h4>
-                              <p className="text-xs text-purple-700 mt-0.5">
-                                Every customer can view and download these from their portal.
-                                Insurance certificates, waste carrier licence, environmental and
-                                health &amp; safety policies.
-                              </p>
-                            </div>
-                            <label className={`px-3 py-2 rounded-lg text-sm font-medium cursor-pointer ${docUploading ? 'bg-gray-300 text-gray-500' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
-                              {docUploading ? 'Uploading\u2026' : '+ Upload document'}
-                              <input
-                                type="file"
-                                className="hidden"
-                                disabled={docUploading}
-                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                                onChange={async (e) => {
-                                  const file = e.target.files && e.target.files[0];
-                                  if (!file) return;
-                                  e.target.value = '';
-                                  if (file.size > 15 * 1024 * 1024) {
-                                    alert('That file is over 15MB. Please compress it or upload a smaller version.');
-                                    return;
-                                  }
-                                  const title = window.prompt(
-                                    'What should customers see this called?',
-                                    file.name.replace(/\.[^.]+$/, '')
-                                  );
-                                  if (title === null) return;
-                                  const expiry = window.prompt(
-                                    'Expiry date, if it has one (YYYY-MM-DD).\n\nLeave blank for policies that do not expire.',
-                                    ''
-                                  );
-                                  setDocUploading(true);
-                                  try {
-                                    const safe = file.name.replace(/[^A-Za-z0-9._-]/g, '_');
-                                    const path = 'company/' + Date.now() + '_' + safe;
-                                    const { error: upErr } = await window.supabase.storage
-                                      .from('documents').upload(path, file);
-                                    if (upErr) throw upErr;
-                                    const { data: { publicUrl } } = window.supabase.storage
-                                      .from('documents').getPublicUrl(path);
-                                    const { error: insErr } = await window.supabase
-                                      .from('company_documents')
-                                      .insert([{
-                                        title: (title || file.name).trim(),
-                                        file_name: file.name,
-                                        file_url: publicUrl,
-                                        file_size: file.size,
-                                        expires_on: (expiry || '').trim() || null,
-                                        sort_order: (companyDocs.length + 1) * 10,
-                                        is_active: true,
-                                      }]);
-                                    if (insErr) throw insErr;
-                                    setCompanyDocs(await loadCompanyDocuments());
-                                  } catch (err) {
-                                    alert('Could not upload: ' + err.message);
-                                  } finally {
-                                    setDocUploading(false);
-                                  }
-                                }}
-                              />
-                            </label>
-                          </div>
-
-                          {companyDocs.length === 0 ? (
-                            <p className="text-xs text-purple-600 bg-white border border-purple-100 rounded-lg px-3 py-2">
-                              Nothing uploaded yet. Customers will see an empty section until you add something.
-                            </p>
-                          ) : (
-                            <div className="bg-white border border-purple-100 rounded-lg divide-y divide-gray-100">
-                              {companyDocs.map(doc => {
-                                const exp = documentExpiryState(doc);
-                                return (
-                                  <div key={doc.id} className="flex items-center gap-3 px-3 py-2.5">
-                                    <LucideIcon icon="FileText" size={18} className="text-purple-600 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-sm font-medium text-gray-800 truncate">{doc.title}</div>
-                                      <div className="text-xs text-gray-500">
-                                        {doc.file_name}
-                                        {doc.file_size ? ' \u00b7 ' + Math.round(doc.file_size / 1024) + ' KB' : ''}
-                                        {exp && exp.state === 'expired' && (
-                                          <span className="text-red-600 font-medium"> · Expired {exp.date.toLocaleDateString('en-GB')}</span>
-                                        )}
-                                        {exp && exp.state === 'soon' && (
-                                          <span className="text-amber-600 font-medium"> · Expires in {exp.days} day{exp.days === 1 ? '' : 's'}</span>
-                                        )}
-                                        {exp && exp.state === 'ok' && (
-                                          <span> · Valid to {exp.date.toLocaleDateString('en-GB')}</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer"
-                                      className="text-xs text-purple-700 hover:underline flex-shrink-0">View</a>
-                                    <button
-                                      onClick={async () => {
-                                        if (!confirm('Remove "' + doc.title + '" from the customer portal?')) return;
-                                        try {
-                                          await window.supabase.from('company_documents')
-                                            .update({ is_active: false }).eq('id', doc.id);
-                                          setCompanyDocs(await loadCompanyDocuments());
-                                        } catch (err) { alert('Could not remove: ' + err.message); }
-                                      }}
-                                      className="text-xs text-red-600 hover:underline flex-shrink-0">Remove</button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
+                        {/* The insurance and policy documents box that sat here has
+                            been removed. It read a company_documents table that was
+                            never created, which is where the 404 and the
+                            "relation does not exist" warning came from. Company
+                            documents live on the Documents tab, in the documents
+                            table, and are sent to customers from there. */}
 
                         {/* Company contact details — these appear on the quote PDF */}
                         <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
@@ -22900,12 +22771,13 @@ const DocumentsView = ({ user }) => {
         let totalBytes = 0;
         for (const doc of selectedDocs) {
           let blob = null;
-          if (doc.file_path) {
+          const docPath = doc.file_path || storagePathFromUrl(doc.file_url);
+          if (docPath) {
             // Read through the storage API rather than the public URL, so this
             // keeps working when the bucket is made private.
             const { data, error } = await window.supabase.storage
               .from('documents')
-              .download(doc.file_path);
+              .download(docPath);
             if (error) throw new Error('Could not read "' + (doc.name || 'document') + '": ' + error.message);
             blob = data;
           } else if (doc.file_url) {
@@ -22936,10 +22808,11 @@ const DocumentsView = ({ user }) => {
         const links = [];
         let anyPermanent = false;
         for (const doc of selectedDocs) {
-          if (doc.file_path) {
+          const docPath = doc.file_path || storagePathFromUrl(doc.file_url);
+          if (docPath) {
             const { data, error } = await window.supabase.storage
               .from('documents')
-              .createSignedUrl(doc.file_path, Number(linkDays) * 24 * 60 * 60);
+              .createSignedUrl(docPath, Number(linkDays) * 24 * 60 * 60);
             if (error) throw new Error('Could not create a link for "' + (doc.name || 'document') + '": ' + error.message);
             links.push((doc.name || displayFileName(doc)) + ':\n' + data.signedUrl);
           } else if (doc.file_url) {
@@ -23098,6 +22971,7 @@ const DocumentsView = ({ user }) => {
                 <div className="mt-2 flex gap-2">
                   <a 
                     href={doc.file_url} 
+                    onClick={(e) => { e.preventDefault(); openStoredFile(doc); }}
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="text-blue-500 hover:text-blue-700"
@@ -23946,6 +23820,14 @@ useEffect(() => {
   };
 
 useEffect(() => {
+  // Both of these read tables that Row Level Security closes to anonymous
+  // visitors. This effect used to have an empty dependency array, so it ran
+  // once when the app mounted - which is on the login screen, before anyone has
+  // signed in. The Sage products query came back with zero rows and never ran
+  // again for the rest of the session, leaving the job and quote forms stuck on
+  // "Loading Sage products...". Whether it worked came down to whether session
+  // restore happened to finish first.
+  if (!user?.id) return;
   const loadSageProducts = async () => {
   try {
     // Paginated + filtered by active=true. Same rationale as customers /
@@ -23964,7 +23846,7 @@ useEffect(() => {
 };
   loadCustomersFromSupabase();
   loadSageProducts();
-}, []);
+}, [user?.id]);
 
 // 2 AM Full Sync with Phone Lookups
 // ⛔ DISABLED 30 Apr 2026 — this sync has multiple bugs that have been
@@ -30569,7 +30451,9 @@ window.location.href = '/#sage-integration';  // Keep this line!
                                   {doc.created_at ? ' \u00b7 ' + new Date(doc.created_at).toLocaleDateString('en-GB') : ''}
                                 </div>
                               </div>
-                              <a href={doc.file_url} target="_blank" rel="noopener noreferrer"
+                              <a href={doc.file_url}
+                                 onClick={(e) => { e.preventDefault(); openStoredFile(doc); }}
+                                 target="_blank" rel="noopener noreferrer"
                                  className="text-xs text-blue-600 hover:underline flex-shrink-0">Open</a>
                             </div>
                           ))}
@@ -34294,6 +34178,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                             <div className="flex gap-2">
                               <a
                                 href={attachment.file_url}
+                                onClick={(e) => { e.preventDefault(); openStoredFile(attachment); }}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
