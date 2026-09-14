@@ -7633,6 +7633,126 @@ const [isEvent, setIsEvent] = useState(false);
                 {/* ── RECURRING JOB TAB ── */}
                 {activeTab === 'recurring' && !isEvent && (
                   <div className="space-y-5 p-6">
+                        {/* ── The series ──────────────────────────────────────
+                            Changing the supplier here changes every future week.
+                            Jobs already booked but not yet done are updated too;
+                            anything finished keeps what it had, because a job
+                            that has happened is a record, not a plan. */}
+                        {job && job.id && (formData.isRecurring || job.parentJobId) && (
+                          <div className="border border-blue-200 rounded-lg overflow-hidden">
+                            <div className="bg-blue-50 px-4 py-3 border-b border-blue-200">
+                              <p className="text-sm font-semibold text-blue-900">
+                                {job.parentJobId ? 'The whole schedule' : 'This series'}
+                              </p>
+                              <p className="text-xs text-blue-700 mt-0.5">
+                                {job.parentJobId
+                                  ? 'This is one of the repeats. Changing anything here changes every future one, not just this job.'
+                                  : 'Applies from the next job onwards, and to any already booked.'}
+                              </p>
+                            </div>
+                            <div className="p-4 space-y-3">
+                              {seriesError && (
+                                <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
+                                  {seriesError}
+                                </div>
+                              )}
+                              {seriesSaved && (
+                                <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm">
+                                  {seriesSaved}
+                                </div>
+                              )}
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier from now on</label>
+                                <SearchableDropdown
+                                  options={suppliers}
+                                  value={seriesDraft.supplier_name}
+                                  onChange={(name) => setSeriesDraft(prev => ({ ...prev, supplier_name: name }))}
+                                  placeholder={formData.supplierName || 'Select supplier'}
+                                  displayField="name"
+                                  valueField="name"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  The carrier name and CBDU on future transfer notes follow this.
+                                </p>
+                              </div>
+
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={!!seriesDraft.is_paused}
+                                  onChange={(e) => setSeriesDraft(prev => ({ ...prev, is_paused: e.target.checked }))}
+                                  className="w-4 h-4 text-blue-600 rounded"
+                                />
+                                <span className="text-sm text-gray-700">
+                                  Pause this series (no new jobs created until unticked)
+                                </span>
+                              </label>
+
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  disabled={seriesSaving}
+                                  onClick={async () => {
+                                    setSeriesSaving(true);
+                                    setSeriesError('');
+                                    setSeriesSaved('');
+                                    try {
+                                      if (!(await jobSeriesAvailable())) {
+                                        setSeriesError('Series are not set up on the database yet, so this cannot be saved. Recurring jobs carry on working as before in the meantime.');
+                                        return;
+                                      }
+                                      // A weekly copy has no series of its own —
+                                      // the schedule belongs to the template job,
+                                      // so reach through to that one.
+                                      const templateId = job.parentJobId || job.parent_job_id || null;
+                                      const template = templateId
+                                        ? (jobs || []).find(j => j.id === templateId)
+                                        : null;
+                                      const anchor = template
+                                        ? template
+                                        : { ...job, ...formData, id: job.id };
+                                      if (templateId && !template) {
+                                        setSeriesError('Could not find the template job for this series. Open it directly and try there.');
+                                        return;
+                                      }
+                                      const existing = await ensureSeriesForJob(anchor);
+                                      if (!existing) {
+                                        setSeriesError('Could not open the series for this job.');
+                                        return;
+                                      }
+                                      const changes = {
+                                        supplier_name: seriesDraft.supplier_name || existing.supplier_name,
+                                        is_paused: !!seriesDraft.is_paused,
+                                        frequency: formData.recurringFrequency || existing.frequency || 'weekly',
+                                        end_date: formData.recurringEndDate || null,
+                                      };
+                                      const outcome = await saveSeriesAndCascade(existing.id, changes);
+                                      if (!outcome.saved) {
+                                        setSeriesError(outcome.error || 'Could not save the series.');
+                                        return;
+                                      }
+                                      setSeriesSaved(
+                                        outcome.updated > 0
+                                          ? 'Saved. ' + outcome.updated + ' job' + (outcome.updated === 1 ? '' : 's') + ' already booked were updated too.'
+                                          : 'Saved. It applies from the next job created.'
+                                      );
+                                      if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
+                                    } catch (e) {
+                                      console.error('Series save failed:', e);
+                                      setSeriesError(e.message || 'Could not save the series.');
+                                    } finally {
+                                      setSeriesSaving(false);
+                                    }
+                                  }}
+                                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                  {seriesSaving ? 'Saving...' : 'Save series'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                     <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                       <input
                         type="checkbox"
@@ -7721,108 +7841,6 @@ const [isEvent, setIsEvent] = useState(false);
                         })()}
 
 
-                        {/* ── The series ──────────────────────────────────────
-                            Changing the supplier here changes every future week.
-                            Jobs already booked but not yet done are updated too;
-                            anything finished keeps what it had, because a job
-                            that has happened is a record, not a plan. */}
-                        {job && job.id && (
-                          <div className="border border-blue-200 rounded-lg overflow-hidden">
-                            <div className="bg-blue-50 px-4 py-3 border-b border-blue-200">
-                              <p className="text-sm font-semibold text-blue-900">This series</p>
-                              <p className="text-xs text-blue-700 mt-0.5">
-                                Applies from the next job onwards, and to any already booked.
-                              </p>
-                            </div>
-                            <div className="p-4 space-y-3">
-                              {seriesError && (
-                                <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
-                                  {seriesError}
-                                </div>
-                              )}
-                              {seriesSaved && (
-                                <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm">
-                                  {seriesSaved}
-                                </div>
-                              )}
-
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier from now on</label>
-                                <SearchableDropdown
-                                  options={suppliers}
-                                  value={seriesDraft.supplier_name}
-                                  onChange={(name) => setSeriesDraft(prev => ({ ...prev, supplier_name: name }))}
-                                  placeholder={formData.supplierName || 'Select supplier'}
-                                  displayField="name"
-                                  valueField="name"
-                                />
-                                <p className="text-xs text-gray-500 mt-1">
-                                  The carrier name and CBDU on future transfer notes follow this.
-                                </p>
-                              </div>
-
-                              <label className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={!!seriesDraft.is_paused}
-                                  onChange={(e) => setSeriesDraft(prev => ({ ...prev, is_paused: e.target.checked }))}
-                                  className="w-4 h-4 text-blue-600 rounded"
-                                />
-                                <span className="text-sm text-gray-700">
-                                  Pause this series (no new jobs created until unticked)
-                                </span>
-                              </label>
-
-                              <div className="flex justify-end">
-                                <button
-                                  type="button"
-                                  disabled={seriesSaving}
-                                  onClick={async () => {
-                                    setSeriesSaving(true);
-                                    setSeriesError('');
-                                    setSeriesSaved('');
-                                    try {
-                                      if (!(await jobSeriesAvailable())) {
-                                        setSeriesError('Series are not set up on the database yet, so this cannot be saved. Recurring jobs carry on working as before in the meantime.');
-                                        return;
-                                      }
-                                      const existing = await ensureSeriesForJob({ ...job, ...formData, id: job.id });
-                                      if (!existing) {
-                                        setSeriesError('Could not open the series for this job.');
-                                        return;
-                                      }
-                                      const changes = {
-                                        supplier_name: seriesDraft.supplier_name || existing.supplier_name,
-                                        is_paused: !!seriesDraft.is_paused,
-                                        frequency: formData.recurringFrequency || existing.frequency || 'weekly',
-                                        end_date: formData.recurringEndDate || null,
-                                      };
-                                      const outcome = await saveSeriesAndCascade(existing.id, changes);
-                                      if (!outcome.saved) {
-                                        setSeriesError(outcome.error || 'Could not save the series.');
-                                        return;
-                                      }
-                                      setSeriesSaved(
-                                        outcome.updated > 0
-                                          ? 'Saved. ' + outcome.updated + ' job' + (outcome.updated === 1 ? '' : 's') + ' already booked were updated too.'
-                                          : 'Saved. It applies from the next job created.'
-                                      );
-                                      if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
-                                    } catch (e) {
-                                      console.error('Series save failed:', e);
-                                      setSeriesError(e.message || 'Could not save the series.');
-                                    } finally {
-                                      setSeriesSaving(false);
-                                    }
-                                  }}
-                                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                                >
-                                  {seriesSaving ? 'Saving...' : 'Save series'}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
                           <p className="font-semibold mb-1">⚠️ How it works</p>
                           <p>Save the job to lock in the recurring schedule. Each time a job is due, the system will automatically create it as a copy of this one and show a notification on your dashboard. You can cancel the recurring schedule at any time by editing the job.</p>
@@ -7872,7 +7890,7 @@ const [isEvent, setIsEvent] = useState(false);
                       </div>
                     )}
 
-                    {!formData.isRecurring && (
+                    {!formData.isRecurring && !job?.parentJobId && (
                       <div className="text-center py-10 text-gray-400">
                         <div className="text-5xl mb-3">🔁</div>
                         <p className="font-medium text-gray-500">Tick the box above to set up a recurring schedule</p>
