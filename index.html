@@ -4029,7 +4029,48 @@ const parseJobLineItems = (jobObj) => {
     lineDescription: li?.description || '',
     lineQty: li?.quantity || null,
     lineUnit: li?.unit || null,
+    // Per-line supplier, set on quotes and carried through on conversion.
+    supplierName: li?.supplier_name || li?.supplierName || '',
   }));
+};
+
+// Section C of a transfer note names the carrier taking the waste away. That
+// is a per-line fact: one job can tip at several suppliers, and each note has
+// to name the one that actually took that load. Resolved from the line's own
+// supplier, falling back to the job header only when the header names a single
+// real supplier. A header reading "Multiple" is a label, not a carrier, and
+// must never reach a transfer note — that is what produced notes with a blank
+// carrier registration.
+const resolveLineTransferee = (jobObj, lineItemIndex, suppliersList) => {
+  const meta = parseJobLineItems(jobObj);
+  const lineMeta = meta.find(m => m.lineItemIndex === lineItemIndex);
+  const headerName = String(jobObj?.supplierName || jobObj?.supplier_name || '').trim();
+  const lineName = String(lineMeta?.supplierName || '').trim();
+  const name = lineName || ((headerName && headerName !== MULTIPLE_SUPPLIERS) ? headerName : '');
+  if (!name) return null;
+
+  const match = Array.isArray(suppliersList)
+    ? suppliersList.find(s => String(s.name || s.companyName || '').trim().toLowerCase() === name.toLowerCase())
+    : null;
+
+  const sites = (() => {
+    const raw = match?.siteAddresses || match?.site_addresses;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try { return JSON.parse(raw); } catch (e) { return []; }
+  })();
+  const firstSite = sites.length > 0 ? sites[0] : null;
+
+  return {
+    name,
+    // Section C takes the supplier's registered address, never a site address.
+    address: match ? [match.address, match.city, match.county, match.postcode].filter(Boolean).join(', ') : '',
+    postcode: match?.postcode || '',
+    carrierReg: match?.wasteCarrierLicense || match?.waste_carrier_license || firstSite?.cbduNumber || '',
+    permitNumber: match?.environmentalPermit || match?.environmental_permit || '',
+    representing: name,
+    onFile: !!match,
+  };
 };
 
 // Phase 3 — build the default `lines` state. One entry per job line item.
@@ -4039,7 +4080,7 @@ const parseJobLineItems = (jobObj) => {
 // lines are NOT included by default — staff must tick to add a WTN. This
 // matches the historical behaviour where a single WTN was generated from
 // the first line item.
-const buildDefaultLines = (jobObj) => {
+const buildDefaultLines = (jobObj, suppliersList) => {
   const meta = parseJobLineItems(jobObj);
   if (meta.length === 0) {
     // No line items — synthesise a single placeholder line so the form
@@ -4071,6 +4112,7 @@ const buildDefaultLines = (jobObj) => {
     }];
   }
   return meta.map((m, i) => {
+    const lineTransferee = resolveLineTransferee(jobObj, m.lineItemIndex, suppliersList);
     const skipSize = jobObj?.skipSize || null;
     const productDesc = m.productName || (skipSize ? `${skipSize} Skip` : null) || jobObj?.sageProductName || null;
     const descParts = [productDesc];
@@ -4098,6 +4140,14 @@ const buildDefaultLines = (jobObj) => {
       // fix16: see synthesised-line case above
       disposalSitePermit: '',
       disposalSiteCarrierReg: '',
+      // Section C — the carrier for this line, resolved from the line's own
+      // supplier rather than the job header.
+      transfereeName: lineTransferee ? lineTransferee.name : '',
+      transfereeAddress: lineTransferee ? lineTransferee.address : '',
+      transfereePostcode: lineTransferee ? lineTransferee.postcode : '',
+      transfereeCarrierReg: lineTransferee ? lineTransferee.carrierReg : '',
+      transfereePermitNumber: lineTransferee ? lineTransferee.permitNumber : '',
+      transfereeRepresenting: lineTransferee ? lineTransferee.representing : '',
     };
   });
 };
@@ -4109,7 +4159,7 @@ const buildDefaultLines = (jobObj) => {
 // matching saved WTN are added with `included=false` so staff can tick
 // them to create new WTNs.
 const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
-  if (!Array.isArray(savedWtns) || savedWtns.length === 0) return buildDefaultLines(jobObj);
+  if (!Array.isArray(savedWtns) || savedWtns.length === 0) return buildDefaultLines(jobObj, suppliersList);
   const meta = parseJobLineItems(jobObj);
   // Map saved WTNs by line_item_index
   const savedByIdx = new Map();
@@ -4172,6 +4222,19 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
         // Preserve the saved row id and suffix so we can update in place
         // rather than insert duplicates.
         _savedId: saved.id,
+        // Section C, per line. What was saved wins, because a transfer note
+        // is a legal record of what was agreed at the time.
+        ...(() => {
+          const resolved = resolveLineTransferee(jobObj, i, suppliersList);
+          return {
+            transfereeName: saved.transfereeName || (resolved ? resolved.name : ''),
+            transfereeAddress: saved.transfereeAddress || (resolved ? resolved.address : ''),
+            transfereePostcode: saved.transfereePostcode || (resolved ? resolved.postcode : ''),
+            transfereeCarrierReg: saved.transfereeCarrierReg || (resolved ? resolved.carrierReg : ''),
+            transfereePermitNumber: saved.transfereePermitNumber || (resolved ? resolved.permitNumber : ''),
+            transfereeRepresenting: saved.transfereeRepresenting || (resolved ? resolved.representing : ''),
+          };
+        })(),
         _savedSuffix: saved.suffixLetter || null,
       });
     } else {
@@ -4200,6 +4263,17 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
         disposalSiteAddress: '',
         disposalSitePermit: '',
         disposalSiteCarrierReg: '',
+        ...(() => {
+          const resolved = resolveLineTransferee(jobObj, i, suppliersList);
+          return resolved ? {
+            transfereeName: resolved.name,
+            transfereeAddress: resolved.address,
+            transfereePostcode: resolved.postcode,
+            transfereeCarrierReg: resolved.carrierReg,
+            transfereePermitNumber: resolved.permitNumber,
+            transfereeRepresenting: resolved.representing,
+          } : {};
+        })(),
       });
     }
   }
@@ -4488,7 +4562,7 @@ const [wtnFields, setWtnFields] = useState(() => {
     // Phase 3 — per-line state. One entry per job line item; only the
     // first is included by default. The flat top-level fields above
     // mirror the first included line for legacy/email rendering.
-    lines: buildDefaultLines(job),
+    lines: buildDefaultLines(job, suppliers),
   };
 });
 
@@ -4855,12 +4929,11 @@ useEffect(() => {
           transferor_address: updated.transferorAddress || null,
           transferor_postcode: updated.transferorPostcode || null,
           transferor_representing: updated.transferorRepresenting || null,
-          transferee_name: updated.transfereeName || null,
-          transferee_address: updated.transfereeAddress || null,
-          transferee_postcode: updated.transfereePostcode || null,
-          transferee_carrier_reg: updated.transfereeCarrierReg || null,
-          transferee_permit_number: updated.transfereePermitNumber || null,
-          transferee_representing: updated.transfereeRepresenting || null,
+          // Section C is deliberately absent. It names the carrier taking the
+          // waste, and on a job that tips at more than one supplier that is a
+          // per-line fact. Patching it job-wide overwrote every note with
+          // whichever supplier happened to be on the job header, which on a
+          // multi-supplier job is the word "Multiple" and not a carrier at all.
           transfer_address: updated.transferAddress || null,
           transfer_date: updated.transferDate || null,
           transfer_time: updated.transferTime || null,
@@ -5433,6 +5506,13 @@ const buildMultiWtnHtml = (wtnFields, job) => {
       // fix16
       disposalSitePermit: line.disposalSitePermit || '',
       disposalSiteCarrierReg: line.disposalSiteCarrierReg || '',
+      // Section C — the carrier for this line, not for the job
+      transfereeName: line.transfereeName || wtnFields.transfereeName || '',
+      transfereeAddress: line.transfereeAddress || wtnFields.transfereeAddress || '',
+      transfereePostcode: line.transfereePostcode || wtnFields.transfereePostcode || '',
+      transfereeCarrierReg: line.transfereeCarrierReg || wtnFields.transfereeCarrierReg || '',
+      transfereePermitNumber: line.transfereePermitNumber || wtnFields.transfereePermitNumber || '',
+      transfereeRepresenting: line.transfereeRepresenting || wtnFields.transfereeRepresenting || '',
     };
     // Strip the `lines` array from the snapshot so buildWtnHtml only sees
     // the flat shape it was designed for.
@@ -24552,14 +24632,17 @@ function wtnFieldsToRows(wtnFields, jobId) {
       transferor_representing: wtnFields.transferorRepresenting || null,
       selected_transferor_site_id: wtnFields.selectedTransferorSiteId || null,
       // Section C — Transferee (shared)
-      transferee_name: wtnFields.transfereeName || null,
-      transferee_address: wtnFields.transfereeAddress || null,
-      transferee_postcode: wtnFields.transfereePostcode || null,
-      transferee_carrier_reg: wtnFields.transfereeCarrierReg || null,
-      transferee_permit_number: wtnFields.transfereePermitNumber || null,
+      // Section C — the carrier for this line. One job can tip at several
+      // suppliers, so each note records its own. Falls back to the job-wide
+      // value for single-supplier jobs and for anything saved before this.
+      transferee_name: line.transfereeName || wtnFields.transfereeName || null,
+      transferee_address: line.transfereeAddress || wtnFields.transfereeAddress || null,
+      transferee_postcode: line.transfereePostcode || wtnFields.transfereePostcode || null,
+      transferee_carrier_reg: line.transfereeCarrierReg || wtnFields.transfereeCarrierReg || null,
+      transferee_permit_number: line.transfereePermitNumber || wtnFields.transfereePermitNumber || null,
       selected_site_id: wtnFields.selectedSiteId || null,
       transferee_signature: wtnFields.transfereeSignature || null,
-      transferee_representing: wtnFields.transfereeRepresenting || null,
+      transferee_representing: line.transfereeRepresenting || wtnFields.transfereeRepresenting || null,
       // Section D — Transfer & broker (shared)
       transfer_address: wtnFields.transferAddress || null,
       transfer_date: wtnFields.transferDate || null,
@@ -32739,6 +32822,7 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
   // Phone numbers being typed on the Sourcing tab, keyed by supplier name, and
   // whichever one is mid-save. Nothing is written until Save is pressed.
   const [supplierPhoneDrafts, setSupplierPhoneDrafts] = useState({});
+  const [newSourcingProduct, setNewSourcingProduct] = useState('');
   const [savingSupplierName, setSavingSupplierName] = useState('');
   // Every past price for every product, gathered once per form rather than once
   // per cell. Jobs and quotes arrive as props so this never touches the database
@@ -33598,32 +33682,118 @@ By approving this quotation and authorising us to commence services, you acknowl
                   next best is still here.
                 </div>
 
-                <div className="max-w-sm">
-                  <SearchableDropdown
-                    options={suppliers}
-                    value={newCompareSupplier}
-                    onChange={(name) => {
-                      const picked = String(name || '').trim();
-                      if (picked && !columns.includes(picked)) {
-                        setExtraCompareSuppliers(prev => prev.concat([picked]));
-                      }
-                      setNewCompareSupplier('');
-                    }}
-                    placeholder="Add a supplier you have called"
-                    displayField="name"
-                    valueField="name"
-                    allowCustom={true}
-                    customHint="Not on the list — use this name anyway"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Pick from the supplier list where you can. A supplier off the
-                    list brings its phone number through to the job.
-                  </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
+                  <div>
+                    <SearchableDropdown
+                      options={suppliers}
+                      value={newCompareSupplier}
+                      onChange={(name) => {
+                        const picked = String(name || '').trim();
+                        if (picked && !columns.includes(picked)) {
+                          setExtraCompareSuppliers(prev => prev.concat([picked]));
+                        }
+                        setNewCompareSupplier('');
+                      }}
+                      placeholder="Add a supplier you have called"
+                      displayField="name"
+                      valueField="name"
+                      allowCustom={true}
+                      customHint="Not on the list — use this name anyway"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Pick from the supplier list where you can. A supplier off the
+                      list brings its phone number through to the job.
+                    </p>
+                  </div>
+                  <div>
+                    {/* Products can be added from here as well as from Quote
+                        Details. The ring-round is where a quote actually starts,
+                        so making someone build the product list on another tab
+                        first had the job the wrong way round. */}
+                    <SearchableDropdown
+                      options={sageProducts}
+                      value={newSourcingProduct}
+                      onChange={(name) => {
+                        const label = String(name || '').trim();
+                        if (!label) { setNewSourcingProduct(''); return; }
+                        const product = (sageProducts || []).find(pr => (pr.name || '') === label);
+                        const newLineItem = {
+                          id: Date.now(),
+                          sage_id: product ? product.sage_id : null,
+                          product_name: product ? product.name : label,
+                          description: product ? (product.description || product.name) : label,
+                          item_code: product ? product.item_code : null,
+                          type: product ? product.type : null,
+                          quantity: 1,
+                          unit: defaultUnitForJobType(formData.jobType),
+                          supplier_price: 0.00,
+                          customer_price: 0.00,
+                          unit_price: 0.00,
+                          discount: 0.00,
+                          vat_rate: 20,
+                          total: 0.00,
+                          sales_ledger_account: (product && product.sales_ledger_account) || 'dc4b88bb472b11e9aac702d5719f235e',
+                          nominal_code: (product && product.nominal_code) || 'dc4b88bb472b11e9aac702d5719f235e',
+                          tax_code: (product && product.tax_rate_id) || 'T1',
+                          supplier_name: '',
+                          sourcing: [],
+                        };
+                        // Identical to the picker on Quote Details: a real Sage
+                        // product also becomes the quote's headline product, which
+                        // is what several summary views fall back to when they
+                        // want one name for the job.
+                        setFormData({
+                          ...formData,
+                          lineItems: [...(formData.lineItems || []), newLineItem],
+                          ...(product ? { sageProductName: product.name, sage_id: product.sage_id } : {}),
+                        });
+                        setNewSourcingProduct('');
+                      }}
+                      placeholder="Add a product to price"
+                      displayField="name"
+                      valueField="name"
+                      allowCustom={true}
+                      customHint="Not a Sage product — add as a one-off"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Added here, it appears on the quote as well. A one-off has no
+                      Sage code, so set its description before the quote goes out.
+                    </p>
+                  </div>
                 </div>
+
+                {/* Whatever has been picked so far, shown whether or not there
+                    are products yet. Without this, adding a supplier to a brand
+                    new quote looked like nothing had happened: the grid below
+                    only draws once the quote has line items to price. */}
+                {columns.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {columns.map(name => (
+                      <span
+                        key={name}
+                        className="inline-flex items-center gap-2 bg-white border border-gray-300 rounded-full pl-3 pr-2 py-1 text-sm"
+                      >
+                        {name}
+                        {extraCompareSuppliers.includes(name) && (
+                          <button
+                            type="button"
+                            onClick={() => setExtraCompareSuppliers(prev => prev.filter(n => n !== name))}
+                            className="text-gray-400 hover:text-red-600 leading-none"
+                            title={'Remove ' + name}
+                          >
+                            &times;
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {items.length === 0 && (
                   <p className="text-sm text-gray-500">
-                    Add products on the Quote Details tab first, then come back here to price them.
+                    {columns.length > 0
+                      ? 'Suppliers saved. Add products on the Quote Details tab and their prices can go in here.'
+                      : 'Add the suppliers you have called, then add products on the Quote Details tab to price them against.'}
                   </p>
                 )}
 
@@ -33680,6 +33850,13 @@ By approving this quotation and authorising us to commence services, you acknowl
                                 {rowUnit && (
                                   <div className="text-xs text-gray-400">per {rowUnit}</div>
                                 )}
+                                <button
+                                  type="button"
+                                  onClick={() => setFormData({ ...formData, lineItems: items.filter((_, k) => k !== lineIndex) })}
+                                  className="text-xs text-gray-400 hover:text-red-600 underline"
+                                >
+                                  remove
+                                </button>
                                 {it.supplier_name && (
                                   <div className="text-xs text-green-700">using {it.supplier_name}</div>
                                 )}
