@@ -25817,7 +25817,10 @@ useEffect(() => {
           is_cancelled: false,
           hazardous_waste: rj.hazardous_waste,
           is_recurring: false, // copy itself is not recurring
-          job_date: today, // date job was actually created; scheduled date noted above
+          // The date the job is FOR, not the date the checker happened to run.
+          // It used to be stamped with today, so a schedule starting last
+          // Thursday produced a job dated today with a note saying otherwise.
+          job_date: rj.recurring_next_date || today,
           // Apply line item filter — only include items selected for recurring
           line_items: (() => {
             const allItems = rj.line_items ? (typeof rj.line_items === 'string' ? JSON.parse(rj.line_items) : rj.line_items) : [];
