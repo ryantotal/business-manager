@@ -33618,37 +33618,54 @@ By approving this quotation and authorising us to commence services, you acknowl
               return found ? found.price : '';
             };
 
+            // Every write on this tab updates from the previous state rather
+            // than from the copy captured when the tab rendered. Two changes in
+            // quick succession were otherwise able to overwrite each other,
+            // which is how a removed product could reappear.
+            const updateLines = (change) => {
+              setFormData(prev => ({ ...prev, lineItems: change(prev.lineItems || []) }));
+            };
+
             const setPrice = (lineIndex, supplierName, value) => {
-              const updatedItems = [...items];
-              const entries = [...(updatedItems[lineIndex].sourcing || [])];
-              const at = entries.findIndex(e => e && e.supplier_name === supplierName);
-              if (at === -1) entries.push({ supplier_name: supplierName, supplier_id: supplierIdFor(supplierName), price: value, note: '', chosen: false });
-              else entries[at] = { ...entries[at], price: value };
-              updatedItems[lineIndex] = { ...updatedItems[lineIndex], sourcing: entries };
-              setFormData({ ...formData, lineItems: updatedItems });
+              updateLines(current => {
+                const updatedItems = [...current];
+                if (!updatedItems[lineIndex]) return current;
+                const entries = [...(updatedItems[lineIndex].sourcing || [])];
+                const at = entries.findIndex(e => e && e.supplier_name === supplierName);
+                if (at === -1) entries.push({ supplier_name: supplierName, supplier_id: supplierIdFor(supplierName), price: value, note: '', chosen: false });
+                else entries[at] = { ...entries[at], price: value };
+                updatedItems[lineIndex] = { ...updatedItems[lineIndex], sourcing: entries };
+                return updatedItems;
+              });
             };
 
             // Choosing a cell sets the line's supplier and cost together, so the
             // two can never disagree with the price that was actually picked.
             const choose = (lineIndex, supplierName) => {
-              const updatedItems = [...items];
-              const entries = (updatedItems[lineIndex].sourcing || []).map(e => ({
-                ...e, chosen: e.supplier_name === supplierName
-              }));
-              const picked = entries.find(e => e.supplier_name === supplierName);
-              updatedItems[lineIndex] = {
-                ...updatedItems[lineIndex],
-                sourcing: entries,
-                supplier_name: supplierName,
-                supplier_price: parseFloat(picked && picked.price) || 0
-              };
-              setFormData({ ...formData, lineItems: updatedItems });
+              updateLines(current => {
+                const updatedItems = [...current];
+                if (!updatedItems[lineIndex]) return current;
+                const entries = (updatedItems[lineIndex].sourcing || []).map(e => ({
+                  ...e, chosen: e.supplier_name === supplierName
+                }));
+                const picked = entries.find(e => e.supplier_name === supplierName);
+                updatedItems[lineIndex] = {
+                  ...updatedItems[lineIndex],
+                  sourcing: entries,
+                  supplier_name: supplierName,
+                  supplier_price: parseFloat(picked && picked.price) || 0
+                };
+                return updatedItems;
+              });
             };
 
             const setSell = (lineIndex, value) => {
-              const updatedItems = [...items];
-              updatedItems[lineIndex] = { ...updatedItems[lineIndex], customer_price: value };
-              setFormData({ ...formData, lineItems: updatedItems });
+              updateLines(current => {
+                const updatedItems = [...current];
+                if (!updatedItems[lineIndex]) return current;
+                updatedItems[lineIndex] = { ...updatedItems[lineIndex], customer_price: value };
+                return updatedItems;
+              });
             };
 
             // A note belongs to the phone call, not to one price, so it is held
@@ -33664,14 +33681,17 @@ By approving this quotation and authorising us to commence services, you acknowl
             };
 
             const setNote = (supplierName, value) => {
-              const updatedItems = items.map(it => {
+              updateLines(current => current.map(it => {
                 const entries = [...(it.sourcing || [])];
                 const at = entries.findIndex(e => e && e.supplier_name === supplierName);
                 if (at === -1) entries.push({ supplier_name: supplierName, supplier_id: supplierIdFor(supplierName), price: '', note: value, chosen: false });
                 else entries[at] = { ...entries[at], note: value };
                 return { ...it, sourcing: entries };
-              });
-              setFormData({ ...formData, lineItems: updatedItems });
+              }));
+            };
+
+            const removeLine = (lineIndex) => {
+              updateLines(current => current.filter((_, k) => k !== lineIndex));
             };
 
             return (
@@ -33742,11 +33762,11 @@ By approving this quotation and authorising us to commence services, you acknowl
                         // product also becomes the quote's headline product, which
                         // is what several summary views fall back to when they
                         // want one name for the job.
-                        setFormData({
-                          ...formData,
-                          lineItems: [...(formData.lineItems || []), newLineItem],
+                        setFormData(prev => ({
+                          ...prev,
+                          lineItems: [...(prev.lineItems || []), newLineItem],
                           ...(product ? { sageProductName: product.name, sage_id: product.sage_id } : {}),
-                        });
+                        }));
                         setNewSourcingProduct('');
                       }}
                       placeholder="Add a product to price"
@@ -33799,11 +33819,11 @@ By approving this quotation and authorising us to commence services, you acknowl
 
                 {items.length > 0 && columns.length === 0 && (
                   <p className="text-sm text-gray-500">
-                    Add a supplier above to start writing prices against each product.
+                    Add the suppliers you have called and their prices go in alongside each product.
                   </p>
                 )}
 
-                {items.length > 0 && columns.length > 0 && (
+                {items.length > 0 && (
                   <div className="overflow-x-auto">
                     <table className="border border-gray-200 bg-white text-sm">
                       <thead className="bg-gray-100">
@@ -33852,7 +33872,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                                 )}
                                 <button
                                   type="button"
-                                  onClick={() => setFormData({ ...formData, lineItems: items.filter((_, k) => k !== lineIndex) })}
+                                  onClick={() => removeLine(lineIndex)}
                                   className="text-xs text-gray-400 hover:text-red-600 underline"
                                 >
                                   remove
