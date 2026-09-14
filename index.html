@@ -948,6 +948,178 @@ const deriveSupplierName = (lineItems, fallback) => {
 // The customer record used for one-off trade counter work. It is a real row
 // in the customers table, picked from the list like any other. Who the job is
 // actually for goes in the quote's internal reference.
+// ── Recurring work as a series ─────────────────────────────────────────────
+// A repeating skip empty is described by a row in job_series, not by the first
+// job in the chain. Each occurrence is built from the series, so changing the
+// supplier changes every future week without rewriting jobs that have already
+// happened.
+//
+// Everything here degrades quietly if the job_series table is absent, so the
+// portal can be deployed before the database change is run. Without the table
+// recurring jobs behave exactly as they did before.
+const JOB_SERIES_TABLE = 'job_series';
+
+let __jobSeriesAvailable = null;
+
+const jobSeriesAvailable = async () => {
+  if (__jobSeriesAvailable !== null) return __jobSeriesAvailable;
+  try {
+    const { error } = await window.supabase.from(JOB_SERIES_TABLE).select('id').limit(1);
+    __jobSeriesAvailable = !error;
+    if (error) console.warn('[series] job_series unavailable, falling back to the old behaviour:', error.message);
+  } catch (e) {
+    __jobSeriesAvailable = false;
+  }
+  return __jobSeriesAvailable;
+};
+
+// The job columns a series owns. Anything not listed stays per-job: dates,
+// prices actually charged, invoice state, notes, the WTN itself.
+const SERIES_OWNED_JOB_FIELDS = [
+  'customer_name', 'site_address1', 'site_address2', 'site_city', 'site_postcode',
+  'site_contact', 'site_phone', 'site_notes', 'job_type', 'skip_size', 'waste_type',
+  'supplier_name', 'line_items',
+];
+
+const seriesFromJob = (job) => {
+  if (!job) return null;
+  const pick = (a, b) => (job[a] !== undefined && job[a] !== null ? job[a] : (job[b] !== undefined ? job[b] : null));
+  const rawLines = pick('line_items', 'lineItems');
+  return {
+    customer_name: pick('customer_name', 'customerName'),
+    site_address1: pick('site_address1', 'siteAddress1'),
+    site_address2: pick('site_address2', 'siteAddress2'),
+    site_city: pick('site_city', 'siteCity'),
+    site_postcode: pick('site_postcode', 'sitePostcode'),
+    site_contact: pick('site_contact', 'siteContact'),
+    site_phone: pick('site_phone', 'sitePhone'),
+    site_notes: pick('site_notes', 'siteNotes'),
+    job_type: pick('job_type', 'jobType'),
+    skip_size: pick('skip_size', 'skipSize'),
+    waste_type: pick('waste_type', 'wasteType'),
+    supplier_name: pick('supplier_name', 'supplierName'),
+    line_items: typeof rawLines === 'string' ? rawLines : (rawLines ? JSON.stringify(rawLines) : null),
+    frequency: pick('recurring_frequency', 'recurringFrequency') || 'weekly',
+    start_date: pick('recurring_start_date', 'recurringStartDate') || pick('job_date', 'jobDate') || null,
+    end_date: pick('recurring_end_date', 'recurringEndDate') || null,
+    next_date: pick('recurring_next_date', 'recurringNextDate') || null,
+    is_paused: false,
+  };
+};
+
+// The series values written onto a job. Blank series fields are skipped rather
+// than blanking the job, so a half-filled series never wipes good job data.
+const seriesOverlayForJob = (series, { includeSchedule = false } = {}) => {
+  if (!series) return {};
+  const out = {};
+  SERIES_OWNED_JOB_FIELDS.forEach((field) => {
+    const value = series[field];
+    if (value !== null && value !== undefined && value !== '') out[field] = value;
+  });
+  if (includeSchedule) {
+    if (series.frequency) out.recurring_frequency = series.frequency;
+    if (series.end_date !== undefined) out.recurring_end_date = series.end_date || null;
+  }
+  return out;
+};
+
+// Jobs a series change should reach: booked, not yet done, not cancelled, and
+// dated today or later. Anything already completed is history and stays put.
+const jobIsFutureForSeries = (job, todayStr) => {
+  if (!job) return false;
+  if (job.is_completed || job.isCompleted) return false;
+  if (job.is_cancelled || job.isCancelled) return false;
+  const date = job.job_date || job.jobDate || null;
+  if (!date) return true;
+  return String(date) >= String(todayStr);
+};
+
+const advanceSeriesDate = (dateStr, frequency) => {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const freq = frequency || 'weekly';
+  if (freq === 'daily') d.setDate(d.getDate() + 1);
+  else if (freq === 'weekly') d.setDate(d.getDate() + 7);
+  else if (freq === 'fortnightly') d.setDate(d.getDate() + 14);
+  else if (freq === 'monthly') d.setMonth(d.getMonth() + 1);
+  else d.setDate(d.getDate() + 7);
+  return d.toISOString().split('T')[0];
+};
+
+const loadSeriesById = async (seriesId) => {
+  if (!seriesId) return null;
+  if (!(await jobSeriesAvailable())) return null;
+  try {
+    const { data, error } = await window.supabase
+      .from(JOB_SERIES_TABLE).select('*').eq('id', seriesId).maybeSingle();
+    if (error) throw error;
+    return data || null;
+  } catch (e) {
+    console.error('[series] could not load series', seriesId, e);
+    return null;
+  }
+};
+
+// Creates a series from a job the first time one is needed, and links the job
+// to it. That is the migration: it happens per series, on demand, rather than
+// as one bulk rewrite of every recurring job in the system.
+const ensureSeriesForJob = async (job) => {
+  if (!job || !job.id) return null;
+  if (!(await jobSeriesAvailable())) return null;
+  const existingId = job.series_id || job.seriesId;
+  if (existingId) {
+    const found = await loadSeriesById(existingId);
+    if (found) return found;
+  }
+  try {
+    const { data, error } = await window.supabase
+      .from(JOB_SERIES_TABLE).insert([seriesFromJob(job)]).select().single();
+    if (error) throw error;
+    await window.supabase.from('jobs').update({ series_id: data.id }).eq('id', job.id);
+    // Children already created get linked too, so a later change reaches them.
+    await window.supabase.from('jobs').update({ series_id: data.id }).eq('parent_job_id', job.id);
+    return data;
+  } catch (e) {
+    console.error('[series] could not create a series for job', job.id, e);
+    return null;
+  }
+};
+
+// Saves the series and pushes the change onto every future job on it.
+const saveSeriesAndCascade = async (seriesId, changes, todayStr) => {
+  const today = todayStr || new Date().toISOString().split('T')[0];
+  const result = { saved: false, updated: 0, error: null };
+  if (!seriesId) { result.error = 'No series'; return result; }
+  try {
+    const { data: saved, error } = await window.supabase
+      .from(JOB_SERIES_TABLE)
+      .update({ ...changes, updated_at: new Date().toISOString() })
+      .eq('id', seriesId).select().single();
+    if (error) throw error;
+    result.saved = true;
+
+    const patch = seriesOverlayForJob(saved, { includeSchedule: true });
+    if (Object.keys(patch).length === 0) return result;
+
+    const { data: linked, error: readError } = await window.supabase
+      .from('jobs').select('id, job_date, is_completed, is_cancelled').eq('series_id', seriesId);
+    if (readError) throw readError;
+
+    const ids = (linked || []).filter(j => jobIsFutureForSeries(j, today)).map(j => j.id);
+    if (ids.length === 0) return result;
+
+    const { error: writeError } = await window.supabase.from('jobs').update(patch).in('id', ids);
+    if (writeError) throw writeError;
+    result.updated = ids.length;
+    return result;
+  } catch (e) {
+    console.error('[series] save failed', e);
+    result.error = e.message || String(e);
+    return result;
+  }
+};
+
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
 // Searchable Dropdown Component
@@ -3925,6 +4097,12 @@ const [attachmentType, setAttachmentType] = useState('Waste Transfer Note');
 const [wtnSending, setWtnSending] = useState(false);
 const [wtnSentOk, setWtnSentOk] = useState(false);
 const [wtnTouched, setWtnTouched] = useState(!!(job?.wtn_data || job?.wtnData || (Array.isArray(job?.wtns) && job.wtns.length > 0)));
+// The series editor on the Recurring tab. Held here because the tab is a
+// conditional render and hooks cannot live inside one.
+const [seriesDraft, setSeriesDraft] = useState({ supplier_name: '', is_paused: false });
+const [seriesSaving, setSeriesSaving] = useState(false);
+const [seriesError, setSeriesError] = useState('');
+const [seriesSaved, setSeriesSaved] = useState('');
 const [wtnSuggestions, setWtnSuggestions] = useState({}); // tracks which fields were auto-filled from previous WTNs
 
 // Keep WTN supplier/customer fields in sync with form changes
@@ -6921,22 +7099,6 @@ const [isEvent, setIsEvent] = useState(false);
               in the Products & Services table above, and rolled up into the
               job's own quantity/unit columns on save — so the dashboard, job
               list, calendar and customer portal keep working unchanged. */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {formData.jobType !== 'Aggregates' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Weight (tonnes)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formData.weight}
-                  onChange={(e) => setFormData({...formData, weight: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  placeholder="If known"
-                />
-              </div>
-            )}
-          </div>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Date *</label>
@@ -7558,6 +7720,109 @@ const [isEvent, setIsEvent] = useState(false);
                           );
                         })()}
 
+
+                        {/* ── The series ──────────────────────────────────────
+                            Changing the supplier here changes every future week.
+                            Jobs already booked but not yet done are updated too;
+                            anything finished keeps what it had, because a job
+                            that has happened is a record, not a plan. */}
+                        {job && job.id && (
+                          <div className="border border-blue-200 rounded-lg overflow-hidden">
+                            <div className="bg-blue-50 px-4 py-3 border-b border-blue-200">
+                              <p className="text-sm font-semibold text-blue-900">This series</p>
+                              <p className="text-xs text-blue-700 mt-0.5">
+                                Applies from the next job onwards, and to any already booked.
+                              </p>
+                            </div>
+                            <div className="p-4 space-y-3">
+                              {seriesError && (
+                                <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
+                                  {seriesError}
+                                </div>
+                              )}
+                              {seriesSaved && (
+                                <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm">
+                                  {seriesSaved}
+                                </div>
+                              )}
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier from now on</label>
+                                <SearchableDropdown
+                                  options={suppliers}
+                                  value={seriesDraft.supplier_name}
+                                  onChange={(name) => setSeriesDraft(prev => ({ ...prev, supplier_name: name }))}
+                                  placeholder={formData.supplierName || 'Select supplier'}
+                                  displayField="name"
+                                  valueField="name"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  The carrier name and CBDU on future transfer notes follow this.
+                                </p>
+                              </div>
+
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={!!seriesDraft.is_paused}
+                                  onChange={(e) => setSeriesDraft(prev => ({ ...prev, is_paused: e.target.checked }))}
+                                  className="w-4 h-4 text-blue-600 rounded"
+                                />
+                                <span className="text-sm text-gray-700">
+                                  Pause this series (no new jobs created until unticked)
+                                </span>
+                              </label>
+
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  disabled={seriesSaving}
+                                  onClick={async () => {
+                                    setSeriesSaving(true);
+                                    setSeriesError('');
+                                    setSeriesSaved('');
+                                    try {
+                                      if (!(await jobSeriesAvailable())) {
+                                        setSeriesError('Series are not set up on the database yet, so this cannot be saved. Recurring jobs carry on working as before in the meantime.');
+                                        return;
+                                      }
+                                      const existing = await ensureSeriesForJob({ ...job, ...formData, id: job.id });
+                                      if (!existing) {
+                                        setSeriesError('Could not open the series for this job.');
+                                        return;
+                                      }
+                                      const changes = {
+                                        supplier_name: seriesDraft.supplier_name || existing.supplier_name,
+                                        is_paused: !!seriesDraft.is_paused,
+                                        frequency: formData.recurringFrequency || existing.frequency || 'weekly',
+                                        end_date: formData.recurringEndDate || null,
+                                      };
+                                      const outcome = await saveSeriesAndCascade(existing.id, changes);
+                                      if (!outcome.saved) {
+                                        setSeriesError(outcome.error || 'Could not save the series.');
+                                        return;
+                                      }
+                                      setSeriesSaved(
+                                        outcome.updated > 0
+                                          ? 'Saved. ' + outcome.updated + ' job' + (outcome.updated === 1 ? '' : 's') + ' already booked were updated too.'
+                                          : 'Saved. It applies from the next job created.'
+                                      );
+                                      if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
+                                    } catch (e) {
+                                      console.error('Series save failed:', e);
+                                      setSeriesError(e.message || 'Could not save the series.');
+                                    } finally {
+                                      setSeriesSaving(false);
+                                    }
+                                  }}
+                                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                  {seriesSaving ? 'Saving...' : 'Save series'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
                           <p className="font-semibold mb-1">⚠️ How it works</p>
                           <p>Save the job to lock in the recurring schedule. Each time a job is due, the system will automatically create it as a copy of this one and show a notification on your dashboard. You can cancel the recurring schedule at any time by editing the job.</p>
@@ -25452,6 +25717,15 @@ useEffect(() => {
       if (error || !recurringJobs || recurringJobs.length === 0) return;
 
       for (const rj of recurringJobs) {
+        // Where a series exists, it is the source of truth for who the supplier
+        // is, where the skip goes and what is on the job. Editing the series is
+        // what makes next week different; the first job in the chain is left as
+        // the record of what happened that day.
+        const series = await loadSeriesById(rj.series_id);
+        if (series) {
+          if (series.is_paused) continue;
+          Object.assign(rj, seriesOverlayForJob(series, { includeSchedule: true }));
+        }
         // Check end date
         if (rj.recurring_end_date && rj.recurring_next_date > rj.recurring_end_date) continue;
 
@@ -25563,6 +25837,7 @@ useEffect(() => {
           wtn_recurring_frequency: null,
           wtn_recurring_next_date: null,
           parent_job_id: rj.id,
+          series_id: rj.series_id || null,
         };
 
         // Atomically "claim the slot" for this occurrence. We flip the parent's
