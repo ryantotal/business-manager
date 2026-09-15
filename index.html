@@ -13081,12 +13081,36 @@ async function buildQuotePdfContext(user) {
   };
 }
 
+// The person named on a quote is whoever wrote it, not whoever is signed in
+// when the PDF gets built. Older quotes recorded nothing, or recorded a bare
+// name, so both are handled; anything unreadable falls back to the current
+// user rather than leaving the quote anonymous.
+function readPreparedBy(quote) {
+  const raw = (quote && (quote.preparedBy || quote.prepared_by)) || '';
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  const text = String(raw).trim();
+  if (!text) return null;
+  if (text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && (parsed.name || parsed.email || parsed.phone)) return parsed;
+      // Valid JSON but nothing in it. Falling back to the signed-in user is
+      // better than printing "{}" on a customer's quote.
+      return null;
+    } catch (e) { /* not JSON after all — treat it as a plain name */ }
+  }
+  return { name: text, email: '', phone: '' };
+}
+
 // Build the finished PDF for a quote. Returns { doc, filename, base64 }.
 async function generateQuotePdf(quote, user) {
   if (!(window.jspdf && window.jspdf.jsPDF)) {
     throw new Error('The PDF library has not loaded. Check your connection and reload the page.');
   }
   const ctx = await buildQuotePdfContext(user);
+  const recorded = readPreparedBy(quote);
+  if (recorded) ctx.preparedBy = recorded;
   const doc = buildQuotePdfDoc(quote, ctx);
   const filename = 'Quotation-' + (quote.quoteNumber || 'draft') + '.pdf';
   // datauristring looks like "data:application/pdf;filename=...;base64,XXXX"
@@ -28307,6 +28331,15 @@ const saveSupplierToDatabase = async (supplier) => {
       internal_reference: newQuote.internalReference || '',
       inclusions: newQuote.inclusions || '',
       exclusions: newQuote.exclusions || '',
+      // Who wrote it. Stored on the quote because the PDF is rebuilt every time
+      // it is opened, and used to name whoever happened to be looking at it —
+      // so a quote written by one person and sent by another went out with the
+      // wrong name, mobile and email on it.
+      prepared_by: JSON.stringify({
+        name: [user?.firstName, user?.lastName].filter(Boolean).join(' '),
+        email: user?.email || '',
+        phone: user?.phone || '',
+      }),
       created_at: newQuote.createdDate || new Date().toISOString()
     };
 
