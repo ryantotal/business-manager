@@ -7761,8 +7761,16 @@ const [isEvent, setIsEvent] = useState(false);
                         onChange={e => setFormData({
                           ...formData,
                           isRecurring: e.target.checked,
-                          // When turning on, seed recurringNextDate from startDate
-                          recurringNextDate: e.target.checked ? (formData.recurringStartDate || formData.jobDate || new Date().toISOString().split('T')[0]) : ''
+                          // The first job date is THIS job. The next one due is
+                          // one interval later — seeding it with the start date
+                          // made the checker treat this job as outstanding and
+                          // create a duplicate of it.
+                          recurringNextDate: e.target.checked
+                            ? advanceSeriesDate(
+                                formData.recurringStartDate || formData.jobDate || new Date().toISOString().split('T')[0],
+                                formData.recurringFrequency || 'weekly'
+                              )
+                            : ''
                         })}
                         className="w-5 h-5 text-blue-600 rounded"
                       />
@@ -7780,7 +7788,14 @@ const [isEvent, setIsEvent] = useState(false);
                               <button
                                 key={freq}
                                 type="button"
-                                onClick={() => setFormData({...formData, recurringFrequency: freq})}
+                                onClick={() => setFormData({
+                                  ...formData,
+                                  recurringFrequency: freq,
+                                  recurringNextDate: advanceSeriesDate(
+                                    formData.recurringStartDate || formData.jobDate,
+                                    freq
+                                  ) || formData.recurringNextDate
+                                })}
                                 className={`py-3 px-4 rounded-lg border-2 text-sm font-medium capitalize transition-all ${
                                   formData.recurringFrequency === freq
                                     ? 'border-blue-500 bg-blue-50 text-blue-700'
@@ -7802,7 +7817,7 @@ const [isEvent, setIsEvent] = useState(false);
                               onChange={e => setFormData({
                                 ...formData,
                                 recurringStartDate: e.target.value,
-                                recurringNextDate: e.target.value  // keep nextDate in sync with start
+                                recurringNextDate: advanceSeriesDate(e.target.value, formData.recurringFrequency || 'weekly')
                               })}
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                             />
