@@ -1120,6 +1120,33 @@ const saveSeriesAndCascade = async (seriesId, changes, todayStr) => {
   }
 };
 
+// ── Hazardous jobs awaiting a consignment note ─────────────────────────────
+// The tip issues the consignment note, not us. Our job is to get a copy,
+// file it against the job so the customer can pull it from the portal, and
+// keep it for three years. The one that gets missed is the copy that never
+// arrives, so a job marked hazardous stays flagged until the note is on it.
+const jobIsHazardous = (job) => !!(job && (job.isHazardous || job.is_hazardous));
+
+const jobHasConsignmentNote = (job) => !!(
+  job && (
+    job.consignmentNoteReceived ||
+    job.consignment_note_received ||
+    // A note code typed in by hand counts: it means someone has it in front
+    // of them, even if the PDF has not been attached yet.
+    String(job.consignmentNote || job.consignment_note || '').trim()
+  )
+);
+
+const jobAwaitingConsignmentNote = (job) => jobIsHazardous(job) && !jobHasConsignmentNote(job);
+
+// Any attachment whose type names it as a consignment note clears the flag.
+// Matched loosely because the three upload forms in the app use different
+// labels for the same thing.
+const isConsignmentNoteAttachment = (fileType) => {
+  const t = String(fileType || '').toLowerCase().replace(/[^a-z]/g, '');
+  return t.includes('consignment') || t === 'cn' || t === 'connote';
+};
+
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
 // Searchable Dropdown Component
@@ -7095,6 +7122,29 @@ const [isEvent, setIsEvent] = useState(false);
             </div>
           )}
           
+          {/* Hazardous waste. The tip issues the consignment note, so this is
+              not a document we produce — it is a reminder to get their copy,
+              file it, and keep it for three years. The job stays flagged until
+              a consignment note is attached to it. */}
+          <div className={`rounded-lg border p-4 ${formData.isHazardous ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!formData.isHazardous}
+                onChange={(e) => setFormData({...formData, isHazardous: e.target.checked})}
+                className="w-4 h-4 text-red-600 rounded"
+              />
+              <span className="text-sm font-medium text-red-800">Hazardous waste</span>
+            </label>
+            {formData.isHazardous && (
+              <p className="text-xs text-red-700 mt-2">
+                This job will stay flagged until the tip's consignment note is
+                attached to it on the Documents tab. Attach it and the customer
+                can pull their copy from the portal.
+              </p>
+            )}
+          </div>
+
           {/* Quantity and Unit used to live here. They're now entered per line
               in the Products & Services table above, and rolled up into the
               job's own quantity/unit columns on save — so the dashboard, job
@@ -7569,6 +7619,7 @@ const [isEvent, setIsEvent] = useState(false);
           <label className="block text-sm font-medium text-gray-700 mb-1">Attachment Type</label>
           <select id="attachment-type" className="w-full px-3 py-2 border border-gray-300 rounded-lg">
             <option value="Waste Transfer Note">Waste Transfer Note</option>
+            <option value="Consignment Note">Consignment Note</option>
             <option value="Invoice">Invoice</option>
             <option value="Receipt">Receipt</option>
             <option value="Photo">Photo</option>
@@ -10749,6 +10800,18 @@ const uploadJobAttachment = async () => {
 
     if (error) throw error;
 
+
+    // Filing the consignment note is what takes a hazardous job off the
+    // outstanding list. A failure here must not lose the upload, so it is
+    // logged rather than thrown.
+    if (isConsignmentNoteAttachment(attachmentType)) {
+      const { error: flagError } = await window.supabase
+        .from('jobs')
+        .update({ consignment_note_received: true })
+        .eq('id', selectedJob.id);
+      if (flagError) console.error('Consignment note uploaded but the job flag did not clear:', flagError);
+    }
+
     alert('Job attachment uploaded successfully!');
     loadJobAttachments(selectedJob.id);
     
@@ -11504,7 +11567,14 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
                               <div className="w-1.5 h-12 rounded-full flex-shrink-0 mt-0.5" style={{backgroundColor: jobColors[job.jobType] || '#6b7280'}} />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="font-mono font-bold text-sm text-gray-900">{job.jobNumber}</span>
+                                  <span className="font-mono font-bold text-sm text-gray-900">
+                                    {job.jobNumber}
+                                    {jobAwaitingConsignmentNote(job) && (
+                                      <span className="ml-2 px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-300 text-[10px] font-medium align-middle">
+                                        CN due
+                                      </span>
+                                    )}
+                                  </span>
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${mStatus}`}>{mStatusLabel}</span>
                                 </div>
                                 <div className="text-sm font-medium text-gray-800 mt-0.5 truncate">{job.customerName || '—'}</div>
@@ -16998,6 +17068,22 @@ console.log(JSON.stringify(invoiceData, null, 2));
         setCapEditorOpen={setCapEditorOpen}
       />
 
+      {/* Hazardous waste awaiting its consignment note. Sits with the ON STOP
+          banner because it is the same kind of thing: something outstanding
+          that whoever opens the job needs to see without hunting for it. */}
+      {jobAwaitingConsignmentNote(job) && (
+        <div className="bg-red-50 border-b-2 border-red-300 px-4 sm:px-6 py-3 flex items-center gap-3">
+          <span className="text-red-600 text-xl">&#9888;</span>
+          <div>
+            <p className="font-semibold text-red-800">Hazardous &mdash; consignment note outstanding</p>
+            <p className="text-sm text-red-600">
+              Get the tip's note and attach it on the Documents tab as "Consignment Note".
+              The customer can then pull their copy from the portal.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ON STOP Banner */}
       {job.onStop && (
         <div className="bg-red-50 border-b-2 border-red-300 px-4 sm:px-6 py-3 flex items-center justify-between">
@@ -18250,6 +18336,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
     <select id="attachment-type" className="px-3 py-2 border rounded">
       <option value="receipt">Receipt</option>
       <option value="wtn">Waste Transfer Note</option>
+      <option value="consignment">Consignment Note</option>
       <option value="invoice">Invoice</option>
       <option value="photo">Photo</option>
       <option value="other">Other</option>
@@ -25519,6 +25606,8 @@ collectionDate: job.collection_date,
   wasteTransferNote: job.waste_transfer_note,
   hazardousWaste: job.hazardous_waste || false,
   consignmentNote: job.consignment_note,
+  isHazardous: job.is_hazardous || false,
+  consignmentNoteReceived: job.consignment_note_received || false,
   invoiceNumber: job.invoice_number,
   invoiceStatus: job.invoice_status || 'Not Invoiced',
   paymentStatus: job.payment_status || 'Not Paid',
@@ -25640,6 +25729,8 @@ const refreshJobs = async () => {
                 wasteTransferNote: job.waste_transfer_note,
                 hazardousWaste: job.hazardous_waste || false,
                 consignmentNote: job.consignment_note,
+                isHazardous: job.is_hazardous || false,
+                consignmentNoteReceived: job.consignment_note_received || false,
                 invoiceNumber: job.invoice_number,
                 invoiceStatus: job.invoice_status || 'Not Invoiced',
                 paymentStatus: job.payment_status || 'Not Paid',
@@ -26429,6 +26520,7 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
       waste_transfer_note: newJob.wasteTransferNote || null,
       hazardous_waste: newJob.hazardousWaste || false,
       consignment_note: newJob.consignmentNote || null,
+      is_hazardous: !!newJob.isHazardous,
       invoice_number: newJob.invoiceNumber || null,
       invoice_status: newJob.invoiceStatus || 'Not Invoiced',
       payment_status: newJob.paymentStatus || 'Not Paid',
@@ -26585,6 +26677,7 @@ collection_date: updatedJob.collectionDate || null,
       waste_transfer_note: updatedJob.wasteTransferNote,
       hazardous_waste: updatedJob.hazardousWaste || false,
       consignment_note: updatedJob.consignmentNote,
+      is_hazardous: !!updatedJob.isHazardous,
       invoice_number: updatedJob.invoiceNumber,
       invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
       payment_status: updatedJob.paymentStatus || 'Not Paid',
@@ -35846,6 +35939,18 @@ window.uploadJobAttachment = async () => {
       }]);
 
     if (error) throw error;
+
+
+    // Filing the consignment note is what takes a hazardous job off the
+    // outstanding list. A failure here must not lose the upload, so it is
+    // logged rather than thrown.
+    if (isConsignmentNoteAttachment(attachmentType)) {
+      const { error: flagError } = await window.supabase
+        .from('jobs')
+        .update({ consignment_note_received: true })
+        .eq('id', selectedJob.id);
+      if (flagError) console.error('Consignment note uploaded but the job flag did not clear:', flagError);
+    }
 
     alert('Job attachment uploaded successfully!');
     loadJobAttachments(selectedJob.id);
