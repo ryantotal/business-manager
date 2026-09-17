@@ -13094,7 +13094,12 @@ function readPreparedBy(quote) {
   if (text.startsWith('{')) {
     try {
       const parsed = JSON.parse(text);
-      if (parsed && (parsed.name || parsed.email || parsed.phone)) return parsed;
+      if (parsed && (parsed.name || parsed.email || parsed.phone)) {
+        // With the direct number suppressed the PDF falls back to the office
+        // line on its own, so there is nothing to print in its place.
+        if (parsed.hidePhone) return { ...parsed, phone: '' };
+        return parsed;
+      }
       // Valid JSON but nothing in it. Falling back to the signed-in user is
       // better than printing "{}" on a customer's quote.
       return null;
@@ -26310,6 +26315,10 @@ const loadQuotesFromSupabase = async () => {
         inclusions: quote.inclusions || '',
         exclusions: quote.exclusions || '',
         preparedBy: quote.prepared_by || '',
+        hideDirectPhone: (() => {
+          const parsed = readPreparedBy(quote);
+          return !!(parsed && parsed.hidePhone);
+        })(),
       }));
       
       setQuotes(quotesWithCamelCase);
@@ -28358,6 +28367,7 @@ const saveSupplierToDatabase = async (supplier) => {
         name: [user?.firstName, user?.lastName].filter(Boolean).join(' '),
         email: user?.email || '',
         phone: user?.phone || '',
+        hidePhone: !!newQuote.hideDirectPhone,
       }),
       created_at: newQuote.createdDate || new Date().toISOString()
     };
@@ -28419,7 +28429,18 @@ const saveSupplierToDatabase = async (supplier) => {
       inclusions: updatedQuote.inclusions || '',
       exclusions: updatedQuote.exclusions || '',
       notes: updatedQuote.notes || '',
-      status: updatedQuote.status || 'PENDING'
+      status: updatedQuote.status || 'PENDING',
+      // The author stays whoever wrote it. Only the "keep my mobile off this"
+      // flag changes here, so editing someone else's quote never renames it.
+      prepared_by: (() => {
+        const existing = readPreparedBy(updatedQuote) || {};
+        return JSON.stringify({
+          name: existing.name || '',
+          email: existing.email || '',
+          phone: existing.phone || '',
+          hidePhone: !!updatedQuote.hideDirectPhone,
+        });
+      })()
     };
     
     // rest of your update code...
@@ -33899,6 +33920,18 @@ By approving this quotation and authorising us to commence services, you acknowl
                   />
                   <span className="text-sm text-gray-700 font-medium">
                     Hide totals section on PDF (remove subtotal, VAT and grand total)
+                  </span>
+                </label>
+                <label htmlFor="hideDirectPhone" className="flex items-center cursor-pointer mt-3">
+                  <input
+                    type="checkbox"
+                    id="hideDirectPhone"
+                    checked={!!formData.hideDirectPhone}
+                    onChange={(e) => setFormData({...formData, hideDirectPhone: e.target.checked})}
+                    className="mr-3 h-4 w-4"
+                  />
+                  <span className="text-sm text-gray-700 font-medium">
+                    Keep my mobile off this quote (show the office number instead)
                   </span>
                 </label>
               </div>
