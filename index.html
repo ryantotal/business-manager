@@ -13094,14 +13094,14 @@ function readPreparedBy(quote) {
   if (text.startsWith('{')) {
     try {
       const parsed = JSON.parse(text);
-      if (parsed && (parsed.name || parsed.email || parsed.phone)) {
+      if (parsed && (parsed.name || parsed.email || parsed.phone || parsed.hidePhone)) {
         // With the direct number suppressed the PDF falls back to the office
         // line on its own, so there is nothing to print in its place.
         if (parsed.hidePhone) return { ...parsed, phone: '' };
         return parsed;
       }
-      // Valid JSON but nothing in it. Falling back to the signed-in user is
-      // better than printing "{}" on a customer's quote.
+      // Valid JSON but nothing in it at all. Falling back to the signed-in
+      // user is better than printing "{}" on a customer's quote.
       return null;
     } catch (e) { /* not JSON after all — treat it as a plain name */ }
   }
@@ -13115,7 +13115,17 @@ async function generateQuotePdf(quote, user) {
   }
   const ctx = await buildQuotePdfContext(user);
   const recorded = readPreparedBy(quote);
-  if (recorded) ctx.preparedBy = recorded;
+  if (recorded) {
+    // A quote written before authors were recorded has only the "keep my
+    // mobile off this" flag on it. In that case the name and email still come
+    // from whoever is signed in — there is nobody else to name — but the
+    // direct number is dropped, which is the whole point of the tick.
+    const named = (recorded.name || recorded.email) ? recorded : (ctx.preparedBy || {});
+    ctx.preparedBy = {
+      ...named,
+      phone: recorded.hidePhone ? '' : (recorded.phone || named.phone || ''),
+    };
+  }
   const doc = buildQuotePdfDoc(quote, ctx);
   const filename = 'Quotation-' + (quote.quoteNumber || 'draft') + '.pdf';
   // datauristring looks like "data:application/pdf;filename=...;base64,XXXX"
