@@ -9648,6 +9648,14 @@ const [groupByProduct, setGroupByProduct] = useState(false);
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">Products Sold with Margins</h3>
+          {(() => {
+            const outstanding = (filteredJobs || []).filter(j => jobAwaitingConsignmentNote(j)).length;
+            return outstanding > 0 ? (
+              <span className="px-3 py-1 rounded-full bg-red-100 text-red-800 border border-red-300 text-sm font-medium">
+                {outstanding} consignment note{outstanding === 1 ? '' : 's'} outstanding
+              </span>
+            ) : null;
+          })()}
           <input 
             type="text"
             placeholder="Search products..."
@@ -9690,7 +9698,7 @@ const [groupByProduct, setGroupByProduct] = useState(false);
                   productStats[productType].cost += pricing.cost;
                 });
                 
-                return Object.entries(productStats)
+                const rows = Object.entries(productStats)
                   .map(([product, stats]) => ({
                     product,
                     ...stats,
@@ -9714,46 +9722,16 @@ const [groupByProduct, setGroupByProduct] = useState(false);
                       <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.marginPercent.toFixed(1)}%</td>
                     </tr>
                   ));
-              })()}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      {/* Hazardous waste, in the same shape as the report above so the two read
-          together. It carries different paperwork, different risk and different
-          margins, so it is worth seeing on its own rather than buried in the
-          Other row. Follows the date filter like every other figure here. */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
-          <h3 className="text-lg font-semibold">Hazardous Waste</h3>
-          {(() => {
-            const outstanding = (filteredJobs || []).filter(j => jobAwaitingConsignmentNote(j)).length;
-            return outstanding > 0 ? (
-              <span className="px-3 py-1 rounded-full bg-red-100 text-red-800 border border-red-300 text-sm font-medium">
-                {outstanding} consignment note{outstanding === 1 ? '' : 's'} outstanding
-              </span>
-            ) : null;
-          })()}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waste Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jobs</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profit</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Margin %</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Share of Turnover</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {(() => {
+                // Hazardous waste cuts across the job types above rather than
+                // being one of them — a hazardous muck away is counted in Muck
+                // Away as well as here. Shown separated by a line and labelled
+                // as already included, so the column does not look like it
+                // should add up to the rows above it.
                 const hazJobs = (filteredJobs || []).filter(j => jobIsHazardous(j));
-                const totals = hazJobs.reduce((acc, job) => {
+                if (hazJobs.length === 0) return rows;
+
+                const haz = hazJobs.reduce((acc, job) => {
                   const pricing = getJobPricing(job);
                   acc.count++;
                   acc.totalQuantity += parseFloat(job.quantity) || 0;
@@ -9761,33 +9739,21 @@ const [groupByProduct, setGroupByProduct] = useState(false);
                   acc.cost += pricing.cost;
                   return acc;
                 }, { count: 0, totalQuantity: 0, revenue: 0, cost: 0 });
+                const hazProfit = haz.revenue - haz.cost;
+                const hazMargin = haz.revenue > 0 ? (hazProfit / haz.revenue) * 100 : 0;
 
-                if (totals.count === 0) {
-                  return (
-                    <tr>
-                      <td colSpan={8} className="px-6 py-4 text-sm text-gray-500">
-                        Nothing marked hazardous in this period. Jobs appear here once the
-                        Hazardous waste box is ticked on the job.
-                      </td>
-                    </tr>
-                  );
-                }
-
-                const profit = totals.revenue - totals.cost;
-                const marginPercent = totals.revenue > 0 ? (profit / totals.revenue) * 100 : 0;
-                const allRevenue = (filteredJobs || []).reduce((sum, job) => sum + getJobPricing(job).revenue, 0);
-                const share = allRevenue > 0 ? (totals.revenue / allRevenue) * 100 : 0;
-
-                return (
-                  <tr>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">Hazardous</td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{totals.count}</td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{totals.totalQuantity.toFixed(0)}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">&pound;{totals.revenue.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-500">&pound;{totals.cost.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-green-600">&pound;{profit.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-blue-600">{marginPercent.toFixed(1)}%</td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{share.toFixed(1)}%</td>
+                return rows.concat(
+                  <tr key="hazardous" className="border-t-2 border-gray-300 bg-red-50">
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                      Hazardous
+                      <span className="block text-xs font-normal text-gray-500">included in the rows above</span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{haz.count}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{haz.totalQuantity.toFixed(0)}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">£{haz.revenue.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">£{haz.cost.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-green-600">£{hazProfit.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-blue-600">{hazMargin.toFixed(1)}%</td>
                   </tr>
                 );
               })()}
