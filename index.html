@@ -7226,36 +7226,41 @@ const [isEvent, setIsEvent] = useState(false);
               ({sites.length} on file for {formData.customerName})
             </span>
           </label>
-          {sites.length > 0 && <select
-            value={current ? (current.id || current.siteName) : ''}
-            onChange={(e) => {
-              const id = e.target.value;
-              if (!id) return;
-              const site = sites.find(s => (s.id || s.siteName) === id);
-              if (!site) return;
-              // Line 1 is capped at 50 characters to match Sage's address
-              // field, so overflow spills into line 2 rather than being cut.
-              const split = splitOverflowFromLine1(site.address || '', '');
-              setFormData({
-                ...formData,
-                siteAddress1: split.line1,
-                siteAddress2: split.line2,
-                sitePostcode: site.postcode || '',
-                siteCity: site.city || formData.siteCity || '',
-              });
-              setShowAddressSuggestions(false);
-            }}
-            className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm bg-white"
-          >
-            <option value="">
-              {current ? siteLabel(current) : '\u2014 Select a site, or type an address below \u2014'}
-            </option>
-            {sites.map(s => (
-              <option key={s.id || s.siteName} value={s.id || s.siteName}>
-                {siteLabel(s)}
-              </option>
-            ))}
-          </select>}
+          {/* Searchable rather than a plain dropdown: a customer with fifty
+              sites was an unscrollable list. The label leads with the postcode
+              so the list sorts by area and typing a postcode or a site name
+              finds it. */}
+          {sites.length > 0 && (() => {
+            const options = sites.map(s => ({
+              key: String(s.id || s.siteName || ''),
+              label: [String(s.postcode || '').toUpperCase(), siteLabel(s)].filter(Boolean).join('  \u00b7  '),
+            }));
+            return (
+              <SearchableDropdown
+                options={options}
+                value={current ? String(current.id || current.siteName || '') : ''}
+                onChange={(key) => {
+                  if (!key) return;
+                  const site = sites.find(s => String(s.id || s.siteName || '') === key);
+                  if (!site) return;
+                  // Line 1 is capped at 50 characters to match Sage's address
+                  // field, so overflow spills into line 2 rather than being cut.
+                  const split = splitOverflowFromLine1(site.address || '', '');
+                  setFormData({
+                    ...formData,
+                    siteAddress1: split.line1,
+                    siteAddress2: split.line2,
+                    sitePostcode: site.postcode || '',
+                    siteCity: site.city || formData.siteCity || '',
+                  });
+                  setShowAddressSuggestions(false);
+                }}
+                placeholder="Type a postcode or site name"
+                displayField="label"
+                valueField="key"
+              />
+            );
+          })()}
           <p className="text-xs text-blue-700 mt-2">
             {current
               ? 'Matched to a saved site. Its permit, CBDU and SIC code will fill in on the WTN.'
@@ -12877,7 +12882,7 @@ function buildQuotePdfDoc(quote, ctx) {
   let leftY = y + 5.5 + doc.splitTextToSize(String(quote.customerName || '—'), colW).length * 4.4;
   setFont('normal', 9, MUTED);
   if (quote.customerContact) { doc.text('FAO: ' + quote.customerContact, M, leftY); leftY += 4.2; }
-  const siteBits = [quote.siteAddress1 || quote.siteAddress, quote.siteCity, quote.sitePostcode].filter(Boolean).join(', ');
+  const siteBits = [quote.siteAddress1 || quote.siteAddress, quote.siteAddress2, quote.siteCity, quote.sitePostcode].filter(Boolean).join(', ');
   if (siteBits) {
     const sl = doc.splitTextToSize('Site: ' + siteBits, colW);
     doc.text(sl, M, leftY); leftY += sl.length * 4.2;
@@ -12928,15 +12933,13 @@ function buildQuotePdfDoc(quote, ctx) {
   const rowFor = (item) => {
     const qty   = parseFloat(item.quantity) || 1;
     const price = parseFloat(item.customer_price || item.unit_price || item.price || 0) || 0;
+    // The customer sees the description and nothing else. The product name is
+    // our own category (Disposal, Transport, Grab Hire) and printing both gave
+    // lines like "Topsoil — BS3882 - Topsoil". The name is only used when a
+    // line has no description at all.
     const desc  = item.description || item.product_name || 'Service';
-    // Joined on one line rather than stacked. The product name is really a
-    // category (Disposal, Transport, Consignment note) and the description
-    // usually repeats it, so two lines read as a duplicate.
-    const name  = item.product_name && item.description && item.product_name !== item.description
-      ? item.product_name + ' \u2014 ' + item.description
-      : desc;
     return {
-      name: name,
+      name: desc,
       qty: String(qty) + (item.unit ? ' ' + unitLabel(item.unit) : ''),
       price: money(price),
       net: money(qty * price),
@@ -15319,13 +15322,28 @@ function getCustomerSites(customer) {
   if (!customer) return [];
   const raw = customer.siteAddresses || customer.site_addresses;
   if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    return [];
+  let list = [];
+  if (Array.isArray(raw)) list = raw;
+  else {
+    try {
+      const parsed = JSON.parse(raw);
+      list = Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
   }
+  // Sorted by postcode. A customer with fifty sites was listed in whatever
+  // order they happened to be added, which is no order at all when you are
+  // looking for one. Postcode groups them by area, so sites near each other
+  // sit near each other. Sites with no postcode go last rather than first.
+  return [...list].sort((a, b) => {
+    const pa = String((a && a.postcode) || '').toUpperCase().replace(/\s+/g, '');
+    const pb = String((b && b.postcode) || '').toUpperCase().replace(/\s+/g, '');
+    if (!pa && !pb) return 0;
+    if (!pa) return 1;
+    if (!pb) return -1;
+    return pa.localeCompare(pb);
+  });
 }
 
 // A site's display label — name first, falling back to the address.
@@ -26418,6 +26436,7 @@ const loadQuotesFromSupabase = async () => {
         siteContact: quote.site_contact,
         sitePhone: quote.site_phone,
         siteNotes: quote.site_notes,
+        customerPO: quote.customer_po || '',
         siteAddress1: quote.site_address1,
         siteAddress2: quote.site_address2,
         siteCity: quote.site_city,
@@ -28474,8 +28493,19 @@ const saveSupplierToDatabase = async (supplier) => {
       vat_rate: newQuote.vatRate || 20,
       valid_until: newQuote.validUntil,
       delivery_date: newQuote.deliveryDate || null,
+      // The form collects a full address and the loader reads every part of it
+      // back. Only line one was ever written, so line two, the town, the site
+      // contact and the site phone were typed in and thrown away.
       site_address: newQuote.siteAddress || newQuote.siteAddress1 || '',
+      site_address1: newQuote.siteAddress1 || '',
+      site_address2: newQuote.siteAddress2 || '',
+      site_city: newQuote.siteCity || '',
       site_postcode: newQuote.sitePostcode || '',
+      site_contact: newQuote.siteContact || '',
+      site_phone: newQuote.sitePhone || '',
+      site_notes: newQuote.siteNotes || '',
+      customer_po: newQuote.customerPO || '',
+      hide_prices_on_pdf: newQuote.hidePricesOnPDF !== false,
       notes: newQuote.notes || '',
       status: newQuote.status || 'PENDING',
       line_items: JSON.stringify(newQuote.lineItems || []),
@@ -28538,7 +28568,7 @@ const saveSupplierToDatabase = async (supplier) => {
        line_items: updatedQuote.lineItems ? JSON.stringify(updatedQuote.lineItems) : null,
       
       // ADD ALL THESE SITE FIELDS (matching your job update):
-      site_address: updatedQuote.siteAddress || '',
+      site_address: updatedQuote.siteAddress1 || updatedQuote.siteAddress || '',
       site_address1: updatedQuote.siteAddress1 || '',
       site_address2: updatedQuote.siteAddress2 || '',
       site_city: updatedQuote.siteCity || '',
@@ -28548,12 +28578,14 @@ const saveSupplierToDatabase = async (supplier) => {
       site_notes: updatedQuote.siteNotes || '',
       delivery_instructions: updatedQuote.deliveryInstructions || '',
       access_restrictions: updatedQuote.accessRestrictions || '',  // Add this one too
-      hide_prices_on_pdf: updatedQuote.hidePricesOnPDF || false,
+      hide_prices_on_pdf: updatedQuote.hidePricesOnPDF !== false,
       scope_description: updatedQuote.scopeDescription || '',
       internal_reference: updatedQuote.internalReference || '',
       inclusions: updatedQuote.inclusions || '',
       exclusions: updatedQuote.exclusions || '',
       notes: updatedQuote.notes || '',
+      customer_po: updatedQuote.customerPO || '',
+      terms_conditions: updatedQuote.terms_conditions || '',
       status: updatedQuote.status || 'PENDING',
       // The author stays whoever wrote it. Only the "keep my mobile off this"
       // flag changes here, so editing someone else's quote never renames it.
@@ -35314,36 +35346,38 @@ By approving this quotation and authorising us to commence services, you acknowl
                         ({sites.length} on file for {formData.customerName})
                       </span>
                     </label>
-                    {sites.length > 0 && (
-                      <select
-                        value={current ? (current.id || current.siteName) : ''}
-                        onChange={(e) => {
-                          const id = e.target.value;
-                          if (!id) return;
-                          const site = sites.find(s => (s.id || s.siteName) === id);
-                          if (!site) return;
-                          const split = splitOverflowFromLine1(site.address || '', '');
-                          setFormData({
-                            ...formData,
-                            siteAddress1: split.line1,
-                            siteAddress2: split.line2,
-                            sitePostcode: site.postcode || '',
-                            siteCity: site.city || formData.siteCity || '',
-                          });
-                          setShowAddressSuggestions(false);
-                        }}
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm bg-white"
-                      >
-                        <option value="">
-                          {current ? siteLabel(current) : '— Select a site, or type an address below —'}
-                        </option>
-                        {sites.map(s => (
-                          <option key={s.id || s.siteName} value={s.id || s.siteName}>
-                            {siteLabel(s)}
-                          </option>
-                        ))}
-                      </select>
-                    )}
+                    {/* Same searchable picker as the job form: postcode first
+                        so the list sorts by area, and typing finds a site
+                        without scrolling fifty of them. */}
+                    {sites.length > 0 && (() => {
+                      const options = sites.map(s => ({
+                        key: String(s.id || s.siteName || ''),
+                        label: [String(s.postcode || '').toUpperCase(), siteLabel(s)].filter(Boolean).join('  \u00b7  '),
+                      }));
+                      return (
+                        <SearchableDropdown
+                          options={options}
+                          value={current ? String(current.id || current.siteName || '') : ''}
+                          onChange={(key) => {
+                            if (!key) return;
+                            const site = sites.find(s => String(s.id || s.siteName || '') === key);
+                            if (!site) return;
+                            const split = splitOverflowFromLine1(site.address || '', '');
+                            setFormData({
+                              ...formData,
+                              siteAddress1: split.line1,
+                              siteAddress2: split.line2,
+                              sitePostcode: site.postcode || '',
+                              siteCity: site.city || formData.siteCity || '',
+                            });
+                            setShowAddressSuggestions(false);
+                          }}
+                          placeholder="Type a postcode or site name"
+                          displayField="label"
+                          valueField="key"
+                        />
+                      );
+                    })()}
                     <p className="text-xs text-blue-700 mt-2">
                       {current
                         ? 'Matched to a saved site. Its permit, CBDU and SIC code will carry through to the job.'
