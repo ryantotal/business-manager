@@ -15347,6 +15347,72 @@ function getCustomerSites(customer) {
 }
 
 // A site's display label — name first, falling back to the address.
+// When a quote becomes a job the site is real work, so it earns its place on
+// the customer's site list. Adding it here means the list builds itself from
+// jobs actually done, rather than relying on someone remembering to add it —
+// and a site picked from the list later carries its permit, CBDU and SIC code
+// through to the transfer note, which a typed address never does.
+//
+// Returns { added, reason } and never throws: failing to file a site must not
+// stop a quote becoming a job.
+const normaliseSiteKey = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+const siteAlreadyOnFile = (sites, address1, postcode) => {
+  const wantPostcode = normaliseSiteKey(postcode);
+  const wantAddress = normaliseSiteKey(address1);
+  return (sites || []).some((s) => {
+    if (!s) return false;
+    const havePostcode = normaliseSiteKey(s.postcode);
+    const haveAddress = normaliseSiteKey(s.address);
+    if (wantPostcode && havePostcode && wantPostcode !== havePostcode) return false;
+    if (!wantPostcode && !havePostcode) return false;
+    // Same postcode is not enough on its own — an industrial estate can hold a
+    // dozen units. The start of the address has to agree too.
+    if (!wantAddress || !haveAddress) return !!wantPostcode && wantPostcode === havePostcode;
+    return haveAddress.startsWith(wantAddress.slice(0, 12)) || wantAddress.startsWith(haveAddress.slice(0, 12));
+  });
+};
+
+const addSiteToCustomerIfNew = async (customer, site) => {
+  try {
+    if (!customer || !customer.id) return { added: false, reason: 'no customer' };
+    if (WALK_IN_CUSTOMER_NAME === (customer.name || customer.companyName)) {
+      return { added: false, reason: 'walk-in customer' };
+    }
+    const address1 = String(site?.address1 || '').trim();
+    const postcode = String(site?.postcode || '').trim();
+    if (!address1 && !postcode) return { added: false, reason: 'no address' };
+
+    const sites = getCustomerSites(customer);
+    if (siteAlreadyOnFile(sites, address1, postcode)) {
+      return { added: false, reason: 'already on file' };
+    }
+
+    const fullAddress = [address1, site?.address2, site?.city].filter(Boolean).join(', ');
+    const nextSite = {
+      id: 'site_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      siteName: site?.siteName || address1 || postcode,
+      address: fullAddress || address1,
+      city: site?.city || '',
+      postcode: postcode,
+      contactName: site?.contactName || '',
+      contactPhone: site?.contactPhone || '',
+      sicCode: '',
+      addedFrom: site?.addedFrom || '',
+    };
+
+    const { error } = await window.supabase
+      .from('customers')
+      .update({ site_addresses: JSON.stringify([...sites, nextSite]) })
+      .eq('id', customer.id);
+    if (error) throw error;
+    return { added: true, site: nextSite };
+  } catch (e) {
+    console.error('[sites] could not add the site to the customer:', e);
+    return { added: false, reason: e.message || 'failed' };
+  }
+};
+
 function siteLabel(site) {
   if (!site) return '';
   const name = site.siteName || site.name;
@@ -28726,7 +28792,7 @@ const handleAcceptQuote = async (quote) => {
     // Create job from quote
     const newJob = {
       customerName: quote.customerName,
-      customerPO: '',
+      customerPO: quote.customerPO || '',
       supplierName: quote.supplierName || '',
       supplierRef: '',
       jobType: quote.jobType,
@@ -28742,10 +28808,18 @@ const handleAcceptQuote = async (quote) => {
       vatRate: 20,
       jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
       status: 'CONFIRMED',
-      siteAddress1: quote.siteAddress || '',
+      // The site as entered on the quote, not the customer's own details, and
+      // not blanked. Line two, the town, the site contact and the site notes
+      // were being dropped at conversion, and the contact and phone were read
+      // from the customer record rather than the site.
+      siteAddress: quote.siteAddress1 || quote.siteAddress || '',
+      siteAddress1: quote.siteAddress1 || quote.siteAddress || '',
+      siteAddress2: quote.siteAddress2 || '',
+      siteCity: quote.siteCity || '',
       sitePostcode: quote.sitePostcode || '',
-      siteContact: quote.customerContact || '',
-      sitePhone: quote.customerPhone || '',
+      siteContact: quote.siteContact || quote.customerContact || '',
+      sitePhone: quote.sitePhone || quote.customerPhone || '',
+      siteNotes: quote.siteNotes || '',
       notes: `Created from accepted quote ${quote.quoteNumber}. ${quote.notes || ''}`.trim(),
       invoiceNumber: '',
       invoiceStatus: 'Not Invoiced',
@@ -28849,7 +28923,7 @@ const handleRejectQuote = async (quote) => {
       jobNumber: jobNumber,
       quoteReference: quote.quoteNumber,  // This might need to be added to handleAddJob mapping
       customerName: quote.customerName,
-      customerPO: '',
+      customerPO: quote.customerPO || '',
       supplierName: quote.supplierName || '',
       supplierRef: '',
       haulierName: '',  // Add this field
@@ -28871,14 +28945,18 @@ const handleRejectQuote = async (quote) => {
       jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
       collectionDate: null,  // Add this
       status: 'CONFIRMED',
-      siteAddress: quote.siteAddress || '',
-      siteAddress1: quote.siteAddress1 || '',
-      siteAddress2: '',  // Add this
-      siteCity: '',  // Add this
+      // The site as entered on the quote, not the customer's own details, and
+      // not blanked. Line two, the town, the site contact and the site notes
+      // were being dropped at conversion, and the contact and phone were read
+      // from the customer record rather than the site.
+      siteAddress: quote.siteAddress1 || quote.siteAddress || '',
+      siteAddress1: quote.siteAddress1 || quote.siteAddress || '',
+      siteAddress2: quote.siteAddress2 || '',
+      siteCity: quote.siteCity || '',
       sitePostcode: quote.sitePostcode || '',
-      siteContact: quote.customerContact || '',
-      sitePhone: quote.customerPhone || '',
-      siteNotes: '',  // Add this
+      siteContact: quote.siteContact || quote.customerContact || '',
+      sitePhone: quote.sitePhone || quote.customerPhone || '',
+      siteNotes: quote.siteNotes || '',
       deliveryInstructions: '',  // Add this
       accessRestrictions: '',  // Add this
       timeSlot: '',  // Add this
@@ -28901,7 +28979,31 @@ const handleRejectQuote = async (quote) => {
     
    // Save job using handleAddJob which handles field conversions
 await handleAddJob(newJob);
-    
+
+    // File the site against the customer if it is not already there. Reported
+    // in the confirmation rather than silently, so it is obvious when the site
+    // list has grown. A failure here never blocks the conversion.
+    let siteOutcome = { added: false };
+    try {
+      const customer = (customers || []).find(
+        c => (c.name || c.companyName) === quote.customerName
+      );
+      siteOutcome = await addSiteToCustomerIfNew(customer, {
+        address1: quote.siteAddress1 || quote.siteAddress || '',
+        address2: quote.siteAddress2 || '',
+        city: quote.siteCity || '',
+        postcode: quote.sitePostcode || '',
+        contactName: quote.siteContact || '',
+        contactPhone: quote.sitePhone || '',
+        addedFrom: jobNumber,
+      });
+      if (siteOutcome.added && typeof loadCustomersFromSupabase === 'function') {
+        await loadCustomersFromSupabase();
+      }
+    } catch (e) {
+      console.error('[sites] adding the site from the quote failed:', e);
+    }
+
     // Update quote status to CONVERTED
     const { error: quoteError } = await window.supabase
       .from('quotes')
@@ -28925,7 +29027,10 @@ await handleAddJob(newJob);
     setShowFullPageQuote(null);
     setActiveTab('jobs');
     
-    alert(`✅ Quote ${quote.quoteNumber} successfully converted to Job ${jobNumber}!`);
+    alert(
+      `✅ Quote ${quote.quoteNumber} successfully converted to Job ${jobNumber}!` +
+      (siteOutcome.added ? `\n\nThe site has been added to ${quote.customerName}'s saved sites.` : '')
+    );
     
   } catch (error) {
     console.error('Error converting quote to job:', error);
