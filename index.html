@@ -5851,6 +5851,16 @@ if (!job || !job.id) {
 
     if (error) throw error;
 
+      // Filing the consignment note takes a hazardous job off the outstanding
+      // list. Logged rather than thrown: a flag failure must not lose the file.
+      if (isConsignmentNoteAttachment(attachmentType)) {
+        const { error: cnFlagError } = await window.supabase
+          .from('jobs')
+          .update({ consignment_note_received: true })
+          .eq('id', job.id);
+        if (cnFlagError) console.error('Consignment note uploaded but the job flag did not clear:', cnFlagError);
+      }
+
     alert('Attachment uploaded successfully!');
     // Also refresh the full page view if it's open
 if (window.refreshFullPageAttachments) {
@@ -16519,6 +16529,20 @@ console.log(JSON.stringify(invoiceData, null, 2));
 
       if (error) throw error;
       setJobAttachments(data || []);
+
+      // Self-repair: a consignment note attached before the flag existed, or
+      // through an upload path that did not set it, still counts. Clearing it
+      // here means the jobs list stops saying "CN due" without anyone having to
+      // re-upload anything.
+      const hasNote = (data || []).some(a => isConsignmentNoteAttachment(a && a.file_type));
+      if (hasNote && jobIsHazardous(job) && !jobHasConsignmentNote(job)) {
+        const { error: repairError } = await window.supabase
+          .from('jobs')
+          .update({ consignment_note_received: true })
+          .eq('id', jobId);
+        if (repairError) console.error('Could not clear the consignment note flag:', repairError);
+        else if (onUpdateDisplay) onUpdateDisplay({ ...job, consignmentNoteReceived: true, consignment_note_received: true });
+      }
     } catch (error) {
       console.error('Error loading job attachments:', error);
       setJobAttachments([]);
@@ -16559,6 +16583,16 @@ console.log(JSON.stringify(invoiceData, null, 2));
         }]);
 
       if (error) throw error;
+
+      // Filing the consignment note takes a hazardous job off the outstanding
+      // list. Logged rather than thrown: a flag failure must not lose the file.
+      if (isConsignmentNoteAttachment(attachmentType)) {
+        const { error: cnFlagError } = await window.supabase
+          .from('jobs')
+          .update({ consignment_note_received: true })
+          .eq('id', job.id);
+        if (cnFlagError) console.error('Consignment note uploaded but the job flag did not clear:', cnFlagError);
+      }
 
       alert('Job attachment uploaded successfully!');
       loadJobAttachments(job.id);
@@ -17177,7 +17211,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
       {/* Hazardous waste awaiting its consignment note. Sits with the ON STOP
           banner because it is the same kind of thing: something outstanding
           that whoever opens the job needs to see without hunting for it. */}
-      {jobAwaitingConsignmentNote(job) && (
+      {jobAwaitingConsignmentNote(job) && !(jobAttachments || []).some(a => isConsignmentNoteAttachment(a && a.file_type)) && (
         <div className="bg-red-50 border-b-2 border-red-300 px-4 sm:px-6 py-3 flex items-center gap-3">
           <span className="text-red-600 text-xl">&#9888;</span>
           <div>
