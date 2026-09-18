@@ -9643,6 +9643,74 @@ const [groupByProduct, setGroupByProduct] = useState(false);
 
       {/* fix32v: Managers/Brokers see only the Staff Holidays widget below; every financial report (margins, profit, cost, turnover) is Admin-only */}
       {hasPermission('dashboard:financials') && (<>
+
+      {/* Hazardous waste, split out from everything else. It carries different
+          paperwork, different risk and different margins, so it is worth being
+          able to see what it is actually worth rather than having it buried in
+          the total. Follows the date filter like every other figure here. */}
+      {(() => {
+        const hazJobs = filteredJobs.filter(j => jobIsHazardous(j));
+        const totals = hazJobs.reduce((acc, job) => {
+          const p = getJobPricing(job);
+          acc.revenue += p.revenue;
+          acc.cost += p.cost;
+          acc.profit += p.profit;
+          return acc;
+        }, { revenue: 0, cost: 0, profit: 0 });
+        const allRevenue = filteredJobs.reduce((sum, job) => sum + getJobPricing(job).revenue, 0);
+        const margin = totals.revenue > 0 ? (totals.profit / totals.revenue) * 100 : 0;
+        const shareOfTurnover = allRevenue > 0 ? (totals.revenue / allRevenue) * 100 : 0;
+        const outstanding = hazJobs.filter(j => jobAwaitingConsignmentNote(j)).length;
+
+        return (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex justify-between items-start mb-4 gap-3 flex-wrap">
+              <div>
+                <h3 className="text-lg font-semibold">Hazardous waste</h3>
+                <p className="text-sm text-gray-600">
+                  {hazJobs.length} job{hazJobs.length === 1 ? '' : 's'} marked hazardous in this period
+                </p>
+              </div>
+              {outstanding > 0 && (
+                <span className="px-3 py-1 rounded-full bg-red-100 text-red-800 border border-red-300 text-sm font-medium">
+                  {outstanding} consignment note{outstanding === 1 ? '' : 's'} outstanding
+                </span>
+              )}
+            </div>
+
+            {hazJobs.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                Nothing marked hazardous in this period. Jobs are counted here once the
+                Hazardous waste box is ticked on the job.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-600">Turnover</div>
+                  <div className="text-lg font-bold text-gray-900">&pound;{totals.revenue.toFixed(2)}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-600">Cost</div>
+                  <div className="text-lg font-bold text-red-600">&pound;{totals.cost.toFixed(2)}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-600">Profit</div>
+                  <div className="text-lg font-bold text-green-600">&pound;{totals.profit.toFixed(2)}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-600">Margin</div>
+                  <div className="text-lg font-bold text-green-600">{margin.toFixed(1)}%</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-600">Share of turnover</div>
+                  <div className="text-lg font-bold text-gray-900">{shareOfTurnover.toFixed(1)}%</div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Report 1: Products Sold with Margins */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-4">
@@ -16540,8 +16608,16 @@ console.log(JSON.stringify(invoiceData, null, 2));
           .from('jobs')
           .update({ consignment_note_received: true })
           .eq('id', jobId);
-        if (repairError) console.error('Could not clear the consignment note flag:', repairError);
-        else if (onUpdateDisplay) onUpdateDisplay({ ...job, consignmentNoteReceived: true, consignment_note_received: true });
+        if (repairError) {
+          console.error('Could not clear the consignment note flag:', repairError);
+        } else {
+          if (onUpdateDisplay) onUpdateDisplay({ ...job, consignmentNoteReceived: true, consignment_note_received: true });
+          // The jobs list is a separate copy, so without this the red dot stays
+          // on the row behind until something else reloads the list. Safe to
+          // call: on the way back round the job already has its note, so the
+          // repair does not run again.
+          if (onRefresh) await onRefresh();
+        }
       }
     } catch (error) {
       console.error('Error loading job attachments:', error);
