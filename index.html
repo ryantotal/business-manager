@@ -28677,7 +28677,10 @@ const saveSupplierToDatabase = async (supplier) => {
       site_phone: newQuote.sitePhone || '',
       site_notes: newQuote.siteNotes || '',
       customer_po: newQuote.customerPO || '',
-      hide_prices_on_pdf: newQuote.hidePricesOnPDF !== false,
+      // Totals are shown unless someone has deliberately ticked the box.
+      // A quote that goes out with no prices on it is the expensive mistake,
+      // so the safe default is visible.
+      hide_prices_on_pdf: newQuote.hidePricesOnPDF === true,
       notes: newQuote.notes || '',
       status: newQuote.status || 'PENDING',
       line_items: JSON.stringify(newQuote.lineItems || []),
@@ -28750,7 +28753,7 @@ const saveSupplierToDatabase = async (supplier) => {
       site_notes: updatedQuote.siteNotes || '',
       delivery_instructions: updatedQuote.deliveryInstructions || '',
       access_restrictions: updatedQuote.accessRestrictions || '',  // Add this one too
-      hide_prices_on_pdf: updatedQuote.hidePricesOnPDF !== false,
+      hide_prices_on_pdf: updatedQuote.hidePricesOnPDF === true,
       scope_description: updatedQuote.scopeDescription || '',
       internal_reference: updatedQuote.internalReference || '',
       inclusions: updatedQuote.inclusions || '',
@@ -34282,12 +34285,12 @@ By approving this quotation and authorising us to commence services, you acknowl
                   <input
                     type="checkbox"
                     id="hidePrices"
-                    checked={formData.hidePricesOnPDF !== false}
+                    checked={formData.hidePricesOnPDF === true}
                     onChange={(e) => setFormData({...formData, hidePricesOnPDF: e.target.checked})}
                     className="mr-3 h-4 w-4"
                   />
                   <span className="text-sm text-gray-700 font-medium">
-                    Hide totals section on PDF (remove subtotal, VAT and grand total)
+                    Hide ALL prices on the PDF — unit prices, line totals, VAT and grand total
                   </span>
                 </label>
                 <label htmlFor="hideDirectPhone" className="flex items-center cursor-pointer mt-3">
@@ -36211,7 +36214,9 @@ window.uploadJobAttachment = async () => {
     // Filing the consignment note is what takes a hazardous job off the
     // outstanding list. A failure here must not lose the upload, so it is
     // logged rather than thrown.
-    if (isConsignmentNoteAttachment(attachmentType)) {
+    // This script sits outside the app's code block and cannot see its helpers,
+    // so the check is done inline rather than calling isConsignmentNoteAttachment.
+    if (/consignment|^cn$|connote/.test(String(attachmentType || '').toLowerCase().replace(/[^a-z]/g, ''))) {
       const { error: flagError } = await window.supabase
         .from('jobs')
         .update({ consignment_note_received: true })
