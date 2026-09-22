@@ -1223,6 +1223,72 @@ const markQuoteLinesConverted = (quote, selectedIndices, jobNumber) => {
   });
 };
 
+// ── Schedules that would run alongside this one ────────────────────────────
+// Ticking "Make this a recurring job" on a weekly copy turns the copy into a
+// new schedule — but the schedule that made the copy carries on. Nothing
+// said so, and for months two schedules ran side by side for the same skips:
+// the old one on Tuesdays, the new one on its proper day.
+//
+// Two ways of competing:
+//   parent — this job was made by a schedule that is still running
+//   same   — another running schedule for the same customer, site and
+//            products, on the same weekday
+const jobIsLiveSchedule = (j) =>
+  !!(j && (j.isRecurring || j.is_recurring) && !(j.isCancelled || j.is_cancelled));
+
+const scheduleProductKey = (j) => {
+  const lines = (j && (j.lineItems || j.line_items)) || [];
+  let arr = lines;
+  if (typeof lines === 'string') {
+    try { arr = JSON.parse(lines); } catch (e) { arr = []; }
+  }
+  const names = (Array.isArray(arr) ? arr : [])
+    .map(it => String((it && (it.product_name || it.description)) || '').trim().toLowerCase())
+    .filter(Boolean)
+    .sort();
+  if (names.length) return names.join('|');
+  return String((j && (j.sageProductName || j.sage_product_name)) || '').trim().toLowerCase();
+};
+
+const scheduleWeekday = (j) => {
+  const d = (j && (j.recurringStartDate || j.recurring_start_date || j.jobDate || j.job_date)) || '';
+  if (!d) return null;
+  const dt = new Date(String(d).slice(0, 10) + 'T12:00:00Z');
+  return isNaN(dt.getTime()) ? null : dt.getUTCDay();
+};
+
+const findCompetingSchedules = (job, draft, jobs) => {
+  const all = Array.isArray(jobs) ? jobs : [];
+  const me = { ...(job || {}), ...(draft || {}) };
+  const myId = job && job.id;
+  const found = [];
+
+  const parentId = (job && (job.parentJobId || job.parent_job_id)) || null;
+  const parent = parentId ? all.find(j => String(j.id) === String(parentId)) : null;
+  if (parent && jobIsLiveSchedule(parent)) found.push({ job: parent, reason: 'parent' });
+
+  const myCustomer = String(me.customerName || me.customer_name || '').trim().toLowerCase();
+  const myPostcode = String(me.sitePostcode || me.site_postcode || '').replace(/\s+/g, '').toUpperCase();
+  const myProducts = scheduleProductKey(me);
+  const myDay = scheduleWeekday(me);
+  const myFreq = me.recurringFrequency || me.recurring_frequency || 'weekly';
+  if (myCustomer && myPostcode && myProducts && myDay !== null) {
+    all.forEach(j => {
+      if (!j || String(j.id) === String(myId)) return;
+      if (parent && String(j.id) === String(parent.id)) return;
+      if (!jobIsLiveSchedule(j)) return;
+      const c = String(j.customerName || j.customer_name || '').trim().toLowerCase();
+      const pc = String(j.sitePostcode || j.site_postcode || '').replace(/\s+/g, '').toUpperCase();
+      const f = j.recurringFrequency || j.recurring_frequency || 'weekly';
+      if (c === myCustomer && pc === myPostcode && scheduleProductKey(j) === myProducts
+          && scheduleWeekday(j) === myDay && f === myFreq) {
+        found.push({ job: j, reason: 'same' });
+      }
+    });
+  }
+  return found;
+};
+
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
 // Searchable Dropdown Component
@@ -4206,6 +4272,9 @@ const [seriesDraft, setSeriesDraft] = useState({ supplier_name: '', is_paused: f
 const [seriesSaving, setSeriesSaving] = useState(false);
 const [seriesError, setSeriesError] = useState('');
 const [seriesSaved, setSeriesSaved] = useState('');
+// Which competing schedule is mid-switch-off, from the warning on the
+// Recurring tab. Up here with the other state, not inside the tab.
+const [switchingOffSchedule, setSwitchingOffSchedule] = useState('');
 const [wtnSuggestions, setWtnSuggestions] = useState({}); // tracks which fields were auto-filled from previous WTNs
 
 // Keep WTN supplier/customer fields in sync with form changes
@@ -7998,6 +8067,70 @@ const [isEvent, setIsEvent] = useState(false);
                         Make this a recurring job
                       </label>
                     </div>
+
+                    {/* Another schedule already doing this work. Ticking the box
+                        on a weekly copy turns it into a new schedule, but the one
+                        that made the copy keeps going — which is how the MetCat
+                        skips ran on Tuesdays as well as their proper days for
+                        months. Offered as a warning with a one-click fix, not a
+                        block, because moving a schedule to a new day is a real
+                        and common thing to do. */}
+                    {formData.isRecurring && (() => {
+                      const competing = findCompetingSchedules(job, formData, jobs);
+                      if (competing.length === 0) return null;
+                      return (
+                        <div className="bg-red-50 border border-red-300 rounded-lg p-4 space-y-3">
+                          <p className="text-sm font-semibold text-red-800">
+                            {competing.length === 1
+                              ? 'Another schedule is already doing this work'
+                              : competing.length + ' other schedules are already doing this work'}
+                          </p>
+                          {competing.map(({ job: other, reason }) => {
+                            const no = other.jobNumber || other.job_number || 'another job';
+                            const day = (() => {
+                              const d = other.recurringStartDate || other.recurring_start_date || other.jobDate || other.job_date;
+                              if (!d) return '';
+                              const dt = new Date(String(d).slice(0, 10) + 'T12:00:00Z');
+                              return isNaN(dt.getTime()) ? '' : ['Sundays','Mondays','Tuesdays','Wednesdays','Thursdays','Fridays','Saturdays'][dt.getUTCDay()];
+                            })();
+                            const busy = switchingOffSchedule === String(other.id);
+                            return (
+                              <div key={other.id} className="flex items-start justify-between gap-3 flex-wrap">
+                                <p className="text-sm text-red-800 flex-1 min-w-[16rem]">
+                                  {reason === 'parent'
+                                    ? <>This job was made by <strong>{no}</strong>'s schedule{day ? ' (' + day + ')' : ''}, which is still running. Leave both on and you'll get both.</>
+                                    : <><strong>{no}</strong> already collects the same thing from this site{day ? ' on ' + day : ''}. Leave both on and you'll get two every week.</>}
+                                </p>
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={async () => {
+                                    if (!confirm('Switch off ' + no + '\'s schedule?\n\nIts existing jobs stay exactly as they are. It just stops making new ones.')) return;
+                                    setSwitchingOffSchedule(String(other.id));
+                                    try {
+                                      const { error } = await window.supabase
+                                        .from('jobs')
+                                        .update({ is_recurring: false, recurring_next_date: null })
+                                        .eq('id', other.id);
+                                      if (error) throw error;
+                                      if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
+                                    } catch (e) {
+                                      console.error('Could not switch the schedule off:', e);
+                                      alert('Could not switch ' + no + ' off: ' + (e.message || 'unknown error'));
+                                    } finally {
+                                      setSwitchingOffSchedule('');
+                                    }
+                                  }}
+                                  className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 whitespace-nowrap"
+                                >
+                                  {busy ? 'Switching off...' : 'Switch ' + no + ' off'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
 
                     {formData.isRecurring && (
                       <div className="space-y-4">
