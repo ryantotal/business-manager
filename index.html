@@ -11935,6 +11935,14 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
                                   <span>{job.jobDate ? new Date(job.jobDate).toLocaleDateString('en-GB') : '—'}</span>
                                   {job.supplierName && <><span>·</span><span className="truncate">{job.supplierName}</span></>}
                                 </div>
+                                {(() => {
+                                  const items = Array.isArray(job.lineItems) ? job.lineItems : [];
+                                  const text = items
+                                    .map(i => String((i && (i.description || i.product_name)) || '').trim())
+                                    .filter(Boolean)
+                                    .join(', ') || job.sageProductName || '';
+                                  return text ? <div className="text-xs text-gray-700 mt-0.5 truncate">{text}</div> : null;
+                                })()}
                                 <div className="text-xs text-gray-400 mt-0.5 truncate">{[job.siteAddress1, job.sitePostcode].filter(Boolean).join(', ') || '—'}</div>
                                 <div className="flex items-center gap-3 mt-1">
                                   {job.invoiceNumber && <span className="text-xs font-medium text-blue-600">{job.invoiceNumber}</span>}
@@ -11955,7 +11963,7 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
         <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job Number & Date</th>
 <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
 <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product/Service</th>
+<th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
 <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Haulier</th>
 <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
 <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Postcode</th>
@@ -12027,13 +12035,20 @@ style={{ backgroundColor: job.onStop ? '#ef4444' : jobColors[job.jobType] }}
 <span title={job.supplierName}>{truncateText(job.supplierName, 20)}</span>
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-500' : ''}`}>
-{job.lineItems && job.lineItems.length > 0
- ? <span title={job.lineItems[0].product_name || job.lineItems[0].description}>
-{(job.lineItems[0].product_name || job.lineItems[0].description || '-').substring(0, 30)}
-{(job.lineItems[0].product_name || job.lineItems[0].description || '').length > 30 ? '...' : ''}
-</span>
- : job.sageProductName || '-'
-}
+{(() => {
+  // The line descriptions, the same as the quotes list shows, rather than
+  // the product name. The product is a Sage category ("Disposal", "Grab
+  // Hire"); the description is what the job actually is, so two jobs using
+  // the same product can be told apart at a glance. Every line is listed,
+  // not just the first, since a job often has more than one.
+  const items = Array.isArray(job.lineItems) ? job.lineItems : [];
+  const text = items
+    .map(i => String((i && (i.description || i.product_name)) || '').trim())
+    .filter(Boolean)
+    .join(', ')
+    || job.sageProductName || '-';
+  return <span title={text} className="block max-w-[220px] truncate">{text}</span>;
+})()}
 </td>
 <td className={`px-3 py-3 whitespace-nowrap text-sm text-gray-900 ${isFinished ? 'bg-green-500' : ''}`}>
 <span title={job.haulierName}>{shortenCompanyName(job.haulierName)}</span>
