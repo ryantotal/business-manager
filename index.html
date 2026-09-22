@@ -24841,6 +24841,12 @@ useEffect(() => {
 }, []);
           const { user, logout, hasPermission } = useAuth();
           const [activeTab, setActiveTab] = useState('jobs');
+          // The Convert to Job product picker. Declared up here with the rest of
+          // the app's state, not beside the handler that uses it: the app returns
+          // early for a signed-out user, and a hook placed after that return is
+          // called on some renders and not others, which React rejects outright
+          // (error #310) and the whole portal goes blank.
+          const [convertPicker, setConvertPicker] = useState(null);
           const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
           const [recurringNotifications, setRecurringNotifications] = useState([]);
           const [portalRequestToasts, setPortalRequestToasts] = useState([]);
@@ -29041,8 +29047,6 @@ const handleRejectQuote = async (quote) => {
   }
 };
 
-
-   const [convertPicker, setConvertPicker] = useState(null);
 
    // Convert to Job: pick the lines first. Lines already on a job are shown but
    // cannot be picked again. On a quote converted before lines were tracked,
