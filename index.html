@@ -1147,6 +1147,54 @@ const isConsignmentNoteAttachment = (fileType) => {
   return t.includes('consignment') || t === 'cn' || t === 'connote';
 };
 
+// ── Converting part of a quote ─────────────────────────────────────────────
+// A customer often confirms some of a quote now and the rest later. Each line
+// on the quote remembers which job it went onto, so the next conversion offers
+// only what is left, and the quote only counts as converted once every line
+// has gone somewhere.
+const quoteLineJob = (item) => (item && (item.converted_to_job || item.convertedToJob)) || '';
+
+const quoteConversionState = (quote) => {
+  const lines = (quote && (quote.lineItems || [])) || [];
+  const converted = lines.filter((it) => !!quoteLineJob(it)).length;
+  // A quote marked converted before lines were tracked has nothing recorded on
+  // its lines. It is not known which went, so the picker has to ask.
+  const legacy = quote && quote.status === 'CONVERTED' && lines.length > 0 && converted === 0;
+  return {
+    total: lines.length,
+    converted,
+    remaining: lines.length - converted,
+    legacy: !!legacy,
+    partial: converted > 0 && converted < lines.length,
+    complete: lines.length > 0 && converted === lines.length,
+  };
+};
+
+// Whether a convert button should be offered at all.
+const quoteCanConvertMore = (quote, { includeLegacy = false } = {}) => {
+  if (!quote) return false;
+  const state = quoteConversionState(quote);
+  if (state.total === 0) return false;
+  if (state.legacy) return includeLegacy;
+  return state.remaining > 0;
+};
+
+// Marks the chosen lines as converted to the new job. On a legacy quote the
+// lines not chosen now are assumed to be the ones that went on the original
+// job, since that is the only way the situation arises.
+const markQuoteLinesConverted = (quote, selectedIndices, jobNumber) => {
+  const lines = (quote && quote.lineItems) || [];
+  const picked = new Set(selectedIndices || []);
+  const legacy = quoteConversionState(quote).legacy;
+  const previous = (quote && (quote.job_reference || quote.jobReference)) || '';
+  return lines.map((item, i) => {
+    if (quoteLineJob(item)) return item;
+    if (picked.has(i)) return { ...item, converted_to_job: jobNumber };
+    if (legacy && previous) return { ...item, converted_to_job: previous };
+    return item;
+  });
+};
+
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
 // Searchable Dropdown Component
@@ -12701,8 +12749,9 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
             >
               <Edit3 size={16} />
             </button>
-            {(quote.status === 'ACCEPTED' ||
-              ((quote.status === 'PENDING' || quote.status === 'SENT') && !expired)) ? (
+            {((quote.status === 'ACCEPTED' ||
+              ((quote.status === 'PENDING' || quote.status === 'SENT') && !expired)) ||
+              (quoteConversionState(quote).partial && quoteCanConvertMore(quote))) ? (
               <button
                 onClick={() => onConvertToJob(quote)}
                 className="text-green-600 hover:text-green-900"
@@ -18970,6 +19019,14 @@ By approving this quotation and authorising us to commence services, you acknowl
             }`}>
               {isExpired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
             </span>
+            {(() => {
+              const cs = quoteConversionState(quote);
+              return cs.partial ? (
+                <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-50 text-purple-800 border border-purple-200">
+                  {cs.converted} of {cs.total} converted
+                </span>
+              ) : null;
+            })()}
           </div>
           
           <div className="flex items-center space-x-2">
@@ -19240,8 +19297,12 @@ Total Waste Services Ltd`);
                 </button>
               </>
             )}
-            {(quote.status === 'ACCEPTED' ||
-              ((quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired)) && (
+            {/* Stays available while any product is still unconverted, and on a
+                quote converted before products were tracked, so the rest can
+                still be put on a job when the customer confirms them. */}
+            {((quote.status === 'ACCEPTED' ||
+              ((quote.status === 'PENDING' || quote.status === 'SENT') && !isExpired)) ||
+              quoteCanConvertMore(quote, { includeLegacy: true })) && (
               <button
                 onClick={() => onConvertToJob(quote)}
                 className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
@@ -28981,7 +29042,28 @@ const handleRejectQuote = async (quote) => {
 };
 
 
-   const handleConvertQuoteToJob = async (quote) => {
+   const [convertPicker, setConvertPicker] = useState(null);
+
+   // Convert to Job: pick the lines first. Lines already on a job are shown but
+   // cannot be picked again. On a quote converted before lines were tracked,
+   // nothing is pre-ticked, because it is not known which lines went.
+   const handleConvertQuoteToJob = (quote) => {
+     const state = quoteConversionState(quote);
+     const selected = (quote.lineItems || [])
+       .map((it, i) => (!quoteLineJob(it) && !state.legacy ? i : null))
+       .filter(i => i !== null);
+     setConvertPicker({ quote, selected, legacy: state.legacy });
+   };
+
+   // Convert to Job opens a picker first; this does the work once the lines
+   // have been chosen.
+   const performConvertQuoteToJob = async (quote, selectedIndices) => {
+  const picked = new Set(selectedIndices || []);
+  const chosenLines = (quote.lineItems || []).filter((_, i) => picked.has(i));
+  if (chosenLines.length === 0) {
+    alert('Pick at least one product to put on the job.');
+    return;
+  }
   try {
     // Job number from the same source as every other way of creating a job.
     //
@@ -29060,7 +29142,7 @@ const handleRejectQuote = async (quote) => {
       sageProductId: null,  // Add this
       sageProductName: null,  // Add this
       sage_id: null,  // Add this
-      lineItems: quote.lineItems || [],
+      lineItems: chosenLines,
       parentJobId: null,  // Add this
       linkedJobs: []  // Add this
     };
@@ -29092,14 +29174,22 @@ await handleAddJob(newJob);
       console.error('[sites] adding the site from the quote failed:', e);
     }
 
-    // Update quote status to CONVERTED
+    // Each converted line remembers its job. The quote only becomes CONVERTED
+    // once every line has gone somewhere; until then it stays live so the
+    // rest can be converted when the customer confirms them.
+    const markedLines = markQuoteLinesConverted(quote, selectedIndices, jobNumber);
+    const nowComplete = quoteConversionState({ ...quote, lineItems: markedLines }).complete;
+    const jobRefs = Array.from(new Set(
+      [quote.job_reference, ...markedLines.map(quoteLineJob)].filter(Boolean)
+    )).join(', ');
+    const quoteUpdate = {
+      line_items: JSON.stringify(markedLines),
+      job_reference: jobRefs || jobNumber,
+      ...(nowComplete ? { status: 'CONVERTED', converted_date: new Date().toISOString() } : {}),
+    };
     const { error: quoteError } = await window.supabase
       .from('quotes')
-      .update({ 
-        status: 'CONVERTED',
-        converted_date: new Date().toISOString(),
-        job_reference: jobNumber  // Store the new job number
-      })
+      .update(quoteUpdate)
       .eq('id', quote.id);
     
     if (quoteError) throw quoteError;
@@ -29107,7 +29197,12 @@ await handleAddJob(newJob);
     // Update local state
     setQuotes(quotes.map(q => 
       q.id === quote.id 
-        ? { ...q, status: 'CONVERTED', job_reference: jobNumber }
+        ? {
+            ...q,
+            lineItems: markedLines,
+            job_reference: quoteUpdate.job_reference,
+            ...(nowComplete ? { status: 'CONVERTED' } : {}),
+          }
         : q
     ));
     
@@ -29116,7 +29211,8 @@ await handleAddJob(newJob);
     setActiveTab('jobs');
     
     alert(
-      `✅ Quote ${quote.quoteNumber} successfully converted to Job ${jobNumber}!` +
+      `✅ ${chosenLines.length} of ${(quote.lineItems || []).length} products from ${quote.quoteNumber} are now Job ${jobNumber}.` +
+      (nowComplete ? '' : `\n\nThe rest stay on the quote — convert them when the customer confirms.`) +
       (siteOutcome.added ? `\n\nThe site has been added to ${quote.customerName}'s saved sites.` : '')
     );
     
@@ -29471,6 +29567,115 @@ onClick={() => {
   />
 )}
 {showCollectionCalendar && <CollectionCalendarModal />}
+
+{/* Which products go onto the job. The customer often confirms part of a
+    quote now and the rest later, so each line can be converted separately and
+    the quote remembers which job each one went to. */}
+{convertPicker && (() => {
+  const { quote, selected, legacy } = convertPicker;
+  const lines = quote.lineItems || [];
+  const toggle = (i) => setConvertPicker(prev => ({
+    ...prev,
+    selected: prev.selected.includes(i) ? prev.selected.filter(x => x !== i) : [...prev.selected, i],
+  }));
+  const available = lines.map((it, i) => (quoteLineJob(it) ? null : i)).filter(i => i !== null);
+  const allPicked = available.length > 0 && available.every(i => selected.includes(i));
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-xl font-bold">Convert {quote.quoteNumber} to a job</h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Tick the products the customer has confirmed. Anything left unticked
+            stays on the quote to convert later.
+          </p>
+        </div>
+
+        {legacy && (
+          <div className="mx-6 mt-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3 text-sm">
+            This quote was converted to {quote.job_reference || 'a job'} before the
+            portal tracked which products went. Tick only the ones being added now —
+            the rest will be recorded as already on {quote.job_reference || 'the original job'}.
+          </div>
+        )}
+
+        <div className="p-6 space-y-2">
+          {available.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setConvertPicker(prev => ({ ...prev, selected: allPicked ? [] : available }))}
+              className="text-sm text-blue-600 hover:text-blue-800 underline mb-2"
+            >
+              {allPicked ? 'Untick all' : 'Tick all'}
+            </button>
+          )}
+          {lines.map((it, i) => {
+            const done = quoteLineJob(it);
+            const qty = parseFloat(it.quantity) || 0;
+            return (
+              <label
+                key={it.id || i}
+                className={`flex items-start gap-3 p-3 rounded-lg border ${
+                  done ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
+                       : selected.includes(i) ? 'bg-green-50 border-green-300 cursor-pointer'
+                       : 'bg-white border-gray-200 cursor-pointer hover:bg-gray-50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!done || selected.includes(i)}
+                  disabled={!!done}
+                  onChange={() => toggle(i)}
+                  className="mt-1 w-4 h-4"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">
+                    {it.product_name || it.description || 'Line ' + (i + 1)}
+                  </div>
+                  {it.description && it.description !== it.product_name && (
+                    <div className="text-xs text-gray-500">{it.description}</div>
+                  )}
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {qty}{it.unit ? ' ' + it.unit : ''}
+                    {it.supplier_name ? ' \u00b7 ' + it.supplier_name : ''}
+                  </div>
+                </div>
+                {done && (
+                  <span className="text-xs font-medium text-gray-500 whitespace-nowrap">on {done}</span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="p-6 border-t border-gray-200 flex justify-between items-center gap-3">
+          <span className="text-sm text-gray-600">
+            {selected.length} of {lines.length} product{lines.length === 1 ? '' : 's'} selected
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setConvertPicker(null)}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                const chosen = selected.slice().sort((a, b) => a - b);
+                setConvertPicker(null);
+                await performConvertQuoteToJob(quote, chosen);
+              }}
+              disabled={selected.length === 0}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+            >
+              Create job
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+})()}
 {/* Full Page Quote View - ADD this RIGHT AFTER showFullPageJob section */}
 {showFullPageQuote && (
   <FullPageQuoteView 
