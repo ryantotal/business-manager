@@ -2063,44 +2063,6 @@ return (
           // Supabase keeps the session in the browser, so a reload no longer
           // means signing in again. Pick the profile back up on start.
           const [restoring, setRestoring] = useState(true);
-          // Arriving with ?portal=<token> means an owner opened this customer's
-          // portal from the admin screen. Same code path the customer uses, so
-          // what is on screen is genuinely what they see.
-          useEffect(() => {
-            const linkToken = new URLSearchParams(window.location.search).get('portal');
-            if (!linkToken) return;
-            let stop = false;
-            (async () => {
-              try {
-                const { data: customer } = await window.supabase
-                  .rpc('portal_me', { p_token: linkToken });
-                if (stop || !customer) {
-                  setPortalError('That portal link has expired. Open it again from the Customers screen.');
-                  return;
-                }
-                const { data: jobs } = await window.supabase
-                  .rpc('portal_jobs', { p_token: linkToken });
-                const { data: info } = await window.supabase.rpc('portal_company_info');
-                if (stop) return;
-                setPortalUser({
-                  company: customer.name,
-                  customer,
-                  token: linkToken,
-                  viewingAsOwner: true,
-                  logoUrl: (info && info.logo_url) || null,
-                  companyName: (info && info.company_name) || null
-                });
-                setPortalJobs((jobs || []).map(j => ({
-                  ...j,
-                  wtns: j.wtns || [],
-                  wtnData: (j.wtns && j.wtns[0]) || j.wtn_data || null
-                })));
-              } catch (e) {
-                console.warn('[Portal] could not open from link:', e);
-              }
-            })();
-            return () => { stop = true; };
-          }, []);
 
           useEffect(() => {
             let cancelled = false;
@@ -2507,6 +2469,45 @@ return (
           const [portalUser, setPortalUser] = useState(null);
           const [portalJobs, setPortalJobs] = useState([]);
           const [loadingPortal, setLoadingPortal] = useState(false);
+
+          // Arriving with ?portal=<token> means an owner opened this customer's
+          // portal from the admin screen. Same code path the customer uses, so
+          // what is on screen is genuinely what they see.
+          useEffect(() => {
+            const linkToken = new URLSearchParams(window.location.search).get('portal');
+            if (!linkToken) return;
+            let stop = false;
+            (async () => {
+              try {
+                const { data: customer } = await window.supabase
+                  .rpc('portal_me', { p_token: linkToken });
+                if (stop || !customer) {
+                  setPortalError('That portal link has expired. Open it again from the Customers screen.');
+                  return;
+                }
+                const { data: jobs } = await window.supabase
+                  .rpc('portal_jobs', { p_token: linkToken });
+                const { data: info } = await window.supabase.rpc('portal_company_info');
+                if (stop) return;
+                setPortalUser({
+                  company: customer.name,
+                  customer,
+                  token: linkToken,
+                  viewingAsOwner: true,
+                  logoUrl: (info && info.logo_url) || null,
+                  companyName: (info && info.company_name) || null
+                });
+                setPortalJobs((jobs || []).map(j => ({
+                  ...j,
+                  wtns: j.wtns || [],
+                  wtnData: (j.wtns && j.wtns[0]) || j.wtn_data || null
+                })));
+              } catch (e) {
+                console.warn('[Portal] could not open from link:', e);
+              }
+            })();
+            return () => { stop = true; };
+          }, []);
           // The company document state that sat here was removed along with the
           // panel it fed. loadingPortal was the line above it and is still used
           // by the portal sign-in, so it stays.
@@ -4765,7 +4766,11 @@ const [wtnFields, setWtnFields] = useState(() => {
   const todayStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().slice(0,5);
   const autoWtnNumber = 'WTN-' + (job?.jobNumber || job?.id || 'DRAFT');
-  const autoDate = job?.collectionDate || ((job?.isCompleted || job?.is_completed) ? todayStr : null) || job?.jobDate || todayStr;
+  // The date the waste actually moved: the collection date where there is one,
+  // otherwise the job's own date. It used to fall back to today for a completed
+  // job, so a note drafted months later carried the date it was drafted rather
+  // than the date of the work — and once saved, that is what the note says.
+  const autoDate = job?.collectionDate || job?.collection_date || job?.jobDate || job?.job_date || todayStr;
 
   if (savedWtn) {
     // Always re-derive recipient email from customer record (never use stale saved email)
@@ -5319,7 +5324,11 @@ useEffect(() => {
   const todayStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().slice(0,5);
   const autoWtnNumber = 'WTN-' + (job?.jobNumber || '');
-  const autoDate = job?.collectionDate || ((job?.isCompleted || job?.is_completed) ? todayStr : null) || job?.jobDate || todayStr;
+  // The date the waste actually moved: the collection date where there is one,
+  // otherwise the job's own date. It used to fall back to today for a completed
+  // job, so a note drafted months later carried the date it was drafted rather
+  // than the date of the work — and once saved, that is what the note says.
+  const autoDate = job?.collectionDate || job?.collection_date || job?.jobDate || job?.job_date || todayStr;
 
   // Always update WTN number to match current job, and refresh date/time if blank
   // Also always re-derive recipient email from customer record (never use stale saved email)
@@ -27454,6 +27463,30 @@ collection_date: updatedJob.collectionDate || null,
       .eq('id', updatedJob.id);
 
     if (error) throw error;
+
+    // Move the job, move its transfer notes. A note records the date the waste
+    // moved, so a note left on the original booking date after the job was
+    // rescheduled simply says the wrong day — that is how 99 of them came to
+    // disagree with their jobs. Notes already issued are left alone: a document
+    // that has gone to a customer must not quietly rewrite itself.
+    if ('job_date' in jobForDatabase || 'collection_date' in jobForDatabase) {
+      const movedTo = jobForDatabase.collection_date || jobForDatabase.job_date
+        || updatedJob.collectionDate || updatedJob.jobDate || null;
+      const alreadyIssued = updatedJob.wtnSent || updatedJob.wtn_sent
+        || updatedJob.wtnSentAt || updatedJob.wtn_sent_at;
+      if (movedTo && !alreadyIssued) {
+        try {
+          const { error: wtnDateError } = await window.supabase
+            .from('wtns')
+            .update({ transfer_date: movedTo })
+            .eq('job_id', updatedJob.id);
+          if (wtnDateError) throw wtnDateError;
+        } catch (e) {
+          // Never block the job save for this; the note can be corrected by hand.
+          console.error('[job save] could not move the transfer note dates:', e);
+        }
+      }
+    }
 
     // Re-fetch the updated job from Supabase so local state matches DB exactly
     const { data: freshJob, error: fetchError } = await window.supabase
