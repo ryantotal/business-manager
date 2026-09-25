@@ -2888,7 +2888,7 @@ return (
               <div className="min-h-screen bg-gray-50">
                 {portalUser?.viewingAsOwner && (
                   <div className="bg-amber-100 border-b border-amber-300 text-amber-900 px-4 py-2 text-sm text-center">
-                    Viewing as {portalUser.company} — exactly what they see. This link lasts 30 minutes.
+                    Viewing as {portalUser.company} — exactly what they see. This link lasts one hour.
                   </div>
                 )}
                 {/* Portal Header */}
@@ -25107,6 +25107,25 @@ info@totalwasteservicesltd.com`;
                             💾 Save
                           </button>
                         )}
+                        {/* Opens the customer's real portal, not a copy of it.
+                            The token is a normal portal session issued to a
+                            signed-in staff account and lasts an hour; their PIN
+                            and passcode are untouched. */}
+                        <button onClick={async () => {
+                          try {
+                            const { data, error } = await window.supabase
+                              .rpc('portal_owner_token', { p_customer_id: customer.id });
+                            if (error) throw error;
+                            if (!data || !data.token) throw new Error('No portal session came back for this customer.');
+                            window.open(window.location.origin + '/?portal=' + data.token, '_blank');
+                          } catch (e) {
+                            console.error('Could not open the portal:', e);
+                            alert('Could not open ' + cName + "'s portal.\n\n" + (e.message || 'Unknown error'));
+                          }
+                        }}
+                          className="px-3 py-1.5 bg-green-700 text-white rounded-lg text-xs font-medium hover:bg-green-800">
+                          Open their portal
+                        </button>
                         <button onClick={() => setPortalPreviewCustomer(cName)}
                           className="px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-200">
                           👁 Preview
@@ -27090,7 +27109,16 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
           // The modal also stashes the precomputed email-availability info so
           // the JSX doesn't have to recompute it on every render.
           const [completionPrompt, setCompletionPrompt] = useState(null);
-          if (!user) {
+          // A ?portal= link opens the customer's own portal, even for a signed-in
+          // staff account. Without this the link is ignored in your own browser
+          // and you would have to use a private window to see what they see.
+          // The token is what grants access, so a staff session changes nothing
+          // about what is shown.
+          const portalLinkToken = (() => {
+            try { return new URLSearchParams(window.location.search).get('portal'); }
+            catch (e) { return null; }
+          })();
+          if (!user || portalLinkToken) {
             return <LoginScreen />;
           }
 
