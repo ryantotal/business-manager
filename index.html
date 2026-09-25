@@ -3643,6 +3643,33 @@ return (
             );
           }
 
+          // Arrived on a ?portal= link but the portal has not loaded yet, or would
+          // not load. Showing the ordinary login form here is misleading: nobody
+          // following a portal link has a password to type, and for staff it
+          // looks as though the link did nothing.
+          const portalLinkOnUrl = (() => {
+            try { return !!new URLSearchParams(window.location.search).get('portal'); }
+            catch (e) { return false; }
+          })();
+          if (portalLinkOnUrl && !portalUser) {
+            return (
+              <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+                <div className="max-w-md w-full bg-white rounded-xl border border-gray-200 p-8 text-center">
+                  {portalError ? (
+                    <>
+                      <p className="text-gray-800 font-medium">{portalError}</p>
+                      <p className="text-sm text-gray-500 mt-2">
+                        Open it again from Admin &rarr; Customer Portal.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-gray-600">Opening the portal&hellip;</p>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
               <div className="max-w-md w-full">
@@ -25112,13 +25139,22 @@ info@totalwasteservicesltd.com`;
                             signed-in staff account and lasts an hour; their PIN
                             and passcode are untouched. */}
                         <button onClick={async () => {
+                          // The tab is opened here, while the click is still
+                          // happening, and pointed at the portal once the token
+                          // arrives. Opening it after the database call instead
+                          // gets it blocked as a popup.
+                          let tab = null;
+                          try { tab = window.open('about:blank', '_blank'); } catch (e) { tab = null; }
                           try {
                             const { data, error } = await window.supabase
                               .rpc('portal_owner_token', { p_customer_id: customer.id });
                             if (error) throw error;
                             if (!data || !data.token) throw new Error('No portal session came back for this customer.');
-                            window.open(window.location.origin + '/?portal=' + data.token, '_blank');
+                            const url = window.location.origin + '/?portal=' + data.token;
+                            if (tab && !tab.closed) tab.location.href = url;
+                            else window.location.href = url;   // popup blocked: use this tab
                           } catch (e) {
+                            if (tab && !tab.closed) tab.close();
                             console.error('Could not open the portal:', e);
                             alert('Could not open ' + cName + "'s portal.\n\n" + (e.message || 'Unknown error'));
                           }
