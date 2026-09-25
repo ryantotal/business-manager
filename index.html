@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-09-25 10:45';
+const BUILD_STAMP = '2026-09-25 11:25';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -4771,6 +4771,37 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
         // is a legal record of what was agreed at the time.
         ...(() => {
           const resolved = resolveLineTransferee(jobObj, i, suppliersList);
+          // A note that has gone out is a record of what was agreed, so it
+          // keeps every word of it.
+          if (saved.sent || saved.sentAt) {
+            return {
+              transfereeName: saved.transfereeName || (resolved ? resolved.name : ''),
+              transfereeAddress: saved.transfereeAddress || (resolved ? resolved.address : ''),
+              transfereePostcode: saved.transfereePostcode || (resolved ? resolved.postcode : ''),
+              transfereeCarrierReg: saved.transfereeCarrierReg || (resolved ? resolved.carrierReg : ''),
+              transfereePermitNumber: saved.transfereePermitNumber || (resolved ? resolved.permitNumber : ''),
+              transfereeRepresenting: saved.transfereeRepresenting || (resolved ? resolved.representing : ''),
+              transfereeSignature: saved.transfereeSignature || '',
+            };
+          }
+          // Not yet issued, and the job has moved to a different carrier since
+          // this draft was saved. Everything in Section C belongs to the old
+          // one — including the name of whoever signed for them. Carrying that
+          // across says a person from one company signed on behalf of another.
+          const movedCarrier = resolved && resolved.name
+            && saved.transfereeName
+            && String(resolved.name).trim().toLowerCase() !== String(saved.transfereeName).trim().toLowerCase();
+          if (movedCarrier) {
+            return {
+              transfereeName: resolved.name,
+              transfereeAddress: resolved.address || '',
+              transfereePostcode: resolved.postcode || '',
+              transfereeCarrierReg: resolved.carrierReg || '',
+              transfereePermitNumber: resolved.permitNumber || '',
+              transfereeRepresenting: resolved.representing || '',
+              transfereeSignature: '',   // the new carrier has not signed
+            };
+          }
           return {
             transfereeName: saved.transfereeName || (resolved ? resolved.name : ''),
             transfereeAddress: saved.transfereeAddress || (resolved ? resolved.address : ''),
@@ -4778,6 +4809,7 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
             transfereeCarrierReg: saved.transfereeCarrierReg || (resolved ? resolved.carrierReg : ''),
             transfereePermitNumber: saved.transfereePermitNumber || (resolved ? resolved.permitNumber : ''),
             transfereeRepresenting: saved.transfereeRepresenting || (resolved ? resolved.representing : ''),
+            transfereeSignature: saved.transfereeSignature || '',
           };
         })(),
         _savedSuffix: saved.suffixLetter || null,
