@@ -1289,6 +1289,84 @@ const findCompetingSchedules = (job, draft, jobs) => {
   return found;
 };
 
+// ── Two people editing the same job ────────────────────────────────────────
+// The edit form takes a copy of the job when it opens and never looks again,
+// and saving wrote every field back. So if someone else changed the supplier
+// while your form was open, your save quietly put the old one back — no error,
+// nothing to see, and the two of you looking at different jobs until the next
+// refresh.
+//
+// Now a save carries only the fields that were actually changed. Anything left
+// alone keeps whatever is in the database, so two people working on different
+// parts of the same job both get their way.
+const sameJobValue = (a, b) => {
+  const norm = (v) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'object') { try { return JSON.stringify(v); } catch (e) { return String(v); } }
+    return String(v);
+  };
+  return norm(a) === norm(b);
+};
+
+// mine    — what this save would write
+// opened  — what the same builder produces from the job as the form opened it
+// current — the row as it is in the database right now
+//
+// Returns the fields to write, and any the user changed that someone else has
+// also changed since — those are a genuine clash and need a person to decide.
+const mergeJobUpdate = (mine, opened, current) => {
+  const payload = {};
+  const conflicts = [];
+  Object.keys(mine || {}).forEach((key) => {
+    const iChangedIt = !sameJobValue(mine[key], opened ? opened[key] : undefined);
+    const theyChangedIt = !!current && !sameJobValue(current[key], opened ? opened[key] : undefined);
+
+    if (!iChangedIt) {
+      // Left alone. Writing it back would undo anyone else's change.
+      if (!theyChangedIt && current) payload[key] = mine[key]; // unchanged either side; harmless
+      return;
+    }
+    payload[key] = mine[key];
+    if (theyChangedIt && !sameJobValue(current[key], mine[key])) {
+      conflicts.push({ field: key, mine: mine[key], theirs: current[key] });
+    }
+  });
+  return { payload, conflicts };
+};
+
+// Field names as a person would say them, for the clash message.
+const JOB_FIELD_LABELS = {
+  customer_name: 'customer', supplier_name: 'supplier', job_type: 'job type',
+  job_date: 'job date', delivery_date: 'delivery date', collection_date: 'collection date',
+  line_items: 'products', sage_line_items: 'products', quantity: 'quantity', unit: 'unit',
+  site_address1: 'site address', site_address2: 'site address', site_city: 'town',
+  site_postcode: 'postcode', site_contact: 'site contact', site_phone: 'site phone',
+  customer_po: 'PO number', status: 'status', notes: 'notes', haulier_name: 'haulier',
+  is_hazardous: 'hazardous flag', is_recurring: 'recurring schedule',
+};
+const describeJobFields = (fields) => {
+  const names = Array.from(new Set(fields.map(f => JOB_FIELD_LABELS[f.field] || f.field)));
+  return names.join(', ');
+};
+
+// Quotes save the same way and had the same fault, so they use the same rule.
+const mergeQuoteUpdate = mergeJobUpdate;
+const QUOTE_FIELD_LABELS = {
+  customer_name: 'customer', supplier_name: 'supplier', job_type: 'quote type',
+  line_items: 'products', terms_conditions: 'terms and conditions',
+  site_address1: 'site address', site_address2: 'site address', site_city: 'town',
+  site_postcode: 'postcode', site_contact: 'site contact', site_phone: 'site phone',
+  customer_po: 'PO number', status: 'status', notes: 'notes',
+  scope_description: 'scope', inclusions: 'inclusions', exclusions: 'exclusions',
+  internal_reference: 'internal reference', vat_rate: 'VAT rate',
+  hide_prices_on_pdf: 'hide prices setting', prepared_by: 'who prepared it',
+  valid_until: 'valid until date', proposed_delivery_date: 'proposed delivery date',
+};
+const describeQuoteFields = (fields) => {
+  const names = Array.from(new Set(fields.map(f => QUOTE_FIELD_LABELS[f.field] || f.field)));
+  return names.join(', ');
+};
+
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
 // Searchable Dropdown Component
@@ -6102,6 +6180,16 @@ eventEndDate: '',
   
   return initialData;
 });
+
+// The job exactly as it was when this form opened. Saving compares against it
+// so only genuinely changed fields are written, and an edit someone else made
+// in the meantime is not quietly reverted. A ref rather than state: it must
+// not change for the life of the form.
+const openedWithRef = React.useRef(null);
+if (openedWithRef.current === null) {
+  try { openedWithRef.current = JSON.parse(JSON.stringify(formData)); }
+  catch (e) { openedWithRef.current = false; }
+}
 const [isEvent, setIsEvent] = useState(false);
 
           const [activeTab, setActiveTab] = useState('details');
@@ -6427,7 +6515,7 @@ const [isEvent, setIsEvent] = useState(false);
       }
     }
     
-    onSave(newJob);
+    onSave(openedWithRef.current ? { ...newJob, __openedWith: openedWithRef.current } : newJob);
   }
 };
 
@@ -27184,7 +27272,7 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
     }
 
     // Convert camelCase to snake_case for database
-    const jobForDatabase = {
+    const buildJobPayload = (updatedJob) => ({
       customer_name: updatedJob.customerName,
       // fix31 — defensive fallback. If the camelCase mapping has been
       // missed by some upstream path (e.g. handleCompleteJob built
@@ -27267,7 +27355,34 @@ collection_date: updatedJob.collectionDate || null,
       wtn_recurring: updatedJob.wtnRecurring || false,
       wtn_recurring_frequency: updatedJob.wtnRecurringFrequency || null,
       wtn_recurring_next_date: updatedJob.wtnRecurringNextDate || null,
-    };
+    });
+
+    // Only write what actually changed. The form took its copy of the job when
+    // it opened; anything untouched since is left alone so a colleague's edit
+    // made in the meantime is not written back over.
+    const jobForDatabase = await (async () => {
+      const mine = buildJobPayload(updatedJob);
+      const openedWith = updatedJob.__openedWith;
+      if (!openedWith) return mine;   // older form, or a save from elsewhere
+      let current = null;
+      try {
+        const { data } = await window.supabase.from('jobs').select('*').eq('id', updatedJob.id).single();
+        current = data || null;
+      } catch (e) {
+        console.warn('[job save] could not read the current row, saving everything:', e);
+        return mine;
+      }
+      const opened = buildJobPayload({ ...updatedJob, ...openedWith, id: updatedJob.id });
+      const { payload, conflicts } = mergeJobUpdate(mine, opened, current);
+      // Both changed the same field: yours wins, no prompt. Logged so there is
+      // a trace if two people ever disagree about what a job said.
+      if (conflicts.length > 0) {
+        console.warn('[job save] overwriting someone else\'s change to:', describeJobFields(conflicts));
+      }
+      return payload;
+    })();
+    if (!jobForDatabase) { setIsSubmitting && setIsSubmitting(false); return; }
+
 
     const { error } = await window.supabase
       .from('jobs')
@@ -29073,7 +29188,7 @@ const saveSupplierToDatabase = async (supplier) => {
 
   const handleUpdateQuote = async (updatedQuote) => {
   try {
-    const quoteForDatabase = {
+    const buildQuotePayload = (updatedQuote) => ({
       customer_name: updatedQuote.customerName,
       customer_contact: updatedQuote.customerContact || '',
       customer_email: updatedQuote.customerEmail || '',
@@ -29121,15 +29236,35 @@ const saveSupplierToDatabase = async (supplier) => {
           hidePhone: !!updatedQuote.hideDirectPhone,
         });
       })()
-    };
+    });
+
+    // Only write what actually changed, so a quote left open in one person's
+    // form does not put back what someone else has since edited.
+    const quoteForDatabase = await (async () => {
+      const mine = buildQuotePayload(updatedQuote);
+      if (updatedQuote.lineItems) mine.line_items = JSON.stringify(updatedQuote.lineItems);
+      const openedWith = updatedQuote.__openedWith;
+      if (!openedWith) return mine;
+      let current = null;
+      try {
+        const { data } = await window.supabase.from('quotes').select('*').eq('id', updatedQuote.id).single();
+        current = data || null;
+      } catch (e) {
+        console.warn('[quote save] could not read the current row, saving everything:', e);
+        return mine;
+      }
+      const openedQuote = { ...updatedQuote, ...openedWith, id: updatedQuote.id };
+      const opened = buildQuotePayload(openedQuote);
+      if (openedQuote.lineItems) opened.line_items = JSON.stringify(openedQuote.lineItems);
+      const { payload, conflicts } = mergeQuoteUpdate(mine, opened, current);
+      if (conflicts.length > 0) {
+        console.warn('[quote save] overwriting someone else\'s change to:', describeQuoteFields(conflicts));
+      }
+      return payload;
+    })();
+    if (!quoteForDatabase) return;
+
     
-    // rest of your update code...
-
-    // Only add line_items if your quotes table has this column
-    if (updatedQuote.lineItems) {
-      quoteForDatabase.line_items = JSON.stringify(updatedQuote.lineItems);
-    }
-
     const { error } = await window.supabase
       .from('quotes')
       .update(quoteForDatabase)
@@ -34318,6 +34453,15 @@ By approving this quotation and authorising us to commence services, you acknowl
     return initialData;
   });
 
+  // How the quote looked when this form opened. Saving compares against it so
+  // only changed fields are written — the same fix as on jobs, where a save
+  // from a form left open put back whatever a colleague had changed.
+  const openedWithRef = React.useRef(null);
+  if (openedWithRef.current === null) {
+    try { openedWithRef.current = JSON.parse(JSON.stringify(formData)); }
+    catch (e) { openedWithRef.current = false; }
+  }
+
   const [activeTab, setActiveTab] = useState('details');
   // Which AI request is in flight: false, 'all', or 'scope'.
   const [aiDrafting, setAiDrafting] = useState(false);
@@ -34420,7 +34564,7 @@ By approving this quotation and authorising us to commence services, you acknowl
         inclusions: formData.inclusions || '',
         exclusions: formData.exclusions || '',
       };
-      await onSave(newQuote);
+      await onSave(openedWithRef.current ? { ...newQuote, __openedWith: openedWithRef.current } : newQuote);
     } catch (err) {
       console.error('QuoteForm handleSubmit error:', err);
       alert('Error creating quote: ' + err.message);
