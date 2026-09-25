@@ -799,6 +799,85 @@ const openStoredFile = (fileLike, portalToken) => {
 // Line items are stored under four different names depending on how old the
 // record is, and sometimes as a JSON string rather than an array. Every reader
 // in this file re-implements that; this is the one place that does it properly.
+// Map a row from the `wtns` table to the legacy camelCase shape that the rest
+// of the app already understands. This lets all the "is there a WTN?" checks
+// keep working without rewriting every consumer.
+// Hoisted (function declaration, not const arrow) so all components in this
+// single-file React app can reach it regardless of source-line position.
+function mapWtnRowToCamel(row) { return row ? ({
+  id: row.id,
+  jobId: row.job_id,
+  wtnNumber: row.wtn_number,
+  suffixLetter: row.suffix_letter,
+  // Line item context (new)
+  lineItemIndex: row.line_item_index,
+  lineItemProductName: row.line_item_product_name,
+  lineItemDescription: row.line_item_description,
+  lineItemQuantity: row.line_item_quantity,
+  // Section A
+  wasteDescription: row.waste_description,
+  skipSize: row.skip_size,
+  listOfWasteCode: row.list_of_waste_code,
+  wasteContainer: row.waste_container,
+  wasteProcess: row.waste_process,
+  quantity: row.quantity,
+  unit: row.unit,
+  isHazardous: row.is_hazardous,
+  // Phase 3 (post-fix11) — informational disposal site (Section D row).
+  // Stored as plain TEXT columns on the wtns table.
+  disposalSiteName: row.disposal_site_name,
+  disposalSiteAddress: row.disposal_site_address,
+  // fix16: site permit & carrier reg, also TEXT columns. Snapshot at save
+  // time so old WTNs stay accurate if the supplier's details change later.
+  disposalSitePermit: row.disposal_site_permit,
+  disposalSiteCarrierReg: row.disposal_site_carrier_reg,
+  // Section B
+  transferorName: row.transferor_name,
+  transferorAddress: row.transferor_address,
+  transferorPostcode: row.transferor_postcode,
+  transferorSicCode: row.transferor_sic_code,
+  transferorIsProducer: row.transferor_is_producer,
+  transferorPermitNumber: row.transferor_permit_number,
+  transferorSignature: row.transferor_signature,
+  transferorRepresenting: row.transferor_representing,
+  selectedTransferorSiteId: row.selected_transferor_site_id,
+  // Section C
+  transfereeName: row.transferee_name,
+  transfereeAddress: row.transferee_address,
+  transfereePostcode: row.transferee_postcode,
+  transfereeCarrierReg: row.transferee_carrier_reg,
+  transfereePermitNumber: row.transferee_permit_number,
+  selectedSiteId: row.selected_site_id,
+  transfereeSignature: row.transferee_signature,
+  transfereeRepresenting: row.transferee_representing,
+  // Section D
+  transferAddress: row.transfer_address,
+  transferDate: row.transfer_date,
+  transferTime: row.transfer_time,
+  brokerName: row.broker_name,
+  brokerAddress: row.broker_address,
+  brokerCarrierReg: row.broker_carrier_reg,
+  // Pcts
+  recycledPct: row.recycled_pct,
+  recoveredPct: row.recovered_pct,
+  landfillPct: row.landfill_pct,
+  // Misc
+  notes: row.notes,
+  recipientEmail: row.recipient_email,
+  additionalEmails: row.additional_emails,
+  recipientEmailSource: row.recipient_email_source,
+  // Per-WTN flags (new — these used to live on the job)
+  sent: row.sent,
+  sentAt: row.sent_at,
+  recipient: row.recipient,
+  portalVisible: row.portal_visible,
+  recurring: row.recurring,
+  recurringFrequency: row.recurring_frequency,
+  recurringNextDate: row.recurring_next_date,
+  // Catch-all for anything not mapped
+  extra: row.extra || {},
+}) : null; }
+
 const readLineItems = (record) => {
   if (!record) return [];
   const candidates = [record.lineItems, record.line_items, record.sageLineItems, record.sage_line_items];
@@ -2499,8 +2578,12 @@ return (
                 });
                 setPortalJobs((jobs || []).map(j => ({
                   ...j,
-                  wtns: j.wtns || [],
-                  wtnData: (j.wtns && j.wtns[0]) || j.wtn_data || null
+                  // Rows come straight from the database in its own field
+                  // names. The transfer note is written against the app's
+                  // names, so without converting them every field on the
+                  // customer's note printed as a dash.
+                  wtns: (j.wtns || []).map(mapWtnRowToCamel).filter(Boolean),
+                  wtnData: ((j.wtns && j.wtns[0]) ? mapWtnRowToCamel(j.wtns[0]) : null) || j.wtn_data || null
                 })));
               } catch (e) {
                 console.warn('[Portal] could not open from link:', e);
@@ -2575,8 +2658,8 @@ return (
               // shim is applied here rather than by a second query.
               setPortalJobs((jobs || []).map(j => ({
                 ...j,
-                wtns: j.wtns || [],
-                wtnData: (j.wtns && j.wtns[0]) || j.wtn_data || null
+                wtns: (j.wtns || []).map(mapWtnRowToCamel).filter(Boolean),
+                wtnData: ((j.wtns && j.wtns[0]) ? mapWtnRowToCamel(j.wtns[0]) : null) || j.wtn_data || null
               })));
             } catch (err) {
               setPortalError('An error occurred. Please try again.');
@@ -2602,8 +2685,8 @@ return (
               }
               setPortalJobs((jobs || []).map(j => ({
                 ...j,
-                wtns: j.wtns || [],
-                wtnData: (j.wtns && j.wtns[0]) || j.wtn_data || null
+                wtns: (j.wtns || []).map(mapWtnRowToCamel).filter(Boolean),
+                wtnData: ((j.wtns && j.wtns[0]) ? mapWtnRowToCamel(j.wtns[0]) : null) || j.wtn_data || null
               })));
             } catch (err) {
               console.error('Portal refresh failed:', err);
@@ -25508,84 +25591,6 @@ const _disabled_2am_sync_for_reference = () => {
 // old camelCase shape) so any code that hasn't been migrated yet keeps working.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Map a row from the `wtns` table to the legacy camelCase shape that the rest
-// of the app already understands. This lets all the "is there a WTN?" checks
-// keep working without rewriting every consumer.
-// Hoisted (function declaration, not const arrow) so all components in this
-// single-file React app can reach it regardless of source-line position.
-function mapWtnRowToCamel(row) { return row ? ({
-  id: row.id,
-  jobId: row.job_id,
-  wtnNumber: row.wtn_number,
-  suffixLetter: row.suffix_letter,
-  // Line item context (new)
-  lineItemIndex: row.line_item_index,
-  lineItemProductName: row.line_item_product_name,
-  lineItemDescription: row.line_item_description,
-  lineItemQuantity: row.line_item_quantity,
-  // Section A
-  wasteDescription: row.waste_description,
-  skipSize: row.skip_size,
-  listOfWasteCode: row.list_of_waste_code,
-  wasteContainer: row.waste_container,
-  wasteProcess: row.waste_process,
-  quantity: row.quantity,
-  unit: row.unit,
-  isHazardous: row.is_hazardous,
-  // Phase 3 (post-fix11) — informational disposal site (Section D row).
-  // Stored as plain TEXT columns on the wtns table.
-  disposalSiteName: row.disposal_site_name,
-  disposalSiteAddress: row.disposal_site_address,
-  // fix16: site permit & carrier reg, also TEXT columns. Snapshot at save
-  // time so old WTNs stay accurate if the supplier's details change later.
-  disposalSitePermit: row.disposal_site_permit,
-  disposalSiteCarrierReg: row.disposal_site_carrier_reg,
-  // Section B
-  transferorName: row.transferor_name,
-  transferorAddress: row.transferor_address,
-  transferorPostcode: row.transferor_postcode,
-  transferorSicCode: row.transferor_sic_code,
-  transferorIsProducer: row.transferor_is_producer,
-  transferorPermitNumber: row.transferor_permit_number,
-  transferorSignature: row.transferor_signature,
-  transferorRepresenting: row.transferor_representing,
-  selectedTransferorSiteId: row.selected_transferor_site_id,
-  // Section C
-  transfereeName: row.transferee_name,
-  transfereeAddress: row.transferee_address,
-  transfereePostcode: row.transferee_postcode,
-  transfereeCarrierReg: row.transferee_carrier_reg,
-  transfereePermitNumber: row.transferee_permit_number,
-  selectedSiteId: row.selected_site_id,
-  transfereeSignature: row.transferee_signature,
-  transfereeRepresenting: row.transferee_representing,
-  // Section D
-  transferAddress: row.transfer_address,
-  transferDate: row.transfer_date,
-  transferTime: row.transfer_time,
-  brokerName: row.broker_name,
-  brokerAddress: row.broker_address,
-  brokerCarrierReg: row.broker_carrier_reg,
-  // Pcts
-  recycledPct: row.recycled_pct,
-  recoveredPct: row.recovered_pct,
-  landfillPct: row.landfill_pct,
-  // Misc
-  notes: row.notes,
-  recipientEmail: row.recipient_email,
-  additionalEmails: row.additional_emails,
-  recipientEmailSource: row.recipient_email_source,
-  // Per-WTN flags (new — these used to live on the job)
-  sent: row.sent,
-  sentAt: row.sent_at,
-  recipient: row.recipient,
-  portalVisible: row.portal_visible,
-  recurring: row.recurring,
-  recurringFrequency: row.recurring_frequency,
-  recurringNextDate: row.recurring_next_date,
-  // Catch-all for anything not mapped
-  extra: row.extra || {},
-}) : null; }
 
 // Bulk-fetch all wtns for an array of job ids. Returns a Map<jobId, WTN[]>.
 // Chunks the input into batches of 100 because PostgREST has a URL length
