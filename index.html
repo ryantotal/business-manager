@@ -878,6 +878,12 @@ function mapWtnRowToCamel(row) { return row ? ({
   extra: row.extra || {},
 }) : null; }
 
+// Which build this is. Updated by hand each time the file is handed over, so
+// "is this deployed?" is answerable at a glance instead of by guesswork — the
+// service worker caches hard and a stale build looks exactly like a bug.
+const BUILD_STAMP = '2026-09-25 10:45';
+try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
+
 const readLineItems = (record) => {
   if (!record) return [];
   const candidates = [record.lineItems, record.line_items, record.sageLineItems, record.sage_line_items];
@@ -2972,7 +2978,7 @@ return (
               <div className="min-h-screen bg-gray-50">
                 {portalUser?.viewingAsOwner && (
                   <div className="bg-amber-100 border-b border-amber-300 text-amber-900 px-4 py-2 text-sm text-center">
-                    Viewing as {portalUser.company} — exactly what they see. This link lasts one hour.
+                    Viewing as {portalUser.company} — exactly what they see. This link lasts one hour. (build {BUILD_STAMP})
                   </div>
                 )}
                 {/* Portal Header */}
@@ -29884,6 +29890,9 @@ const CollectionCalendarModal = () => {
         <div className="hidden sm:flex items-center space-x-2">
           <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
           <span className="text-sm text-gray-600">Live</span>
+          <span className="text-xs text-gray-400" title="The build this browser is running. If it does not match what was just deployed, you are on a cached copy.">
+            build {BUILD_STAMP}
+          </span>
         </div>
         
         <div className="flex items-center space-x-2">
