@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-09-28 11:45';
+const BUILD_STAMP = '2026-09-28 12:15';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -19328,6 +19328,54 @@ console.log(JSON.stringify(invoiceData, null, 2));
               ↩ Unpublish
             </button>
           )}
+          {/* Some files should go to the customer but not to a contractor with
+              a site-restricted login on the same account. Marked here, hidden
+              by the database when that login asks for its jobs. */}
+          {attachment.portal_visible && (() => {
+            const entries = (() => {
+              const raw = job.portalAttachments || job.portal_attachments;
+              if (!raw) return [];
+              if (Array.isArray(raw)) return raw;
+              try { return JSON.parse(raw); } catch (e) { return []; }
+            })();
+            const mine = entries.find(e => String(e.id) === String(attachment.id));
+            const restricted = !!(mine && mine.main_account_only);
+            return (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const { data: jobData } = await window.supabase
+                      .from('jobs').select('portal_attachments').eq('id', job.id).single();
+                    const raw = jobData?.portal_attachments;
+                    const list = !raw ? [] : (Array.isArray(raw) ? raw : (() => {
+                      try { return JSON.parse(raw); } catch (e) { return []; }
+                    })());
+                    const updated = list.map(e => String(e.id) === String(attachment.id)
+                      ? { ...e, main_account_only: !restricted } : e);
+                    const { error } = await window.supabase.from('jobs')
+                      .update({ portal_attachments: JSON.stringify(updated) }).eq('id', job.id);
+                    if (error) throw error;
+                    if (onRefresh) await onRefresh();
+                    loadJobAttachments(job.id);
+                    alert(restricted
+                      ? attachment.file_name + ' is now visible to everyone on this account.'
+                      : attachment.file_name + ' is now hidden from site-restricted logins. The customer\'s own login still sees it.');
+                  } catch (err) {
+                    alert('Could not change that: ' + (err.message || 'unknown error'));
+                  }
+                }}
+                className={restricted
+                  ? "px-3 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 text-sm"
+                  : "px-3 py-1 bg-white text-gray-700 border border-gray-300 rounded hover:bg-gray-50 text-sm"}
+                title={restricted
+                  ? 'Hidden from site-restricted logins. Click to show it to everyone.'
+                  : 'Visible to everyone on this account. Click to hide it from site-restricted logins.'}
+              >
+                {restricted ? 'Main account only' : 'Hide from restricted'}
+              </button>
+            );
+          })()}
           {user?.role === 'ADMIN' && (
             <button
               type="button"
