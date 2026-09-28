@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-09-25 12:05';
+const BUILD_STAMP = '2026-09-25 13:05';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -1450,6 +1450,76 @@ const QUOTE_FIELD_LABELS = {
 const describeQuoteFields = (fields) => {
   const names = Array.from(new Set(fields.map(f => QUOTE_FIELD_LABELS[f.field] || f.field)));
   return names.join(', ');
+};
+
+// ── Transfer notes for recurring jobs ──────────────────────────────────────
+// A weekly skip is the same waste, the same container, the same carrier and
+// the same tip every week. The only thing that changes is the date. So rather
+// than building a note from scratch — which leaves the EWC code and the SIC
+// code blank, because nothing can guess them — the previous note on the same
+// schedule is carried forward.
+//
+// The customer gets their note the day after the collection, without waiting
+// for the job to be completed, which can be a month later while a supplier
+// invoice is chased.
+
+// Everything that is genuinely about this job rather than the waste stream.
+// These are replaced when a note is carried forward; everything else is kept.
+const WTN_PER_JOB_FIELDS = [
+  'id', 'job_id', 'wtn_number', 'transfer_date', 'transfer_time',
+  'sent', 'sent_at', 'recipient', 'recipient_email_source',
+  'portal_visible', 'created_at', 'updated_at',
+  'recurring', 'recurring_frequency', 'recurring_next_date',
+];
+
+// Is this job one that should get its note published automatically, and is it
+// due? Scheduled date, not completion: the waste moved on the day, whatever
+// state the paperwork is in.
+const wtnAutoDue = (job, todayStr) => {
+  if (!job) return { due: false, reason: 'no job' };
+  if (job.isCancelled || job.is_cancelled) return { due: false, reason: 'cancelled' };
+  const parentId = job.parentJobId || job.parent_job_id;
+  const partOfSchedule = !!parentId || !!(job.isRecurring || job.is_recurring);
+  if (!partOfSchedule) return { due: false, reason: 'not a recurring job' };
+  const when = String(job.jobDate || job.job_date || '').slice(0, 10);
+  if (!when) return { due: false, reason: 'no job date' };
+  if (!(when < String(todayStr).slice(0, 10))) return { due: false, reason: 'not yet — the day after the job' };
+  return { due: true, reason: 'due' };
+};
+
+// Build this week's note from last week's. Returns a row ready to insert.
+const cloneWtnForNextJob = (prevRow, job, { wtnNumber, transferDate, quantity } = {}) => {
+  if (!prevRow || !job) return null;
+  const row = {};
+  Object.keys(prevRow).forEach(k => {
+    if (WTN_PER_JOB_FIELDS.indexOf(k) === -1) row[k] = prevRow[k];
+  });
+  row.job_id = job.id;
+  row.wtn_number = wtnNumber || ('WTN-' + (job.jobNumber || job.job_number || ''))
+    + (prevRow.suffix_letter ? '-' + prevRow.suffix_letter : '');
+  row.transfer_date = transferDate || String(job.jobDate || job.job_date || '').slice(0, 10);
+  row.transfer_time = null;
+  // Signatures carry over with everything else. On a standing weekly
+  // collection the same two people sign every week, and a blank signature box
+  // makes the note look unfinished to the customer. They are typed names on a
+  // repeating arrangement, not a mark made on the day.
+  // Published to the customer's portal, not emailed. Emailing is still a
+  // deliberate act by a person.
+  row.portal_visible = true;
+  row.sent = false;
+  row.sent_at = null;
+  if (quantity != null && quantity !== '') row.quantity = quantity;
+  return row;
+};
+
+// What stops a note being carried forward. Anything listed here is left for a
+// person rather than published half-finished.
+const wtnCarryForwardBlocked = (prevRow) => {
+  if (!prevRow) return 'no previous note on this schedule to copy';
+  if (!String(prevRow.waste_description || '').trim()) return 'the previous note has no waste description';
+  if (!String(prevRow.list_of_waste_code || '').trim()) return 'the previous note has no EWC code';
+  if (!String(prevRow.transferee_name || '').trim()) return 'the previous note names no carrier';
+  return null;
 };
 
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
@@ -10064,6 +10134,18 @@ const Dashboard = ({ jobs, customers, suppliers, products }) => {
   const [endDate, setEndDate] = useState(null);
   // Add this with your other state variables at the top of the Dashboard component
 const [groupByProduct, setGroupByProduct] = useState(false);
+
+  // Recurring collections whose transfer note could not be published on its
+  // own. Filled in by the checker that runs at startup.
+  const [heldNotes, setHeldNotes] = useState(() => {
+    try { return window._autoWtnHeld || []; } catch (e) { return []; }
+  });
+  useEffect(() => {
+    const pick = () => { try { setHeldNotes(window._autoWtnHeld || []); } catch (e) {} };
+    pick();
+    window.addEventListener('tws-auto-wtn-done', pick);
+    return () => window.removeEventListener('tws-auto-wtn-done', pick);
+  }, []);
   
   // State for search bars
   const [searchTerms, setSearchTerms] = useState({
@@ -10191,6 +10273,53 @@ const [groupByProduct, setGroupByProduct] = useState(false);
           </span>
         </div>
       </div>
+
+      {/* Recurring collections with no transfer note. Not a financial report —
+          anyone who runs the jobs needs to see this, so it sits outside the
+          admin gate below. */}
+      {heldNotes.length > 0 && (
+        <div className="bg-white rounded-xl border border-amber-300 p-6">
+          <div className="flex justify-between items-start gap-3 flex-wrap mb-3">
+            <div>
+              <h3 className="text-lg font-semibold text-amber-900">
+                {heldNotes.length} recurring collection{heldNotes.length === 1 ? '' : 's'} with no transfer note
+              </h3>
+              <p className="text-sm text-gray-600">
+                These could not be copied from the previous note on their schedule, so nothing
+                has gone to the customer. Open the job, fill in what is missing and issue the
+                note; from then on it carries forward on its own.
+              </p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Collection</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">What it needs</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {heldNotes.slice(0, 25).map((h, i) => (
+                  <tr key={(h.jobNumber || '') + i}>
+                    <td className="px-6 py-3 text-sm font-medium text-gray-900">{h.jobNumber || '—'}</td>
+                    <td className="px-6 py-3 text-sm text-gray-500">{h.customerName || '—'}</td>
+                    <td className="px-6 py-3 text-sm text-gray-500">
+                      {h.jobDate ? new Date(String(h.jobDate).slice(0, 10)).toLocaleDateString('en-GB') : '—'}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-amber-800">{h.reason || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {heldNotes.length > 25 && (
+            <p className="text-sm text-gray-500 mt-3">and {heldNotes.length - 25} more</p>
+          )}
+        </div>
+      )}
 
       {/* fix32v: Managers/Brokers see only the Staff Holidays widget below; every financial report (margins, profit, cost, turnover) is Admin-only */}
       {hasPermission('dashboard:financials') && (<>
@@ -26584,6 +26713,82 @@ useEffect(() => {
 
   checkRecurringJobs();
   window.checkRecurringJobs = checkRecurringJobs;
+
+  // ── Transfer notes for recurring collections ───────────────────────────
+  // The day after a scheduled collection, put the customer's transfer note on
+  // their portal — carried forward from the previous one on that schedule, so
+  // the EWC code and everything else about the waste stream comes from a note
+  // a person already checked. Not tied to completion: a job stays open for
+  // weeks waiting on a supplier invoice, and the customer should not wait that
+  // long for their paperwork.
+  //
+  // There is no scheduler, so this runs when the portal is opened. Anything
+  // missed is picked up the next time someone signs in.
+  const publishDueRecurringWtns = async () => {
+    if (window._autoWtnRunning) return;
+    window._autoWtnRunning = true;
+    const held = [];
+    let published = 0;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const due = (jobs || []).filter(j => wtnAutoDue(j, today).due);
+      if (due.length === 0) return;
+
+      // Which of them already have a note
+      const dueIds = due.map(j => j.id).filter(Boolean);
+      const { data: existing } = await window.supabase
+        .from('wtns').select('job_id').in('job_id', dueIds);
+      const hasNote = new Set((existing || []).map(r => r.job_id));
+
+      for (const job of due) {
+        if (hasNote.has(job.id)) continue;
+
+        // The previous note on this schedule: the same template's jobs,
+        // most recent first.
+        const templateId = job.parentJobId || job.parent_job_id || job.id;
+        const { data: family } = await window.supabase
+          .from('jobs').select('id, job_date')
+          .or('id.eq.' + templateId + ',parent_job_id.eq.' + templateId);
+        const earlier = (family || [])
+          .filter(f => f.id !== job.id && String(f.job_date || '') < String(job.jobDate || job.job_date || ''))
+          .sort((a, b) => String(b.job_date || '').localeCompare(String(a.job_date || '')));
+        if (earlier.length === 0) { held.push({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date, customerName: job.customerName, reason: 'first collection on this schedule — nothing to copy from' }); continue; }
+
+        const { data: prevRows } = await window.supabase
+          .from('wtns').select('*').in('job_id', earlier.map(e => e.id).slice(0, 20));
+        if (!prevRows || prevRows.length === 0) { held.push({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date, customerName: job.customerName, reason: 'no previous note on this schedule to copy' }); continue; }
+
+        // Most recent note, and every line of it
+        const newestJobId = earlier.map(e => e.id).find(id => prevRows.some(r => r.job_id === id));
+        const lines = prevRows.filter(r => r.job_id === newestJobId);
+        const blocked = lines.map(wtnCarryForwardBlocked).find(Boolean);
+        if (blocked) { held.push({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date, customerName: job.customerName, reason: blocked }); continue; }
+
+        const rows = lines.map(prev => cloneWtnForNextJob(prev, job)).filter(Boolean);
+        if (rows.length === 0) { held.push({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date, customerName: job.customerName, reason: 'nothing to copy' }); continue; }
+
+        const { error: insErr } = await window.supabase.from('wtns').insert(rows);
+        if (insErr) { held.push({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date, customerName: job.customerName, reason: 'could not save: ' + (insErr.message || 'unknown error') }); continue; }
+        published += rows.length;
+        console.log('[Auto WTN] ' + job.jobNumber + ' — ' + rows.length + ' note(s) published to the portal');
+      }
+    } catch (err) {
+      console.error('[Auto WTN] checker error:', err);
+    } finally {
+      if (published > 0) console.log('[Auto WTN] published ' + published + ' note(s)');
+      if (held.length > 0) console.warn('[Auto WTN] held back for a person to look at:', held);
+      // The dashboard shows these. A list only in the console is a list nobody
+      // reads, and a schedule quietly producing no notes would go unnoticed
+      // until a customer asked for one.
+      window._autoWtnHeld = held;
+      window._autoWtnLastRun = new Date().toISOString();
+      try { window.dispatchEvent(new CustomEvent('tws-auto-wtn-done')); } catch (e) {}
+      window._autoWtnRunning = false;
+    }
+  };
+
+  publishDueRecurringWtns();
+  window.publishDueRecurringWtns = publishDueRecurringWtns;
 
   // ── On-Stop Daily Rollover ─────────────────────────────────────────────
   // Jobs marked as "on stop" should roll forward to today's date every day.
