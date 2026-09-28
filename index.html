@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-09-25 13:05';
+const BUILD_STAMP = '2026-09-28 10:55';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -27482,6 +27482,31 @@ collection_date: updatedJob.collectionDate || null,
       .eq('id', updatedJob.id);
 
     if (error) throw error;
+
+    // A schedule's series record overrides the template when jobs are
+    // generated, so a template edited without its series being updated goes on
+    // producing jobs with the old details — which is how a schedule moved to
+    // one supplier kept generating jobs for the previous one. Keep the two in
+    // step whenever the template is saved.
+    try {
+      const seriesId = updatedJob.seriesId || updatedJob.series_id;
+      const isTemplate = updatedJob.isRecurring || updatedJob.is_recurring;
+      if (seriesId && isTemplate) {
+        const patch = {};
+        SERIES_OWNED_JOB_FIELDS.forEach((field) => {
+          if (field in jobForDatabase) patch[field] = jobForDatabase[field];
+        });
+        if (Object.keys(patch).length > 0) {
+          patch.updated_at = new Date().toISOString();
+          const { error: seriesErr } = await window.supabase
+            .from('job_series').update(patch).eq('id', seriesId);
+          if (seriesErr) throw seriesErr;
+        }
+      }
+    } catch (e) {
+      // Never block the job save for this.
+      console.error('[job save] could not keep the series in step with the template:', e);
+    }
 
     // Move the job, move its transfer notes. A note records the date the waste
     // moved, so a note left on the original booking date after the job was
