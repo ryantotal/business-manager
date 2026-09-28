@@ -24942,6 +24942,104 @@ const CustomerPortalAdmin = ({ jobs, customers }) => {
   const [expandedPreviewId, setExpandedPreviewId] = useState(null);
   const [emailOverrides, setEmailOverrides] = useState({}); // { customerName: emailString }
 
+  // ── Site-restricted logins ────────────────────────────────────────────
+  // Extra credentials on an existing customer's account, limited to one site.
+  // The passcode is hashed in the database, never here, so it can be created
+  // and reset from this screen but never read back.
+  const [portalLogins, setPortalLogins] = useState([]);
+  const [loginsError, setLoginsError] = useState('');
+  const [showNewLogin, setShowNewLogin] = useState(false);
+  const [savingLogin, setSavingLogin] = useState(false);
+  const [newLogin, setNewLogin] = useState({ customerId: '', label: '', pin: '', passcode: '', sitePostcode: '' });
+
+  const loadPortalLogins = React.useCallback(async () => {
+    try {
+      const { data, error } = await window.supabase
+        .from('portal_logins')
+        .select('id, customer_id, label, pin, site_postcode, is_active, created_at')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setPortalLogins(data || []);
+      setLoginsError('');
+    } catch (e) {
+      console.error('[Portal logins] could not load:', e);
+      setPortalLogins([]);
+      setLoginsError('Site-restricted logins are not set up on this database yet. Run the setup SQL and this will fill in.');
+    }
+  }, []);
+
+  React.useEffect(() => { loadPortalLogins(); }, [loadPortalLogins]);
+
+  const saveNewLogin = async () => {
+    const pin = String(newLogin.pin || '').trim();
+    const passcode = String(newLogin.passcode || '').trim();
+    const label = String(newLogin.label || '').trim();
+    const site = String(newLogin.sitePostcode || '').trim().toUpperCase();
+    if (!newLogin.customerId) { alert('Pick the customer whose account this login sits on.'); return; }
+    if (!label) { alert('Give the login a name, so you know who it is for.'); return; }
+    if (pin.length !== 4) { alert('The PIN must be 4 digits.'); return; }
+    if (passcode.length < 6) { alert('The passcode must be at least 6 characters.'); return; }
+    if (!site) { alert('Set the site postcode. Without one this login would see everything on the account.'); return; }
+    setSavingLogin(true);
+    try {
+      const { error } = await window.supabase.rpc('set_portal_login', {
+        p_id: null,
+        p_customer_id: newLogin.customerId,
+        p_label: label,
+        p_pin: pin,
+        p_passcode: passcode,
+        p_site_postcode: site,
+      });
+      if (error) throw error;
+      setShowNewLogin(false);
+      await loadPortalLogins();
+      setSavedMsg('Login created for ' + label);
+      setTimeout(() => setSavedMsg(''), 4000);
+    } catch (e) {
+      console.error('[Portal logins] could not save:', e);
+      alert('Could not create that login.\n\n' + (e.message || 'Unknown error'));
+    } finally {
+      setSavingLogin(false);
+    }
+  };
+
+  const toggleLogin = async (l) => {
+    const turningOff = l.is_active;
+    if (turningOff && !confirm('Switch off the login for ' + l.label + '?\n\nThey will not be able to sign in until it is switched back on.')) return;
+    try {
+      const { error } = await window.supabase
+        .from('portal_logins').update({ is_active: !l.is_active }).eq('id', l.id);
+      if (error) throw error;
+      await loadPortalLogins();
+    } catch (e) {
+      console.error('[Portal logins] could not change:', e);
+      alert('Could not change that login.\n\n' + (e.message || 'Unknown error'));
+    }
+  };
+
+  const resetLoginPasscode = async (l) => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    const passcode = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    if (!confirm('Give ' + l.label + ' a new passcode?\n\nThe new one is:\n\n' + passcode + '\n\nWrite it down now — it cannot be read back afterwards. Their old passcode stops working straight away.')) return;
+    try {
+      const { error } = await window.supabase.rpc('set_portal_login', {
+        p_id: l.id,
+        p_customer_id: l.customer_id,
+        p_label: l.label,
+        p_pin: l.pin,
+        p_passcode: passcode,
+        p_site_postcode: l.site_postcode,
+      });
+      if (error) throw error;
+      await loadPortalLogins();
+      setSavedMsg('New passcode for ' + l.label + ': ' + passcode);
+    } catch (e) {
+      console.error('[Portal logins] could not reset:', e);
+      alert('Could not set a new passcode.\n\n' + (e.message || 'Unknown error'));
+    }
+  };
+
+
   // Pre-fill with existing credentials from customer records
   React.useEffect(() => {
     const existing = {};
@@ -25233,6 +25331,186 @@ info@totalwasteservicesltd.com`;
         <p>3. Click <strong>📧 Email Login</strong> to send the credentials directly to the customer's email address via Gmail.</p>
         <p>4. The customer goes to your portal, clicks <strong>Customer Portal</strong>, and enters their PIN and passcode — no company name needed.</p>
         <p>5. They can view their jobs (customer price only, no cost prices) and download their Waste Transfer Notes.</p>
+      </div>
+
+      {/* ── Site-restricted logins ──────────────────────────────────────────
+          A second set of credentials on an existing customer's account, tied
+          to one site. Used where someone else needs to see part of a
+          customer's work — a contractor the customer brokers for — without
+          seeing the rest of it. */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="mb-4 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Site-restricted logins</h2>
+            <p className="text-gray-500 text-sm mt-1">
+              An extra login on a customer's account that only shows jobs at one postcode.
+              The customer's own login is unaffected and still sees everything.
+            </p>
+          </div>
+          <button
+            onClick={() => { setNewLogin({ customerId: '', label: '', pin: '', passcode: '', sitePostcode: '' }); setShowNewLogin(true); }}
+            className="px-4 py-2 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800"
+          >
+            Add a login
+          </button>
+        </div>
+
+        {loginsError && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3 text-sm mb-3">
+            {loginsError}
+          </div>
+        )}
+
+        {showNewLogin && (
+          <div className="border border-gray-200 rounded-lg p-4 mb-4 bg-gray-50 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+                <SearchableDropdown
+                  options={customers.map(c => ({ ...c, name: c.company_name || c.name }))}
+                  value={(customers.find(c => c.id === newLogin.customerId) || {}).name
+                    || (customers.find(c => c.id === newLogin.customerId) || {}).company_name || ''}
+                  onChange={(value) => {
+                    const c = customers.find(x => (x.company_name || x.name) === value);
+                    setNewLogin(prev => ({ ...prev, customerId: c ? c.id : '' }));
+                  }}
+                  placeholder="Whose account is this on?"
+                  displayField="name"
+                  valueField="name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Who is it for? *</label>
+                <input
+                  type="text"
+                  value={newLogin.label}
+                  onChange={(e) => setNewLogin(prev => ({ ...prev, label: e.target.value }))}
+                  placeholder="e.g. Evtec"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Site postcode *</label>
+                <input
+                  type="text"
+                  value={newLogin.sitePostcode}
+                  onChange={(e) => setNewLogin(prev => ({ ...prev, sitePostcode: e.target.value.toUpperCase() }))}
+                  placeholder="DY11"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  They see jobs whose postcode starts with this. "DY11" covers the whole area;
+                  "DY11 7QE" is one site.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">PIN *</label>
+                  <input
+                    type="text"
+                    value={newLogin.pin}
+                    onChange={(e) => setNewLogin(prev => ({ ...prev, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                    placeholder="4 digits"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Passcode *</label>
+                  <input
+                    type="text"
+                    value={newLogin.passcode}
+                    onChange={(e) => setNewLogin(prev => ({ ...prev, passcode: e.target.value }))}
+                    placeholder="6 or more"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => {
+                  const pin = String(Math.floor(1000 + Math.random() * 9000));
+                  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+                  const passcode = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                  setNewLogin(prev => ({ ...prev, pin, passcode }));
+                }}
+                className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-sm hover:bg-gray-200"
+              >
+                Generate a PIN and passcode
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setShowNewLogin(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-white">
+                Cancel
+              </button>
+              <button
+                onClick={saveNewLogin}
+                disabled={savingLogin}
+                className="px-4 py-2 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:bg-gray-300"
+              >
+                {savingLogin ? 'Saving…' : 'Create login'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Write the passcode down before saving — it is stored scrambled and cannot be read back.
+            </p>
+          </div>
+        )}
+
+        {portalLogins.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            No site-restricted logins yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">For</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">On account of</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sees</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PIN</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {portalLogins.map(l => {
+                  const cust = customers.find(c => c.id === l.customer_id);
+                  return (
+                    <tr key={l.id} className={l.is_active ? '' : 'opacity-60'}>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{l.label}</td>
+                      <td className="px-4 py-3 text-sm text-gray-500">{cust ? (cust.company_name || cust.name) : '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {l.site_postcode ? l.site_postcode + ' jobs only' : <span className="text-amber-700">everything — no site set</span>}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-mono text-gray-700">{l.pin}</td>
+                      <td className="px-4 py-3 text-sm">
+                        {l.is_active
+                          ? <span className="px-2 py-1 rounded-full bg-green-100 text-green-800 text-xs font-medium">Active</span>
+                          : <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-600 text-xs font-medium">Switched off</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => toggleLogin(l)}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50 mr-2"
+                        >
+                          {l.is_active ? 'Switch off' : 'Switch on'}
+                        </button>
+                        <button
+                          onClick={() => resetLoginPasscode(l)}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50"
+                        >
+                          New passcode
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
