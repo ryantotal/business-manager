@@ -12987,6 +12987,28 @@ job.status.replace('_', ' ')}
           );
         };
 // ADD THE TermsSettings COMPONENT HERE (line 3437):
+// The standard terms, fetched once and kept. Quotes written while the terms
+// were failing to load stored none of their own, so their PDFs printed no
+// terms at all. The PDF falls back to these rather than printing nothing.
+let _activeQuoteTerms = null;
+const getActiveQuoteTerms = async () => {
+  if (_activeQuoteTerms !== null) return _activeQuoteTerms;
+  try {
+    const { data, error } = await window.supabase
+      .from('terms_conditions')
+      .select('content, created_at')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    _activeQuoteTerms = (data && data[0] && String(data[0].content || '').trim()) || '';
+  } catch (e) {
+    console.error('Could not read the standard terms:', e);
+    _activeQuoteTerms = '';
+  }
+  return _activeQuoteTerms;
+};
+
 // Used only when the terms_conditions table has no active row at all, which
 // should only be true on a fresh database. Quotes have their own copy of this
 // text in the PDF builders; this one exists so the editor is never blank.
@@ -13788,7 +13810,13 @@ function buildQuotePdfDoc(quote, ctx) {
   if (quote.paymentTerms) termRows.push(['Payment terms', String(quote.paymentTerms)]);
   if (company.carrierReg) termRows.push(['Waste carrier licence', company.carrierReg]);
 
-  const freeTerms = String(quote.terms_conditions || '').trim();
+  // A quote keeps the wording it was written with. Where it has none — every
+  // quote written while the terms were failing to load — the standard wording
+  // is used, because a quote printed with no terms at all is worse than one
+  // printed with the current ones.
+  const freeTerms = String(quote.terms_conditions || '').trim()
+    || String((ctx && ctx.standardTerms) || '').trim()
+    || FALLBACK_QUOTE_TERMS;
 
   if (termRows.length > 0 || freeTerms) {
     need(24);
@@ -13922,6 +13950,8 @@ async function buildQuotePdfContext(user) {
       email: user.email || '',
       phone: user.phone || '',
     } : {},
+    // Used where the quote itself has no terms stored.
+    standardTerms: await getActiveQuoteTerms(),
   };
 }
 
