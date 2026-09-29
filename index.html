@@ -1522,6 +1522,85 @@ const wtnCarryForwardBlocked = (prevRow) => {
   return null;
 };
 
+// ── Credit conditions ──────────────────────────────────────────────────────
+// An approved application either opens an account straight away — rare — or
+// puts the customer on pro forma for their first few orders, with the account
+// starting once those are done. Before this, the condition lived in somebody's
+// memory and a line in the notes.
+const CREDIT_TERMS_ACCOUNT = 'account';
+const CREDIT_TERMS_PROFORMA = 'proforma';
+
+const creditTermsOf = (customer) =>
+  String((customer && (customer.credit_terms_type || customer.creditTermsType)) || CREDIT_TERMS_ACCOUNT).toLowerCase();
+
+const proformaOrdersRequired = (customer) => {
+  const n = parseInt((customer && (customer.proforma_orders_required || customer.proformaOrdersRequired)) || 0, 10);
+  return isNaN(n) || n < 0 ? 0 : n;
+};
+
+// How many of the customer's orders count towards clearing the condition.
+// Counted from jobs marked as one of the pro forma orders, which is asked when
+// the job is booked — not inferred from completed jobs. A job is completed
+// weeks later when the supplier invoice arrives, and a job done on account
+// looks identical, so inferring it measured neither the promise made nor the
+// money received. Cancelled jobs drop out.
+const jobIsProformaOrder = (j) => !!(j && (j.proformaOrder || j.proforma_order));
+
+const proformaOrdersDone = (customerName, jobs) => {
+  const name = String(customerName || '').trim().toLowerCase();
+  if (!name) return 0;
+  return (jobs || []).filter((j) => {
+    if (!j) return false;
+    if (String(j.customerName || j.customer_name || '').trim().toLowerCase() !== name) return false;
+    if (j.isCancelled || j.is_cancelled) return false;
+    return jobIsProformaOrder(j);
+  }).length;
+};
+
+// Where a customer stands. Returns null when there is no condition to meet.
+const creditConditionStatus = (customer, jobs) => {
+  if (!customer) return null;
+  if (creditTermsOf(customer) !== CREDIT_TERMS_PROFORMA) return null;
+  const required = proformaOrdersRequired(customer);
+  if (required <= 0) return null;
+  const done = proformaOrdersDone(customer.name || customer.company_name, jobs);
+  const remaining = Math.max(0, required - done);
+  return {
+    required,
+    done,
+    remaining,
+    satisfied: remaining === 0,
+    label: remaining === 0
+      ? 'Pro forma condition met — ' + done + ' of ' + required + ' orders taken. Their account can be switched on.'
+      : 'Pro forma — ' + done + ' of ' + required + ' orders taken. Payment due before this job goes out.',
+  };
+};
+
+// The wording sent to the customer when an application is approved. Written
+// out in full so it goes out the same way every time, rather than being
+// composed from scratch on the day.
+const creditApprovalEmail = ({ customerName, limit, terms, ordersRequired, companyName, contactName }) => {
+  const money = limit ? ('\u00a3' + String(limit).replace(/[^0-9.,]/g, '')) : 'an agreed limit';
+  const lines = [];
+  lines.push('Dear ' + (contactName || 'Sir or Madam') + ',');
+  lines.push('');
+  lines.push('Thank you for your credit application. I am pleased to confirm that we have approved an account for ' + (customerName || 'your company') + ' with a credit limit of ' + money + '.');
+  lines.push('');
+  if (terms === CREDIT_TERMS_PROFORMA && ordersRequired > 0) {
+    lines.push('Before the account becomes active, your first ' + ordersRequired + ' order' + (ordersRequired === 1 ? '' : 's') + ' will need to be paid on a pro forma basis. We will issue a pro forma invoice for each one, and the work will be booked in once payment has cleared.');
+    lines.push('');
+    lines.push('Once those ' + ordersRequired + ' order' + (ordersRequired === 1 ? ' has' : 's have') + ' been completed and settled, your account will open on our standard terms and you will be able to order against the ' + money + ' limit in the usual way.');
+  } else {
+    lines.push('The account is active immediately and you are able to order against the limit on our standard terms.');
+  }
+  lines.push('');
+  lines.push('If you have any questions about any of this, please do get in touch.');
+  lines.push('');
+  lines.push('Kind regards,');
+  lines.push(companyName || 'Total Waste Services Ltd');
+  return lines.join('\n');
+};
+
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
 // Searchable Dropdown Component
@@ -6499,6 +6578,37 @@ const [isEvent, setIsEvent] = useState(false);
     console.warn('[Line items] could not derive the job supplier:', supErr);
   }
 
+  // ── Pro forma orders ─────────────────────────────────────────────────
+  // A customer approved on pro forma terms owes payment up front for their
+  // first few orders. Rather than guessing from completed jobs — which happen
+  // weeks later and look the same whether or not anyone paid — the job is
+  // asked about here, while it is being booked.
+  try {
+    const customerRecord = (customers || []).find(
+      c => (c.companyName || c.name) === formData.customerName
+    );
+    const credit = creditConditionStatus(customerRecord, jobs);
+    const alreadyCounted = jobIsProformaOrder(job) || jobIsProformaOrder(formData);
+    if (credit && !credit.satisfied && !alreadyCounted) {
+      const isOne = confirm(
+        formData.customerName + ' is on pro forma for their first ' + credit.required + ' orders.\n\n' +
+        credit.done + ' of ' + credit.required + ' taken so far.\n\n' +
+        'Is this one of them?\n\n' +
+        'OK  — yes, count it. Payment is due before the work goes out.\n' +
+        'Cancel — no, this one does not count.');
+      formData.proformaOrder = !!isOne;
+      if (isOne && credit.remaining === 1) {
+        alert('That is ' + credit.required + ' of ' + credit.required + '.\n\n' +
+              'Once this one is paid, ' + formData.customerName +
+              "'s account can be switched to normal terms on their customer record.");
+      }
+    } else if (alreadyCounted) {
+      formData.proformaOrder = true;
+    }
+  } catch (e) {
+    console.error('[Pro forma] could not check the credit condition:', e);
+  }
+
   // ── Site allocation check ────────────────────────────────────────────
   // Warn if this booking would breach the customer's tonnage cap for the
   // site + product. Not a hard block — customers do verbally increase caps —
@@ -6993,8 +7103,32 @@ const [isEvent, setIsEvent] = useState(false);
             {/* Customer Extended Details - Auto-populated */}
             {formData.customerName && (() => {
               const customer = customers.find(c => (c.companyName || c.name) === formData.customerName);
+              const credit = creditConditionStatus(customer, jobs);
               return customer ? (
                 <div className="col-span-2 bg-gray-50 rounded-lg p-4 mb-4">
+                  {/* On pro forma until the agreed number of orders is done.
+                      Shown here, where the work is being booked, because that
+                      is the moment it matters. */}
+                  {credit && (
+                    <div className={credit.satisfied
+                      ? "mb-3 rounded-lg border border-green-300 bg-green-50 p-3"
+                      : "mb-3 rounded-lg border border-red-300 bg-red-50 p-3"}>
+                      <p className={credit.satisfied ? "text-sm font-semibold text-green-900" : "text-sm font-semibold text-red-900"}>
+                        {credit.label}
+                      </p>
+                      {!credit.satisfied && (
+                        <p className="text-xs text-red-800 mt-1">
+                          Raise a pro forma invoice and get it paid before this one goes out.
+                          {' '}{credit.remaining} of {credit.required} still to go.
+                        </p>
+                      )}
+                      {credit.satisfied && (
+                        <p className="text-xs text-green-800 mt-1">
+                          Switch their terms to a direct account on the customer record, and this will stop appearing.
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <h3 className="text-sm font-medium text-gray-700 mb-3">Customer Information</h3>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
@@ -20600,7 +20734,7 @@ Total Waste Services Ltd`);
             // buttons next to each other, and an email to a customer is not
             // something to fire off on a mis-click. Answering no still records
             // the decision — it only skips the email.
-            const sendDecisionEmail = async (app, status, limit) => {
+            const sendDecisionEmail = async (app, status, limit, creditTerms, proformaCount) => {
               const d = app.form_data || {};
               const to = (d.accountsEmail || app.sent_to || '').trim();
               const companyName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
@@ -20628,9 +20762,16 @@ Total Waste Services Ltd`);
                 return;
               }
 
+              const onProforma = approved
+                && String(creditTerms || '').toLowerCase() === CREDIT_TERMS_PROFORMA
+                && Number(proformaCount) > 0;
               const what = approved
-                ? 'Email ' + to + ' to confirm the account is open' +
-                  (limit ? ' with a ' + limit + ' limit?' : '?')
+                ? (onProforma
+                    ? 'Email ' + to + ' to confirm the account is approved' +
+                      (limit ? ' at ' + limit : '') +
+                      ', with the first ' + proformaCount + ' order' + (proformaCount === 1 ? '' : 's') + ' on pro forma?'
+                    : 'Email ' + to + ' to confirm the account is open' +
+                      (limit ? ' with a ' + limit + ' limit?' : '?'))
                 : 'Email ' + to + ' to say we cannot open a credit account, but that we can work on pro forma?';
               if (!confirm(what)) return;
 
@@ -20639,10 +20780,27 @@ Total Waste Services Ltd`);
                 '',
                 'Thank you for your credit account application.',
                 '',
-                limit
-                  ? 'We are pleased to confirm that your credit account is now open, with a credit limit of ' + limit + '.'
-                  : 'We are pleased to confirm that your credit account is now open.',
+                // An account approved on pro forma terms does not open until
+                // the agreed orders are done, so the email must not say it has.
+                onProforma
+                  ? (limit
+                      ? 'We are pleased to confirm that we have approved an account for you with a credit limit of ' + limit + '.'
+                      : 'We are pleased to confirm that we have approved an account for you.')
+                  : (limit
+                      ? 'We are pleased to confirm that your credit account is now open, with a credit limit of ' + limit + '.'
+                      : 'We are pleased to confirm that your credit account is now open.'),
                 '',
+                ...(onProforma ? [
+                  'Before the account becomes active, your first ' + proformaCount + ' order' +
+                    (proformaCount === 1 ? '' : 's') + ' will need to be paid on a pro forma basis.',
+                  'We will issue a pro forma invoice for each one, and the work will be booked in',
+                  'once payment has cleared.',
+                  '',
+                  'Once those ' + proformaCount + ' order' + (proformaCount === 1 ? ' has' : 's have') +
+                    ' been completed and settled, your account will open on our',
+                  'standard terms and you will be able to order against the limit in the usual way.',
+                  '',
+                ] : []),
                 'Accounts are strictly settled 30 days from the date of invoice.',
                 '',
                 'If you have any questions about your account, please reply to this email',
@@ -20716,6 +20874,8 @@ Total Waste Services Ltd`);
 
             const setStatus = async (app, status) => {
               let limit = null;
+              let creditTerms = CREDIT_TERMS_ACCOUNT;
+              let proformaCount = 0;
               if (status === 'approved') {
                 const asked = (app.form_data && app.form_data.creditLimit) || '';
                 // Asked for in pounds and nothing else — no shorthand, so
@@ -20734,6 +20894,30 @@ Total Waste Services Ltd`);
                   if (isNaN(n) || n < 0) { alert('That is not a number. Enter the amount in pounds, e.g. 5000.'); return; }
                   limit = formatMoney(Math.round(n));
                 }
+
+                // How the account starts. Most approvals go on pro forma for
+                // the first few orders; a direct account is the exception, so
+                // pro forma is offered as the default.
+                const askTerms = window.prompt(
+                  'How does this account start?\n\n' +
+                  '  1  Pro forma for the first few orders, then the account opens\n' +
+                  '  2  Direct account, active straight away\n\n' +
+                  'Enter 1 or 2.',
+                  '1');
+                if (askTerms === null) return;
+                if (String(askTerms).trim() === '2') {
+                  creditTerms = CREDIT_TERMS_ACCOUNT;
+                  proformaCount = 0;
+                } else {
+                  creditTerms = CREDIT_TERMS_PROFORMA;
+                  const askCount = window.prompt(
+                    'How many orders on pro forma before the account opens?\n\nEnter the number only.',
+                    '5');
+                  if (askCount === null) return;
+                  const c = parseInt(String(askCount).trim(), 10);
+                  if (isNaN(c) || c < 1) { alert('That is not a number of orders. Enter 1 or more.'); return; }
+                  proformaCount = c;
+                }
               }
               try {
                 await window.supabase.from('credit_applications').update({
@@ -20741,6 +20925,8 @@ Total Waste Services Ltd`);
                   decided_at: new Date().toISOString(),
                   decided_by: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email,
                   approved_limit: status === 'approved' ? (limit || null) : null,
+                  credit_terms_type: status === 'approved' ? creditTerms : null,
+                  proforma_orders_required: status === 'approved' ? proformaCount : null,
                 }).eq('id', app.id);
                 await load();
                 notifyCreditChanged();
@@ -20748,13 +20934,18 @@ Total Waste Services Ltd`);
                 // Ask about the email before the customer-setup run, so the
                 // applicant hears back even if setting the record up is
                 // abandoned half way.
-                await sendDecisionEmail(app, status, limit);
+                await sendDecisionEmail(app, status, limit, creditTerms, proformaCount);
 
                 // Approving and then setting the customer up are the same job,
                 // so run straight into it rather than making them find the
                 // button afterwards.
                 if (status === 'approved' && !app.customer_created) {
-                  await createCustomer({ ...app, approved_limit: limit || null }, true);
+                  await createCustomer({
+                    ...app,
+                    approved_limit: limit || null,
+                    credit_terms_type: creditTerms,
+                    proforma_orders_required: proformaCount,
+                  }, true);
                 }
               } catch (e) { alert('Could not update: ' + describeError(e)); }
             };
@@ -20796,6 +20987,10 @@ Total Waste Services Ltd`);
                   city: d.regTown || '',
                   postcode: d.regPostcode || '',
                   credit_limit: limitNumber,
+                  // How the account starts. A customer on pro forma is flagged
+                  // on every job until the agreed number of orders is done.
+                  credit_terms_type: app.credit_terms_type || CREDIT_TERMS_ACCOUNT,
+                  proforma_orders_required: app.proforma_orders_required || 0,
                   credit_days: 30,
                   account_status: 'Active',
                   additional_emails: d.accountsEmail || '',
@@ -26591,6 +26786,7 @@ collectionDate: job.collection_date,
   hazardousWaste: job.hazardous_waste || false,
   consignmentNote: job.consignment_note,
   isHazardous: job.is_hazardous || false,
+  proformaOrder: job.proforma_order || false,
   consignmentNoteReceived: job.consignment_note_received || false,
   invoiceNumber: job.invoice_number,
   invoiceStatus: job.invoice_status || 'Not Invoiced',
@@ -26714,6 +26910,7 @@ const refreshJobs = async () => {
                 hazardousWaste: job.hazardous_waste || false,
                 consignmentNote: job.consignment_note,
                 isHazardous: job.is_hazardous || false,
+                proformaOrder: job.proforma_order || false,
                 consignmentNoteReceived: job.consignment_note_received || false,
                 invoiceNumber: job.invoice_number,
                 invoiceStatus: job.invoice_status || 'Not Invoiced',
@@ -27607,6 +27804,7 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
       hazardous_waste: newJob.hazardousWaste || false,
       consignment_note: newJob.consignmentNote || null,
       is_hazardous: !!newJob.isHazardous,
+      proforma_order: !!newJob.proformaOrder,
       invoice_number: newJob.invoiceNumber || null,
       invoice_status: newJob.invoiceStatus || 'Not Invoiced',
       payment_status: newJob.paymentStatus || 'Not Paid',
@@ -27768,6 +27966,8 @@ collection_date: updatedJob.collectionDate || null,
       hazardous_waste: updatedJob.hazardousWaste || false,
       consignment_note: updatedJob.consignmentNote,
       is_hazardous: !!updatedJob.isHazardous,
+      // Whether this job counts towards the pro forma orders.
+      proforma_order: updatedJob.proformaOrder ?? updatedJob.proforma_order ?? false,
       invoice_number: updatedJob.invoiceNumber,
       invoice_status: updatedJob.invoiceStatus || 'Not Invoiced',
       payment_status: updatedJob.paymentStatus || 'Not Paid',
