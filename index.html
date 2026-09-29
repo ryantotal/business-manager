@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-09-28 12:15';
+const BUILD_STAMP = '2026-09-29 09:35';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -34685,19 +34685,29 @@ const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts 
   useEffect(() => {
     const loadTermsConditions = async () => {
       try {
+        // Not .single(): that treats "no active row" and "more than one active
+        // row" as errors, and the error was being ignored — so the box sat
+        // empty for ever behind a placeholder that said it was still loading.
+        // Newest active row wins, and anything else falls through to the
+        // standard wording below.
         const { data, error } = await window.supabase
           .from('terms_conditions')
-          .select('content')
+          .select('content, created_at')
           .eq('is_active', true)
-          .single();
-        
-        if (data) {
-          setDefaultTerms(data.content);
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (error) throw error;
+
+        const content = (data && data[0] && String(data[0].content || '').trim()) || '';
+        if (content) {
+          setDefaultTerms(content);
           // If creating new quote or quote has no T&Cs, set the default
           if (!quote?.terms_conditions) {
-            setFormData(prev => ({...prev, terms_conditions: data.content}));
+            setFormData(prev => ({...prev, terms_conditions: content}));
           }
+          return;
         }
+        throw new Error('No active terms and conditions are set. Set them in Admin → Quote Terms.');
       } catch (error) {
         console.error('Error loading T&Cs:', error);
         // Set a fallback if can't load from DB
@@ -35434,7 +35444,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                   onChange={(e) => setFormData({...formData, terms_conditions: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   rows={10}
-                  placeholder="Loading terms and conditions..."
+                  placeholder={defaultTerms ? 'Enter your terms and conditions...' : 'Loading terms and conditions...'}
                 />
               </div>
             </div>
