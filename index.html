@@ -21426,6 +21426,30 @@ Total Waste Services Ltd`);
                                     className="px-3 py-1.5 bg-green-700 text-white rounded-lg text-xs font-medium hover:bg-green-800">Approve</button>
                                   <button onClick={() => setStatus(app, 'declined')}
                                     className="px-3 py-1.5 border border-red-300 text-red-700 rounded-lg text-xs font-medium hover:bg-red-50">Decline</button>
+                                  {/* Available before the decision, not only after it. An
+                                      application worth thinking about is one worth being
+                                      able to take away, read properly and show to someone
+                                      else first. */}
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const pdf = buildCreditApplicationPdfDoc(app, {
+                                          jsPDF: window.jspdf && window.jspdf.jsPDF,
+                                          logoDataUrl: await loadLogoDataUrl(),
+                                          services: TWS_SERVICES,
+                                          company: {
+                                            name: localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+                                            address: localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress,
+                                            phone: TWS_COMPANY.phone, vat: TWS_COMPANY.vat,
+                                            companyNo: TWS_COMPANY.companyNo, carrierReg: TWS_COMPANY.carrierReg,
+                                          },
+                                        });
+                                        pdf.save((app.reference || 'credit-application') + '.pdf');
+                                      } catch (e) { alert('Could not build the PDF: ' + describeError(e)); }
+                                    }}
+                                    className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50">
+                                    Download to review
+                                  </button>
                                 </div>
                               )}
 
