@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 17:40';
+const BUILD_STAMP = '2026-10-01 18:05';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -3587,6 +3587,8 @@ return (
                                     <td colSpan={7} className="px-8 py-4 border-t border-green-100">
                                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs" style={{gridTemplateColumns:"repeat(3,minmax(0,1fr))",overflow:"hidden"}}>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Job Reference</div><div className="font-semibold">{job.job_number}</div></div>
+                                        {/* The customer's own reference — what they file this work under. */}
+                                        {job.customer_po && <div><div className="text-gray-400 uppercase tracking-wide mb-1">Your PO</div><div className="font-semibold">{job.customer_po}</div></div>}
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Service</div><div className="font-semibold">{job.job_type}</div></div>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Status</div><div className="font-semibold">{done ? 'Completed' : cancelled ? 'Cancelled' : job.status === 'REQUESTED' ? 'Requested' : 'Scheduled'}</div></div>
                                         <div><div className="text-gray-400 uppercase tracking-wide mb-1">Date</div><div className="font-semibold">{job.job_date ? new Date(job.job_date).toLocaleDateString('en-GB') : '—'}</div></div>
@@ -3766,6 +3768,8 @@ return (
                                     <div className="grid grid-cols-2 gap-3 text-xs">
                                       <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Service</div><div className="font-semibold">{job.job_type}</div></div>
                                       <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Date</div><div className="font-semibold">{job.job_date ? new Date(job.job_date).toLocaleDateString('en-GB') : '—'}</div></div>
+                                      {/* The customer's own reference — what they file this work under. */}
+                                      {job.customer_po && <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Your PO</div><div className="font-semibold">{job.customer_po}</div></div>}
                                       {job.delivery_date && <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Delivery</div><div className="font-semibold">{new Date(job.delivery_date).toLocaleDateString('en-GB')}</div></div>}
                                       {job.collection_date && <div><div className="text-gray-400 uppercase tracking-wide mb-0.5">Collection</div><div className="font-semibold">{new Date(job.collection_date).toLocaleDateString('en-GB')}</div></div>}
                                       <div className="col-span-2" style={{minWidth:0}}><div className="text-gray-400 uppercase tracking-wide mb-0.5">Site Address</div><div className="font-semibold" style={{wordBreak:'break-word'}}>{[job.site_address1, job.site_address2, job.site_city, job.site_postcode].filter(Boolean).join(', ') || '—'}</div></div>
