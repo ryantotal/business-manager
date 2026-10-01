@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 13:15';
+const BUILD_STAMP = '2026-10-01 14:05';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -5400,7 +5400,9 @@ const EWCPicker = ({ value, onChange }) => {
       // (e.g. on a smaller screen or a longer multi-line WTN).
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const desiredWidth = Math.max(rect.width, 380);
+      // Wide enough for an official waste description without wrapping to
+      // four lines; the field itself is only a few inches across.
+      const desiredWidth = Math.max(rect.width, 460);
       // Clamp horizontally so a button near the right edge doesn't overflow
       let left = rect.left;
       if (left + desiredWidth > vw - 8) left = Math.max(8, vw - desiredWidth - 8);
@@ -5436,8 +5438,12 @@ const EWCPicker = ({ value, onChange }) => {
           {selected.hazardous ? '⚠️ HAZARDOUS — ' : '✅ Non-hazardous — '}{selected.desc}
         </div>
       )}
-      {open && <div className="fixed inset-0" style={{zIndex:9998}} onClick={() => { setOpen(false); setSearch(''); }} />}
-      {open && (
+      {/* Rendered onto the page itself rather than here. Inside the products
+          table it was being cropped by the sideways-scrolling container, so the
+          list showed one result and scrolled left to right instead of down. */}
+      {open && ReactDOM.createPortal(
+        <>
+        <div className="fixed inset-0" style={{zIndex:9998}} onClick={() => { setOpen(false); setSearch(''); }} />
         <div
           style={{ position:'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}
           className="bg-white border border-gray-200 rounded-xl shadow-2xl flex flex-col"
@@ -5455,12 +5461,12 @@ const EWCPicker = ({ value, onChange }) => {
                 </button>
                 <button type="button" onClick={() => setTab('all')}
                   className={`px-3 py-1 rounded text-xs font-medium ${tab==='all'?'bg-green-700 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                  All 800+ codes
+                  All {EWC_CODES.length} codes
                 </button>
               </div>
             )}
           </div>
-          <div className="overflow-y-auto" style={{maxHeight:'320px'}}>
+          <div className="overflow-y-auto overflow-x-hidden" style={{maxHeight:'420px'}}>
             {filtered.length === 0 && <div className="px-4 py-4 text-sm text-gray-400 text-center">No matching codes found — try different keywords</div>}
             {filtered.map(e => (
               <button key={e.code} type="button"
@@ -5471,8 +5477,8 @@ const EWCPicker = ({ value, onChange }) => {
                   {e.hazardous && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium shrink-0">HAZ ⚠️</span>}
                   {value===e.code && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium shrink-0">Selected ✓</span>}
                 </div>
-                <div className="text-xs text-gray-700 mt-0.5 leading-tight font-medium">{e.desc}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{e.chapter}</div>
+                <div className="text-xs text-gray-700 mt-0.5 leading-tight font-medium break-words">{e.desc}</div>
+                <div className="text-xs text-gray-400 mt-0.5 break-words">{e.chapter}</div>
               </button>
             ))}
           </div>
@@ -5481,6 +5487,8 @@ const EWCPicker = ({ value, onChange }) => {
             <button type="button" onClick={() => { setOpen(false); setSearch(''); }} className="text-xs text-gray-500 hover:text-gray-700 font-medium">✕ Close</button>
           </div>
         </div>
+        </>,
+        document.body
       )}
     </div>
   );
