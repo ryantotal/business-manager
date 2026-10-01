@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 16:00';
+const BUILD_STAMP = '2026-10-01 16:55';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -7483,7 +7483,15 @@ if (openedWithRef.current === null) {
 }
 const [isEvent, setIsEvent] = useState(false);
 
-          const [activeTab, setActiveTab] = useState('details');
+          // Opened from the document button on a job, the form starts on the
+          // transfer note. It used to open on Details and then try to click the
+          // note's tab by searching the page 400ms later, which found nothing.
+          const [activeTab, setActiveTab] = useState(() => {
+            try {
+              if (window._openJobFormOnWtn) { window._openJobFormOnWtn = false; return 'wtn'; }
+            } catch (e) { /* no window */ }
+            return 'details';
+          });
 
           // Auto-set unit to tonnes for Aggregates — but ONLY when the
           // current unit is clearly wrong for Aggregates (skip / collections
@@ -7952,7 +7960,7 @@ const [isEvent, setIsEvent] = useState(false);
       onClick={() => { setActiveTab('wtn'); setWtnTouched(true); }}
       className={`px-3 sm:px-6 py-3 text-sm sm:text-base font-medium whitespace-nowrap ${activeTab === 'wtn' ? 'border-b-2 border-green-500 text-green-600' : 'text-gray-500'}`}
     >
-      📄 Send WTN
+      📄 Waste Transfer Note
     </button>
   </div>
 )}
@@ -8244,12 +8252,20 @@ const [isEvent, setIsEvent] = useState(false);
               })()}
               {formData.sitePostcode && (
                 <button type="button" onClick={() => {
-                  // Store job context for the map to pick up
-                  window._supplierMapContext = {
+                  // The supplier map is a screen behind this form, so switching
+                  // to it without closing the form did nothing at all — which is
+                  // what this button appeared to do.
+                  if (typeof window.openSupplierMapForJob !== 'function') {
+                    alert('The supplier map could not be opened from here. Close the job and use the Supplier Map tab.');
+                    return;
+                  }
+                  if (!confirm('Open the supplier map for ' + (formData.sitePostcode || 'this site') +
+                               '?\n\nThis closes the job. Anything you have changed and not saved will be lost.')) return;
+                  window.openSupplierMapForJob({
                     postcode: formData.sitePostcode,
                     jobType: formData.jobType,
-                  };
-                  setActiveTab('supplierMap');
+                  });
+                  onClose();
                 }} className="mt-1 text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1">
                   <MapPin size={12} /> Find suppliers near {formData.sitePostcode}
                 </button>
@@ -10776,6 +10792,39 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                               🌐 Publish to Portal
                             </button>
                           </div>
+                          {/* Taking it back off again. A note published by
+                              mistake, or to check how it looked, had no way
+                              back — publishing was one-way. */}
+                          {((Array.isArray(job.wtns) && job.wtns.some(w => w && (w.portalVisible || w.portal_visible)))
+                            || job.wtnPortalVisible || job.wtn_portal_visible) && (
+                            <div className="flex gap-3">
+                              <button type="button"
+                                onClick={async () => {
+                                  if (!confirm('Take this transfer note off the customer\'s portal?\n\nThey will no longer see it. Nothing is deleted — you can publish it again.')) return;
+                                  try {
+                                    try {
+                                      await window.applyPerWtnState(job.id, { portal_visible: false });
+                                    } catch (perWtnErr) {
+                                      console.error('[WTN] per-note unpublish failed:', perWtnErr);
+                                    }
+                                    const { error } = await window.supabase.from('jobs')
+                                      .update({ wtn_portal_visible: false }).eq('id', job.id);
+                                    if (error) throw error;
+                                    alert('Taken off the customer portal.');
+                                    // This form is not given a refresh function,
+                                    // so ask the app for one.
+                                    if (typeof window.loadJobsFromSupabase === 'function') {
+                                      await window.loadJobsFromSupabase();
+                                    }
+                                  } catch (err) {
+                                    alert('Could not take it off the portal: ' + (err.message || 'unknown error'));
+                                  }
+                                }}
+                                className="flex-1 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2">
+                                ↩ Take off the portal
+                              </button>
+                            </div>
+                          )}
                           <div className="flex gap-3">
                             <button type="button"
                               disabled={wtnSending || wtnTotalPct!==100}
@@ -18617,12 +18666,9 @@ console.log(JSON.stringify(invoiceData, null, 2));
 {['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType) && (
   <button
     onClick={() => {
+      window._openJobFormOnWtn = true;
       onEdit(job);
       window.refreshFullPageAttachments = () => loadJobAttachments(job.id);
-      setTimeout(() => {
-        const wtnTabBtn = document.querySelector('[data-tab="wtn"]');
-        if (wtnTabBtn) wtnTabBtn.click();
-      }, 400);
     }}
     className={`p-2 rounded-lg ${(Array.isArray(job.wtns) && job.wtns.length > 0) || job.wtn_data || job.wtnData ? 'text-green-600 hover:bg-green-100' : 'text-amber-600 hover:bg-amber-100'}`}
     title={(Array.isArray(job.wtns) && job.wtns.length > 0) || job.wtn_data || job.wtnData ? 'Edit WTN' : 'Create WTN'}
@@ -26827,6 +26873,17 @@ useEffect(() => {
 }, []);
           const { user, logout, hasPermission } = useAuth();
           const [activeTab, setActiveTab] = useState('jobs');
+
+          // Opening the supplier map from inside a job. The job form is a
+          // screen in front of this one, so it has to close itself first and
+          // then ask for the map — it cannot switch this tab on its own.
+          React.useEffect(() => {
+            window.openSupplierMapForJob = (ctx) => {
+              try { window._supplierMapContext = ctx || null; } catch (e) {}
+              setActiveTab('supplierMap');
+            };
+            return () => { try { delete window.openSupplierMapForJob; } catch (e) {} };
+          }, []);
           // The Convert to Job product picker. Declared up here with the rest of
           // the app's state, not beside the handler that uses it: the app returns
           // early for a signed-out user, and a hook placed after that return is
@@ -29960,12 +30017,12 @@ const handleCompleteJob = async (job, sendChoice) => {
         `✅ Job ${job.jobNumber} marked as completed!\n\n⚠️ No Waste Transfer Note has been created for this job.\n\nWould you like to create one now?\n\nClick OK to open the WTN tab, or Cancel to skip.`
       );
       if (sendNow) {
+        // Same as the document button on the job: ask for the note, then open
+        // the form. Looking for the tab in the page afterwards never worked —
+        // the tab it searched for carries no such marker.
+        window._openJobFormOnWtn = true;
         setEditingJob(updatedJob);
         setShowJobForm(true);
-        setTimeout(() => {
-          const wtnTabBtn = document.querySelector('[data-tab="wtn"]');
-          if (wtnTabBtn) wtnTabBtn.click();
-        }, 400);
       }
     } else {
       alert('✅ Job marked as completed!');
