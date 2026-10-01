@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-09-30 09:40';
+const BUILD_STAMP = '2026-09-30 10:05';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -4904,8 +4904,16 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
         listOfWasteCode: saved.listOfWasteCode || '',
         wasteContainer: saved.wasteContainer || 'Skip',
         wasteProcess: saved.wasteProcess || '',
-        quantity: saved.quantity || m.lineQty || 1,
-        unit: saved.unit || 'tonnes',
+        // An unissued note follows the job. A draft written when the job said
+        // one load should not still say one load after the job is changed to
+        // eight — the note records what moved, not what was first booked.
+        // A note already sent keeps what it was issued with.
+        quantity: (saved.sent || saved.sentAt)
+          ? (saved.quantity || m.lineQty || jobObj?.quantity || 1)
+          : (m.lineQty || jobObj?.quantity || saved.quantity || 1),
+        unit: (saved.sent || saved.sentAt)
+          ? (saved.unit || 'tonnes')
+          : (m.lineUnit || jobObj?.unit || saved.unit || 'tonnes'),
         isHazardous: !!saved.isHazardous,
         skipSize: saved.skipSize || m.productName || '',
         // Phase 3 (post-fix11) — informational disposal site
@@ -4981,8 +4989,11 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
         listOfWasteCode: '',
         wasteContainer: 'Skip',
         wasteProcess: '',
-        quantity: m.lineQty || 1,
-        unit: 'tonnes',
+        // Same fallback as everywhere else: the line's own quantity, then the
+        // job's. This branch used to ignore the job entirely, so a job whose
+        // quantity sits at the top rather than on the line showed as 1.
+        quantity: m.lineQty || jobObj?.quantity || 1,
+        unit: m.lineUnit || jobObj?.unit || 'tonnes',
         isHazardous: false,
         skipSize: m.productName || skipSize || '',
         disposalSiteName: '',
