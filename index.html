@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-09-30 10:05';
+const BUILD_STAMP = '2026-09-30 11:30';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -1478,9 +1478,14 @@ const WTN_PER_JOB_FIELDS = [
 const wtnAutoDue = (job, todayStr) => {
   if (!job) return { due: false, reason: 'no job' };
   if (job.isCancelled || job.is_cancelled) return { due: false, reason: 'cancelled' };
-  const parentId = job.parentJobId || job.parent_job_id;
-  const partOfSchedule = !!parentId || !!(job.isRecurring || job.is_recurring);
-  if (!partOfSchedule) return { due: false, reason: 'not a recurring job' };
+  // Every job where waste moves, not only the recurring ones. A one-off skip
+  // or muck away raises a note the same way; it has no previous note to copy
+  // from, so it is built from the job, which is why the EWC code is set on the
+  // product line.
+  const jobType = String(job.jobType || job.job_type || '');
+  if (!JOB_TYPES_NEEDING_EWC.includes(jobType)) {
+    return { due: false, reason: 'no waste moves on a ' + (jobType || 'job of this type') };
+  }
   const when = String(job.jobDate || job.job_date || '').slice(0, 10);
   if (!when) return { due: false, reason: 'no job date' };
   if (!(when < String(todayStr).slice(0, 10))) return { due: false, reason: 'not yet — the day after the job' };
@@ -1600,6 +1605,10 @@ const creditApprovalEmail = ({ customerName, limit, terms, ordersRequired, compa
   lines.push(companyName || 'Total Waste Services Ltd');
   return lines.join('\n');
 };
+
+// Job types where waste moves, so a transfer note is needed and the line has
+// to carry an EWC code. Aggregates delivered to site are not waste.
+const JOB_TYPES_NEEDING_EWC = ['Skip Hire', 'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Other'];
 
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
@@ -4723,6 +4732,8 @@ const parseJobLineItems = (jobObj) => {
     lineDescription: li?.description || '',
     lineQty: li?.quantity || null,
     lineUnit: li?.unit || null,
+    // Set on the job so the transfer note does not have to be told it twice.
+    lineEwcCode: li?.ewc_code || li?.ewcCode || '',
     // Per-line supplier, set on quotes and carried through on conversion.
     supplierName: li?.supplier_name || li?.supplierName || '',
   }));
@@ -4786,7 +4797,7 @@ const buildDefaultLines = (jobObj, suppliersList) => {
       lineQty: null,
       included: true,
       wasteDescription: '',
-      listOfWasteCode: '',
+      listOfWasteCode: m.lineEwcCode || '',
       wasteContainer: 'Skip',
       wasteProcess: '',
       quantity: jobObj?.quantity || 1,
@@ -4817,7 +4828,7 @@ const buildDefaultLines = (jobObj, suppliersList) => {
       ...m,
       included: i === 0, // only first line ticked by default
       wasteDescription: wasteDesc,
-      listOfWasteCode: '',
+      listOfWasteCode: m.lineEwcCode || '',
       wasteContainer: jobObj?.jobType === 'Roll-on Roll-off' ? 'Roll-on roll-off container'
                     : jobObj?.jobType === 'Muck Away' ? 'Loose'
                     : jobObj?.jobType === 'Grab Hire' ? 'Loose' : 'Skip',
@@ -4901,7 +4912,11 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
         lineQty: saved.lineItemQuantity || m.lineQty,
         included: true,
         wasteDescription: saved.wasteDescription || '',
-        listOfWasteCode: saved.listOfWasteCode || '',
+        // An unissued note follows the code set on the job; one already sent
+        // keeps what it was issued with.
+        listOfWasteCode: (saved.sent || saved.sentAt)
+          ? (saved.listOfWasteCode || '')
+          : (saved.listOfWasteCode || m.lineEwcCode || ''),
         wasteContainer: saved.wasteContainer || 'Skip',
         wasteProcess: saved.wasteProcess || '',
         // An unissued note follows the job. A draft written when the job said
@@ -4986,7 +5001,7 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
         lineQty: m.lineQty,
         included: false,
         wasteDescription: descParts.filter(Boolean).join(' — ') || '',
-        listOfWasteCode: '',
+        listOfWasteCode: m.lineEwcCode || '',
         wasteContainer: 'Skip',
         wasteProcess: '',
         // Same fallback as everywhere else: the line's own quantity, then the
@@ -5123,7 +5138,7 @@ const [wtnFields, setWtnFields] = useState(() => {
             ...m,
             included: false,
             wasteDescription: '',
-            listOfWasteCode: '',
+            listOfWasteCode: m.lineEwcCode || '',
             wasteContainer: 'Skip',
             wasteProcess: '',
             quantity: m.lineQty || 1,
@@ -7449,6 +7464,7 @@ const [isEvent, setIsEvent] = useState(false);
                     <tr>
                       <th className="px-4 py-3 text-left font-medium w-44">Product/Service</th>
                       <th className="px-2 py-3 text-left font-medium w-56 min-w-[14rem]">Supplier</th>
+                      <th className="px-2 py-3 text-left font-medium w-44 min-w-[11rem]">EWC code</th>
                       <th className="px-4 py-3 text-left font-medium w-72 min-w-[18rem]">Description (Editable)</th>
                       <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
                       <th className="px-2 py-3 text-left font-medium w-24">Unit</th>
@@ -7513,6 +7529,32 @@ const [isEvent, setIsEvent] = useState(false);
                               >
                                 clear
                               </button>
+                            )}
+                          </td>
+                          {/* The code for this waste. Set here, on the job, so a
+                              transfer note can be raised without anyone having to
+                              look it up afterwards — and so a note can be produced
+                              automatically at all, which needs a code it cannot
+                              guess. Same picker the transfer note itself uses. */}
+                          <td className="px-2 py-3 align-top w-44 min-w-[11rem]">
+                            {JOB_TYPES_NEEDING_EWC.includes(formData.jobType) ? (
+                              <>
+                                <EWCPicker
+                                  value={item.ewc_code || ''}
+                                  onChange={(code) => setFormData(prev => {
+                                    const updated = [...(prev.lineItems || [])];
+                                    updated[index] = { ...updated[index], ewc_code: code || '' };
+                                    return { ...prev, lineItems: updated };
+                                  })}
+                                />
+                                {!item.ewc_code && (
+                                  <div className="text-xs text-amber-700 mt-1">
+                                    Needed for the transfer note
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-xs text-gray-400">Not needed for {formData.jobType || 'this job type'}</span>
                             )}
                           </td>
                           <td className="px-4 py-3 align-top w-72 max-w-[22rem]">
