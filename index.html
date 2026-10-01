@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-09-30 11:30';
+const BUILD_STAMP = '2026-10-01 11:15';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -1475,6 +1475,12 @@ const WTN_PER_JOB_FIELDS = [
 // Is this job one that should get its note published automatically, and is it
 // due? Scheduled date, not completion: the waste moved on the day, whatever
 // state the paperwork is in.
+// Notes are raised automatically from this date forward only. Jobs before it
+// were done under the old way of working, many without an EWC code, and
+// sweeping up months of history would publish a pile of paperwork nobody has
+// looked at. They stay as they are.
+const WTN_AUTO_FROM_DATE = '2026-10-01';
+
 const wtnAutoDue = (job, todayStr) => {
   if (!job) return { due: false, reason: 'no job' };
   if (job.isCancelled || job.is_cancelled) return { due: false, reason: 'cancelled' };
@@ -1488,6 +1494,7 @@ const wtnAutoDue = (job, todayStr) => {
   }
   const when = String(job.jobDate || job.job_date || '').slice(0, 10);
   if (!when) return { due: false, reason: 'no job date' };
+  if (when < WTN_AUTO_FROM_DATE) return { due: false, reason: 'before notes were raised automatically' };
   if (!(when < String(todayStr).slice(0, 10))) return { due: false, reason: 'not yet — the day after the job' };
   return { due: true, reason: 'due' };
 };
@@ -1609,6 +1616,102 @@ const creditApprovalEmail = ({ customerName, limit, terms, ordersRequired, compa
 // Job types where waste moves, so a transfer note is needed and the line has
 // to carry an EWC code. Aggregates delivered to site are not waste.
 const JOB_TYPES_NEEDING_EWC = ['Skip Hire', 'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Other'];
+
+// ── A transfer note built from the job ─────────────────────────────────────
+// A recurring collection copies last week's note. A one-off has nothing to
+// copy, so its note is built from the job itself: the waste and EWC code from
+// the product lines, the customer as transferor, the line's supplier as
+// carrier, and Total Waste Services as the broker who arranged it.
+//
+// Returns { rows } ready to insert, or { blocked } naming what is missing.
+// Nothing incomplete is ever published — a transfer note with no EWC code or
+// no carrier is not a document, it is a liability.
+const buildWtnRowsFromJob = (job, { suppliers, customer, company, wtnNumber } = {}) => {
+  if (!job || !job.id) return { blocked: 'no job' };
+
+  const jobType = String(job.jobType || job.job_type || '');
+  if (!JOB_TYPES_NEEDING_EWC.includes(jobType)) {
+    return { blocked: 'no waste moves on a ' + (jobType || 'job of this type') };
+  }
+
+  // A job with nothing on it synthesises one empty placeholder line, which
+  // would otherwise be reported as three separate missing fields.
+  if ((parseJobLineItems(job) || []).length === 0) {
+    return { blocked: 'the job has no products on it' };
+  }
+
+  // The EWC code is the switch. A line that carries waste has one and gets a
+  // note; a line that does not — transport, haulage, a standing charge — gets
+  // nothing. One job can have both, so this is decided per line rather than
+  // per job.
+  const all = (buildDefaultLines(job, suppliers || []) || []);
+  const lines = all
+    .filter(l => String(l && l.listOfWasteCode || '').trim())
+    .map(l => ({ ...l, included: true }));
+
+  if (lines.length === 0) {
+    return { blocked: 'no EWC code on any line — nothing on this job is being treated as waste' };
+  }
+
+  // What a line with a code must still carry before its note can go out.
+  const missing = [];
+  lines.forEach((l, i) => {
+    const which = lines.length > 1 ? 'line ' + (i + 1) + ' ' : '';
+    const desc = String(l.wasteDescription || '').trim();
+    // "Muck Away" describes the service, not the waste. Left alone, a bare
+    // line falls back to the job type and the note would say that — which is
+    // how notes end up describing the container or the job instead of what
+    // was actually moved.
+    if (!desc) missing.push(which + 'has no waste description');
+    else if (desc.toLowerCase() === jobType.toLowerCase()) {
+      missing.push(which + 'describes the waste only as "' + desc + '" — say what the waste actually is');
+    }
+    if (!String(l.transfereeName || '').trim()) missing.push(which + 'has no carrier');
+  });
+  if (missing.length > 0) return { blocked: missing.join('; ') };
+
+  // Section B — whose waste it is. The customer, and the site it came from.
+  const siteAddress = [job.siteAddress1 || job.site_address1, job.siteAddress2 || job.site_address2,
+                       job.siteCity || job.site_city].filter(Boolean).join(', ');
+  const transferorName = job.customerName || job.customer_name || '';
+  if (!transferorName) return { blocked: 'the job has no customer on it' };
+
+  const sicCode = (customer && (customer.sic_code || customer.sicCode)) || '';
+
+  const fields = {
+    lines,
+    wtnNumber: wtnNumber || ('WTN-' + (job.jobNumber || job.job_number || '')),
+    transferorName,
+    transferorAddress: siteAddress,
+    transferorPostcode: job.sitePostcode || job.site_postcode || '',
+    transferorSicCode: sicCode,
+    transferorIsProducer: true,
+    // Nobody has signed a note the system raised on its own.
+    transferorSignature: '',
+    transfereeSignature: '',
+    transferAddress: siteAddress,
+    transferDate: String(job.collectionDate || job.collection_date
+      || job.jobDate || job.job_date || '').slice(0, 10),
+    transferTime: null,
+    brokerName: (company && company.name) || 'Total Waste Services Ltd',
+    brokerAddress: (company && company.address) || '',
+    brokerCarrierReg: (company && company.carrierReg) || '',
+    notes: '',
+  };
+
+  const rows = wtnFieldsToRows(fields, job.id);
+  if (!rows || rows.length === 0) return { blocked: 'nothing to raise' };
+
+  return {
+    rows: rows.map(r => ({
+      ...r,
+      // Published to the customer's portal. Emailing stays a deliberate act.
+      portal_visible: true,
+      sent: false,
+      sent_at: null,
+    })),
+  };
+};
 
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
 
@@ -4797,7 +4900,9 @@ const buildDefaultLines = (jobObj, suppliersList) => {
       lineQty: null,
       included: true,
       wasteDescription: '',
-      listOfWasteCode: m.lineEwcCode || '',
+      // No line to read a code from — this is the placeholder for a job with
+      // no products on it at all.
+      listOfWasteCode: '',
       wasteContainer: 'Skip',
       wasteProcess: '',
       quantity: jobObj?.quantity || 1,
@@ -9486,73 +9591,11 @@ const [isEvent, setIsEvent] = useState(false);
                     </div>
 
                     {/* Recurring WTN toggle — hidden on child jobs, managed by parent */}
-                    {job?.parentJobId ? (
-                      <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 opacity-60">
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400">🔄</span>
-                          <span className="text-sm text-gray-400">Recurring WTN schedule — managed on parent job only</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="border border-blue-200 rounded-lg overflow-hidden">
-                        <div className="bg-blue-50 px-4 py-2 flex items-center gap-3">
-                          <input type="checkbox" id="recurringWtn" checked={wtnFields.recurringWtn||false}
-                            onChange={e=>setWtnFields({...wtnFields, recurringWtn: e.target.checked,
-                              recurringWtnNextDate: e.target.checked ? (() => {
-                                const d = new Date();
-                                if (wtnFields.recurringWtnFrequency === 'monthly') d.setMonth(d.getMonth()+1);
-                                else if (wtnFields.recurringWtnFrequency === 'annually') d.setFullYear(d.getFullYear()+1);
-                                return d.toISOString().split('T')[0];
-                              })() : ''
-                            })}
-                            className="w-4 h-4 text-blue-600 rounded" />
-                          <label htmlFor="recurringWtn" className="text-sm font-semibold text-blue-800 cursor-pointer">🔄 Set up recurring WTN emails</label>
-                        </div>
-                        {wtnFields.recurringWtn && (
-                          <div className="p-4 space-y-3">
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
-                                <div className="flex flex-col gap-1.5">
-                                  {[
-                                    {key:'per-job', label:'📋 Every completed job', desc:'Auto-sends a WTN each time this job or any duplicate is marked as completed'},
-                                    {key:'monthly', label:'📅 Monthly', desc:'Sends on the same date each month'},
-                                    {key:'annually', label:'📆 Annually', desc:'Sends once a year'},
-                                  ].map(f=>(
-                                    <button key={f.key} type="button"
-                                      onClick={()=>{
-                                        const d = new Date();
-                                        if (f.key==='monthly') d.setMonth(d.getMonth()+1);
-                                        else if (f.key==='annually') d.setFullYear(d.getFullYear()+1);
-                                        setWtnFields({...wtnFields, recurringWtnFrequency: f.key,
-                                          recurringWtnNextDate: f.key==='per-job' ? '' : d.toISOString().split('T')[0]});
-                                      }}
-                                      className={`w-full text-left px-3 py-2 rounded text-xs font-medium border transition-colors ${wtnFields.recurringWtnFrequency===f.key?'bg-blue-600 text-white border-blue-600':'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'}`}>
-                                      <div>{f.label}</div>
-                                      <div className={`text-xs mt-0.5 ${wtnFields.recurringWtnFrequency===f.key?'text-blue-100':'text-gray-400'}`}>{f.desc}</div>
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                              {wtnFields.recurringWtnFrequency !== 'per-job' && (
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-600 mb-1">First send date</label>
-                                  <input type="date" className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs"
-                                    value={wtnFields.recurringWtnNextDate||''}
-                                    onChange={e=>setWtnFields({...wtnFields,recurringWtnNextDate:e.target.value})} />
-                                </div>
-                              )}
-                            </div>
-                            <div className="text-xs text-blue-700 bg-blue-50 rounded p-2">
-                              {wtnFields.recurringWtnFrequency==='per-job'
-                                ? `📋 A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} every time this job, or any duplicate of it, is marked as completed.`
-                                : `✉️ A WTN will be automatically emailed to ${wtnFields.recipientEmail||'the customer'} ${wtnFields.recurringWtnFrequency==='monthly'?'every month':'every year'}${wtnFields.recurringWtnNextDate ? ', starting ' + new Date(wtnFields.recurringWtnNextDate).toLocaleDateString('en-GB') : ''}.`
-                              }
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {/* "Set up recurring WTN emails" removed. It emailed a note
+                        on a schedule with no check that the note was complete,
+                        and nothing was using it. Recurring collections now have
+                        their note published to the customer's portal the day
+                        after each one, which is the same job done properly. */}
 
                     {/* Action buttons */}
                     {(() => {
@@ -18772,9 +18815,22 @@ console.log(JSON.stringify(invoiceData, null, 2));
                       <p>Sent: <span className="font-medium">{new Date(job.wtnSentAt || job.wtn_sent_at).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></p>
                     )}
                     {(() => {
+                      // The address stored here is only who the note WOULD go to
+                      // if it were emailed. Saying "Sent to" on the strength of
+                      // it claimed the customer had been emailed when nobody
+                      // had pressed send.
+                      const wasSent = !!(job.wtnSent || job.wtn_sent || job.wtnSentAt || job.wtn_sent_at);
                       const recipient = job.wtnData?.recipientEmail || job.wtnRecipient || job.wtn_recipient || '';
-                      if (!recipient) return null;
-                      return <p>Sent to: <span className="font-medium">{recipient}</span></p>;
+                      if (wasSent) {
+                        return recipient
+                          ? <p>Emailed to: <span className="font-medium">{recipient}</span></p>
+                          : null;
+                      }
+                      const onPortal = (Array.isArray(job.wtns) && job.wtns.some(w => w && (w.portalVisible || w.portal_visible)))
+                        || job.wtnPortalVisible || job.wtn_portal_visible;
+                      return onPortal
+                        ? <p>On the customer's portal. <span className="text-green-600">Not emailed.</span></p>
+                        : <p className="text-amber-700">Not on the customer's portal yet, and not emailed.</p>;
                     })()}
                     {job.wtnData?.transferDate && (
                       <p>Transfer date: <span className="font-medium">{new Date(job.wtnData.transferDate).toLocaleDateString('en-GB')}</span></p>
@@ -27373,28 +27429,55 @@ useEffect(() => {
       for (const job of due) {
         if (hasNote.has(job.id)) continue;
 
-        // The previous note on this schedule: the same template's jobs,
-        // most recent first.
+        const note = (p) => ({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date,
+                               customerName: job.customerName, reason: p });
+
+        // A recurring collection copies the previous note on its schedule:
+        // same waste, same carrier, already checked by a person. A one-off has
+        // nothing to copy, so its note is built from the job instead.
         const templateId = job.parentJobId || job.parent_job_id || job.id;
-        const { data: family } = await window.supabase
-          .from('jobs').select('id, job_date')
-          .or('id.eq.' + templateId + ',parent_job_id.eq.' + templateId);
-        const earlier = (family || [])
-          .filter(f => f.id !== job.id && String(f.job_date || '') < String(job.jobDate || job.job_date || ''))
-          .sort((a, b) => String(b.job_date || '').localeCompare(String(a.job_date || '')));
-        if (earlier.length === 0) { held.push({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date, customerName: job.customerName, reason: 'first collection on this schedule — nothing to copy from' }); continue; }
+        const onSchedule = !!(job.parentJobId || job.parent_job_id || job.isRecurring || job.is_recurring);
 
-        const { data: prevRows } = await window.supabase
-          .from('wtns').select('*').in('job_id', earlier.map(e => e.id).slice(0, 20));
-        if (!prevRows || prevRows.length === 0) { held.push({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date, customerName: job.customerName, reason: 'no previous note on this schedule to copy' }); continue; }
+        let rows = null;
+        if (onSchedule) {
+          const { data: family } = await window.supabase
+            .from('jobs').select('id, job_date')
+            .or('id.eq.' + templateId + ',parent_job_id.eq.' + templateId);
+          const earlier = (family || [])
+            .filter(f => f.id !== job.id && String(f.job_date || '') < String(job.jobDate || job.job_date || ''))
+            .sort((a, b) => String(b.job_date || '').localeCompare(String(a.job_date || '')));
 
-        // Most recent note, and every line of it
-        const newestJobId = earlier.map(e => e.id).find(id => prevRows.some(r => r.job_id === id));
-        const lines = prevRows.filter(r => r.job_id === newestJobId);
-        const blocked = lines.map(wtnCarryForwardBlocked).find(Boolean);
-        if (blocked) { held.push({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date, customerName: job.customerName, reason: blocked }); continue; }
+          if (earlier.length > 0) {
+            const { data: prevRows } = await window.supabase
+              .from('wtns').select('*').in('job_id', earlier.map(e => e.id).slice(0, 20));
+            if (prevRows && prevRows.length > 0) {
+              const newestJobId = earlier.map(e => e.id).find(id => prevRows.some(r => r.job_id === id));
+              const prevLines = prevRows.filter(r => r.job_id === newestJobId);
+              const blocked = prevLines.map(wtnCarryForwardBlocked).find(Boolean);
+              if (blocked) { held.push(note(blocked)); continue; }
+              rows = prevLines.map(prev => cloneWtnForNextJob(prev, job)).filter(Boolean);
+            }
+          }
+        }
 
-        const rows = lines.map(prev => cloneWtnForNextJob(prev, job)).filter(Boolean);
+        // Nothing to copy — the first collection on a schedule, or a one-off.
+        // Build it from the job.
+        if (!rows) {
+          const customerRecord = (customers || []).find(
+            c => (c.companyName || c.name) === (job.customerName || job.customer_name)
+          );
+          const built = buildWtnRowsFromJob(job, {
+            suppliers,
+            customer: customerRecord,
+            company: {
+              name: localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+              address: localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress,
+              carrierReg: TWS_COMPANY.carrierReg,
+            },
+          });
+          if (built.blocked) { held.push(note(built.blocked)); continue; }
+          rows = built.rows;
+        }
         if (rows.length === 0) { held.push({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date, customerName: job.customerName, reason: 'nothing to copy' }); continue; }
 
         const { error: insErr } = await window.supabase.from('wtns').insert(rows);
