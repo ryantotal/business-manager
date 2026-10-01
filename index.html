@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 14:05';
+const BUILD_STAMP = '2026-10-01 14:45';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -5385,7 +5385,10 @@ const EWCPicker = ({ value, onChange }) => {
       || String(e.keywords || '').toLowerCase().includes(q)
       || String(e.group || '').toLowerCase().includes(q)
       || String(e.chapter || '').toLowerCase().includes(q);
-  }).slice(0, 50);
+  });
+  // No cap. It used to stop at 50, so "All codes" showed the first 50 and
+  // nothing else — every code in chapter 01 and none of the other 19.
+  const shown = filtered;
 
   const selected = EWC_CODES.find(e => e.code === value);
 
@@ -5420,17 +5423,20 @@ const EWCPicker = ({ value, onChange }) => {
 
   return (
     <div className="relative">
-      <div className="flex gap-2" ref={btnRef}>
+      {/* The box grows, the button does not. Without min-w-0 and shrink-0 the
+          box took the whole column and pushed Browse off the edge, so in the
+          products table there was no way to reach the list at all. */}
+      <div className="flex gap-2 items-start" ref={btnRef}>
         <input
           type="text"
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg text-sm"
           value={value}
           onChange={e => onChange(e.target.value)}
           placeholder="e.g. 17 09 04"
         />
         <button type="button" onClick={openDropdown}
-          className="px-3 py-2 bg-green-700 text-white rounded-lg text-xs font-medium hover:bg-green-800 whitespace-nowrap">
-          Browse codes
+          className="shrink-0 px-3 py-2 bg-green-700 text-white rounded-lg text-xs font-medium hover:bg-green-800 whitespace-nowrap">
+          Browse
         </button>
       </div>
       {selected && (
@@ -5467,8 +5473,8 @@ const EWCPicker = ({ value, onChange }) => {
             )}
           </div>
           <div className="overflow-y-auto overflow-x-hidden" style={{maxHeight:'420px'}}>
-            {filtered.length === 0 && <div className="px-4 py-4 text-sm text-gray-400 text-center">No matching codes found — try different keywords</div>}
-            {filtered.map(e => (
+            {shown.length === 0 && <div className="px-4 py-4 text-sm text-gray-400 text-center">No matching codes found — try different keywords</div>}
+            {shown.map(e => (
               <button key={e.code} type="button"
                 onClick={() => { onChange(e.code); setOpen(false); setSearch(''); }}
                 className={`w-full text-left px-4 py-2.5 hover:bg-green-50 border-b border-gray-50 last:border-0 transition-colors ${value===e.code?'bg-green-50':''}`}>
@@ -5483,7 +5489,10 @@ const EWCPicker = ({ value, onChange }) => {
             ))}
           </div>
           <div className="p-2 border-t border-gray-100 flex justify-between items-center bg-gray-50 rounded-b-xl">
-            <span className="text-xs text-gray-400">{filtered.length} result{filtered.length!==1?'s':''} {search ? `for "${search}"` : ''}</span>
+            <span className="text-xs text-gray-400">
+              {shown.length} {shown.length === 1 ? 'code' : 'codes'}{search ? ` for "${search}"` : ''}
+              {!search && shown.length > 60 ? ' — type to narrow it down' : ''}
+            </span>
             <button type="button" onClick={() => { setOpen(false); setSearch(''); }} className="text-xs text-gray-500 hover:text-gray-700 font-medium">✕ Close</button>
           </div>
         </div>
