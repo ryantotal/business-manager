@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 19:00';
+const BUILD_STAMP = '2026-10-01 19:25';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -28782,7 +28782,17 @@ const loadQuotesFromSupabase = async () => {
         sentDate: quote.sent_date,
         acceptedDate: quote.accepted_date,
         rejectedDate: quote.rejected_date,
-        lineItems: quote.line_items ? JSON.parse(quote.line_items) : [],
+        // line_items is sometimes a JSON string and sometimes an array, and
+        // occasionally a string holding a string. Parse until it is an array
+        // rather than assuming, because JSON.parse on an array throws and
+        // took the whole quote list down with it.
+        lineItems: (() => {
+          let v = quote.line_items;
+          for (let i = 0; i < 3 && typeof v === 'string'; i++) {
+            try { v = JSON.parse(v); } catch (e) { return []; }
+          }
+          return Array.isArray(v) ? v : [];
+        })(),
         createdDate: quote.created_at || new Date().toISOString().split('T')[0],
         created_at: quote.created_at || new Date().toISOString().split('T')[0],
         terms_conditions: quote.terms_conditions || '',
