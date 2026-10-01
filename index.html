@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 18:05';
+const BUILD_STAMP = '2026-10-01 18:40';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -28936,10 +28936,28 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
       delete jobForDatabase.id;
     }
 
-    const { data, error } = await window.supabase
+    // Columns added recently may not exist yet on a database that hasn't had
+    // the migration run. Losing a whole job because of one new field is far
+    // worse than saving it without that field, so the insert is retried
+    // without the newer columns and the omission is reported.
+    const NEWER_COLUMNS = ['proforma_order', 'is_hazardous'];
+    let { data, error } = await window.supabase
       .from('jobs')
       .insert([jobForDatabase])
       .select();
+
+    if (error && /column .* does not exist|Could not find the .* column/i.test(error.message || '')) {
+      const dropped = NEWER_COLUMNS.filter(c => c in jobForDatabase);
+      const retry = { ...jobForDatabase };
+      dropped.forEach(c => { delete retry[c]; });
+      console.warn('[Jobs] insert refused a newer column, retrying without:', dropped, error.message);
+      ({ data, error } = await window.supabase.from('jobs').insert([retry]).select());
+      if (!error) {
+        alert('Job saved, but these fields could not be stored because the database is missing them:\n\n  ' +
+              dropped.join('\n  ') +
+              '\n\nEverything else was saved. Tell whoever looks after the database.');
+      }
+    }
 
     if (error) throw error;
 
