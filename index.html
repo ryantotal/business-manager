@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 14:45';
+const BUILD_STAMP = '2026-10-01 16:00';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -1732,6 +1732,27 @@ const SearchableDropdown = ({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredProducts, setFilteredProducts] = useState(options);
+  // Where the control is on screen. The list is drawn onto the page rather
+  // than inside the control: inside a sideways-scrolling table — the products
+  // table on a job — it was cropped to one column and could not be read.
+  const triggerRef = React.useRef(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0 });
+  const placeMenu = () => {
+    const el = triggerRef.current;
+    if (!el || !el.getBoundingClientRect) return;
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth || 1024;
+    const vh = window.innerHeight || 768;
+    const width = Math.max(r.width, 260);
+    let left = r.left;
+    if (left + width > vw - 8) left = Math.max(8, vw - width - 8);
+    const below = vh - r.bottom;
+    const openUp = below < 240 && r.top > below;
+    setMenuPos({
+      top: openUp ? Math.max(8, r.top - Math.min(300, r.top) - 4) : r.bottom + 4,
+      left, width,
+    });
+  };
 
   useEffect(() => {
     // Sort options alphabetically and filter by search term
@@ -1769,8 +1790,9 @@ const SearchableDropdown = ({
   return (
     <div className="relative">
       <div
+        ref={triggerRef}
         className={`w-full px-3 py-2 border border-gray-300 rounded-lg cursor-pointer bg-white ${className}`}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => { if (!isOpen) placeMenu(); setIsOpen(!isOpen); }}
       >
         <div className="flex items-center justify-between">
           <span className={value ? 'text-gray-900' : 'text-gray-500'}>
@@ -1785,8 +1807,14 @@ const SearchableDropdown = ({
         </div>
       </div>
       
-      {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+      {isOpen && ReactDOM.createPortal(
+        <>
+        <div className="fixed inset-0" style={{ zIndex: 9998 }} onClick={() => { setIsOpen(false); setSearchTerm(''); }} />
+        <div
+          style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: menuPos.width, zIndex: 9999 }}
+          className="bg-white border border-gray-300 rounded-lg shadow-2xl max-h-60 overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="p-2 border-b">
             <input
               type="text"
@@ -1824,6 +1852,8 @@ const SearchableDropdown = ({
 )}
           </div>
         </div>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -5432,7 +5462,7 @@ const EWCPicker = ({ value, onChange }) => {
           className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg text-sm"
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder="e.g. 17 09 04"
+          placeholder="17 09 04"
         />
         <button type="button" onClick={openDropdown}
           className="shrink-0 px-3 py-2 bg-green-700 text-white rounded-lg text-xs font-medium hover:bg-green-800 whitespace-nowrap">
@@ -5845,7 +5875,7 @@ const buildLinesFromSavedWtns = (jobObj, savedWtns, suppliersList) => {
         // keeps what it was issued with.
         listOfWasteCode: (saved.sent || saved.sentAt)
           ? (saved.listOfWasteCode || '')
-          : (saved.listOfWasteCode || m.lineEwcCode || ''),
+          : (m.lineEwcCode || saved.listOfWasteCode || ''),
         wasteContainer: saved.wasteContainer || 'Skip',
         wasteProcess: saved.wasteProcess || '',
         // An unissued note follows the job. A draft written when the job said
@@ -8392,8 +8422,8 @@ const [isEvent, setIsEvent] = useState(false);
                   <thead className="bg-gray-100">
                     <tr>
                       <th className="px-4 py-3 text-left font-medium w-44">Product/Service</th>
-                      <th className="px-2 py-3 text-left font-medium w-56 min-w-[14rem]">Supplier</th>
-                      <th className="px-2 py-3 text-left font-medium w-64 min-w-[17rem]">EWC code</th>
+                      <th className="px-2 py-3 text-left font-medium w-48 min-w-[12rem]">Supplier</th>
+                      <th className="px-2 py-3 text-left font-medium w-44 min-w-[11rem]">EWC code</th>
                       <th className="px-4 py-3 text-left font-medium w-72 min-w-[18rem]">Description (Editable)</th>
                       <th className="px-2 py-3 text-left font-medium w-16">Qty</th>
                       <th className="px-2 py-3 text-left font-medium w-24">Unit</th>
@@ -8416,7 +8446,7 @@ const [isEvent, setIsEvent] = useState(false);
                             </div>
                             <div className="text-xs text-gray-500">{item.item_code}</div>
                           </td>
-                          <td className="px-2 py-3 align-top w-56 min-w-[14rem]">
+                          <td className="px-2 py-3 align-top w-48 min-w-[12rem]">
                             {/* Each line carries its own supplier, which is what
                                 its transfer note names as the carrier. Left
                                 blank, a line uses the job's supplier. Wide
@@ -8437,7 +8467,9 @@ const [isEvent, setIsEvent] = useState(false);
                               })}
                               placeholder={
                                 formData.supplierName && formData.supplierName !== MULTIPLE_SUPPLIERS
-                                  ? 'Uses ' + formData.supplierName
+                                  // Short enough to read inside a narrow column;
+                                  // the full name is on the job above.
+                                  ? 'Uses job supplier'
                                   : 'Pick supplier'
                               }
                               displayField="name"
@@ -8465,7 +8497,7 @@ const [isEvent, setIsEvent] = useState(false);
                               look it up afterwards — and so a note can be produced
                               automatically at all, which needs a code it cannot
                               guess. Same picker the transfer note itself uses. */}
-                          <td className="px-2 py-3 align-top w-64 min-w-[17rem]">
+                          <td className="px-2 py-3 align-top w-44 min-w-[11rem]">
                             {JOB_TYPES_NEEDING_EWC.includes(formData.jobType) ? (
                               <>
                                 <EWCPicker
@@ -8492,7 +8524,7 @@ const [isEvent, setIsEvent] = useState(false);
                                 />
                                 {!item.ewc_code && (
                                   <div className="text-xs text-amber-700 mt-1">
-                                    Needed for the transfer note
+                                    Needed for the note
                                   </div>
                                 )}
                               </>
@@ -9815,7 +9847,12 @@ const [isEvent, setIsEvent] = useState(false);
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-medium text-gray-800 truncate">{line.productName || `Line ${idx + 1}`}</div>
                                 {line.lineDescription && <div className="text-xs text-gray-500 truncate">{line.lineDescription}</div>}
-                                {line.lineQty != null && <div className="text-xs text-gray-400">Qty: {line.lineQty}</div>}
+                                {(line.quantity != null || line.lineQty != null) && (
+                                  <div className="text-xs text-gray-400">
+                                    Qty: {line.quantity != null ? line.quantity : line.lineQty}
+                                    {line.unit ? ' ' + line.unit : ''}
+                                  </div>
+                                )}
                               </div>
                             </label>
                           ))}
