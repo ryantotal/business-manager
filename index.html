@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 18:40';
+const BUILD_STAMP = '2026-10-01 19:00';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -28979,6 +28979,12 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
     }
   } catch (error) {
     console.error('Error adding job:', error);
+    // Say so, and tell whoever called. Swallowing this quietly is how a quote
+    // came to be marked converted, with its lines locked against a job number
+    // that was never created.
+    alert('The job could not be saved.\n\n' + (error.message || 'Unknown error') +
+          '\n\nNothing has been created. Try again, and if it keeps happening send this message on.');
+    throw error;
   } finally {
     setIsSubmitting(false);
   }
