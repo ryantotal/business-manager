@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 17:15';
+const BUILD_STAMP = '2026-10-01 17:40';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -10795,9 +10795,12 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                           {/* Taking it back off again. A note published by
                               mistake, or to check how it looked, had no way
                               back — publishing was one-way. */}
-                          {((Array.isArray(job.wtns) && job.wtns.some(w => w && (w.portalVisible || w.portal_visible)))
-                            || job.wtnPortalVisible || job.wtn_portal_visible) && (
-                            <div className="flex gap-3">
+                          {/* Always offered, not only when this screen believes the
+                              note is published. Whether it is published is held in
+                              two places and they can disagree, and a button that
+                              hides itself when you need it is worse than one that
+                              occasionally has nothing to do. */}
+                          <div className="flex gap-3">
                               <button type="button"
                                 onClick={async () => {
                                   if (!confirm('Take this transfer note off the customer\'s portal?\n\nThey will no longer see it. Nothing is deleted — you can publish it again.')) return;
@@ -10821,10 +10824,9 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                                   }
                                 }}
                                 className="flex-1 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2">
-                                ↩ Take off the portal
-                              </button>
-                            </div>
-                          )}
+                              ↩ Take off the portal
+                            </button>
+                          </div>
                           <div className="flex gap-3">
                             <button type="button"
                               disabled={wtnSending || wtnTotalPct!==100}
