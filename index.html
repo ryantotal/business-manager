@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 16:55';
+const BUILD_STAMP = '2026-10-01 17:15';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 const readLineItems = (record) => {
@@ -27868,6 +27868,9 @@ collectionDate: job.collection_date,
   wtnSent: job.wtn_sent || false,
   wtnSentAt: job.wtn_sent_at || null,
   wtnRecipient: job.wtn_recipient || null,
+  // Whether the note is on the customer's portal. Without this the form had
+  // no way to know, so the button to take it off never appeared.
+  wtnPortalVisible: job.wtn_portal_visible || false,
   wtnRecurring: job.wtn_recurring || false,
   wtnRecurringFrequency: job.wtn_recurring_frequency || null,
   wtnRecurringNextDate: job.wtn_recurring_next_date || null,
