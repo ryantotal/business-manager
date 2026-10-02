@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-02 13:45';
+const BUILD_STAMP = '2026-10-02 15:30';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -900,7 +900,7 @@ const twsFormEl = (id) => {
 
 // Window controls for a job/quote screen or form: minimise to the bar, and
 // side by side. Icon-only, in the same grey as the back arrow beside them.
-const TwsWinButtons = ({ onMinimise, onSplit, isSplit }) => {
+const TwsWinButtons = ({ onMinimise, onSplit, isSplit, onClose }) => {
   const cls = 'p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100';
   const svg = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
   return (
@@ -917,6 +917,12 @@ const TwsWinButtons = ({ onMinimise, onSplit, isSplit }) => {
           {isSplit
             ? <svg {...svg}><rect x="3" y="4" width="18" height="16" rx="2" /></svg>
             : <svg {...svg}><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="12" y1="4" x2="12" y2="20" /></svg>}
+        </button>
+      )}
+      {onClose && isSplit && (
+        <button type="button" onClick={onClose} className={'tws-pane-close-btn ' + cls}
+          title="Close this side. The other side goes back to full width">
+          <svg {...svg}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         </button>
       )}
     </div>
@@ -18641,7 +18647,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
       >
         <LucideIcon icon="ChevronLeft" size={22} />
       </button>
-      {onMinimise && <TwsWinButtons onMinimise={onMinimise} onSplit={onSplit} isSplit={isSplit} />}
+      {onMinimise && <TwsWinButtons onMinimise={onMinimise} onSplit={onSplit} isSplit={isSplit} onClose={onClose} />}
       {/* Prev / Next arrows + sidebar toggle */}
       <div className="flex items-center gap-1">
         <button
@@ -20943,7 +20949,7 @@ By approving this quotation and authorising us to commence services, you acknowl
             >
               <LucideIcon icon="ChevronUp" size={24} className="rotate-90" />
             </button>
-            {onMinimise && <TwsWinButtons onMinimise={onMinimise} onSplit={onSplit} isSplit={isSplit} />}
+            {onMinimise && <TwsWinButtons onMinimise={onMinimise} onSplit={onSplit} isSplit={isSplit} onClose={onClose} />}
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{quote.quoteNumber}</h1>
               <p className="text-gray-600">{quote.jobType}</p>
@@ -29603,6 +29609,106 @@ collection_date: updatedJob.collectionDate || null,
       }
     }
 
+    // The customer's PO. New jobs on a schedule copy it from the template when
+    // they are created, but the sync above never carried it, so a PO added to
+    // the template after jobs already existed never reached them. Open,
+    // uninvoiced jobs on the schedule take the template's PO when theirs is
+    // blank, or when theirs is the PO the template had before this save. A
+    // different PO typed onto one job is left alone, and clearing the
+    // template's PO never clears anyone else's.
+    let poCopiedTo = 0;
+    const templatePo = String(jobForDatabase.customer_po ?? updatedJob.customerPO ?? updatedJob.customer_po ?? '').trim();
+    if ((updatedJob.isRecurring || updatedJob.is_recurring) && templatePo) {
+      try {
+        const opened = updatedJob.__openedWith || {};
+        const previousPo = String(opened.customerPO ?? opened.customer_po ?? '').trim();
+        const { data: poChildren, error: poReadErr } = await window.supabase
+          .from('jobs')
+          .select('id, customer_po')
+          .eq('parent_job_id', updatedJob.id)
+          .eq('is_completed', false)
+          .eq('is_cancelled', false)
+          .is('invoice_number', null);
+        if (poReadErr) throw poReadErr;
+        const poIds = (poChildren || []).filter(c => {
+          if (c.id === updatedJob.id) return false;
+          const theirs = String(c.customer_po || '').trim();
+          return !theirs || (previousPo && theirs === previousPo && theirs !== templatePo);
+        }).map(c => c.id);
+        if (poIds.length > 0) {
+          const { error: poWriteErr } = await window.supabase
+            .from('jobs').update({ customer_po: templatePo }).in('id', poIds);
+          if (poWriteErr) throw poWriteErr;
+          poCopiedTo = poIds.length;
+          setTimeout(() => window.loadJobsFromSupabase(), 400);
+        }
+      } catch (poErr) {
+        console.error('[handleUpdateJob] could not copy the PO to the jobs on this schedule:', poErr);
+        alert('The job was saved, but the PO could not be copied to the other jobs on this schedule: ' + (poErr.message || poErr));
+      }
+    }
+
+    // A job part-way along a schedule is given a PO (or a new one): offer to
+    // carry it onto every later open job on the same schedule, and onto the
+    // recurring job itself so jobs created from now on have it too. Asked
+    // rather than assumed, because a PO can also be for one visit only.
+    // Recurring schedules only: parent_job_id is also used by exchanges, so
+    // the parent must itself be recurring.
+    let poFollowing = 0;
+    let poFollowingValue = '';
+    try {
+      const poOpened = updatedJob.__openedWith || null;
+      // The form does not carry the link to its schedule, so fall back to
+      // the job as it was opened, then to the copy in the jobs list.
+      const poListed = (jobs || []).find(j => j.id === updatedJob.id) || {};
+      const poParentId = updatedJob.parentJobId || updatedJob.parent_job_id
+        || (poOpened && (poOpened.parentJobId || poOpened.parent_job_id))
+        || poListed.parentJobId || poListed.parent_job_id || null;
+      const newPo = String(updatedJob.customerPO ?? updatedJob.customer_po ?? '').trim();
+      const oldPo = poOpened ? String(poOpened.customerPO ?? poOpened.customer_po ?? '').trim() : null;
+      const myDate = String(updatedJob.jobDate || updatedJob.job_date || '').slice(0, 10);
+      if (poParentId && poOpened && newPo && newPo !== oldPo && myDate) {
+        const { data: tpl } = await window.supabase
+          .from('jobs').select('id, job_number, is_recurring, customer_po').eq('id', poParentId).maybeSingle();
+        if (tpl && tpl.is_recurring) {
+          const { data: sibs, error: sibErr } = await window.supabase
+            .from('jobs')
+            .select('id, job_number, job_date, customer_po')
+            .eq('parent_job_id', poParentId)
+            .eq('is_completed', false)
+            .eq('is_cancelled', false)
+            .is('invoice_number', null);
+          if (sibErr) throw sibErr;
+          const later = (sibs || []).filter(j =>
+            j.id !== updatedJob.id && j.id !== tpl.id &&
+            String(j.job_date || '').slice(0, 10) > myDate &&
+            String(j.customer_po || '').trim() !== newPo);
+          const tplNeeds = String(tpl.customer_po || '').trim() !== newPo;
+          if ((later.length > 0 || tplNeeds) && window.confirm(
+              'PO ' + newPo + ' is now on ' + (updatedJob.jobNumber || 'this job') + '.\n\n' +
+              'Use it for the rest of this schedule too? That is ' +
+              (later.length > 0 ? later.length + ' later job' + (later.length === 1 ? '' : 's') + ' already booked, plus ' : '') +
+              'every job the schedule creates from now on.\n\n' +
+              'OK = this job and everything after it.\nCancel = this job only.')) {
+            if (later.length > 0) {
+              const { error: e1 } = await window.supabase.from('jobs').update({ customer_po: newPo }).in('id', later.map(j => j.id));
+              if (e1) throw e1;
+            }
+            if (tplNeeds) {
+              const { error: e2 } = await window.supabase.from('jobs').update({ customer_po: newPo }).eq('id', tpl.id);
+              if (e2) throw e2;
+            }
+            poFollowing = later.length;
+            poFollowingValue = newPo;
+            setTimeout(() => window.loadJobsFromSupabase(), 400);
+          }
+        }
+      }
+    } catch (poErr) {
+      console.error('[handleUpdateJob] could not carry the PO along the schedule:', poErr);
+      alert('The job was saved, but the PO could not be copied to the later jobs on this schedule: ' + (poErr.message || poErr));
+    }
+
     // fix19 — also cascade WTN content from the parent's wtns row to all
     // children's wtns rows. The existing child-sync above handles pricing
     // and products but doesn't touch WTN fields (EWC code, disposal site,
@@ -29617,7 +29723,9 @@ collection_date: updatedJob.collectionDate || null,
       }
     }
 
-    alert((updatedJob.isRecurring || updatedJob.is_recurring) ? 'Job updated! Active child jobs updated with new pricing and products.' : 'Job updated successfully!');
+    alert(((updatedJob.isRecurring || updatedJob.is_recurring) ? 'Job updated! Active child jobs updated with new pricing and products.' : 'Job updated successfully!') +
+      (poCopiedTo > 0 ? '\n\nPO ' + templatePo + ' copied to ' + poCopiedTo + ' open job' + (poCopiedTo === 1 ? '' : 's') + ' on this schedule.' : '') +
+      (poFollowingValue ? '\n\nPO ' + poFollowingValue + ' copied to ' + poFollowing + ' later job' + (poFollowing === 1 ? '' : 's') + ' and will be used for new jobs on this schedule.' : ''));
   } catch (error) {
     console.error('Error updating job:', error);
     alert('Error updating job: ' + error.message);
