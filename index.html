@@ -881,8 +881,31 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-01 19:25';
+const BUILD_STAMP = '2026-10-02 09:00';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
+
+// Several job/quote forms can now be mounted at once (minimised ones stay
+// mounted, hidden, so nothing typed is lost). Their upload controls share an
+// id, so look the control up inside the window being used, not the first one
+// in the page.
+const twsFormEl = (id) => {
+  const all = Array.from(document.querySelectorAll('[id="' + id + '"]'));
+  if (all.length < 2) return all[0] || null;
+  const shown = all.filter(el => { const w = el.closest('[data-tws-win]'); return w && w.getAttribute('data-tws-min') !== '1'; });
+  return shown.find(el => el.closest('[data-tws-focus="1"]')) || shown[0] || all[0];
+};
+
+const TwsMinimiseButton = ({ onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title="Minimise to the bottom of the screen. Nothing is lost; click it there to pick it back up."
+    className="tws-minimise-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100"
+  >
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="19" x2="19" y2="19" /></svg>
+    <span className="hidden sm:inline">Minimise</span>
+  </button>
+);
 
 const readLineItems = (record) => {
   if (!record) return [];
@@ -5537,7 +5560,7 @@ const EWCPicker = ({ value, onChange }) => {
   );
 };
 
-const JobForm = ({ job, onClose, onSave, setJobs, jobs, onUpdateDisplay, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
+const JobForm = ({ job, onClose, onSave, onMinimise, setJobs, jobs, onUpdateDisplay, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
  
           const [uploadFile, setUploadFile] = useState(null);
           const [jobAttachments, setJobAttachments] = useState([]);
@@ -7330,8 +7353,8 @@ if (window.refreshFullPageAttachments) {
 };
 
 const handleUploadInForm = async () => {
-  const attachmentType = document.getElementById('attachment-type')?.value || 'Waste Transfer Note';
-  const fileInput = document.getElementById('attachment-file');
+  const attachmentType = twsFormEl('attachment-type')?.value || 'Waste Transfer Note';
+  const fileInput = twsFormEl('attachment-file');
   const file = fileInput?.files[0];
 
  if (!attachmentType || !file) {
@@ -7893,9 +7916,12 @@ const [isEvent, setIsEvent] = useState(false);
                 <div className="bg-white sm:rounded-xl w-full h-full sm:h-[calc(100vh-2rem)] overflow-y-auto mx-auto">
                 <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                   <h2 className="text-xl font-bold">{job ? 'Edit Job' : 'Add New Job'}</h2>
-                  <button onClick={onClose}>
-                    <X size={24} />
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {onMinimise && <TwsMinimiseButton onClick={() => onMinimise(isEvent ? (formData.eventTitle || '') : (formData.customerName || ''))} />}
+                    <button onClick={onClose} title="Close">
+                      <X size={24} />
+                    </button>
+                  </div>
                 </div>
                 {/* ADD THIS EVENT TOGGLE SECTION */}
 <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
@@ -18050,7 +18076,7 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
   );
 };
 
-const FullPageJobView = ({ job, jobs, onClose, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onStop, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh, suppliers = [] }) => {
+const FullPageJobView = ({ job, jobs, onClose, onMinimise, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onStop, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh, suppliers = [] }) => {
   const { hasPermission } = useAuth();  // fix32z: lets the delete button follow the roles map (Managers can delete)
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
@@ -18599,6 +18625,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
       >
         <LucideIcon icon="ChevronLeft" size={22} />
       </button>
+      {onMinimise && <TwsMinimiseButton onClick={() => onMinimise(job)} />}
       {/* Prev / Next arrows + sidebar toggle */}
       <div className="flex items-center gap-1">
         <button
@@ -20638,7 +20665,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
 );
 };
 // Full Page Quote View Component - UPDATED TO MATCH JOB LAYOUT
-const FullPageQuoteView = ({ quote, onClose, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user, customers }) => {
+const FullPageQuoteView = ({ quote, onClose, onMinimise, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user, customers }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [quoteAttachments, setQuoteAttachments] = useState([]);
   const [showSendModal, setShowSendModal] = useState(false);
@@ -20900,6 +20927,7 @@ By approving this quotation and authorising us to commence services, you acknowl
             >
               <LucideIcon icon="ChevronUp" size={24} className="rotate-90" />
             </button>
+            {onMinimise && <TwsMinimiseButton onClick={() => onMinimise(quote)} />}
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{quote.quoteNumber}</h1>
               <p className="text-gray-600">{quote.jobType}</p>
@@ -28823,12 +28851,122 @@ useEffect(() => {
 const [showFullPageQuote, setShowFullPageQuote] = useState(null);
           
           // Form states
-          const [showJobForm, setShowJobForm] = useState(false);
+          // ── Windows ────────────────────────────────────────────────
+          // Job and quote forms live in a list so several can be open at
+          // once. A minimised form stays mounted (hidden), which is what
+          // keeps unsaved typing. The read-only job/quote screens hold
+          // nothing unsaved, so minimising one just remembers which record
+          // it was and reopens it.
+          const [formWins, setFormWins] = useState([]);   // { key, kind: 'job'|'quote', record, min, label }
+          const [viewDock, setViewDock] = useState([]);   // { key, kind: 'jobView'|'quoteView', record }
+          const [winSplit, setWinSplit] = useState(null); // { left, right } — 'jobView' | 'quoteView' | a form key
+          const [focusWin, setFocusWin] = useState(null);
+          const formWinsRef = React.useRef([]);
+          formWinsRef.current = formWins;
+
+          const openFormWin = (kind, record) => {
+            const rid = record && record.id;
+            const hit = rid ? formWinsRef.current.find(w => w.kind === kind && w.record && w.record.id === rid) : null;
+            if (hit) {
+              // Already being edited (probably minimised). Bring that one
+              // back rather than start a second editor on the same record.
+              try { window._openJobFormOnWtn = false; } catch (_) {}
+              setFormWins(prev => prev.map(w => w.key === hit.key ? { ...w, min: false } : w));
+              setFocusWin(hit.key);
+              return;
+            }
+            const key = kind + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+            setFormWins(prev => [...prev, { key, kind, record: record || null, min: false, label: '' }]);
+            setFocusWin(key);
+          };
+          const closeFormWin = (key) => { if (!key) return; setFormWins(prev => prev.filter(w => w.key !== key)); };
+          const minimiseFormWin = (key, label) => setFormWins(prev => prev.map(w => w.key === key ? { ...w, min: true, label: label || w.label } : w));
+
+          const dockView = (kind, rec) => {
+            if (!rec) return;
+            const key = kind + ':' + rec.id;
+            setViewDock(prev => [...prev.filter(v => v.key !== key), { key, kind, record: rec }]);
+          };
+          const minimiseJobView = (rec) => { dockView('jobView', rec || showFullPageJob); setShowFullPageJob(null); };
+          const minimiseQuoteView = (rec) => { dockView('quoteView', rec || showFullPageQuote); setShowFullPageQuote(null); };
+
+          // Opening a record the normal way while it sits minimised: drop the
+          // chip, it is on screen now.
+          useEffect(() => {
+            setViewDock(prev => {
+              const next = prev.filter(v => !(
+                (v.kind === 'jobView' && showFullPageJob && v.record.id === showFullPageJob.id) ||
+                (v.kind === 'quoteView' && showFullPageQuote && v.record.id === showFullPageQuote.id)
+              ));
+              return next.length === prev.length ? prev : next;
+            });
+          }, [showFullPageJob, showFullPageQuote]);
+
+          const winVisible = (ref) =>
+            ref === 'jobView' ? !!showFullPageJob :
+            ref === 'quoteView' ? !!showFullPageQuote :
+            formWins.some(w => w.key === ref && !w.min);
+          const effSplit = (winSplit && winSplit.left !== winSplit.right && winVisible(winSplit.left) && winVisible(winSplit.right)) ? winSplit : null;
+          // One side closed or minimised: the other goes back to full width.
+          useEffect(() => { if (winSplit && !effSplit) setWinSplit(null); });
+
+          const dockChips = [...viewDock, ...formWins.filter(w => w.min)];
+          const dockCount = dockChips.length;
+          const chipLabel = (c) => {
+            const r = c.record || {};
+            const who = c.label || r.customerName || r.eventTitle || '';
+            const num = (c.kind === 'job' || c.kind === 'jobView') ? (r.jobNumber || 'New job') : (r.quoteNumber || 'New quote');
+            return who ? num + ' \u00b7 ' + who : num;
+          };
+          const winWrapClass = (ref) => {
+            if (!winVisible(ref)) return '';
+            const dock = dockCount > 0 ? ' tws-dock-on' : '';
+            if (effSplit && effSplit.left === ref) return 'tws-pane tws-pane-l' + dock;
+            if (effSplit && effSplit.right === ref) return 'tws-pane tws-pane-r' + dock;
+            return 'tws-full' + dock;
+          };
+          // Bring a minimised item back. beside=true puts it on the right of
+          // whatever is on screen; otherwise it takes the screen and
+          // everything else that was open drops to the bar.
+          const showChip = (chip, beside) => {
+            const isView = chip.kind === 'jobView' || chip.kind === 'quoteView';
+            const ref = isView ? chip.kind : chip.key;
+            let partner = null;
+            if (beside) {
+              if (effSplit) partner = effSplit.left;
+              else {
+                const topForm = [...formWins].reverse().find(w => !w.min);
+                partner = topForm ? topForm.key : (showFullPageQuote ? 'quoteView' : (showFullPageJob ? 'jobView' : null));
+              }
+              if (partner && partner === ref) {
+                alert(chip.kind === 'jobView'
+                  ? 'Two jobs can sit side by side only if at least one is open for editing. Click Edit on one of them first.'
+                  : 'Two quotes can sit side by side only if at least one is open for editing. Click Edit on one of them first.');
+                return;
+              }
+            }
+            const keep = partner ? [partner] : [];
+            setFormWins(prev => prev.map(w => {
+              if (w.key === chip.key) return { ...w, min: false };
+              return (!w.min && !keep.includes(w.key)) ? { ...w, min: true } : w;
+            }));
+            if (showFullPageJob && !keep.includes('jobView')) { dockView('jobView', showFullPageJob); setShowFullPageJob(null); }
+            if (showFullPageQuote && !keep.includes('quoteView')) { dockView('quoteView', showFullPageQuote); setShowFullPageQuote(null); }
+            if (isView) {
+              setViewDock(prev => prev.filter(v => v.key !== chip.key));
+              if (chip.kind === 'jobView') setShowFullPageJob((jobs || []).find(j => j.id === chip.record.id) || chip.record);
+              else setShowFullPageQuote((quotes || []).find(q => q.id === chip.record.id) || chip.record);
+            } else {
+              setFocusWin(chip.key);
+            }
+            setWinSplit(partner ? { left: partner, right: ref } : null);
+          };
+          const closeChip = (chip) => {
+            if (chip.kind === 'jobView' || chip.kind === 'quoteView') { setViewDock(prev => prev.filter(v => v.key !== chip.key)); return; }
+            if (window.confirm('Close ' + chipLabel(chip) + '?\n\nAnything typed into it and not saved will be lost.')) closeFormWin(chip.key);
+          };
           const [showCustomerForm, setShowCustomerForm] = useState(false);
           const [showSupplierForm, setShowSupplierForm] = useState(false);
-          const [showQuoteForm, setShowQuoteForm] = useState(false);
-          const [editingJob, setEditingJob] = useState(null);
-          const [editingQuote, setEditingQuote] = useState(null);
           const [sageProducts, setSageProducts] = useState([]);
           const [isSubmitting, setIsSubmitting] = useState(false);
           // Phase 4 — completion prompt modal state. When set to a job object,
@@ -28862,7 +29000,7 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
             ...(user.role === 'ADMIN' ? [{ id: 'admin', name: 'Admin', icon: 'Settings' }] : [])
           ];
 
- const handleAddJob = async (newJob) => {
+ const handleAddJob = async (newJob, winKey) => {
   // Prevent duplicate submissions
   if (isSubmitting) return;
   setIsSubmitting(true);
@@ -28980,8 +29118,7 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
 
     // Add to local jobs state with the proper ID
     setJobs(prevJobs => [savedJob, ...prevJobs]);
-    setShowJobForm(false);
-    setEditingJob(null);
+    closeFormWin(winKey);
     // If this is a recurring job, run the checker immediately so child jobs
     // due today are created right away without needing a logout/login
     if (newJob.isRecurring && window.checkRecurringJobs) {
@@ -29000,7 +29137,7 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
   }
 };
 
- const handleUpdateJob = async (updatedJob) => {
+ const handleUpdateJob = async (updatedJob, winKey) => {
   try {
     // ─── DEFENSIVE ID VALIDATION ────────────────────────────────────────
     // The database `id` column is a UUID. Occasionally — especially right
@@ -29306,8 +29443,7 @@ collection_date: updatedJob.collectionDate || null,
         console.warn('[handleUpdateJob] post-save enrichment failed, using stale state:', e);
       }
       setJobs(jobs.map(job => job.id === updatedJob.id ? enrichedMappedJob : job));
-      setEditingJob(enrichedMappedJob);
-      setShowJobForm(false);
+      closeFormWin(winKey);
       setShowFullPageJob(enrichedMappedJob);
       // Also reload all jobs to ensure everything is fresh
       setTimeout(() => window.loadJobsFromSupabase(), 300);
@@ -29324,8 +29460,7 @@ collection_date: updatedJob.collectionDate || null,
         console.warn('[handleUpdateJob] fallback enrichment failed:', e);
       }
       setJobs(jobs.map(job => job.id === updatedJob.id ? enrichedFallback : job));
-      setEditingJob(enrichedFallback);
-      setShowJobForm(false);
+      closeFormWin(winKey);
       setShowFullPageJob(enrichedFallback);
       setTimeout(() => window.loadJobsFromSupabase(), 300);
     }
@@ -30064,8 +30199,7 @@ const handleCompleteJob = async (job, sendChoice) => {
         // the form. Looking for the tab in the page afterwards never worked —
         // the tab it searched for carries no such marker.
         window._openJobFormOnWtn = true;
-        setEditingJob(updatedJob);
-        setShowJobForm(true);
+        openFormWin('job', updatedJob);
       }
     } else {
       alert('✅ Job marked as completed!');
@@ -30637,8 +30771,7 @@ sitePhone: job.site_phone || job.sitePhone || '',
 siteNotes: job.site_notes || job.siteNotes || '',
     };
     
-    setEditingJob(editableJob);
-    setShowJobForm(true);
+    openFormWin('job', editableJob);
    //setShowFullPageJob(null); // Close the full page view if open
 };
           const saveCustomerToDatabase = async (customer) => {
@@ -30937,7 +31070,7 @@ const saveSupplierToDatabase = async (supplier) => {
             }
           };
 
-        const handleAddQuote = async (newQuote) => {
+        const handleAddQuote = async (newQuote, winKey) => {
   try {
     const quoteForDatabase = {
       // DO NOT include 'id' field - let Supabase generate it
@@ -31008,8 +31141,7 @@ const saveSupplierToDatabase = async (supplier) => {
     
     // Reload all quotes from DB to ensure consistent field mapping
     await loadQuotesFromSupabase();
-    setShowQuoteForm(false);
-    setEditingQuote(null);
+    closeFormWin(winKey);
     
     console.log('[Quote] Saved successfully:', data[0].id);
   } catch (error) {
@@ -31018,7 +31150,7 @@ const saveSupplierToDatabase = async (supplier) => {
   }
 };
 
-  const handleUpdateQuote = async (updatedQuote) => {
+  const handleUpdateQuote = async (updatedQuote, winKey) => {
   try {
     const buildQuotePayload = (updatedQuote) => ({
       customer_name: updatedQuote.customerName,
@@ -31105,8 +31237,7 @@ const saveSupplierToDatabase = async (supplier) => {
     if (error) throw error;
     // Reload all quotes from DB for consistent field mapping
     await loadQuotesFromSupabase();
-    setEditingQuote(null);
-    setShowQuoteForm(false);
+    closeFormWin(winKey);
     setShowFullPageQuote({
       ...updatedQuote,
       lineItems: updatedQuote.lineItems
@@ -31119,13 +31250,11 @@ const saveSupplierToDatabase = async (supplier) => {
 };
 
           const handleEditQuote = (quote) => {
-            setEditingQuote(quote);
-            setShowQuoteForm(true);
+            openFormWin('quote', quote);
           };
 
           const handleConvertToJob = (newJob) => {
-            setEditingJob(newJob);
-            setShowJobForm(true);
+            openFormWin('job', newJob);
             setActiveTab('jobs');
           };
 // ADD these NEW quote management functions after line 6947
@@ -31134,8 +31263,7 @@ const handleDuplicateQuote = (quoteTemplate) => {
   const duplicatedQuote = { ...quoteTemplate, id: null, quoteNumber: null };
   delete duplicatedQuote.id;
   delete duplicatedQuote.quoteNumber;
-  setEditingQuote(duplicatedQuote);
-  setShowQuoteForm(true);
+  openFormWin('quote', duplicatedQuote);
 };
 
 const handleDeleteQuote = async (quoteId) => {
@@ -31775,9 +31903,11 @@ onClick={() => {
 
 
 {/* Full Page Job View - Add this BEFORE the tab content */}
+<div className={'tws-viewwrap ' + winWrapClass('jobView')}>
 {showFullPageJob && (
   <FullPageJobView 
     job={showFullPageJob}
+    onMinimise={minimiseJobView}
     jobs={jobs}
     suppliers={suppliers}
     onClose={() => setShowFullPageJob(null)}
@@ -31821,6 +31951,7 @@ onClick={() => {
     onDeleteAttachment={handleDeleteAttachment}
   />
 )}
+</div>
 {showCollectionCalendar && <CollectionCalendarModal />}
 
 {/* Which products go onto the job. The customer often confirms part of a
@@ -31932,9 +32063,11 @@ onClick={() => {
   );
 })()}
 {/* Full Page Quote View - ADD this RIGHT AFTER showFullPageJob section */}
+<div className={'tws-viewwrap ' + winWrapClass('quoteView')}>
 {showFullPageQuote && (
   <FullPageQuoteView 
     quote={showFullPageQuote}
+    onMinimise={minimiseQuoteView}
     onClose={() => setShowFullPageQuote(null)}
     onEdit={handleEditQuote}
     onDuplicate={handleDuplicateQuote}
@@ -31947,6 +32080,7 @@ onClick={() => {
     customers={customers}
   />
 )}
+</div>
               <div className="p-4 sm:p-6 main-content-area">
                 {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} suppliers={suppliers} />}
                 {activeTab === 'documents' && (
@@ -31956,10 +32090,7 @@ onClick={() => {
                   <JobsView 
                     jobs={jobs} 
                     setJobs={setJobs}
-                    onAddJob={() => {
-  setEditingJob(null);
-  setShowJobForm(true);
-}}
+                    onAddJob={() => openFormWin('job', null)}
                     onUpdateJob={handleUpdateJob}
                     onDeleteJob={handleDeleteJob}
                     onDuplicateJob={handleDuplicateJob}
@@ -31998,7 +32129,7 @@ onClick={() => {
                 {activeTab === 'quotes' && (
   <QuotesView 
     quotes={quotes}
-    onAddQuote={() => { setEditingQuote(null); setShowQuoteForm(true); }}
+    onAddQuote={() => openFormWin('quote', null)}
     onUpdateQuote={handleUpdateQuote}
     onEditQuote={handleEditQuote}
     onConvertToJob={handleConvertQuoteToJob}
@@ -32067,42 +32198,112 @@ onClick={() => {
               </div>
 
               {/* Forms */}
-  {showJobForm && (
-    <JobForm
-        job={editingJob}
-        onClose={() => {
-            setShowJobForm(false);
-            setEditingJob(null);
-        }}
-        onSave={(jobData) => {
-            if (editingJob) {
-                handleUpdateJob(jobData);
-            } else {
-                handleAddJob(jobData);
-            }
-        }}
-        setJobs={setJobs}
-        jobs={jobs}
-        onUpdateDisplay={setShowFullPageJob}
-        customers={customers}
-        suppliers={suppliers}
-        sageProducts={sageProducts}
-        user={user}
-        // MAKE SURE THESE 4 LINES ARE HERE:
-        addressSuggestions={addressSuggestions}
-        showAddressSuggestions={showAddressSuggestions}
-        setShowAddressSuggestions={setShowAddressSuggestions}
-        handleAddressSearch={handleAddressSearch}
-        contactSuggestions={contactSuggestions}
-showContactSuggestions={showContactSuggestions}
-setShowContactSuggestions={setShowContactSuggestions}
-handleContactSearch={handleContactSearch}
-phoneSuggestions={phoneSuggestions}
-showPhoneSuggestions={showPhoneSuggestions}
-setShowPhoneSuggestions={setShowPhoneSuggestions}
-handlePhoneSearch={handlePhoneSearch}
-    />
-)}
+  {formWins.map(w => {
+    // Address/contact lookups are shared app state; only the form being
+    // typed in should show them.
+    const sug = !w.min && (focusWin === w.key || formWins.filter(x => !x.min).length === 1);
+    const common = {
+      customers, suppliers, sageProducts, user,
+      addressSuggestions, showAddressSuggestions: sug && showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch,
+      contactSuggestions, showContactSuggestions: sug && showContactSuggestions, setShowContactSuggestions, handleContactSearch,
+      phoneSuggestions, showPhoneSuggestions: sug && showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch,
+    };
+    return (
+      <div
+        key={w.key}
+        data-tws-win={w.key}
+        data-tws-min={w.min ? '1' : '0'}
+        data-tws-focus={focusWin === w.key ? '1' : '0'}
+        className={'tws-formwrap ' + winWrapClass(w.key)}
+        style={w.min ? { display: 'none' } : undefined}
+        onMouseDownCapture={() => { if (focusWin !== w.key) setFocusWin(w.key); }}
+        onFocusCapture={() => { if (focusWin !== w.key) setFocusWin(w.key); }}
+      >
+        {w.kind === 'job' ? (
+          <JobForm
+            job={w.record}
+            onClose={() => closeFormWin(w.key)}
+            onMinimise={(label) => minimiseFormWin(w.key, label)}
+            onSave={(jobData) => {
+              if (w.record) {
+                handleUpdateJob(jobData, w.key);
+              } else {
+                handleAddJob(jobData, w.key);
+              }
+            }}
+            setJobs={setJobs}
+            jobs={jobs}
+            onUpdateDisplay={setShowFullPageJob}
+            {...common}
+          />
+        ) : (
+          <QuoteForm
+            quote={w.record}
+            onClose={() => closeFormWin(w.key)}
+            onMinimise={(label) => minimiseFormWin(w.key, label)}
+            onSave={(q) => (w.record?.id ? handleUpdateQuote : handleAddQuote)(q, w.key)}
+            setSuppliers={setSuppliers}
+            {...common}
+          />
+        )}
+      </div>
+    );
+  })}
+
+  {/* Minimised jobs and quotes */}
+  <style>{`
+    .tws-pane { position: fixed; top: 0; bottom: 0; width: 50%; transform: translateZ(0); z-index: 50; overflow: hidden; background: #f9fafb; }
+    .tws-pane.tws-dock-on { bottom: 44px; }
+    .tws-pane-l { left: 0; border-right: 3px solid #1f2937; }
+    .tws-pane-r { left: 50%; }
+    .tws-pane.tws-formwrap > .fixed.inset-0 > div { height: 100% !important; }
+    .tws-pane .h-screen { height: 100% !important; }
+    .tws-full.tws-dock-on.tws-viewwrap > .fixed.inset-0 { bottom: 44px; }
+    .tws-full.tws-dock-on.tws-viewwrap .h-screen { height: calc(100vh - 44px) !important; }
+    @media (max-width: 639px) {
+      .tws-full.tws-dock-on.tws-viewwrap > .fixed.inset-0 { bottom: 0; padding-bottom: 44px; }
+    }
+  `}</style>
+  {dockCount > 0 && <div style={{ height: 52 }} />}
+  {dockCount > 0 && (
+    <div className="tws-dock fixed left-0 right-0 bottom-14 sm:bottom-0 z-40 bg-gray-800 border-t border-gray-900 flex items-center gap-2 px-2 overflow-x-auto" style={{ height: 44 }}>
+      <span className="hidden sm:inline text-xs text-gray-400 flex-shrink-0 px-1">Minimised</span>
+      {dockChips.map(chip => {
+        const isJob = chip.kind === 'job' || chip.kind === 'jobView';
+        const isForm = chip.kind === 'job' || chip.kind === 'quote';
+        return (
+          <div key={chip.key} className="tws-dock-chip flex items-stretch flex-shrink-0 bg-white rounded-md shadow text-sm overflow-hidden" style={{ maxWidth: 320 }}>
+            <button
+              type="button"
+              onClick={() => showChip(chip, false)}
+              title="Open"
+              className="flex items-center gap-2 px-3 py-1.5 min-w-0 text-left font-medium text-gray-800 hover:bg-blue-50"
+            >
+              <span className={'inline-block w-2 h-2 rounded-full flex-shrink-0 ' + (isJob ? 'bg-blue-500' : 'bg-purple-500')}></span>
+              <span className="truncate">{chipLabel(chip)}</span>
+              {isForm && <span className="text-xs font-normal text-amber-700 flex-shrink-0">editing</span>}
+            </button>
+            <button
+              type="button"
+              onClick={() => showChip(chip, true)}
+              title="Open side by side with what is on screen"
+              className="tws-dock-split hidden lg:flex items-center px-2 border-l border-gray-200 text-gray-500 hover:bg-blue-50 hover:text-blue-700"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="12" y1="4" x2="12" y2="20" /></svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => closeChip(chip)}
+              title="Close"
+              className="flex items-center px-2 border-l border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-600"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  )}
 
               {/* Phase 4 — completion prompt: asks how to deliver the WTN
                   to the customer when staff click Complete on a waste job. */}
@@ -32142,33 +32343,6 @@ handlePhoneSearch={handlePhoneSearch}
                 />
               )}
 
-              {showQuoteForm && (
-  <QuoteForm 
-    quote={editingQuote}
-    onClose={() => {
-      setShowQuoteForm(false);
-      setEditingQuote(null);
-    }}
-    onSave={editingQuote?.id ? handleUpdateQuote : handleAddQuote}
-    customers={customers}
-    suppliers={suppliers}
-    sageProducts={sageProducts}  // ADD THIS LINE
-    user={user}  // ADD THIS LINE
-    setSuppliers={setSuppliers}
-    addressSuggestions={addressSuggestions}
-    showAddressSuggestions={showAddressSuggestions}
-    setShowAddressSuggestions={setShowAddressSuggestions}
-    handleAddressSearch={handleAddressSearch}
-    contactSuggestions={contactSuggestions}
-    showContactSuggestions={showContactSuggestions}
-    setShowContactSuggestions={setShowContactSuggestions}
-    handleContactSearch={handleContactSearch}
-    phoneSuggestions={phoneSuggestions}
-    showPhoneSuggestions={showPhoneSuggestions}
-    setShowPhoneSuggestions={setShowPhoneSuggestions}
-    handlePhoneSearch={handlePhoneSearch}
-  />
-)}
             </div>
           );
         };
@@ -36027,7 +36201,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
        // Replace the existing QuoteForm component (around line 7141) with this FULLY TESTED version:
 
 // Quote Form Component - UPDATED TO MATCH JOB FORM LAYOUT
-const QuoteForm = ({ quote, onClose, onSave, customers, suppliers, sageProducts = [], user, setSuppliers = () => {}, addressSuggestions = [], showAddressSuggestions, setShowAddressSuggestions = () => {}, handleAddressSearch = () => {}, contactSuggestions = [], showContactSuggestions, setShowContactSuggestions = () => {}, handleContactSearch = () => {}, phoneSuggestions = [], showPhoneSuggestions, setShowPhoneSuggestions = () => {}, handlePhoneSearch = () => {} }) => {
+const QuoteForm = ({ quote, onClose, onSave, onMinimise, customers, suppliers, sageProducts = [], user, setSuppliers = () => {}, addressSuggestions = [], showAddressSuggestions, setShowAddressSuggestions = () => {}, handleAddressSearch = () => {}, contactSuggestions = [], showContactSuggestions, setShowContactSuggestions = () => {}, handleContactSearch = () => {}, phoneSuggestions = [], showPhoneSuggestions, setShowPhoneSuggestions = () => {}, handlePhoneSearch = () => {} }) => {
   // Suppliers currently shown as columns in the price comparison grid, and the
   // box for adding another. Display state only: the prices themselves live on
   // the line items, so nothing here reaches the database.
@@ -36187,8 +36361,8 @@ By approving this quotation and authorising us to commence services, you acknowl
   };
 
   const handleUploadInForm = async () => {
-    const attachmentType = document.getElementById('quote-attachment-type')?.value || 'Quote Document';
-    const fileInput = document.getElementById('quote-attachment-file');
+    const attachmentType = twsFormEl('quote-attachment-type')?.value || 'Quote Document';
+    const fileInput = twsFormEl('quote-attachment-file');
     const file = fileInput?.files[0];
 
     if (!attachmentType || !file) {
@@ -36233,7 +36407,7 @@ By approving this quotation and authorising us to commence services, you acknowl
       }
       
       await loadQuoteAttachments(quote.id);
-      document.getElementById('quote-attachment-file').value = '';
+      if (fileInput) fileInput.value = '';
       
     } catch (error) {
       console.error('Error uploading attachment:', error);
@@ -36509,9 +36683,12 @@ By approving this quotation and authorising us to commence services, you acknowl
       <div className="bg-white sm:rounded-xl w-full h-full sm:h-[calc(100vh-2rem)] overflow-y-auto mx-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-xl font-bold">{quote ? 'Edit Quote' : 'Add New Quote'}</h2>
-          <button onClick={onClose}>
-            <X size={24} />
-          </button>
+          <div className="flex items-center gap-3">
+            {onMinimise && <TwsMinimiseButton onClick={() => onMinimise(formData.customerName || '')} />}
+            <button onClick={onClose} title="Close">
+              <X size={24} />
+            </button>
+          </div>
         </div>
         
         {/* Tab Navigation - EXACT SAME AS JOB FORM */}
