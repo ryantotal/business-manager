@@ -881,31 +881,47 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-02 09:00';
+const BUILD_STAMP = '2026-10-02 13:45';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
-// Several job/quote forms can now be mounted at once (minimised ones stay
-// mounted, hidden, so nothing typed is lost). Their upload controls share an
-// id, so look the control up inside the window being used, not the first one
-// in the page.
+// Several jobs and quotes can be mounted at once (minimised forms stay
+// mounted, hidden; two screens can sit side by side). Their upload controls
+// share an id, so look the control up inside the window that was last
+// clicked in, not the first one in the page.
+try { document.addEventListener('mousedown', (e) => { window.__twsLastDown = e.target; }, true); } catch (e) { /* no document yet */ }
 const twsFormEl = (id) => {
   const all = Array.from(document.querySelectorAll('[id="' + id + '"]'));
   if (all.length < 2) return all[0] || null;
-  const shown = all.filter(el => { const w = el.closest('[data-tws-win]'); return w && w.getAttribute('data-tws-min') !== '1'; });
-  return shown.find(el => el.closest('[data-tws-focus="1"]')) || shown[0] || all[0];
+  const winOf = (el) => (el && el.closest) ? el.closest('[data-tws-win]') : null;
+  const shown = all.filter(el => { const w = winOf(el); return !w || w.getAttribute('data-tws-min') !== '1'; });
+  const last = winOf(window.__twsLastDown);
+  return (last && shown.find(el => winOf(el) === last)) || shown.find(el => el.closest('[data-tws-focus="1"]')) || shown[0] || all[0];
 };
 
-const TwsMinimiseButton = ({ onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    title="Minimise to the bottom of the screen. Nothing is lost; click it there to pick it back up."
-    className="tws-minimise-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100"
-  >
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="19" x2="19" y2="19" /></svg>
-    <span className="hidden sm:inline">Minimise</span>
-  </button>
-);
+// Window controls for a job/quote screen or form: minimise to the bar, and
+// side by side. Icon-only, in the same grey as the back arrow beside them.
+const TwsWinButtons = ({ onMinimise, onSplit, isSplit }) => {
+  const cls = 'p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100';
+  const svg = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  return (
+    <div className="tws-win-buttons flex items-center">
+      {onMinimise && (
+        <button type="button" onClick={onMinimise} className={'tws-minimise-btn ' + cls}
+          title="Minimise: park it at the bottom of the screen and pick it up later">
+          <svg {...svg}><line x1="6" y1="18" x2="18" y2="18" /></svg>
+        </button>
+      )}
+      {onSplit && (
+        <button type="button" onClick={onSplit} className={'tws-split-btn hidden lg:block ' + cls}
+          title={isSplit ? 'Back to full width' : 'Side by side: keep this on the left and open another job or quote next to it'}>
+          {isSplit
+            ? <svg {...svg}><rect x="3" y="4" width="18" height="16" rx="2" /></svg>
+            : <svg {...svg}><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="12" y1="4" x2="12" y2="20" /></svg>}
+        </button>
+      )}
+    </div>
+  );
+};
 
 const readLineItems = (record) => {
   if (!record) return [];
@@ -5560,7 +5576,7 @@ const EWCPicker = ({ value, onChange }) => {
   );
 };
 
-const JobForm = ({ job, onClose, onSave, onMinimise, setJobs, jobs, onUpdateDisplay, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
+const JobForm = ({ job, onClose, onSave, onMinimise, onSplit, isSplit, setJobs, jobs, onUpdateDisplay, customers, suppliers, sageProducts, user, addressSuggestions, showAddressSuggestions, setShowAddressSuggestions, handleAddressSearch, contactSuggestions, showContactSuggestions, setShowContactSuggestions, handleContactSearch, phoneSuggestions, showPhoneSuggestions, setShowPhoneSuggestions, handlePhoneSearch }) => {    
  
           const [uploadFile, setUploadFile] = useState(null);
           const [jobAttachments, setJobAttachments] = useState([]);
@@ -7916,10 +7932,10 @@ const [isEvent, setIsEvent] = useState(false);
                 <div className="bg-white sm:rounded-xl w-full h-full sm:h-[calc(100vh-2rem)] overflow-y-auto mx-auto">
                 <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                   <h2 className="text-xl font-bold">{job ? 'Edit Job' : 'Add New Job'}</h2>
-                  <div className="flex items-center gap-3">
-                    {onMinimise && <TwsMinimiseButton onClick={() => onMinimise(isEvent ? (formData.eventTitle || '') : (formData.customerName || ''))} />}
-                    <button onClick={onClose} title="Close">
-                      <X size={24} />
+                  <div className="flex items-center gap-1">
+                    {onMinimise && <TwsWinButtons onMinimise={() => onMinimise(isEvent ? (formData.eventTitle || '') : (formData.customerName || ''))} onSplit={onSplit} isSplit={isSplit} />}
+                    <button onClick={onClose} title="Close" className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                      <X size={22} />
                     </button>
                   </div>
                 </div>
@@ -18076,7 +18092,7 @@ const SiteAllocationCounter = ({ job, jobs, capEditorOpen, setCapEditorOpen }) =
   );
 };
 
-const FullPageJobView = ({ job, jobs, onClose, onMinimise, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onStop, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh, suppliers = [] }) => {
+const FullPageJobView = ({ job, jobs, onClose, onMinimise, onSplit, isSplit, onEdit, onDuplicate, onDelete, onExchange, onCollection, onComplete, onStop, onDeleteAttachment, user, onUpdateDisplay, setDeleteConfirmation, onRefresh, suppliers = [] }) => {
   const { hasPermission } = useAuth();  // fix32z: lets the delete button follow the roles map (Managers can delete)
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
@@ -18513,8 +18529,8 @@ console.log(JSON.stringify(invoiceData, null, 2));
   };
 
   const uploadJobAttachment = async () => {
-    const attachmentType = document.getElementById('attachment-type')?.value;
-    const fileInput = document.getElementById('attachment-file');
+    const attachmentType = twsFormEl('attachment-type')?.value;
+    const fileInput = twsFormEl('attachment-file');
     const file = fileInput?.files[0];
 
     if (!attachmentType || !file || !job) {
@@ -18560,7 +18576,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
       alert('Job attachment uploaded successfully!');
       loadJobAttachments(job.id);
       
-      document.getElementById('attachment-file').value = '';
+      twsFormEl('attachment-file').value = '';
     } catch (error) {
       console.error('Error uploading job attachment:', error);
       alert('Error uploading job attachment');
@@ -18625,7 +18641,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
       >
         <LucideIcon icon="ChevronLeft" size={22} />
       </button>
-      {onMinimise && <TwsMinimiseButton onClick={() => onMinimise(job)} />}
+      {onMinimise && <TwsWinButtons onMinimise={onMinimise} onSplit={onSplit} isSplit={isSplit} />}
       {/* Prev / Next arrows + sidebar toggle */}
       <div className="flex items-center gap-1">
         <button
@@ -20665,7 +20681,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
 );
 };
 // Full Page Quote View Component - UPDATED TO MATCH JOB LAYOUT
-const FullPageQuoteView = ({ quote, onClose, onMinimise, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user, customers }) => {
+const FullPageQuoteView = ({ quote, onClose, onMinimise, onSplit, isSplit, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user, customers }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [quoteAttachments, setQuoteAttachments] = useState([]);
   const [showSendModal, setShowSendModal] = useState(false);
@@ -20699,8 +20715,8 @@ const FullPageQuoteView = ({ quote, onClose, onMinimise, onEdit, onDuplicate, on
   };
 
   const uploadQuoteAttachment = async () => {
-    const attachmentType = document.getElementById('quote-attachment-type')?.value;
-    const fileInput = document.getElementById('quote-attachment-file');
+    const attachmentType = twsFormEl('quote-attachment-type')?.value;
+    const fileInput = twsFormEl('quote-attachment-file');
     const file = fileInput?.files[0];
 
     if (!attachmentType || !file || !quote) {
@@ -20736,7 +20752,7 @@ const FullPageQuoteView = ({ quote, onClose, onMinimise, onEdit, onDuplicate, on
       alert('Quote attachment uploaded successfully!');
       loadQuoteAttachments(quote.id);
       
-      document.getElementById('quote-attachment-file').value = '';
+      twsFormEl('quote-attachment-file').value = '';
     } catch (error) {
       console.error('Error uploading quote attachment:', error);
       alert('Error uploading quote attachment');
@@ -20927,7 +20943,7 @@ By approving this quotation and authorising us to commence services, you acknowl
             >
               <LucideIcon icon="ChevronUp" size={24} className="rotate-90" />
             </button>
-            {onMinimise && <TwsMinimiseButton onClick={() => onMinimise(quote)} />}
+            {onMinimise && <TwsWinButtons onMinimise={onMinimise} onSplit={onSplit} isSplit={isSplit} />}
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{quote.quoteNumber}</h1>
               <p className="text-gray-600">{quote.jobType}</p>
@@ -26935,7 +26951,23 @@ const [customers, setCustomers] = useState([]);
 const [suppliers, setSuppliers] = useState([]);
 const [jobAttachments, setJobAttachments] = useState([]);
 const [selectedJob, setSelectedJob] = useState(null);
-const [showFullPageJob, setShowFullPageJob] = useState(null);
+// Two slots per screen so two jobs (or two quotes) can sit side by side.
+// Everything in the app still calls setShowFullPageJob; it lands in the
+// second slot when that is the job concerned, or the pane last clicked in.
+const [showFullPageJob, setMainJobView] = useState(null);
+const [sideJob, setSideJobView] = useState(null);
+const viewFocusRef = React.useRef('jobView');
+const viewRecsRef = React.useRef({});
+viewRecsRef.current.jobView = showFullPageJob;
+viewRecsRef.current.jobView2 = sideJob;
+const setShowFullPageJob = (v) => {
+  const side = viewRecsRef.current.jobView2, main = viewRecsRef.current.jobView;
+  if (side) {
+    if (v && v.id === side.id) { setSideJobView(v); return; }
+    if (viewFocusRef.current === 'jobView2' && !(v && main && v.id === main.id)) { setSideJobView(v); return; }
+  }
+  setMainJobView(v);
+};
 const [addressSuggestions, setAddressSuggestions] = useState([]);
 const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
 const [contactSuggestions, setContactSuggestions] = useState([]);
@@ -28848,7 +28880,18 @@ useEffect(() => {
   loadQuotesFromSupabase();
 }, []);
 
-const [showFullPageQuote, setShowFullPageQuote] = useState(null);
+const [showFullPageQuote, setMainQuoteView] = useState(null);
+const [sideQuote, setSideQuoteView] = useState(null);
+viewRecsRef.current.quoteView = showFullPageQuote;
+viewRecsRef.current.quoteView2 = sideQuote;
+const setShowFullPageQuote = (v) => {
+  const side = viewRecsRef.current.quoteView2, main = viewRecsRef.current.quoteView;
+  if (side) {
+    if (v && v.id === side.id) { setSideQuoteView(v); return; }
+    if (viewFocusRef.current === 'quoteView2' && !(v && main && v.id === main.id)) { setSideQuoteView(v); return; }
+  }
+  setMainQuoteView(v);
+};
           
           // Form states
           // ── Windows ────────────────────────────────────────────────
@@ -28859,10 +28902,22 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
           // it was and reopens it.
           const [formWins, setFormWins] = useState([]);   // { key, kind: 'job'|'quote', record, min, label }
           const [viewDock, setViewDock] = useState([]);   // { key, kind: 'jobView'|'quoteView', record }
-          const [winSplit, setWinSplit] = useState(null); // { left, right } — 'jobView' | 'quoteView' | a form key
+          const [winSplit, setWinSplit] = useState(null); // { left, right } — a screen slot or a form key
+          const [splitPick, setSplitPick] = useState(null); // left-hand window while choosing what goes beside it
+          const [pickSearch, setPickSearch] = useState('');
           const [focusWin, setFocusWin] = useState(null);
           const formWinsRef = React.useRef([]);
           formWinsRef.current = formWins;
+
+          const VIEW_REFS = ['jobView', 'jobView2', 'quoteView', 'quoteView2'];
+          const viewRec = { jobView: showFullPageJob, jobView2: sideJob, quoteView: showFullPageQuote, quoteView2: sideQuote };
+          const setViewRec = (ref, rec) => {
+            if (ref === 'jobView') setMainJobView(rec);
+            else if (ref === 'jobView2') setSideJobView(rec);
+            else if (ref === 'quoteView') setMainQuoteView(rec);
+            else if (ref === 'quoteView2') setSideQuoteView(rec);
+          };
+          const viewKind = (ref) => ref.indexOf('jobView') === 0 ? 'jobView' : 'quoteView';
 
           const openFormWin = (kind, record) => {
             const rid = record && record.id;
@@ -28873,11 +28928,12 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
               try { window._openJobFormOnWtn = false; } catch (_) {}
               setFormWins(prev => prev.map(w => w.key === hit.key ? { ...w, min: false } : w));
               setFocusWin(hit.key);
-              return;
+              return hit.key;
             }
             const key = kind + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
             setFormWins(prev => [...prev, { key, kind, record: record || null, min: false, label: '' }]);
             setFocusWin(key);
+            return key;
           };
           const closeFormWin = (key) => { if (!key) return; setFormWins(prev => prev.filter(w => w.key !== key)); };
           const minimiseFormWin = (key, label) => setFormWins(prev => prev.map(w => w.key === key ? { ...w, min: true, label: label || w.label } : w));
@@ -28887,28 +28943,25 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
             const key = kind + ':' + rec.id;
             setViewDock(prev => [...prev.filter(v => v.key !== key), { key, kind, record: rec }]);
           };
-          const minimiseJobView = (rec) => { dockView('jobView', rec || showFullPageJob); setShowFullPageJob(null); };
-          const minimiseQuoteView = (rec) => { dockView('quoteView', rec || showFullPageQuote); setShowFullPageQuote(null); };
+          const minimiseView = (ref) => { dockView(viewKind(ref), viewRec[ref]); setViewRec(ref, null); };
 
           // Opening a record the normal way while it sits minimised: drop the
           // chip, it is on screen now.
           useEffect(() => {
             setViewDock(prev => {
-              const next = prev.filter(v => !(
-                (v.kind === 'jobView' && showFullPageJob && v.record.id === showFullPageJob.id) ||
-                (v.kind === 'quoteView' && showFullPageQuote && v.record.id === showFullPageQuote.id)
-              ));
+              const next = prev.filter(v => !VIEW_REFS.some(r => viewKind(r) === v.kind && viewRec[r] && viewRec[r].id === v.record.id));
               return next.length === prev.length ? prev : next;
             });
-          }, [showFullPageJob, showFullPageQuote]);
+          }, [showFullPageJob, sideJob, showFullPageQuote, sideQuote]);
 
-          const winVisible = (ref) =>
-            ref === 'jobView' ? !!showFullPageJob :
-            ref === 'quoteView' ? !!showFullPageQuote :
-            formWins.some(w => w.key === ref && !w.min);
+          const winVisible = (ref) => VIEW_REFS.includes(ref) ? !!viewRec[ref] : formWins.some(w => w.key === ref && !w.min);
           const effSplit = (winSplit && winSplit.left !== winSplit.right && winVisible(winSplit.left) && winVisible(winSplit.right)) ? winSplit : null;
+          const pickLeft = (!effSplit && splitPick && winVisible(splitPick)) ? splitPick : null;
           // One side closed or minimised: the other goes back to full width.
-          useEffect(() => { if (winSplit && !effSplit) setWinSplit(null); });
+          useEffect(() => {
+            if (winSplit && !effSplit) setWinSplit(null);
+            if (splitPick && !pickLeft) setSplitPick(null);
+          });
 
           const dockChips = [...viewDock, ...formWins.filter(w => w.min)];
           const dockCount = dockChips.length;
@@ -28918,48 +28971,67 @@ const [showFullPageQuote, setShowFullPageQuote] = useState(null);
             const num = (c.kind === 'job' || c.kind === 'jobView') ? (r.jobNumber || 'New job') : (r.quoteNumber || 'New quote');
             return who ? num + ' \u00b7 ' + who : num;
           };
+          const paneSide = (ref) => {
+            if (!winVisible(ref)) return null;
+            if ((effSplit && effSplit.left === ref) || pickLeft === ref) return 'l';
+            if (effSplit && effSplit.right === ref) return 'r';
+            return null;
+          };
           const winWrapClass = (ref) => {
             if (!winVisible(ref)) return '';
             const dock = dockCount > 0 ? ' tws-dock-on' : '';
-            if (effSplit && effSplit.left === ref) return 'tws-pane tws-pane-l' + dock;
-            if (effSplit && effSplit.right === ref) return 'tws-pane tws-pane-r' + dock;
-            return 'tws-full' + dock;
+            const side = paneSide(ref);
+            return (side ? 'tws-pane tws-pane-' + side : 'tws-full') + dock;
           };
-          // Bring a minimised item back. beside=true puts it on the right of
-          // whatever is on screen; otherwise it takes the screen and
-          // everything else that was open drops to the bar.
-          const showChip = (chip, beside) => {
-            const isView = chip.kind === 'jobView' || chip.kind === 'quoteView';
-            const ref = isView ? chip.kind : chip.key;
-            let partner = null;
-            if (beside) {
-              if (effSplit) partner = effSplit.left;
-              else {
-                const topForm = [...formWins].reverse().find(w => !w.min);
-                partner = topForm ? topForm.key : (showFullPageQuote ? 'quoteView' : (showFullPageJob ? 'jobView' : null));
-              }
-              if (partner && partner === ref) {
-                alert(chip.kind === 'jobView'
-                  ? 'Two jobs can sit side by side only if at least one is open for editing. Click Edit on one of them first.'
-                  : 'Two quotes can sit side by side only if at least one is open for editing. Click Edit on one of them first.');
-                return;
-              }
-            }
-            const keep = partner ? [partner] : [];
+          // Everything on screen except `keep` drops to the bar.
+          const tuckAway = (keep, restoreKey) => {
             setFormWins(prev => prev.map(w => {
-              if (w.key === chip.key) return { ...w, min: false };
+              if (w.key === restoreKey) return { ...w, min: false };
               return (!w.min && !keep.includes(w.key)) ? { ...w, min: true } : w;
             }));
-            if (showFullPageJob && !keep.includes('jobView')) { dockView('jobView', showFullPageJob); setShowFullPageJob(null); }
-            if (showFullPageQuote && !keep.includes('quoteView')) { dockView('quoteView', showFullPageQuote); setShowFullPageQuote(null); }
+            VIEW_REFS.forEach(r => { if (viewRec[r] && !keep.includes(r)) { dockView(viewKind(r), viewRec[r]); setViewRec(r, null); } });
+          };
+          const topVisibleRef = () => {
+            const topForm = [...formWins].reverse().find(w => !w.min);
+            if (topForm) return topForm.key;
+            return ['quoteView2', 'quoteView', 'jobView2', 'jobView'].find(r => viewRec[r]) || null;
+          };
+          // Put something on screen. With `left` it goes on the right of that
+          // window; without, it takes the whole screen. target is a chip
+          // from the bar, a record ({ kind: 'jobView'|'quoteView', record }),
+          // or a blank form ({ kind: 'job'|'quote' }).
+          const placeWin = (left, target) => {
+            const chip = target.chip;
+            const kind = chip ? chip.kind : target.kind;
+            const isView = kind === 'jobView' || kind === 'quoteView';
+            tuckAway(left ? [left] : [], chip && !isView ? chip.key : null);
+            let ref;
             if (isView) {
-              setViewDock(prev => prev.filter(v => v.key !== chip.key));
-              if (chip.kind === 'jobView') setShowFullPageJob((jobs || []).find(j => j.id === chip.record.id) || chip.record);
-              else setShowFullPageQuote((quotes || []).find(q => q.id === chip.record.id) || chip.record);
+              const rec = chip ? chip.record : target.record;
+              ref = [kind, kind + '2'].find(r => r !== left);
+              setViewDock(prev => prev.filter(v => v.key !== kind + ':' + rec.id));
+              setViewRec(ref, ((kind === 'jobView' ? jobs : quotes) || []).find(x => x.id === rec.id) || rec);
+              viewFocusRef.current = ref;
+            } else if (chip) {
+              ref = chip.key;
+              setFocusWin(ref);
             } else {
-              setFocusWin(chip.key);
+              ref = openFormWin(kind, null);
             }
-            setWinSplit(partner ? { left: partner, right: ref } : null);
+            setWinSplit(left ? { left, right: ref } : null);
+            setSplitPick(null);
+            setPickSearch('');
+          };
+          const showChip = (chip, beside) => placeWin(beside ? (effSplit ? effSplit.left : (pickLeft || topVisibleRef())) : null, { chip });
+          // The side-by-side button on a screen or form: this one moves to
+          // the left half and the right half offers what to open next to it.
+          // Pressed again while split, it goes back to full width.
+          const toggleSplit = (ref) => {
+            const wasSplit = !!paneSide(ref);
+            tuckAway([ref], null);
+            setWinSplit(null);
+            setPickSearch('');
+            setSplitPick(wasSplit ? null : ref);
           };
           const closeChip = (chip) => {
             if (chip.kind === 'jobView' || chip.kind === 'quoteView') { setViewDock(prev => prev.filter(v => v.key !== chip.key)); return; }
@@ -31903,24 +31975,27 @@ onClick={() => {
 
 
 {/* Full Page Job View - Add this BEFORE the tab content */}
-<div className={'tws-viewwrap ' + winWrapClass('jobView')}>
-{showFullPageJob && (
+{['jobView', 'jobView2'].map(ref => { const rec = viewRec[ref]; return (
+<div key={ref} data-tws-win={ref} className={'tws-viewwrap ' + winWrapClass(ref)} onMouseDownCapture={() => { viewFocusRef.current = ref; }}>
+{rec && (
   <FullPageJobView 
-    job={showFullPageJob}
-    onMinimise={minimiseJobView}
+    job={rec}
+    onMinimise={() => minimiseView(ref)}
+    onSplit={() => toggleSplit(ref)}
+    isSplit={!!paneSide(ref)}
     jobs={jobs}
     suppliers={suppliers}
-    onClose={() => setShowFullPageJob(null)}
-    onUpdateDisplay={setShowFullPageJob}
+    onClose={() => setViewRec(ref, null)}
+    onUpdateDisplay={(j) => setViewRec(ref, j)}
     onRefresh={loadJobsFromSupabase || window.loadJobsFromSupabase}
     onEdit={handleEditJob}
-    onDuplicate={() => handleDuplicateJob(showFullPageJob)}
+    onDuplicate={() => handleDuplicateJob(rec)}
     onDelete={handleDeleteJob}
     setDeleteConfirmation={setDeleteConfirmation}
     onExchange={async (job) => {
     try {
         await handleExchange(job);
-        setShowFullPageJob(null);
+        setViewRec(ref, null);
     } catch (error) {
         console.error('Error:', error);
         alert('Error creating exchange: ' + error.message);
@@ -31942,7 +32017,7 @@ onClick={() => {
         if (error) throw error;
         const updatedJob = { ...job, onStop: newStopState, on_stop: newStopState };
         setJobs(prevJobs => prevJobs.map(j => j.id === job.id ? { ...j, onStop: newStopState, on_stop: newStopState } : j));
-        setShowFullPageJob(updatedJob);
+        setViewRec(ref, updatedJob);
       } catch (err) {
         alert('Error updating stop status: ' + err.message);
       }
@@ -31952,6 +32027,7 @@ onClick={() => {
   />
 )}
 </div>
+); })}
 {showCollectionCalendar && <CollectionCalendarModal />}
 
 {/* Which products go onto the job. The customer often confirms part of a
@@ -32063,12 +32139,15 @@ onClick={() => {
   );
 })()}
 {/* Full Page Quote View - ADD this RIGHT AFTER showFullPageJob section */}
-<div className={'tws-viewwrap ' + winWrapClass('quoteView')}>
-{showFullPageQuote && (
+{['quoteView', 'quoteView2'].map(ref => { const rec = viewRec[ref]; return (
+<div key={ref} data-tws-win={ref} className={'tws-viewwrap ' + winWrapClass(ref)} onMouseDownCapture={() => { viewFocusRef.current = ref; }}>
+{rec && (
   <FullPageQuoteView 
-    quote={showFullPageQuote}
-    onMinimise={minimiseQuoteView}
-    onClose={() => setShowFullPageQuote(null)}
+    quote={rec}
+    onMinimise={() => minimiseView(ref)}
+    onSplit={() => toggleSplit(ref)}
+    isSplit={!!paneSide(ref)}
+    onClose={() => setViewRec(ref, null)}
     onEdit={handleEditQuote}
     onDuplicate={handleDuplicateQuote}
     onDelete={handleDeleteQuote}
@@ -32081,6 +32160,7 @@ onClick={() => {
   />
 )}
 </div>
+); })}
               <div className="p-4 sm:p-6 main-content-area">
                 {activeTab === 'dashboard' && <Dashboard jobs={jobs} customers={customers} suppliers={suppliers} />}
                 {activeTab === 'documents' && (
@@ -32224,6 +32304,8 @@ onClick={() => {
             job={w.record}
             onClose={() => closeFormWin(w.key)}
             onMinimise={(label) => minimiseFormWin(w.key, label)}
+            onSplit={() => toggleSplit(w.key)}
+            isSplit={!!paneSide(w.key)}
             onSave={(jobData) => {
               if (w.record) {
                 handleUpdateJob(jobData, w.key);
@@ -32241,6 +32323,8 @@ onClick={() => {
             quote={w.record}
             onClose={() => closeFormWin(w.key)}
             onMinimise={(label) => minimiseFormWin(w.key, label)}
+            onSplit={() => toggleSplit(w.key)}
+            isSplit={!!paneSide(w.key)}
             onSave={(q) => (w.record?.id ? handleUpdateQuote : handleAddQuote)(q, w.key)}
             setSuppliers={setSuppliers}
             {...common}
@@ -32264,6 +32348,75 @@ onClick={() => {
       .tws-full.tws-dock-on.tws-viewwrap > .fixed.inset-0 { bottom: 0; padding-bottom: 44px; }
     }
   `}</style>
+  {pickLeft && (() => {
+    const term = pickSearch.trim().toLowerCase();
+    const hit = (...parts) => !term || parts.some(p => String(p || '').toLowerCase().includes(term));
+    const leftRec = viewRec[pickLeft] || null;
+    const leftKind = VIEW_REFS.includes(pickLeft) ? viewKind(pickLeft) : null;
+    const jobRows = (jobs || []).filter(j => !j.isEvent && !(leftKind === 'jobView' && leftRec && leftRec.id === j.id) && hit(j.jobNumber, j.customerName, j.sitePostcode, j.jobType)).slice(0, 40);
+    const quoteRows = (quotes || []).filter(q => !(leftKind === 'quoteView' && leftRec && leftRec.id === q.id) && hit(q.quoteNumber, q.customerName, q.jobType)).slice(0, 40);
+    const fmt = (d) => { try { return d ? new Date(d).toLocaleDateString('en-GB') : ''; } catch (_) { return ''; } };
+    const row = 'w-full text-left px-4 py-2 border-b border-gray-100 hover:bg-blue-50 flex items-center justify-between gap-3';
+    return (
+      <div className={'tws-pane tws-pane-r tws-pick' + (dockCount > 0 ? ' tws-dock-on' : '')}>
+        <div className="h-full flex flex-col bg-white">
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-900">Open beside</h2>
+            <button type="button" onClick={() => setSplitPick(null)} title="Cancel, back to full width" className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"><X size={20} /></button>
+          </div>
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+            <input
+              autoFocus
+              type="text"
+              value={pickSearch}
+              onChange={(e) => setPickSearch(e.target.value)}
+              placeholder="Search job or quote number, customer, postcode"
+              className="tws-pick-search flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+            <button type="button" onClick={() => placeWin(pickLeft, { kind: 'job' })} className="tws-pick-newjob px-3 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap">New job</button>
+            <button type="button" onClick={() => placeWin(pickLeft, { kind: 'quote' })} className="tws-pick-newquote px-3 py-2 text-sm font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700 whitespace-nowrap">New quote</button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {dockChips.length > 0 && (
+              <div>
+                <p className="px-4 pt-3 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Minimised</p>
+                {dockChips.map(chip => (
+                  <button type="button" key={chip.key} onClick={() => placeWin(pickLeft, { chip })} className={'tws-pick-row ' + row}>
+                    <span className="font-medium text-gray-900 truncate">{chipLabel(chip)}</span>
+                    {(chip.kind === 'job' || chip.kind === 'quote') && <span className="text-xs text-amber-700 flex-shrink-0">editing</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="px-4 pt-3 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Jobs</p>
+            {jobRows.length === 0 && <p className="px-4 py-2 text-sm text-gray-400">No jobs match</p>}
+            {jobRows.map(j => (
+              <button type="button" key={j.id} onClick={() => placeWin(pickLeft, { kind: 'jobView', record: j })} className={'tws-pick-row tws-pick-job ' + row}>
+                <span className="min-w-0">
+                  <span className="font-semibold text-gray-900">{j.jobNumber}</span>
+                  <span className="ml-2 text-gray-700">{j.customerName}</span>
+                  <span className="block text-xs text-gray-500 truncate">{[j.jobType, j.sitePostcode].filter(Boolean).join(' / ')}</span>
+                </span>
+                <span className="text-xs text-gray-500 flex-shrink-0">{fmt(j.jobDate)}</span>
+              </button>
+            ))}
+            <p className="px-4 pt-4 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Quotes</p>
+            {quoteRows.length === 0 && <p className="px-4 py-2 text-sm text-gray-400">No quotes match</p>}
+            {quoteRows.map(q => (
+              <button type="button" key={q.id} onClick={() => placeWin(pickLeft, { kind: 'quoteView', record: q })} className={'tws-pick-row tws-pick-quote ' + row}>
+                <span className="min-w-0">
+                  <span className="font-semibold text-gray-900">{q.quoteNumber}</span>
+                  <span className="ml-2 text-gray-700">{q.customerName}</span>
+                  <span className="block text-xs text-gray-500 truncate">{q.jobType}</span>
+                </span>
+                <span className="text-xs text-gray-500 flex-shrink-0">{q.status}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  })()}
   {dockCount > 0 && <div style={{ height: 52 }} />}
   {dockCount > 0 && (
     <div className="tws-dock fixed left-0 right-0 bottom-14 sm:bottom-0 z-40 bg-gray-800 border-t border-gray-900 flex items-center gap-2 px-2 overflow-x-auto" style={{ height: 44 }}>
@@ -36201,7 +36354,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
        // Replace the existing QuoteForm component (around line 7141) with this FULLY TESTED version:
 
 // Quote Form Component - UPDATED TO MATCH JOB FORM LAYOUT
-const QuoteForm = ({ quote, onClose, onSave, onMinimise, customers, suppliers, sageProducts = [], user, setSuppliers = () => {}, addressSuggestions = [], showAddressSuggestions, setShowAddressSuggestions = () => {}, handleAddressSearch = () => {}, contactSuggestions = [], showContactSuggestions, setShowContactSuggestions = () => {}, handleContactSearch = () => {}, phoneSuggestions = [], showPhoneSuggestions, setShowPhoneSuggestions = () => {}, handlePhoneSearch = () => {} }) => {
+const QuoteForm = ({ quote, onClose, onSave, onMinimise, onSplit, isSplit, customers, suppliers, sageProducts = [], user, setSuppliers = () => {}, addressSuggestions = [], showAddressSuggestions, setShowAddressSuggestions = () => {}, handleAddressSearch = () => {}, contactSuggestions = [], showContactSuggestions, setShowContactSuggestions = () => {}, handleContactSearch = () => {}, phoneSuggestions = [], showPhoneSuggestions, setShowPhoneSuggestions = () => {}, handlePhoneSearch = () => {} }) => {
   // Suppliers currently shown as columns in the price comparison grid, and the
   // box for adding another. Display state only: the prices themselves live on
   // the line items, so nothing here reaches the database.
@@ -36683,10 +36836,10 @@ By approving this quotation and authorising us to commence services, you acknowl
       <div className="bg-white sm:rounded-xl w-full h-full sm:h-[calc(100vh-2rem)] overflow-y-auto mx-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-xl font-bold">{quote ? 'Edit Quote' : 'Add New Quote'}</h2>
-          <div className="flex items-center gap-3">
-            {onMinimise && <TwsMinimiseButton onClick={() => onMinimise(formData.customerName || '')} />}
-            <button onClick={onClose} title="Close">
-              <X size={24} />
+          <div className="flex items-center gap-1">
+            {onMinimise && <TwsWinButtons onMinimise={() => onMinimise(formData.customerName || '')} onSplit={onSplit} isSplit={isSplit} />}
+            <button onClick={onClose} title="Close" className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+              <X size={22} />
             </button>
           </div>
         </div>
