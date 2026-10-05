@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-02 15:30';
+const BUILD_STAMP = '2026-10-05 10:00';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -1671,6 +1671,161 @@ const JOB_TYPES_NEEDING_EWC = ['Skip Hire', 'Muck Away', 'Grab Hire', 'Roll-on R
 // Returns { rows } ready to insert, or { blocked } naming what is missing.
 // Nothing incomplete is ever published — a transfer note with no EWC code or
 // no carrier is not a document, it is a liability.
+// ── Moved out of JobForm ───────────────────────────────────────────────────
+// buildWtnRowsFromJob below is called by the automatic transfer note runner
+// in App. These three helpers were declared inside JobForm, so from there they
+// did not exist: building a note for a one-off job threw "parseJobLineItems is
+// not defined", and that stopped the run for every job after it as well.
+// They use nothing from the form, so they are simply declared here instead.
+// Phase 3 — helper: parse job line items into a normalised array.
+// Returns [{ lineItemIndex, productName, lineDescription, lineQty }, ...].
+// Used to seed the per-line picker on first WTN and to reconcile the
+// `lines` state with the current job whenever the job's line items
+// change underneath us.
+const parseJobLineItems = (jobObj) => {
+  const candidates = [jobObj?.lineItems, jobObj?.line_items, jobObj?.sageLineItems, jobObj?.sage_line_items];
+  let arr = [];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    if (Array.isArray(raw) && raw.length > 0) { arr = raw; break; }
+    if (typeof raw === 'string' && raw.length > 2) {
+      try { const p = JSON.parse(raw); if (Array.isArray(p) && p.length > 0) { arr = p; break; } } catch {}
+    }
+  }
+  return arr.map((li, idx) => ({
+    lineItemIndex: idx,
+    productName: li?.product_name || li?.productName || '',
+    lineDescription: li?.description || '',
+    lineQty: li?.quantity || null,
+    lineUnit: li?.unit || null,
+    // Set on the job so the transfer note does not have to be told it twice.
+    lineEwcCode: li?.ewc_code || li?.ewcCode || '',
+    // Per-line supplier, set on quotes and carried through on conversion.
+    supplierName: li?.supplier_name || li?.supplierName || '',
+  }));
+};
+
+// Section C of a transfer note names the carrier taking the waste away. That
+// is a per-line fact: one job can tip at several suppliers, and each note has
+// to name the one that actually took that load. Resolved from the line's own
+// supplier, falling back to the job header only when the header names a single
+// real supplier. A header reading "Multiple" is a label, not a carrier, and
+// must never reach a transfer note — that is what produced notes with a blank
+// carrier registration.
+const resolveLineTransferee = (jobObj, lineItemIndex, suppliersList) => {
+  const meta = parseJobLineItems(jobObj);
+  const lineMeta = meta.find(m => m.lineItemIndex === lineItemIndex);
+  const headerName = String(jobObj?.supplierName || jobObj?.supplier_name || '').trim();
+  const lineName = String(lineMeta?.supplierName || '').trim();
+  const name = lineName || ((headerName && headerName !== MULTIPLE_SUPPLIERS) ? headerName : '');
+  if (!name) return null;
+
+  const match = Array.isArray(suppliersList)
+    ? suppliersList.find(s => String(s.name || s.companyName || '').trim().toLowerCase() === name.toLowerCase())
+    : null;
+
+  const sites = (() => {
+    const raw = match?.siteAddresses || match?.site_addresses;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try { return JSON.parse(raw); } catch (e) { return []; }
+  })();
+  const firstSite = sites.length > 0 ? sites[0] : null;
+
+  return {
+    name,
+    // Section C takes the supplier's registered address, never a site address.
+    address: match ? [match.address, match.city, match.county, match.postcode].filter(Boolean).join(', ') : '',
+    postcode: match?.postcode || '',
+    carrierReg: match?.wasteCarrierLicense || match?.waste_carrier_license || firstSite?.cbduNumber || '',
+    permitNumber: match?.environmentalPermit || match?.environmental_permit || '',
+    representing: name,
+    onFile: !!match,
+  };
+};
+
+// Phase 3 — build the default `lines` state. One entry per job line item.
+// Each entry holds: meta (line index/product/desc/qty) + the per-line WTN
+// fields (waste description, EWC, container, process, quantity, unit,
+// hazardous, skipSize). The first line is included by default; additional
+// lines are NOT included by default — staff must tick to add a WTN. This
+// matches the historical behaviour where a single WTN was generated from
+// the first line item.
+const buildDefaultLines = (jobObj, suppliersList) => {
+  const meta = parseJobLineItems(jobObj);
+  if (meta.length === 0) {
+    // No line items — synthesise a single placeholder line so the form
+    // still works for legacy jobs without a populated line_items column.
+    return [{
+      lineItemIndex: 0,
+      productName: '',
+      lineDescription: '',
+      lineQty: null,
+      included: true,
+      wasteDescription: '',
+      // No line to read a code from — this is the placeholder for a job with
+      // no products on it at all.
+      listOfWasteCode: '',
+      wasteContainer: 'Skip',
+      wasteProcess: '',
+      quantity: jobObj?.quantity || 1,
+      unit: jobObj?.unit || 'tonnes',
+      isHazardous: !!jobObj?.hazardousWaste,
+      skipSize: jobObj?.skipSize || '',
+      // Phase 3 (post-fix11) — informational disposal site shown in
+      // Section D of the WTN. NOT a legal field; Section C transferee
+      // remains the supplier (carrier). Optional: only renders on the
+      // WTN if populated.
+      disposalSiteName: '',
+      disposalSiteAddress: '',
+      // fix16: site permit & carrier reg — shown alongside name/address in
+      // Section D so the customer can see the onward facility is regulated.
+      disposalSitePermit: '',
+      disposalSiteCarrierReg: '',
+    }];
+  }
+  return meta.map((m, i) => {
+    const lineTransferee = resolveLineTransferee(jobObj, m.lineItemIndex, suppliersList);
+    const skipSize = jobObj?.skipSize || null;
+    const productDesc = m.productName || (skipSize ? `${skipSize} Skip` : null) || jobObj?.sageProductName || null;
+    const descParts = [productDesc];
+    if (m.lineDescription && m.lineDescription !== m.productName) descParts.push(m.lineDescription);
+    if (jobObj?.wasteType && !descParts.includes(jobObj.wasteType)) descParts.push(jobObj.wasteType);
+    const wasteDesc = descParts.filter(Boolean).join(' — ') || jobObj?.jobType || '';
+    return {
+      ...m,
+      included: i === 0, // only first line ticked by default
+      wasteDescription: wasteDesc,
+      listOfWasteCode: m.lineEwcCode || '',
+      wasteContainer: jobObj?.jobType === 'Roll-on Roll-off' ? 'Roll-on roll-off container'
+                    : jobObj?.jobType === 'Muck Away' ? 'Loose'
+                    : jobObj?.jobType === 'Grab Hire' ? 'Loose' : 'Skip',
+      wasteProcess: '',
+      quantity: m.lineQty || jobObj?.quantity || 1,
+      // Per-line unit where the line item has one; job-level as the fallback.
+      unit: m.lineUnit || jobObj?.unit || 'tonnes',
+      isHazardous: !!jobObj?.hazardousWaste,
+      skipSize: m.productName || skipSize || '',
+      // Phase 3 (post-fix11) — informational disposal site (see comment
+      // on the synthesised-line case above).
+      disposalSiteName: '',
+      disposalSiteAddress: '',
+      // fix16: see synthesised-line case above
+      disposalSitePermit: '',
+      disposalSiteCarrierReg: '',
+      // Section C — the carrier for this line, resolved from the line's own
+      // supplier rather than the job header.
+      transfereeName: lineTransferee ? lineTransferee.name : '',
+      transfereeAddress: lineTransferee ? lineTransferee.address : '',
+      transfereePostcode: lineTransferee ? lineTransferee.postcode : '',
+      transfereeCarrierReg: lineTransferee ? lineTransferee.carrierReg : '',
+      transfereePermitNumber: lineTransferee ? lineTransferee.permitNumber : '',
+      transfereeRepresenting: lineTransferee ? lineTransferee.representing : '',
+    };
+  });
+};
+
+
 const buildWtnRowsFromJob = (job, { suppliers, customer, company, wtnNumber } = {}) => {
   if (!job || !job.id) return { blocked: 'no job' };
 
@@ -1744,7 +1899,7 @@ const buildWtnRowsFromJob = (job, { suppliers, customer, company, wtnNumber } = 
     notes: '',
   };
 
-  const rows = wtnFieldsToRows(fields, job.id);
+  const rows = window.wtnFieldsToRows(fields, job.id);
   if (!rows || rows.length === 0) return { blocked: 'nothing to raise' };
 
   return {
@@ -5717,154 +5872,9 @@ React.useEffect(() => {
     setWtnFields(prev => ({ ...prev, ...updates }));
   }
 }, [formData?.supplierName, formData?.customerName, formData?.siteAddress1, formData?.sitePostcode, formData?.lineItems]);
-// Phase 3 — helper: parse job line items into a normalised array.
-// Returns [{ lineItemIndex, productName, lineDescription, lineQty }, ...].
-// Used to seed the per-line picker on first WTN and to reconcile the
-// `lines` state with the current job whenever the job's line items
-// change underneath us.
-const parseJobLineItems = (jobObj) => {
-  const candidates = [jobObj?.lineItems, jobObj?.line_items, jobObj?.sageLineItems, jobObj?.sage_line_items];
-  let arr = [];
-  for (const raw of candidates) {
-    if (!raw) continue;
-    if (Array.isArray(raw) && raw.length > 0) { arr = raw; break; }
-    if (typeof raw === 'string' && raw.length > 2) {
-      try { const p = JSON.parse(raw); if (Array.isArray(p) && p.length > 0) { arr = p; break; } } catch {}
-    }
-  }
-  return arr.map((li, idx) => ({
-    lineItemIndex: idx,
-    productName: li?.product_name || li?.productName || '',
-    lineDescription: li?.description || '',
-    lineQty: li?.quantity || null,
-    lineUnit: li?.unit || null,
-    // Set on the job so the transfer note does not have to be told it twice.
-    lineEwcCode: li?.ewc_code || li?.ewcCode || '',
-    // Per-line supplier, set on quotes and carried through on conversion.
-    supplierName: li?.supplier_name || li?.supplierName || '',
-  }));
-};
-
-// Section C of a transfer note names the carrier taking the waste away. That
-// is a per-line fact: one job can tip at several suppliers, and each note has
-// to name the one that actually took that load. Resolved from the line's own
-// supplier, falling back to the job header only when the header names a single
-// real supplier. A header reading "Multiple" is a label, not a carrier, and
-// must never reach a transfer note — that is what produced notes with a blank
-// carrier registration.
-const resolveLineTransferee = (jobObj, lineItemIndex, suppliersList) => {
-  const meta = parseJobLineItems(jobObj);
-  const lineMeta = meta.find(m => m.lineItemIndex === lineItemIndex);
-  const headerName = String(jobObj?.supplierName || jobObj?.supplier_name || '').trim();
-  const lineName = String(lineMeta?.supplierName || '').trim();
-  const name = lineName || ((headerName && headerName !== MULTIPLE_SUPPLIERS) ? headerName : '');
-  if (!name) return null;
-
-  const match = Array.isArray(suppliersList)
-    ? suppliersList.find(s => String(s.name || s.companyName || '').trim().toLowerCase() === name.toLowerCase())
-    : null;
-
-  const sites = (() => {
-    const raw = match?.siteAddresses || match?.site_addresses;
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    try { return JSON.parse(raw); } catch (e) { return []; }
-  })();
-  const firstSite = sites.length > 0 ? sites[0] : null;
-
-  return {
-    name,
-    // Section C takes the supplier's registered address, never a site address.
-    address: match ? [match.address, match.city, match.county, match.postcode].filter(Boolean).join(', ') : '',
-    postcode: match?.postcode || '',
-    carrierReg: match?.wasteCarrierLicense || match?.waste_carrier_license || firstSite?.cbduNumber || '',
-    permitNumber: match?.environmentalPermit || match?.environmental_permit || '',
-    representing: name,
-    onFile: !!match,
-  };
-};
-
-// Phase 3 — build the default `lines` state. One entry per job line item.
-// Each entry holds: meta (line index/product/desc/qty) + the per-line WTN
-// fields (waste description, EWC, container, process, quantity, unit,
-// hazardous, skipSize). The first line is included by default; additional
-// lines are NOT included by default — staff must tick to add a WTN. This
-// matches the historical behaviour where a single WTN was generated from
-// the first line item.
-const buildDefaultLines = (jobObj, suppliersList) => {
-  const meta = parseJobLineItems(jobObj);
-  if (meta.length === 0) {
-    // No line items — synthesise a single placeholder line so the form
-    // still works for legacy jobs without a populated line_items column.
-    return [{
-      lineItemIndex: 0,
-      productName: '',
-      lineDescription: '',
-      lineQty: null,
-      included: true,
-      wasteDescription: '',
-      // No line to read a code from — this is the placeholder for a job with
-      // no products on it at all.
-      listOfWasteCode: '',
-      wasteContainer: 'Skip',
-      wasteProcess: '',
-      quantity: jobObj?.quantity || 1,
-      unit: jobObj?.unit || 'tonnes',
-      isHazardous: !!jobObj?.hazardousWaste,
-      skipSize: jobObj?.skipSize || '',
-      // Phase 3 (post-fix11) — informational disposal site shown in
-      // Section D of the WTN. NOT a legal field; Section C transferee
-      // remains the supplier (carrier). Optional: only renders on the
-      // WTN if populated.
-      disposalSiteName: '',
-      disposalSiteAddress: '',
-      // fix16: site permit & carrier reg — shown alongside name/address in
-      // Section D so the customer can see the onward facility is regulated.
-      disposalSitePermit: '',
-      disposalSiteCarrierReg: '',
-    }];
-  }
-  return meta.map((m, i) => {
-    const lineTransferee = resolveLineTransferee(jobObj, m.lineItemIndex, suppliersList);
-    const skipSize = jobObj?.skipSize || null;
-    const productDesc = m.productName || (skipSize ? `${skipSize} Skip` : null) || jobObj?.sageProductName || null;
-    const descParts = [productDesc];
-    if (m.lineDescription && m.lineDescription !== m.productName) descParts.push(m.lineDescription);
-    if (jobObj?.wasteType && !descParts.includes(jobObj.wasteType)) descParts.push(jobObj.wasteType);
-    const wasteDesc = descParts.filter(Boolean).join(' — ') || jobObj?.jobType || '';
-    return {
-      ...m,
-      included: i === 0, // only first line ticked by default
-      wasteDescription: wasteDesc,
-      listOfWasteCode: m.lineEwcCode || '',
-      wasteContainer: jobObj?.jobType === 'Roll-on Roll-off' ? 'Roll-on roll-off container'
-                    : jobObj?.jobType === 'Muck Away' ? 'Loose'
-                    : jobObj?.jobType === 'Grab Hire' ? 'Loose' : 'Skip',
-      wasteProcess: '',
-      quantity: m.lineQty || jobObj?.quantity || 1,
-      // Per-line unit where the line item has one; job-level as the fallback.
-      unit: m.lineUnit || jobObj?.unit || 'tonnes',
-      isHazardous: !!jobObj?.hazardousWaste,
-      skipSize: m.productName || skipSize || '',
-      // Phase 3 (post-fix11) — informational disposal site (see comment
-      // on the synthesised-line case above).
-      disposalSiteName: '',
-      disposalSiteAddress: '',
-      // fix16: see synthesised-line case above
-      disposalSitePermit: '',
-      disposalSiteCarrierReg: '',
-      // Section C — the carrier for this line, resolved from the line's own
-      // supplier rather than the job header.
-      transfereeName: lineTransferee ? lineTransferee.name : '',
-      transfereeAddress: lineTransferee ? lineTransferee.address : '',
-      transfereePostcode: lineTransferee ? lineTransferee.postcode : '',
-      transfereeCarrierReg: lineTransferee ? lineTransferee.carrierReg : '',
-      transfereePermitNumber: lineTransferee ? lineTransferee.permitNumber : '',
-      transfereeRepresenting: lineTransferee ? lineTransferee.representing : '',
-    };
-  });
-};
-
+// parseJobLineItems, resolveLineTransferee and buildDefaultLines used to live
+// here, inside JobForm. They are now at the top of the file, beside
+// buildWtnRowsFromJob, which needs them when it runs outside this form.
 // Phase 3 — when loading a job that already has saved WTN rows
 // (job.wtns array, populated by Phase 2's enrichJobsWithWtns), rebuild
 // the `lines` state from those rows. Each saved WTN row becomes a line
@@ -28175,6 +28185,24 @@ useEffect(() => {
   };
 }, []);
 
+// The automatic transfer note runner is defined inside the startup effect
+// below, which runs once, before anything has loaded. Read through this ref
+// it sees the jobs, customers and suppliers as they are when it runs. Read
+// directly, it saw the empty lists from the first render, found nothing due,
+// and so never published or held back a single note.
+const autoWtnDataRef = React.useRef({ jobs: [], customers: [], suppliers: [] });
+autoWtnDataRef.current = { jobs, customers, suppliers };
+// Run it once the jobs are in, and again at most hourly while the portal
+// stays open, so a tab left open overnight still raises the next day's notes.
+useEffect(() => {
+  if (!jobs || jobs.length === 0) return;
+  const last = window._autoWtnLastAttempt || 0;
+  if (Date.now() - last < 60 * 60 * 1000) return;
+  window._autoWtnLastAttempt = Date.now();
+  // A short wait so customers and suppliers, loaded alongside, are in too.
+  setTimeout(() => { if (window.publishDueRecurringWtns) window.publishDueRecurringWtns(); }, 3000);
+}, [jobs]);
+
 useEffect(() => {
   // Load company settings into localStorage on startup so WTN auto-fills everywhere
   (async () => {
@@ -28422,6 +28450,8 @@ useEffect(() => {
     window._autoWtnRunning = true;
     const held = [];
     let published = 0;
+    // Current data, not what this closure captured on the first render.
+    const { jobs, customers, suppliers } = autoWtnDataRef.current;
     try {
       const today = new Date().toISOString().split('T')[0];
       const due = (jobs || []).filter(j => wtnAutoDue(j, today).due);
@@ -28507,7 +28537,8 @@ useEffect(() => {
     }
   };
 
-  publishDueRecurringWtns();
+  // Started by the effect above once the jobs have loaded; calling it here
+  // ran it against nothing.
   window.publishDueRecurringWtns = publishDueRecurringWtns;
 
   // ── On-Stop Daily Rollover ─────────────────────────────────────────────
