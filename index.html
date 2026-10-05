@@ -881,7 +881,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-05 10:00';
+const BUILD_STAMP = '2026-10-05 11:00';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -10875,6 +10875,16 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
                                     const { error } = await window.supabase.from('jobs')
                                       .update({ wtn_portal_visible: false }).eq('id', job.id);
                                     if (error) throw error;
+                                    // Remember a person took it off, so the
+                                    // automatic run does not put it straight
+                                    // back. Written on its own: if the column
+                                    // has not been added yet this must not
+                                    // stop the note coming off.
+                                    try {
+                                      const { error: wErr } = await window.supabase.from('jobs')
+                                        .update({ wtn_portal_withdrawn: true }).eq('id', job.id);
+                                      if (wErr) console.warn('[WTN] could not record that this note was taken off by hand (wtn_portal_withdrawn missing?):', wErr.message);
+                                    } catch (_) {}
                                     alert('Taken off the customer portal.');
                                     // This form is not given a refresh function,
                                     // so ask the app for one.
@@ -28460,14 +28470,56 @@ useEffect(() => {
       // Which of them already have a note
       const dueIds = due.map(j => j.id).filter(Boolean);
       const { data: existing } = await window.supabase
-        .from('wtns').select('job_id').in('job_id', dueIds);
+        .from('wtns').select('id, job_id, portal_visible, sent, sent_at, waste_description, list_of_waste_code, transferee_name, transfer_date').in('job_id', dueIds);
       const hasNote = new Set((existing || []).map(r => r.job_id));
 
-      for (const job of due) {
-        if (hasNote.has(job.id)) continue;
+      // Which of the due jobs had their note taken off the portal by a
+      // person. Those are never put back automatically. If the column is not
+      // in the database yet, saved notes are listed for a person instead of
+      // being published, because there is no telling which were taken off.
+      let withdrawnKnown = true;
+      const withdrawn = new Set();
+      {
+        const { data: flags, error: flagErr } = await window.supabase
+          .from('jobs').select('id, wtn_portal_withdrawn').in('id', dueIds);
+        if (flagErr) { withdrawnKnown = false; console.warn('[Auto WTN] wtn_portal_withdrawn is not in the database yet:', flagErr.message); }
+        (flags || []).forEach(f => { if (f.wtn_portal_withdrawn) withdrawn.add(f.id); });
+      }
 
+      for (const job of due) {
         const note = (p) => ({ jobNumber: job.jobNumber, jobDate: job.jobDate || job.job_date,
                                customerName: job.customerName, reason: p });
+
+        // The job already has a note. Somebody filled it in on the job and
+        // saved it, which stores it without publishing. Skipping these meant
+        // the jobs staff had prepared were exactly the ones that never
+        // reached the portal.
+        if (hasNote.has(job.id)) {
+          const mine = (existing || []).filter(r => r.job_id === job.id);
+          if (mine.some(r => r.portal_visible || r.sent || r.sent_at)) continue;   // already with the customer
+          if (withdrawn.has(job.id)) continue;                                     // a person took it off
+          if (!withdrawnKnown) { held.push(note('a note is saved on the job but not published, and saved notes cannot be published automatically until the database change for this build has been run')); continue; }
+          const gaps = [];
+          mine.forEach((r, i) => {
+            const which = mine.length > 1 ? 'note ' + (i + 1) + ' ' : 'the saved note ';
+            if (!String(r.list_of_waste_code || '').trim()) gaps.push(which + 'has no EWC code');
+            if (!String(r.waste_description || '').trim()) gaps.push(which + 'has no waste description');
+            if (!String(r.transferee_name || '').trim()) gaps.push(which + 'names no carrier');
+          });
+          if (gaps.length > 0) { held.push(note(gaps.join('; '))); continue; }
+          const jobDay = String(job.jobDate || job.job_date || '').slice(0, 10);
+          const undated = mine.filter(r => !r.transfer_date).map(r => r.id);
+          if (undated.length > 0 && jobDay) {
+            await window.supabase.from('wtns').update({ transfer_date: jobDay }).in('id', undated);
+          }
+          const { error: pubErr } = await window.supabase
+            .from('wtns').update({ portal_visible: true }).in('id', mine.map(r => r.id));
+          if (pubErr) { held.push(note('could not publish the saved note: ' + (pubErr.message || 'unknown error'))); continue; }
+          await window.supabase.from('jobs').update({ wtn_portal_visible: true }).eq('id', job.id);
+          published += mine.length;
+          console.log('[Auto WTN] ' + job.jobNumber + ' — saved note published to the portal');
+          continue;
+        }
 
         // A recurring collection copies the previous note on its schedule:
         // same waste, same carrier, already checked by a person. A one-off has
@@ -28532,6 +28584,10 @@ useEffect(() => {
       // until a customer asked for one.
       window._autoWtnHeld = held;
       window._autoWtnLastRun = new Date().toISOString();
+      // Show what was just published without waiting for the next refresh.
+      if (published > 0 && typeof window.loadJobsFromSupabase === 'function') {
+        try { window.loadJobsFromSupabase(); } catch (e) {}
+      }
       try { window.dispatchEvent(new CustomEvent('tws-auto-wtn-done')); } catch (e) {}
       window._autoWtnRunning = false;
     }
