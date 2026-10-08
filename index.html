@@ -904,7 +904,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-08 11:30';
+const BUILD_STAMP = '2026-10-08 13:00';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -1722,7 +1722,10 @@ const JOB_TYPES_NEEDING_EWC = ['Skip Hire', 'Muck Away', 'Grab Hire', 'Roll-on R
 // Haulage is not a job type. It is a tick on a skip hire, grab hire or muck
 // away job that is collecting from one address and delivering to another.
 // Point A is the job's site. The tick and point B are kept in one column:
-//   { on: true, toName, toAddress, toPostcode }
+//   { on: true, toAddress, toPostcode, notWaste }
+// The same column also holds "not waste": a skip, grab or muck away job that
+// is moving something that is not waste (a grab shifting sand, say), so it
+// needs no EWC code and gets no transfer note.
 const HAULAGE_JOB_TYPES = ['Skip Hire', 'Grab Hire', 'Muck Away'];
 const parseHaulage = (job) => {
   let v = job && job.haulage;
@@ -1736,14 +1739,28 @@ const jobHasHaulage = (job) => {
   const hz = parseHaulage(job);
   return !!(hz && hz.on && HAULAGE_JOB_TYPES.includes(jobTypeOf(job)));
 };
+const jobNotWaste = (job) => {
+  const hz = parseHaulage(job);
+  return !!(hz && hz.notWaste && HAULAGE_JOB_TYPES.includes(jobTypeOf(job)));
+};
+// What goes in the column: nothing at all unless one of the two is ticked.
+const haulageToStore = (job) => {
+  const hz = parseHaulage(job) || {};
+  const on = jobHasHaulage(job), notWaste = jobNotWaste(job);
+  if (!on && !notWaste) return null;
+  const out = {};
+  if (on) { out.on = true; out.toName = hz.toName || ''; out.toAddress = hz.toAddress || ''; out.toPostcode = hz.toPostcode || ''; }
+  if (notWaste) out.notWaste = true;
+  return out;
+};
 const haulageToLine = (job) => {
   const hz = parseHaulage(job) || {};
   return [hz.toName, hz.toAddress, hz.toPostcode].map(v => String(v || '').trim()).filter(Boolean).join(', ');
 };
 // Does this job need an EWC code and a transfer note?
-const jobNeedsEwc = (job) => JOB_TYPES_NEEDING_EWC.includes(jobTypeOf(job));
+const jobNeedsEwc = (job) => JOB_TYPES_NEEDING_EWC.includes(jobTypeOf(job)) && !jobNotWaste(job);
 // The job types where the waste leaves on our paperwork.
-const jobMovesWaste = (job) => ['Skip Hire', 'Roll-on Roll-off', 'Muck Away', 'Grab Hire'].includes(jobTypeOf(job));
+const jobMovesWaste = (job) => ['Skip Hire', 'Roll-on Roll-off', 'Muck Away', 'Grab Hire'].includes(jobTypeOf(job)) && !jobNotWaste(job);
 
 // ── A transfer note built from the job ─────────────────────────────────────
 // A recurring collection copies last week's note. A one-off has nothing to
@@ -7706,28 +7723,27 @@ const [isEvent, setIsEvent] = useState(false);
           }, [formData.customerUnitPrice, formData.supplierUnitPrice, formData.quantity]);
 
 
-   // Haulage point A and point B. Plain functions returning markup (not
-   // components), so typing in them never remounts the inputs.
+   // Haulage point A and point B: an address and a postcode each. Plain
+   // functions returning markup (not components), so typing in them never
+   // remounts the inputs.
    const setHaulage = (patch) => setFormData(prev => ({ ...prev, haulage: { ...(parseHaulage(prev) || {}), ...patch } }));
    const haulageBox = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white';
    const renderHaulagePointA = () => (
      <div className="space-y-2">
-       <p className="text-sm font-medium text-gray-800">Collect from (point A)</p>
+       <p className="text-sm font-medium text-gray-800">A: collect from</p>
        <input type="text" className={'tws-haulage-from ' + haulageBox} placeholder="Address" value={formData.siteAddress1 || ''}
          onChange={(e) => { const v = e.target.value; setFormData(prev => ({ ...prev, siteAddress1: v })); }} />
-       <input type="text" className={haulageBox} placeholder="Postcode" value={formData.sitePostcode || ''}
+       <input type="text" className={'tws-haulage-from-pc ' + haulageBox} placeholder="Postcode" value={formData.sitePostcode || ''}
          onChange={(e) => { const v = e.target.value; setFormData(prev => ({ ...prev, sitePostcode: v })); }} />
-       <p className="text-xs text-gray-600">This is the job's site, the same address as on the Site Information tab.</p>
      </div>
    );
    const renderHaulagePointB = () => {
      const hz = parseHaulage(formData) || {};
      return (
        <div className="space-y-2">
-         <p className="text-sm font-medium text-gray-800">Deliver to (point B)</p>
-         <input type="text" className={haulageBox} placeholder="Site or company name (optional)" value={hz.toName || ''} onChange={(e) => setHaulage({ toName: e.target.value })} />
+         <p className="text-sm font-medium text-gray-800">B: deliver to</p>
          <input type="text" className={'tws-haulage-to ' + haulageBox} placeholder="Address" value={hz.toAddress || ''} onChange={(e) => setHaulage({ toAddress: e.target.value })} />
-         <input type="text" className={haulageBox} placeholder="Postcode" value={hz.toPostcode || ''} onChange={(e) => setHaulage({ toPostcode: e.target.value })} />
+         <input type="text" className={'tws-haulage-to-pc ' + haulageBox} placeholder="Postcode" value={hz.toPostcode || ''} onChange={(e) => setHaulage({ toPostcode: e.target.value })} />
        </div>
      );
    };
@@ -7758,18 +7774,19 @@ const [isEvent, setIsEvent] = useState(false);
       const gaps = [];
       if (!String(formData.siteAddress1 || '').trim() && !String(formData.sitePostcode || '').trim()) gaps.push('where it is collected from (point A)');
       if (!String(hz.toAddress || '').trim() && !String(hz.toPostcode || '').trim()) gaps.push('where it is going to (point B)');
-      if (gaps.length > 0 && !confirm('Haulage is ticked, but this job does not say ' + gaps.join(' or ') + '.\n\nOK = save it anyway.\nCancel = go back and add it.')) return;
+      if (gaps.length > 0 && !confirm('Haulage is ticked, but this job does not say ' + gaps.join(' or ') + '.\n\nThey are on the Site Information tab.\n\nOK = save it anyway.\nCancel = go back and add it.')) return;
     }
 
     try {
       const li = Array.isArray(formData.lineItems) ? formData.lineItems : [];
       const closed = formData.isCompleted || formData.isCancelled || (job && (job.isCompleted || job.isCancelled));
-      if (!isEvent && !closed && JOB_TYPES_EWC_ALERT.includes(formData.jobType) && !li.some(l => ewcOfLine(l))) {
+      if (!isEvent && !closed && JOB_TYPES_EWC_ALERT.includes(formData.jobType) && !jobNotWaste(formData) && !li.some(l => ewcOfLine(l))) {
         const go = confirm(
           'No EWC code on this ' + formData.jobType + ' job.\n\n' +
           (li.length === 0
             ? 'There are no products on it yet. Add the product, then pick its EWC code in the products table.'
             : 'Pick one in the EWC code column of the products table.') +
+          '\n\nIf this job is not moving waste, tick "Not waste" on the Job Details tab instead.' +
           '\n\nWithout a code no transfer note can be raised for this job, and it will sit on the dashboard as held back.\n\n' +
           'OK = save without a code for now.\nCancel = go back and add it.');
         if (!go) return;
@@ -8097,6 +8114,8 @@ const [isEvent, setIsEvent] = useState(false);
   // grab, so the arrows above the table drive it instead.
   // True while a site is being saved to the customer from the job form.
   const [savingSite, setSavingSite] = React.useState(false);
+  // On a haulage job the Site Information tab shows only A and B until asked.
+  const [showSiteExtras, setShowSiteExtras] = React.useState(false);
   const productScrollRef = React.useRef(null);
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
   const [canScrollRight, setCanScrollRight] = React.useState(false);
@@ -8793,7 +8812,7 @@ const [isEvent, setIsEvent] = useState(false);
                                 )}
                               </>
                             ) : (
-                              <span className="text-xs text-gray-400">Not needed for {formData.jobType || 'this job type'}</span>
+                              <span className="text-xs text-gray-400">{jobNotWaste(formData) ? 'Not needed: marked not waste' : 'Not needed for ' + (formData.jobType || 'this job type')}</span>
                             )}
                           </td>
                           <td className="px-4 py-3 align-top w-72 max-w-[22rem]">
@@ -9115,29 +9134,25 @@ const [isEvent, setIsEvent] = useState(false);
             </div>
           )}
 
-          {/* Haulage: a tick on a skip, grab or muck away job that collects
-              from one address and delivers to another. */}
+          {/* Not waste: a skip, grab or muck away job moving something that is
+              not waste, so it needs no EWC code and no transfer note. The
+              haulage tick and its two addresses are on the Site Information
+              tab. */}
           {HAULAGE_JOB_TYPES.includes(formData.jobType) && (
-            <div className={'tws-haulage rounded-lg border p-4 ' + (jobHasHaulage(formData) ? 'border-orange-300 bg-orange-50' : 'border-gray-200 bg-gray-50')}>
-              <label className="flex items-center gap-3 cursor-pointer">
+            <div className={'tws-notwaste rounded-lg border p-4 ' + (jobNotWaste(formData) ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50')}>
+              <label className="flex items-center gap-3 cursor-pointer flex-wrap">
                 <input
                   type="checkbox"
-                  className="tws-haulage-tick w-4 h-4 text-orange-600 rounded"
-                  checked={jobHasHaulage(formData)}
-                  onChange={(e) => setHaulage({ on: e.target.checked })}
+                  className="tws-notwaste-tick w-4 h-4 text-blue-600 rounded"
+                  checked={jobNotWaste(formData)}
+                  onChange={(e) => setHaulage({ notWaste: e.target.checked })}
                 />
-                <span className="text-sm font-medium text-gray-800">Haulage</span>
-                <span className="text-sm text-gray-600">collecting from one address and delivering to another</span>
+                <span className="text-sm font-medium text-gray-800">Not waste</span>
+                <span className="text-sm text-gray-600">no transfer note needed, for example a grab moving sand</span>
               </label>
-              {jobHasHaulage(formData) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                  {renderHaulagePointA()}
-                  {renderHaulagePointB()}
-                </div>
-              )}
-              {jobHasHaulage(formData) && (
-                <p className="text-xs text-gray-700 mt-3">
-                  On the transfer note, point A is where the waste is collected from and point B is shown as the site it is going to.
+              {jobNotWaste(formData) && (
+                <p className="text-xs text-blue-800 mt-2">
+                  No EWC code is asked for and no transfer note will be raised for this job.
                 </p>
               )}
             </div>
@@ -9219,14 +9234,33 @@ const [isEvent, setIsEvent] = useState(false);
 {/* Site Information Tab */}
 {activeTab === 'site' && (
   <div className="space-y-4">
-    {jobHasHaulage(formData) && (
-      <div className="tws-haulage-site rounded-lg border border-orange-300 bg-orange-50 p-4">
-        <p className="text-sm font-medium text-gray-800 mb-3">
-          Haulage job. The site on this tab is point A, where it is collected from. Point B is where it is going:
-        </p>
-        <div className="max-w-md">{renderHaulagePointB()}</div>
+    {HAULAGE_JOB_TYPES.includes(formData.jobType) && (
+      <div className={'tws-haulage rounded-lg border p-4 ' + (jobHasHaulage(formData) ? 'border-orange-300 bg-orange-50' : 'border-gray-200 bg-gray-50')}>
+        <label className="flex items-center gap-3 cursor-pointer flex-wrap">
+          <input
+            type="checkbox"
+            className="tws-haulage-tick w-4 h-4 text-orange-600 rounded"
+            checked={jobHasHaulage(formData)}
+            onChange={(e) => setHaulage({ on: e.target.checked })}
+          />
+          <span className="text-sm font-medium text-gray-800">Haulage</span>
+          <span className="text-sm text-gray-600">collecting from one address and delivering to another</span>
+        </label>
+        {jobHasHaulage(formData) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+            {renderHaulagePointA()}
+            {renderHaulagePointB()}
+          </div>
+        )}
+        {jobHasHaulage(formData) && (
+          <button type="button" onClick={() => setShowSiteExtras(v => !v)}
+            className="tws-site-extras-toggle mt-3 text-sm text-blue-700 underline">
+            {showSiteExtras ? 'Hide the other site details' : 'Add a site contact, phone or access notes'}
+          </button>
+        )}
       </div>
     )}
+    {(!jobHasHaulage(formData) || showSiteExtras) && (<>
     {/* ── Saved sites for this customer ──────────────────────────────────
         Picking from the list keeps the site spelled identically on every
         job, which is what makes PO requests group correctly and the WTN
@@ -9511,6 +9545,7 @@ const [isEvent, setIsEvent] = useState(false);
         placeholder="Any other relevant information..."
       />
     </div>
+    </>)}
   </div>
 )}
 
@@ -19716,6 +19751,12 @@ console.log(JSON.stringify(invoiceData, null, 2));
               <p className="font-semibold text-xs">{haulageToLine(job) || 'Not set'}</p>
             </div>
           )}
+          {jobNotWaste(job) && (
+            <div className="tws-notwaste-view col-span-1 sm:col-span-2">
+              <span className="text-xs text-gray-600">Waste:</span>
+              <p className="font-semibold text-xs">Not waste, no transfer note needed</p>
+            </div>
+          )}
           
           {/* Payment Info */}
           <div>
@@ -29497,7 +29538,7 @@ const setShowFullPageQuote = (v) => {
       job_date: newJob.jobDate || null,
       customer_name: newJob.customerName,
       customer_po: newJob.customerPO || null,
-      ...(jobHasHaulage(newJob) ? { haulage: parseHaulage(newJob) } : {}),
+      ...(haulageToStore(newJob) ? { haulage: haulageToStore(newJob) } : {}),
       supplier_name: newJob.supplierName || null,
       supplier_ref: newJob.supplierRef || null,
       haulier_name: newJob.haulierName || null,
@@ -29681,11 +29722,11 @@ const setShowFullPageQuote = (v) => {
       // updatedJob without customerPO), fall back to the snake_case
       // value rather than writing undefined → null and wiping the PO.
       customer_po: updatedJob.customerPO ?? updatedJob.customer_po ?? null,
-      // Only sent when haulage is ticked, or was: the column is new, and
+      // Only sent when Haulage or Not waste is ticked, or was: the column is new, and
       // sending it on every save would fail every save on a database that
       // has not had it added. Unticking clears it.
-      ...((jobHasHaulage(updatedJob) || parseHaulage(updatedJob))
-        ? { haulage: jobHasHaulage(updatedJob) ? parseHaulage(updatedJob) : null } : {}),
+      ...((haulageToStore(updatedJob) || parseHaulage(updatedJob))
+        ? { haulage: haulageToStore(updatedJob) } : {}),
       supplier_name: updatedJob.supplierName,
       supplier_ref: updatedJob.supplierRef,
       haulier_name: updatedJob.haulierName,
@@ -29805,7 +29846,7 @@ collection_date: updatedJob.collectionDate || null,
       delete retry.haulage;
       ({ error } = await window.supabase.from('jobs').update(retry).eq('id', updatedJob.id));
       if (!error) {
-        alert('Job saved, but the haulage tick and point B could not be stored because the database is missing the haulage column.\n\nEverything else was saved. Tell whoever looks after the database.');
+        alert('Job saved, but the Haulage and Not waste ticks and point B could not be stored because the database is missing the haulage column.\n\nEverything else was saved. Tell whoever looks after the database.');
       }
     }
 
@@ -30235,7 +30276,7 @@ const handleCompleteJob = async (job, sendChoice) => {
   // For non-waste jobs and undrafted-WTN cases we fall through with sendChoice
   // implicitly set to 'skip', preserving the previous behaviour.
   const jobTypeForCheck = job.jobType || job.job_type || '';
-  const isWasteJobForPrompt = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(jobTypeForCheck);
+  const isWasteJobForPrompt = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(jobTypeForCheck) && !jobNotWaste(job);
   const hasParentForPrompt = !!(job.parentJobId || job.parent_job_id);
   const hasDraftedWtn = !!(job.wtn_data || job.wtnData || (Array.isArray(job.wtns) && job.wtns.length > 0));
 
@@ -30561,7 +30602,7 @@ const handleCompleteJob = async (job, sendChoice) => {
     const jobWtnData = job.wtn_data || job.wtnData;
     const jobHasAnyWtn = hasNewWtns || !!jobWtnData;
     const jobTypeForCheck = job.jobType || job.job_type || updatedJob.jobType || updatedJob.job_type || '';
-    const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(jobTypeForCheck);
+    const isWasteJob = ['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(jobTypeForCheck) && !jobNotWaste(job);
     
     // For standalone jobs (not recurring children) with saved WTN data — publish to portal now
     // BUT first refresh the job-derived fields (quantity, description, addresses) from the current
