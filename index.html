@@ -654,6 +654,11 @@ function jobContentFingerprint(j) {
   for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
   return String(h);
 }
+// Which jobs are in a list, by id and number. Used to notice when the list on
+// screen holds something the database does not (or the other way round).
+function jobsListKey(list) {
+  return (list || []).map(j => String(j && j.id) + ':' + String((j && j.jobNumber) || '')).sort().join('|');
+}
 function buildJobsSignature(jobs) {
   if (!Array.isArray(jobs)) return '';
   // Sort-independent count + per-row update fields, hashed into one string
@@ -904,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-08 14:00';
+const BUILD_STAMP = '2026-10-08 16:45';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -28417,7 +28422,13 @@ collectionDate: job.collection_date,
   // fix32m — skip setJobs if nothing actually changed since last load.
   // Prevents the 30s auto-refresh from invalidating every memo for free.
   const newSig = buildJobsSignature(enriched);
-  if (newSig !== window.__lastJobsSignature) {
+  // Also replace the list when what is on screen is not what the database
+  // holds. The check above compares this load with the last load, so a job
+  // on screen that is not in the database (or is there under another number)
+  // used to stay until some unrelated job happened to change.
+  let screenDiffers = false;
+  try { screenDiffers = jobsListKey(autoWtnDataRef.current.jobs) !== jobsListKey(enriched); } catch (e) {}
+  if (newSig !== window.__lastJobsSignature || screenDiffers) {
     window.__lastJobsSignature = newSig;
     setJobs(enriched);
     console.log('Loaded', data.length, 'jobs from Supabase');
@@ -28539,7 +28550,9 @@ updatedAt: job.updated_at,
             const enriched = await enrichJobsWithWtns(jobsWithCamelCase);
             // fix32m — skip setJobs if nothing changed
             const newSig = buildJobsSignature(enriched);
-            if (newSig !== window.__lastJobsSignature) {
+            let screenDiffers = false;
+            try { screenDiffers = jobsListKey(autoWtnDataRef.current.jobs) !== jobsListKey(enriched); } catch (e) {}
+            if (newSig !== window.__lastJobsSignature || screenDiffers) {
               window.__lastJobsSignature = newSig;
               setJobs(enriched);
               console.log('Refreshed', data.length, 'jobs from Supabase');
@@ -29593,8 +29606,12 @@ const setShowFullPageQuote = (v) => {
           ];
 
  const handleAddJob = async (newJob, winKey) => {
-  // Prevent duplicate submissions
-  if (isSubmitting) return;
+  // Prevent duplicate submissions. The flag on window is what actually stops
+  // a double click: two clicks in the same instant both read isSubmitting as
+  // false. Returns false when it did nothing, so a caller that goes on to
+  // record the job elsewhere (a quote conversion) can tell.
+  if (isSubmitting || window._addingJob) return false;
+  window._addingJob = true;
   setIsSubmitting(true);
   
   try {
@@ -29717,6 +29734,7 @@ const setShowFullPageQuote = (v) => {
     if (newJob.isRecurring && window.checkRecurringJobs) {
       setTimeout(() => window.checkRecurringJobs(), 500);
     }
+    return true;
   } catch (error) {
     console.error('Error adding job:', error);
     // Say so, and tell whoever called. Swallowing this quietly is how a quote
@@ -29726,6 +29744,7 @@ const setShowFullPageQuote = (v) => {
           '\n\nNothing has been created. Try again, and if it keeps happening send this message on.');
     throw error;
   } finally {
+    window._addingJob = false;
     setIsSubmitting(false);
   }
 };
@@ -29890,7 +29909,14 @@ collection_date: updatedJob.collectionDate || null,
         console.warn('[job save] could not read the current row, saving everything:', e);
         return mine;
       }
-      const opened = buildJobPayload({ ...updatedJob, ...openedWith, id: updatedJob.id });
+      // What the job said when the form opened, built from that snapshot
+      // alone. It used to be laid over the job being saved, so any field the
+      // snapshot did not hold was filled in from the save itself, looked
+      // unchanged, and was dropped. A job created or converted in this
+      // session, before the list had reloaded it from the database, has a
+      // thin snapshot, so ticking Hazardous (or Haulage) on it straight away
+      // was silently not saved.
+      const opened = buildJobPayload({ ...openedWith, id: updatedJob.id });
       const { payload, conflicts } = mergeJobUpdate(mine, opened, current);
       // Both changed the same field: yours wins, no prompt. Logged so there is
       // a trace if two people ever disagree about what a job said.
@@ -32103,72 +32129,36 @@ const handleSendQuote = async (quote) => {
   }
 };
 
+// Accepting a quote records that the customer said yes. It does not create a
+// job. It used to try to, building a job with no job number, which the
+// database refused every time ("null value in column job_number"), so the
+// quote could never be marked accepted at all. Jobs are created by Convert to
+// Job, which numbers them properly and tracks each product, so that is
+// offered straight afterwards for whatever has not been converted yet.
 const handleAcceptQuote = async (quote) => {
   try {
-    // Create job from quote
-    const newJob = {
-      customerName: quote.customerName,
-      customerPO: quote.customerPO || '',
-      supplierName: quote.supplierName || '',
-      supplierRef: '',
-      jobType: quote.jobType,
-      wasteType: quote.wasteType || '',
-      skipSize: quote.skipSize || '',
-      aggregateType: quote.aggregateType || '',
-      quantity: quote.quantity,
-      unit: quote.unit,
-      customerUnitPrice: quote.price,
-      customerFinalPrice: quote.totalPrice,
-      supplierUnitPrice: 0,
-      supplierFinalPrice: 0,
-      vatRate: 20,
-      jobDate: quote.deliveryDate || new Date().toISOString().split('T')[0],
-      status: 'CONFIRMED',
-      // The site as entered on the quote, not the customer's own details, and
-      // not blanked. Line two, the town, the site contact and the site notes
-      // were being dropped at conversion, and the contact and phone were read
-      // from the customer record rather than the site.
-      siteAddress: quote.siteAddress1 || quote.siteAddress || '',
-      siteAddress1: quote.siteAddress1 || quote.siteAddress || '',
-      siteAddress2: quote.siteAddress2 || '',
-      siteCity: quote.siteCity || '',
-      sitePostcode: quote.sitePostcode || '',
-      siteContact: quote.siteContact || quote.customerContact || '',
-      sitePhone: quote.sitePhone || quote.customerPhone || '',
-      siteNotes: quote.siteNotes || '',
-      notes: `Created from accepted quote ${quote.quoteNumber}. ${quote.notes || ''}`.trim(),
-      invoiceNumber: '',
-      invoiceStatus: 'Not Invoiced',
-      paymentStatus: 'Not Paid',
-      isCompleted: false,
-      isCancelled: false,
-      lineItems: quote.lineItems || []
-    };
-    
-    // Save job
-    await handleAddJob(newJob);
-    
-    // Update quote status
-    const updatedQuote = {
-      ...quote,
-      status: 'ACCEPTED',
-      accepted_date: new Date().toISOString()
-    };
-    
+    const acceptedAt = new Date().toISOString();
     const { error } = await window.supabase
       .from('quotes')
-      .update({ 
-        status: 'ACCEPTED',
-        accepted_date: new Date().toISOString()
-      })
+      .update({ status: 'ACCEPTED', accepted_date: acceptedAt })
       .eq('id', quote.id);
-    
     if (error) throw error;
-    
+
+    const updatedQuote = { ...quote, status: 'ACCEPTED', accepted_date: acceptedAt };
     setQuotes(quotes.map(q => q.id === quote.id ? updatedQuote : q));
-    setShowFullPageQuote(null);
-    setActiveTab('jobs');
-    alert(`Quote ${quote.quoteNumber} accepted and job created!`);
+    setShowFullPageQuote(updatedQuote);
+
+    const state = quoteConversionState(updatedQuote);
+    const left = (updatedQuote.lineItems || []).filter(it => !quoteLineJob(it)).length;
+    if (left > 0 && !state.legacy) {
+      if (confirm(`Quote ${quote.quoteNumber} marked as accepted.\n\n` +
+                  `${left} product${left === 1 ? ' is' : 's are'} not on a job yet. Create the job now?\n\n` +
+                  'OK = choose the products and create the job.\nCancel = leave it for later (use Convert to Job).')) {
+        handleConvertQuoteToJob(updatedQuote);
+      }
+    } else {
+      alert(`Quote ${quote.quoteNumber} marked as accepted.`);
+    }
   } catch (error) {
     console.error('Error accepting quote:', error);
     alert('Error accepting quote: ' + error.message);
@@ -32222,7 +32212,16 @@ const handleRejectQuote = async (quote) => {
 
    // Convert to Job opens a picker first; this does the work once the lines
    // have been chosen.
+   // A second click on Create job, before the screen has caught up with the
+   // first, used to run the whole conversion again: two job numbers taken and
+   // two jobs created from one quote line. Only one conversion runs at a time.
    const performConvertQuoteToJob = async (quote, selectedIndices) => {
+     if (window._convertingQuote) return;
+     window._convertingQuote = true;
+     try { await performConvertQuoteToJobInner(quote, selectedIndices); }
+     finally { window._convertingQuote = false; }
+   };
+   const performConvertQuoteToJobInner = async (quote, selectedIndices) => {
   const picked = new Set(selectedIndices || []);
   const chosenLines = (quote.lineItems || []).filter((_, i) => picked.has(i));
   if (chosenLines.length === 0) {
@@ -32313,7 +32312,8 @@ const handleRejectQuote = async (quote) => {
     };
     
    // Save job using handleAddJob which handles field conversions
-await handleAddJob(newJob);
+const jobWasSaved = await handleAddJob(newJob);
+if (!jobWasSaved) throw new Error('The job was not created because another job was being saved at the same moment. Nothing on the quote has been changed. Try again.');
 
     // File the site against the customer if it is not already there. Reported
     // in the confirmation rather than silently, so it is obvious when the site
