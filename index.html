@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-08 17:15';
+const BUILD_STAMP = '2026-10-08 17:45';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -14953,7 +14953,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
       >
         <td className={`px-6 py-4 whitespace-nowrap ${
   quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  (quote.status === 'CONVERTED' || quote.status === 'ACCEPTED') ? 'line-through decoration-green-500' :
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           <div className="text-sm font-medium text-gray-900">{quote.quoteNumber}</div>
@@ -14961,7 +14961,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
   quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  (quote.status === 'CONVERTED' || quote.status === 'ACCEPTED') ? 'line-through decoration-green-500' :
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           <div>
@@ -14974,14 +14974,14 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
   quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  (quote.status === 'CONVERTED' || quote.status === 'ACCEPTED') ? 'line-through decoration-green-500' :
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           {quote.supplierName || '-'}
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
   quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  (quote.status === 'CONVERTED' || quote.status === 'ACCEPTED') ? 'line-through decoration-green-500' :
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           {(() => {
@@ -15002,21 +15002,21 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
   quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  (quote.status === 'CONVERTED' || quote.status === 'ACCEPTED') ? 'line-through decoration-green-500' :
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           {quote.siteAddress || quote.siteAddress1 || '-'}
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
   quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  (quote.status === 'CONVERTED' || quote.status === 'ACCEPTED') ? 'line-through decoration-green-500' :
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           {quote.sitePostcode || quote.postcode || '-'}
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
   quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  (quote.status === 'CONVERTED' || quote.status === 'ACCEPTED') ? 'line-through decoration-green-500' :
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           {quote.jobType}
@@ -15027,8 +15027,8 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
           }`}>
             {expired && quote.status === 'PENDING' ? 'EXPIRED' : quote.status}
           </span>
-          {/* Part converted: not crossed out, because there is still a
-              product to put on a job, but it says how far it has got. */}
+          {/* Part converted: says how far it has got. An accepted quote is
+              crossed out in green like a converted one. */}
           {(() => {
             const cs = quoteConversionState(quote);
             return cs.partial ? (
@@ -15040,7 +15040,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
         </td>
         <td className={`px-6 py-4 whitespace-nowrap ${
   quote.status === 'REJECTED' ? 'line-through decoration-red-500' :
-  quote.status === 'CONVERTED' ? 'line-through decoration-green-500' :
+  (quote.status === 'CONVERTED' || quote.status === 'ACCEPTED') ? 'line-through decoration-green-500' :
   expired ? 'line-through decoration-gray-500' : ''
 }`}>
           {quote.status === 'REJECTED' ? (quote.rejected_reason || '-') : '-'}
