@@ -638,6 +638,22 @@ function combinePartsToAddress({ line1, line2, city, postcode }) {
 // likely to actually change (status, completion, on-stop, updated_at, count).
 // If the fingerprint matches the previously-stored one, we keep the existing
 // state reference rather than calling setJobs with a brand new array.
+function jobContentFingerprint(j) {
+  let text = '';
+  try {
+    text = JSON.stringify([
+      j.jobDate, j.collectionDate, j.jobType, j.customerName, j.customerPO, j.supplierName,
+      j.siteAddress1, j.sitePostcode, j.quantity, j.unit,
+      j.lineItems, j.haulage, j.isHazardous, j.consignmentNote, j.consignmentNoteReceived,
+      j.wtnPortalVisible, j.wtnSent,
+      Array.isArray(j.wtns) ? j.wtns.map(w => [w && w.id, w && (w.portalVisible || w.portal_visible), w && w.sent, w && (w.listOfWasteCode || w.list_of_waste_code)]) : null,
+    ]);
+  } catch (e) { return ''; }
+  // Short hash, so the fingerprint stays small across a couple of thousand jobs.
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return String(h);
+}
 function buildJobsSignature(jobs) {
   if (!Array.isArray(jobs)) return '';
   // Sort-independent count + per-row update fields, hashed into one string
@@ -652,7 +668,14 @@ function buildJobsSignature(jobs) {
     (j.invoiceStatus || j.invoice_status || '') + ':' +
     (j.invoiceNumber || j.invoice_number || '') + ':' +
     (j.sageSiNumber || j.sage_si_number || '') + ':' +
-    (j.paymentStatus || j.payment_status || '')
+    (j.paymentStatus || j.payment_status || '') + ':' +
+    // What is ON the job. Without this, a change to a product line (an EWC
+    // code, a supplier, a price), the date, the PO or the transfer note left
+    // the fingerprint identical, so the reload threw the new data away and
+    // everything reading the jobs list went on using the old job: the
+    // dashboard's held notes, and every colleague's screen until they
+    // refreshed the page.
+    jobContentFingerprint(j)
   );
   return jobs.length + '#' + parts.join('|');
 }
@@ -881,7 +904,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-05 11:00';
+const BUILD_STAMP = '2026-10-08 11:30';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -1534,7 +1557,7 @@ const wtnAutoDue = (job, todayStr) => {
   // from, so it is built from the job, which is why the EWC code is set on the
   // product line.
   const jobType = String(job.jobType || job.job_type || '');
-  if (!JOB_TYPES_NEEDING_EWC.includes(jobType)) {
+  if (!jobNeedsEwc(job)) {
     return { due: false, reason: 'no waste moves on a ' + (jobType || 'job of this type') };
   }
   const when = String(job.jobDate || job.job_date || '').slice(0, 10);
@@ -1660,7 +1683,67 @@ const creditApprovalEmail = ({ customerName, limit, terms, ordersRequired, compa
 
 // Job types where waste moves, so a transfer note is needed and the line has
 // to carry an EWC code. Aggregates delivered to site are not waste.
+// The job types where a missing EWC code is asked about when the job is saved.
+const JOB_TYPES_EWC_ALERT = ['Skip Hire', 'Muck Away', 'Grab Hire'];
+
+// A job keeps its lines in two columns, and either can arrive as an array, a
+// JSON string, or a JSON string inside a JSON string.
+const ewcParseLines = (raw) => {
+  let v = raw;
+  for (let i = 0; i < 2 && typeof v === 'string'; i++) {
+    try { v = JSON.parse(v); } catch (e) { return []; }
+  }
+  return Array.isArray(v) ? v : [];
+};
+const ewcLineKey = (it) => String((it && (it.product_name || it.productName || it.description)) || '').trim().toLowerCase();
+const ewcOfLine = (it) => String((it && (it.ewc_code || it.ewcCode)) || '').trim();
+// Copies EWC codes onto lines that have none, matching on the product. Never
+// changes a code that is already there. Returns the lines and how many were
+// filled.
+const fillBlankEwc = (items, ...sources) => {
+  const known = {};
+  sources.forEach(src => ewcParseLines(src).forEach(it => {
+    const k = ewcLineKey(it), code = ewcOfLine(it);
+    if (k && code && !known[k]) known[k] = code;
+  }));
+  let filled = 0;
+  const out = ewcParseLines(items).map(it => {
+    if (!it || ewcOfLine(it)) return it;
+    const code = known[ewcLineKey(it)];
+    if (!code) return it;
+    filled++;
+    return { ...it, ewc_code: code };
+  });
+  return { items: out, filled };
+};
+
 const JOB_TYPES_NEEDING_EWC = ['Skip Hire', 'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Other'];
+
+// Haulage is not a job type. It is a tick on a skip hire, grab hire or muck
+// away job that is collecting from one address and delivering to another.
+// Point A is the job's site. The tick and point B are kept in one column:
+//   { on: true, toName, toAddress, toPostcode }
+const HAULAGE_JOB_TYPES = ['Skip Hire', 'Grab Hire', 'Muck Away'];
+const parseHaulage = (job) => {
+  let v = job && job.haulage;
+  for (let i = 0; i < 2 && typeof v === 'string'; i++) {
+    try { v = JSON.parse(v); } catch (e) { return null; }
+  }
+  return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null;
+};
+const jobTypeOf = (job) => String((job && (job.jobType || job.job_type)) || '');
+const jobHasHaulage = (job) => {
+  const hz = parseHaulage(job);
+  return !!(hz && hz.on && HAULAGE_JOB_TYPES.includes(jobTypeOf(job)));
+};
+const haulageToLine = (job) => {
+  const hz = parseHaulage(job) || {};
+  return [hz.toName, hz.toAddress, hz.toPostcode].map(v => String(v || '').trim()).filter(Boolean).join(', ');
+};
+// Does this job need an EWC code and a transfer note?
+const jobNeedsEwc = (job) => JOB_TYPES_NEEDING_EWC.includes(jobTypeOf(job));
+// The job types where the waste leaves on our paperwork.
+const jobMovesWaste = (job) => ['Skip Hire', 'Roll-on Roll-off', 'Muck Away', 'Grab Hire'].includes(jobTypeOf(job));
 
 // ── A transfer note built from the job ─────────────────────────────────────
 // A recurring collection copies last week's note. A one-off has nothing to
@@ -1808,8 +1891,11 @@ const buildDefaultLines = (jobObj, suppliersList) => {
       skipSize: m.productName || skipSize || '',
       // Phase 3 (post-fix11) — informational disposal site (see comment
       // on the synthesised-line case above).
-      disposalSiteName: '',
-      disposalSiteAddress: '',
+      // Haulage ticked: point B on the job is where the waste is being taken.
+      disposalSiteName: jobHasHaulage(jobObj) ? String((parseHaulage(jobObj) || {}).toName || '') : '',
+      disposalSiteAddress: jobHasHaulage(jobObj)
+        ? [(parseHaulage(jobObj) || {}).toAddress, (parseHaulage(jobObj) || {}).toPostcode].map(v => String(v || '').trim()).filter(Boolean).join(', ')
+        : '',
       // fix16: see synthesised-line case above
       disposalSitePermit: '',
       disposalSiteCarrierReg: '',
@@ -1830,7 +1916,7 @@ const buildWtnRowsFromJob = (job, { suppliers, customer, company, wtnNumber } = 
   if (!job || !job.id) return { blocked: 'no job' };
 
   const jobType = String(job.jobType || job.job_type || '');
-  if (!JOB_TYPES_NEEDING_EWC.includes(jobType)) {
+  if (!jobNeedsEwc(job)) {
     return { blocked: 'no waste moves on a ' + (jobType || 'job of this type') };
   }
 
@@ -2068,6 +2154,8 @@ const [postcodeSearch, setPostcodeSearch] = useState('');
 const [postcodePrices, setPostcodePrices] = useState([]);
 const [loadingPrices, setLoadingPrices] = useState(false);
 const [postcodeOptions, setPostcodeOptions] = useState([]);
+const [priceProductSearch, setPriceProductSearch] = useState('');
+const [priceSearchRan, setPriceSearchRan] = useState(false);
 
   // What has actually been used on jobs of this type, most-used first.
   // Cached per job type on the module so switching tabs does not re-query.
@@ -2160,66 +2248,88 @@ const getFilteredProducts = () => {
   });
 };
 
+// Previous prices, by postcode, by product, or both. Postcode alone is the
+// original behaviour. Product alone looks across every job, so it answers
+// "what have we charged for topsoil anywhere"; with both, it is that product
+// at that postcode.
 const searchPostcodePrices = async () => {
-  if (!postcodeSearch) {
-    alert('Please enter a postcode');
+  const postcode = String(postcodeSearch || '').toUpperCase().trim();
+  const productTerm = String(priceProductSearch || '').toLowerCase().trim();
+  if (!postcode && !productTerm) {
+    alert('Enter a postcode, a product, or both');
     return;
   }
-  
+
   setLoadingPrices(true);
   try {
-    const { data, error } = await window.supabase
-      .from('jobs')
-      .select('*')  // Get ALL fields so we can see what's available
-      .eq('site_postcode', postcodeSearch.toUpperCase().trim())
-      .order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    
-    console.log('Full job data:', data); // Check what fields have actual prices
-    
-    if (data && data.length > 0) {
-      const productsMap = new Map();
-      
-      data.forEach(job => {
-        if (job.sage_line_items) {
-          const lineItems = typeof job.sage_line_items === 'string' 
-            ? JSON.parse(job.sage_line_items) 
-            : job.sage_line_items;
-          
-        lineItems.forEach(item => {
-  const key = `${item.product_name}_${item.description || ''}`;
-  if (!productsMap.has(key)) {
-    productsMap.set(key, []);
-  }
-  
-  // Debug log to verify we're getting the right data
-  console.log('Item customer_price:', item.customer_price);
-  console.log('Item supplier_price:', item.supplier_price);
-  
-  productsMap.get(key).push({
-    job_number: job.job_number,
-    customer_name: job.customer_name,
-    product_name: item.product_name || item.description,
-    description: item.description || '',
-    quantity: item.quantity || 1,
-    // Use the CORRECT field names and parse the STRING to number
-    unit_price: parseFloat(item.customer_price) || 0,
-    cost_price: parseFloat(item.supplier_price) || 0,
-    date: job.created_at
-  });
-});
-        }
-      });
-      
-      setPostcodePrices(Array.from(productsMap.entries()));
+    const columns = 'job_number, customer_name, site_postcode, created_at, sage_line_items, line_items';
+    let data = [];
+    if (postcode) {
+      const res = await window.supabase
+        .from('jobs').select(columns)
+        .eq('site_postcode', postcode)
+        .order('created_at', { ascending: false });
+      if (res.error) throw res.error;
+      data = res.data || [];
     } else {
-      setPostcodePrices([]);
-      alert('No jobs found for postcode: ' + postcodeSearch);
+      // Line items are stored as text inside the column, so they cannot be
+      // searched in the database. Read the jobs newest first, a page at a
+      // time, and match here.
+      const PAGE = 1000;
+      for (let page = 0; page < 5; page++) {
+        const res = await window.supabase
+          .from('jobs').select(columns)
+          .order('created_at', { ascending: false })
+          .range(page * PAGE, page * PAGE + PAGE - 1);
+        if (res.error) throw res.error;
+        data = data.concat(res.data || []);
+        if (!res.data || res.data.length < PAGE) break;
+      }
     }
+
+    const itemsOf = (job) => {
+      for (const raw of [job.sage_line_items, job.line_items]) {
+        if (!raw) continue;
+        let v = raw;
+        if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+        if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+        if (Array.isArray(v) && v.length > 0) return v;
+      }
+      return [];
+    };
+    const words = productTerm ? productTerm.split(/\s+/).filter(Boolean) : [];
+    const productsMap = new Map();
+    data.forEach(job => {
+      itemsOf(job).forEach(item => {
+        if (!item) return;
+        if (words.length > 0) {
+          const hay = (String(item.product_name || '') + ' ' + String(item.description || '')).toLowerCase();
+          if (!words.every(wd => hay.includes(wd))) return;
+        }
+        const key = `${item.product_name}_${item.description || ''}`;
+        if (!productsMap.has(key)) productsMap.set(key, []);
+        productsMap.get(key).push({
+          job_number: job.job_number,
+          customer_name: job.customer_name,
+          postcode: job.site_postcode || '',
+          product_name: item.product_name || item.description,
+          description: item.description || '',
+          quantity: item.quantity || 1,
+          unit_price: parseFloat(item.customer_price) || 0,
+          cost_price: parseFloat(item.supplier_price) || 0,
+          date: job.created_at
+        });
+      });
+    });
+    // Most used first, and no more than the 25 most recent of each.
+    const grouped = Array.from(productsMap.entries())
+      .sort((a, b) => b[1].length - a[1].length)
+      .map(([k, rows]) => [k, rows.slice(0, 25)]);
+    setPostcodePrices(grouped);
+    setPriceSearchRan(true);
   } catch (error) {
-    console.error('Error searching postcode prices:', error);
-    alert('Error searching prices');
+    console.error('Error searching previous prices:', error);
+    alert('Error searching prices: ' + (error.message || error));
   } finally {
     setLoadingPrices(false);
   }
@@ -2254,7 +2364,7 @@ const PostcodePricesPopup = () => {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-hidden">
         <div className="p-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold">Check Previous Prices by Postcode</h2>
+            <h2 className="text-xl font-bold">Check Previous Prices</h2>
             <button
               onClick={() => setShowPostcodePrices(false)}
               className="text-gray-400 hover:text-gray-500"
@@ -2271,9 +2381,10 @@ const PostcodePricesPopup = () => {
         value={postcodeSearch}
         onChange={(e) => {
           setPostcodeSearch(e.target.value);
+          setPriceSearchRan(false);
           fetchPostcodeSuggestions(e.target.value);
         }}
-        placeholder="Enter postcode (e.g., B1 2RT)"
+        placeholder="Postcode (e.g., B1 2RT)"
         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
         onKeyPress={(e) => e.key === 'Enter' && searchPostcodePrices()}
         autoFocus={true}
@@ -2297,6 +2408,16 @@ const PostcodePricesPopup = () => {
         </div>
       )}
     </div>
+    <div className="flex-1">
+      <input
+        type="text"
+        value={priceProductSearch}
+        onChange={(e) => { setPriceProductSearch(e.target.value); setPriceSearchRan(false); }}
+        placeholder="Product (e.g., topsoil, 8 yard)"
+        className="tws-price-product w-full px-3 py-2 border border-gray-300 rounded-lg"
+        onKeyPress={(e) => e.key === 'Enter' && searchPostcodePrices()}
+      />
+    </div>
     <button
       onClick={searchPostcodePrices}
       disabled={loadingPrices}
@@ -2305,6 +2426,7 @@ const PostcodePricesPopup = () => {
       {loadingPrices ? 'Searching...' : 'Search'}
     </button>
   </div>
+  <p className="text-xs text-gray-500 mt-2">Fill in either box or both. Product on its own searches every job; with a postcode it is that product at that postcode.</p>
 </div>
         </div>
         
@@ -2322,6 +2444,7 @@ const PostcodePricesPopup = () => {
   <tr>
     <th className="px-3 py-2 text-left">Job #</th>
     <th className="px-3 py-2 text-left">Customer</th>
+    <th className="px-3 py-2 text-left">Postcode</th>
     <th className="px-3 py-2 text-left">Description</th>  {/* Add this */}
     <th className="px-3 py-2 text-left">Qty</th>  {/* Add this */}
     <th className="px-3 py-2 text-left">Unit Price</th>
@@ -2335,6 +2458,7 @@ const PostcodePricesPopup = () => {
     <tr key={idx}>
       <td className="px-3 py-2">{price.job_number}</td>
       <td className="px-3 py-2">{price.customer_name}</td>
+      <td className="px-3 py-2 whitespace-nowrap">{price.postcode}</td>
       <td className="px-3 py-2">{price.description}</td>  {/* Add this */}
       <td className="px-3 py-2">{price.quantity}</td>  {/* Add this */}
       <td className="px-3 py-2 font-semibold">£{price.unit_price.toFixed(2)}</td>
@@ -2391,7 +2515,7 @@ const PostcodePricesPopup = () => {
             </div>
           ) : (
             <div className="text-center text-gray-500 py-8">
-              {postcodeSearch ? 'No prices found for this postcode' : 'Enter a postcode to search'}
+              {priceSearchRan ? 'No previous prices found for that search' : 'Enter a postcode, a product, or both, then Search'}
             </div>
           )}
         </div>
@@ -2421,7 +2545,7 @@ if (products.length === 0) {
 
 return (
   <>
-    <PostcodePricesPopup />
+    {PostcodePricesPopup()}
     <div className="space-y-2">
       {/* Search input */}
       <div className="relative">
@@ -2435,7 +2559,12 @@ return (
 />
           <button
             type="button"
-            onClick={() => setShowPostcodePrices(true)}
+            onClick={() => {
+              // Carry over whatever is typed in the product search box.
+              if (searchTerm && !priceProductSearch) setPriceProductSearch(searchTerm);
+              setPriceSearchRan(false);
+              setShowPostcodePrices(true);
+            }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm whitespace-nowrap"
           >
             🔍 Check Previous Prices
@@ -7577,6 +7706,32 @@ const [isEvent, setIsEvent] = useState(false);
           }, [formData.customerUnitPrice, formData.supplierUnitPrice, formData.quantity]);
 
 
+   // Haulage point A and point B. Plain functions returning markup (not
+   // components), so typing in them never remounts the inputs.
+   const setHaulage = (patch) => setFormData(prev => ({ ...prev, haulage: { ...(parseHaulage(prev) || {}), ...patch } }));
+   const haulageBox = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white';
+   const renderHaulagePointA = () => (
+     <div className="space-y-2">
+       <p className="text-sm font-medium text-gray-800">Collect from (point A)</p>
+       <input type="text" className={'tws-haulage-from ' + haulageBox} placeholder="Address" value={formData.siteAddress1 || ''}
+         onChange={(e) => { const v = e.target.value; setFormData(prev => ({ ...prev, siteAddress1: v })); }} />
+       <input type="text" className={haulageBox} placeholder="Postcode" value={formData.sitePostcode || ''}
+         onChange={(e) => { const v = e.target.value; setFormData(prev => ({ ...prev, sitePostcode: v })); }} />
+       <p className="text-xs text-gray-600">This is the job's site, the same address as on the Site Information tab.</p>
+     </div>
+   );
+   const renderHaulagePointB = () => {
+     const hz = parseHaulage(formData) || {};
+     return (
+       <div className="space-y-2">
+         <p className="text-sm font-medium text-gray-800">Deliver to (point B)</p>
+         <input type="text" className={haulageBox} placeholder="Site or company name (optional)" value={hz.toName || ''} onChange={(e) => setHaulage({ toName: e.target.value })} />
+         <input type="text" className={'tws-haulage-to ' + haulageBox} placeholder="Address" value={hz.toAddress || ''} onChange={(e) => setHaulage({ toAddress: e.target.value })} />
+         <input type="text" className={haulageBox} placeholder="Postcode" value={hz.toPostcode || ''} onChange={(e) => setHaulage({ toPostcode: e.target.value })} />
+       </div>
+     );
+   };
+
    const handleSubmit = async () => {
     // A customer who requires a PO on every job should not get one raised
     // without it by accident. Not a hard block — occasionally the work has to
@@ -7588,6 +7743,35 @@ const [isEvent, setIsEvent] = useState(false);
         const go = confirm(
           formData.customerName + ' requires a purchase order on every job, and this one has no ' +
           'PO number.\n\nSave it anyway?\n\nYou will not be able to invoice until the number is added.');
+        if (!go) return;
+      }
+    } catch (e) { /* never block saving because of this check */ }
+
+    // Skip hire, muck away and grab hire all move waste, and the transfer
+    // note cannot be raised without an EWC code on the line. Asked rather than
+    // blocked: a job is sometimes booked before anyone knows what the waste
+    // is. A line with no code is fine as long as one line has one — transport
+    // and haulage lines never carry a code.
+    // Haulage ticked: it should say where from and where to.
+    if (!isEvent && jobHasHaulage(formData)) {
+      const hz = parseHaulage(formData) || {};
+      const gaps = [];
+      if (!String(formData.siteAddress1 || '').trim() && !String(formData.sitePostcode || '').trim()) gaps.push('where it is collected from (point A)');
+      if (!String(hz.toAddress || '').trim() && !String(hz.toPostcode || '').trim()) gaps.push('where it is going to (point B)');
+      if (gaps.length > 0 && !confirm('Haulage is ticked, but this job does not say ' + gaps.join(' or ') + '.\n\nOK = save it anyway.\nCancel = go back and add it.')) return;
+    }
+
+    try {
+      const li = Array.isArray(formData.lineItems) ? formData.lineItems : [];
+      const closed = formData.isCompleted || formData.isCancelled || (job && (job.isCompleted || job.isCancelled));
+      if (!isEvent && !closed && JOB_TYPES_EWC_ALERT.includes(formData.jobType) && !li.some(l => ewcOfLine(l))) {
+        const go = confirm(
+          'No EWC code on this ' + formData.jobType + ' job.\n\n' +
+          (li.length === 0
+            ? 'There are no products on it yet. Add the product, then pick its EWC code in the products table.'
+            : 'Pick one in the EWC code column of the products table.') +
+          '\n\nWithout a code no transfer note can be raised for this job, and it will sit on the dashboard as held back.\n\n' +
+          'OK = save without a code for now.\nCancel = go back and add it.');
         if (!go) return;
       }
     } catch (e) { /* never block saving because of this check */ }
@@ -8379,7 +8563,9 @@ const [isEvent, setIsEvent] = useState(false);
                 <option value="Other">Other</option>
                 <option value="Grab Hire">Grab Hire</option>
                 <option value="Muck Away">Muck Away</option>
-                <option value="Roll-on Roll-off">Roll-on Roll-off</option>
+                <option value="Concrete">Concrete</option>
+                {formData.jobType === 'Haulage' && <option value="Haulage">Haulage (removed type, pick another)</option>}
+                {formData.jobType === 'Roll-on Roll-off' && <option value="Roll-on Roll-off">Roll-on Roll-off (old type, now under Skip Hire)</option>}
               </select>
             </div>
             <div>
@@ -8576,7 +8762,7 @@ const [isEvent, setIsEvent] = useState(false);
                               automatically at all, which needs a code it cannot
                               guess. Same picker the transfer note itself uses. */}
                           <td className="px-2 py-3 align-top w-44 min-w-[11rem]">
-                            {JOB_TYPES_NEEDING_EWC.includes(formData.jobType) ? (
+                            {jobNeedsEwc(formData) ? (
                               <>
                                 <EWCPicker
                                   value={item.ewc_code || ''}
@@ -8893,7 +9079,7 @@ const [isEvent, setIsEvent] = useState(false);
             </div>
           )}
 
-          {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
+          {['Grab Hire', 'Muck Away', 'Other', 'Concrete', 'Haulage'].includes(formData.jobType) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <SageProductSelector 
@@ -8926,6 +9112,34 @@ const [isEvent, setIsEvent] = useState(false);
                   products={sageProducts}
                 />
               </div>
+            </div>
+          )}
+
+          {/* Haulage: a tick on a skip, grab or muck away job that collects
+              from one address and delivers to another. */}
+          {HAULAGE_JOB_TYPES.includes(formData.jobType) && (
+            <div className={'tws-haulage rounded-lg border p-4 ' + (jobHasHaulage(formData) ? 'border-orange-300 bg-orange-50' : 'border-gray-200 bg-gray-50')}>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="tws-haulage-tick w-4 h-4 text-orange-600 rounded"
+                  checked={jobHasHaulage(formData)}
+                  onChange={(e) => setHaulage({ on: e.target.checked })}
+                />
+                <span className="text-sm font-medium text-gray-800">Haulage</span>
+                <span className="text-sm text-gray-600">collecting from one address and delivering to another</span>
+              </label>
+              {jobHasHaulage(formData) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                  {renderHaulagePointA()}
+                  {renderHaulagePointB()}
+                </div>
+              )}
+              {jobHasHaulage(formData) && (
+                <p className="text-xs text-gray-700 mt-3">
+                  On the transfer note, point A is where the waste is collected from and point B is shown as the site it is going to.
+                </p>
+              )}
             </div>
           )}
           
@@ -9005,6 +9219,14 @@ const [isEvent, setIsEvent] = useState(false);
 {/* Site Information Tab */}
 {activeTab === 'site' && (
   <div className="space-y-4">
+    {jobHasHaulage(formData) && (
+      <div className="tws-haulage-site rounded-lg border border-orange-300 bg-orange-50 p-4">
+        <p className="text-sm font-medium text-gray-800 mb-3">
+          Haulage job. The site on this tab is point A, where it is collected from. Point B is where it is going:
+        </p>
+        <div className="max-w-md">{renderHaulagePointB()}</div>
+      </div>
+    )}
     {/* ── Saved sites for this customer ──────────────────────────────────
         Picking from the list keeps the site spelled identically on every
         job, which is what makes PO requests group correctly and the WTN
@@ -11086,7 +11308,9 @@ EA Broker Registration: ${wtnFields.brokerCarrierReg||'—'}`;
             'Other': { icon: 'Recycle', color: 'text-green-600', bg: 'bg-green-100' },
             'Grab Hire': { icon: 'Truck', color: 'text-purple-600', bg: 'bg-purple-100' },
             'Muck Away': { icon: 'Truck', color: 'text-red-600', bg: 'bg-red-100' },
-            'Roll-on Roll-off': { icon: 'Truck', color: 'text-indigo-600', bg: 'bg-indigo-100' }
+            'Roll-on Roll-off': { icon: 'Truck', color: 'text-indigo-600', bg: 'bg-indigo-100' },
+            'Concrete': { icon: 'Truck', color: 'text-amber-700', bg: 'bg-amber-100' },
+            'Haulage': { icon: 'Truck', color: 'text-orange-600', bg: 'bg-orange-100' }
           };
 
           const statusConfig = {
@@ -11374,6 +11598,27 @@ const [groupByProduct, setGroupByProduct] = useState(false);
     window.addEventListener('tws-auto-wtn-done', pick);
     return () => window.removeEventListener('tws-auto-wtn-done', pick);
   }, []);
+  const [checkingHeld, setCheckingHeld] = useState(false);
+  const [heldCheckedAt, setHeldCheckedAt] = useState(() => { try { return window._autoWtnLastRun || null; } catch (e) { return null; } });
+  useEffect(() => {
+    const done = () => { setCheckingHeld(false); try { setHeldCheckedAt(window._autoWtnLastRun || null); } catch (e) {} };
+    window.addEventListener('tws-auto-wtn-done', done);
+    return () => window.removeEventListener('tws-auto-wtn-done', done);
+  }, []);
+  const recheckHeld = async () => {
+    if (!window.publishDueRecurringWtns) return;
+    setCheckingHeld(true);
+    try {
+      // Fresh jobs first, so a job fixed a moment ago is read as fixed.
+      if (typeof window.loadJobsFromSupabase === 'function') await window.loadJobsFromSupabase();
+      await new Promise(r => setTimeout(r, 300));
+      window._autoWtnLastAttempt = Date.now();
+      await window.publishDueRecurringWtns();
+    } catch (e) { console.error('[Auto WTN] re-check failed:', e); }
+    setCheckingHeld(false);
+  };
+  const openJobFromDashboard = (jobNumber) => { if (jobNumber && window.twsOpenJobByNumber) window.twsOpenJobByNumber(jobNumber); };
+  const [showConNotes, setShowConNotes] = useState(false);
   
   // State for search bars
   const [searchTerms, setSearchTerms] = useState({
@@ -11510,13 +11755,24 @@ const [groupByProduct, setGroupByProduct] = useState(false);
           <div className="flex justify-between items-start gap-3 flex-wrap mb-3">
             <div>
               <h3 className="text-lg font-semibold text-amber-900">
-                {heldNotes.length} recurring collection{heldNotes.length === 1 ? '' : 's'} with no transfer note
+                {heldNotes.length} job{heldNotes.length === 1 ? '' : 's'} with no transfer note on the portal
               </h3>
               <p className="text-sm text-gray-600">
-                These could not be copied from the previous note on their schedule, so nothing
-                has gone to the customer. Open the job, fill in what is missing and issue the
-                note; from then on it carries forward on its own.
+                Something is missing, so nothing has gone to the customer. Click a job to open it,
+                fill in what is missing and save. The note is then raised on its own and the job
+                drops off this list.
               </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {heldCheckedAt && (
+                <span className="text-xs text-gray-500">
+                  Last checked {new Date(heldCheckedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <button type="button" onClick={recheckHeld} disabled={checkingHeld}
+                className="tws-held-recheck px-3 py-1.5 text-sm font-medium border border-amber-400 text-amber-900 rounded-lg hover:bg-amber-50 disabled:opacity-50">
+                {checkingHeld ? 'Checking...' : 'Check again'}
+              </button>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -11531,13 +11787,14 @@ const [groupByProduct, setGroupByProduct] = useState(false);
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {heldNotes.slice(0, 25).map((h, i) => (
-                  <tr key={(h.jobNumber || '') + i}>
-                    <td className="px-6 py-3 text-sm font-medium text-gray-900">{h.jobNumber || '—'}</td>
+                  <tr key={(h.jobNumber || '') + i} onClick={() => openJobFromDashboard(h.jobNumber)}
+                      className="tws-held-row cursor-pointer hover:bg-amber-50" title="Open this job">
+                    <td className="px-6 py-3 text-sm font-medium text-blue-700 underline">{h.jobNumber || '—'}</td>
                     <td className="px-6 py-3 text-sm text-gray-500">{h.customerName || '—'}</td>
                     <td className="px-6 py-3 text-sm text-gray-500">
                       {h.jobDate ? new Date(String(h.jobDate).slice(0, 10)).toLocaleDateString('en-GB') : '—'}
                     </td>
-                    <td className="px-6 py-3 text-sm text-amber-800">{h.reason || '—'}</td>
+                    <td className="px-6 py-3 text-sm text-amber-800 whitespace-normal">{h.reason || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -11559,9 +11816,11 @@ const [groupByProduct, setGroupByProduct] = useState(false);
           {(() => {
             const outstanding = (filteredJobs || []).filter(j => jobAwaitingConsignmentNote(j)).length;
             return outstanding > 0 ? (
-              <span className="px-3 py-1 rounded-full bg-red-100 text-red-800 border border-red-300 text-sm font-medium">
-                {outstanding} consignment note{outstanding === 1 ? '' : 's'} outstanding
-              </span>
+              <button type="button" onClick={() => setShowConNotes(v => !v)}
+                title="Show which jobs"
+                className="tws-connote-badge px-3 py-1 rounded-full bg-red-100 text-red-800 border border-red-300 text-sm font-medium hover:bg-red-200">
+                {outstanding} consignment note{outstanding === 1 ? '' : 's'} outstanding {showConNotes ? '\u25B2' : '\u25BC'}
+              </button>
             ) : null;
           })()}
           <input 
@@ -11572,6 +11831,29 @@ const [groupByProduct, setGroupByProduct] = useState(false);
             className="px-3 py-1 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        {showConNotes && (() => {
+          const waiting = (filteredJobs || []).filter(j => jobAwaitingConsignmentNote(j));
+          if (waiting.length === 0) return null;
+          return (
+            <div className="tws-connote-list mb-4 border border-red-200 bg-red-50 rounded-lg p-4">
+              <p className="text-sm font-medium text-red-900 mb-2">
+                Hazardous jobs with no consignment note on file. Click a job to open it, then attach the tip's note on its Documents tab.
+              </p>
+              <table className="min-w-full text-sm">
+                <tbody>
+                  {waiting.map(j => (
+                    <tr key={j.id} onClick={() => openJobFromDashboard(j.jobNumber)} className="tws-connote-row cursor-pointer hover:bg-red-100 border-t border-red-200">
+                      <td className="py-2 pr-4 font-medium text-blue-700 underline">{j.jobNumber}</td>
+                      <td className="py-2 pr-4 text-gray-800">{j.customerName}</td>
+                      <td className="py-2 pr-4 text-gray-600">{j.jobType}</td>
+                      <td className="py-2 text-gray-600">{j.jobDate ? new Date(String(j.jobDate).slice(0, 10)).toLocaleDateString('en-GB') : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -11656,7 +11938,12 @@ const [groupByProduct, setGroupByProduct] = useState(false);
                       Hazardous
                       <span className="block text-xs font-normal text-gray-500">included in the rows above</span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{haz.count}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {haz.count}
+                      <span className="block text-xs text-gray-500">
+                        {hazJobs.filter(j => jobAwaitingConsignmentNote(j)).length} awaiting a consignment note
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-sm text-gray-500">{haz.totalQuantity.toFixed(0)}</td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">£{haz.revenue.toFixed(2)}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">£{haz.cost.toFixed(2)}</td>
@@ -12623,7 +12910,9 @@ reference: job.customerPO || job.customer_po || '',
             'Other': '#10B981',
             'Grab Hire': '#8B5CF6',
             'Muck Away': '#B45309',
-            'Roll-on Roll-off': '#6366F1'
+            'Roll-on Roll-off': '#6366F1',
+            'Concrete': '#B45309',
+            'Haulage': '#EA580C'
           };
 
           // Sort jobs by date descending (newest first)
@@ -13408,7 +13697,7 @@ const CalendarView = ({ expandedDays, setExpandedDays }) => {
         <option value="Other">Other</option>
         <option value="Grab Hire">Grab Hire</option>
         <option value="Muck Away">Muck Away</option>
-        <option value="Roll-on Roll-off">Roll-on Roll-off</option>
+        <option value="Concrete">Concrete</option>
       </select>
       <select
         value={filters.status}
@@ -14487,7 +14776,7 @@ const QuotesView = ({ quotes, onAddQuote, onUpdateQuote, onEditQuote, onConvertT
       <option value="Other">Other</option>
       <option value="Grab Hire">Grab Hire</option>
       <option value="Muck Away">Muck Away</option>
-      <option value="Roll-on Roll-off">Roll-on Roll-off</option>
+      <option value="Concrete">Concrete</option>
     </select>
     <select
     >
@@ -17478,6 +17767,7 @@ function defaultUnitForJobType(jobType) {
     case 'Grab Hire':         return 'loads';
     case 'Skip Hire':         return 'skip';
     case 'Roll-on Roll-off':  return 'skip';
+    case 'Concrete':          return 'm3';
     default:                  return 'loads';
   }
 }
@@ -18738,7 +19028,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
   <Copy size={20} />
 </button>
 {/* WTN button for waste jobs */}
-{['Skip Hire','Roll-on Roll-off','Muck Away','Grab Hire'].includes(job.jobType) && (
+{jobMovesWaste(job) && (
   <button
     onClick={() => {
       window._openJobFormOnWtn = true;
@@ -19415,11 +19705,17 @@ console.log(JSON.stringify(invoiceData, null, 2));
           
           {/* Site Address - spans 2 columns */}
           <div className="col-span-1 sm:col-span-2">
-            <span className="text-xs text-gray-600">Site Address:</span>
+            <span className="text-xs text-gray-600">{jobHasHaulage(job) ? 'Collect from (point A):' : 'Site Address:'}</span>
             <p className="font-semibold text-xs">
               {job.siteAddress1}{job.siteAddress2 && `, ${job.siteAddress2}`}{job.sitePostcode && ` ${job.sitePostcode}`}
             </p>
           </div>
+          {jobHasHaulage(job) && (
+            <div className="tws-haulage-view col-span-1 sm:col-span-2">
+              <span className="text-xs text-gray-600">Haulage, deliver to (point B):</span>
+              <p className="font-semibold text-xs">{haulageToLine(job) || 'Not set'}</p>
+            </div>
+          )}
           
           {/* Payment Info */}
           <div>
@@ -19775,6 +20071,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
                   wtn_recurring_next_date: null,
                   // Chain — ties child back to recurring parent
                   parent_job_id: src.id,
+                  ...(parseHaulage(src) ? { haulage: parseHaulage(src) } : {}),
                 };
                 const { error } = await window.supabase.from('jobs').insert([newJob]);
                 if (error) throw error;
@@ -26994,6 +27291,12 @@ const setShowFullPageJob = (v) => {
   }
   setMainJobView(v);
 };
+// Lets the dashboard lists open a job.
+window.twsOpenJobByNumber = (num) => {
+  const found = (jobs || []).find(j => j.jobNumber === num);
+  if (found) setShowFullPageJob(found);
+  else alert('Job ' + num + ' is not in the list any more. Refresh the page and try again.');
+};
 const [addressSuggestions, setAddressSuggestions] = useState([]);
 const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
 const [contactSuggestions, setContactSuggestions] = useState([]);
@@ -27899,6 +28202,8 @@ const loadJobsFromSupabase = async () => {
   createdDate: job.created_at,
   customerName: job.customer_name,
   customerPO: job.customer_po,
+haulage: parseHaulage(job),
+updatedAt: job.updated_at,
   // Purchase order request tracking
   poRequestedAt: job.po_requested_at,
   poRequestSentTo: job.po_request_sent_to,
@@ -28028,6 +28333,8 @@ const refreshJobs = async () => {
                 createdDate: job.created_at,
                 customerName: job.customer_name,
                 customerPO: job.customer_po,
+haulage: parseHaulage(job),
+updatedAt: job.updated_at,
                 // Purchase order request tracking
                 poRequestedAt: job.po_requested_at,
                 poRequestSentTo: job.po_request_sent_to,
@@ -28302,6 +28609,16 @@ useEffect(() => {
           newJobNumber = `TWS-${maxNum + 1}`;
         }
 
+        // The lines are kept in two columns, and the series record overrides
+        // only one of them. A code present in one and missing from the other
+        // is copied across, so the new job has it whichever column is read.
+        try {
+          const a = fillBlankEwc(rj.line_items, rj.sage_line_items);
+          const b = fillBlankEwc(rj.sage_line_items, rj.line_items);
+          if (a.filled > 0) rj.line_items = JSON.stringify(a.items);
+          if (b.filled > 0) rj.sage_line_items = JSON.stringify(b.items);
+        } catch (e) { console.warn('[recurring] could not line up EWC codes:', e); }
+
         // Create the new job as a complete copy of the parent
         const newJob = {
           job_number: newJobNumber,
@@ -28386,6 +28703,7 @@ useEffect(() => {
           wtn_recurring_next_date: null,
           parent_job_id: rj.id,
           series_id: rj.series_id || null,
+          ...(parseHaulage(rj) ? { haulage: parseHaulage(rj) } : {}),
         };
 
         // Atomically "claim the slot" for this occurrence. We flip the parent's
@@ -29179,6 +29497,7 @@ const setShowFullPageQuote = (v) => {
       job_date: newJob.jobDate || null,
       customer_name: newJob.customerName,
       customer_po: newJob.customerPO || null,
+      ...(jobHasHaulage(newJob) ? { haulage: parseHaulage(newJob) } : {}),
       supplier_name: newJob.supplierName || null,
       supplier_ref: newJob.supplierRef || null,
       haulier_name: newJob.haulierName || null,
@@ -29253,7 +29572,7 @@ const setShowFullPageQuote = (v) => {
     // the migration run. Losing a whole job because of one new field is far
     // worse than saving it without that field, so the insert is retried
     // without the newer columns and the omission is reported.
-    const NEWER_COLUMNS = ['proforma_order', 'is_hazardous'];
+    const NEWER_COLUMNS = ['proforma_order', 'is_hazardous', 'haulage'];
     let { data, error } = await window.supabase
       .from('jobs')
       .insert([jobForDatabase])
@@ -29362,6 +29681,11 @@ const setShowFullPageQuote = (v) => {
       // updatedJob without customerPO), fall back to the snake_case
       // value rather than writing undefined → null and wiping the PO.
       customer_po: updatedJob.customerPO ?? updatedJob.customer_po ?? null,
+      // Only sent when haulage is ticked, or was: the column is new, and
+      // sending it on every save would fail every save on a database that
+      // has not had it added. Unticking clears it.
+      ...((jobHasHaulage(updatedJob) || parseHaulage(updatedJob))
+        ? { haulage: jobHasHaulage(updatedJob) ? parseHaulage(updatedJob) : null } : {}),
       supplier_name: updatedJob.supplierName,
       supplier_ref: updatedJob.supplierRef,
       haulier_name: updatedJob.haulierName,
@@ -29469,10 +29793,21 @@ collection_date: updatedJob.collectionDate || null,
     if (!jobForDatabase) { setIsSubmitting && setIsSubmitting(false); return; }
 
 
-    const { error } = await window.supabase
+    let { error } = await window.supabase
       .from('jobs')
       .update(jobForDatabase)
       .eq('id', updatedJob.id);
+
+    // The haulage column not being in the database yet must not lose the
+    // rest of the save.
+    if (error && 'haulage' in jobForDatabase && /column .* does not exist|Could not find the .* column/i.test(error.message || '')) {
+      const retry = { ...jobForDatabase };
+      delete retry.haulage;
+      ({ error } = await window.supabase.from('jobs').update(retry).eq('id', updatedJob.id));
+      if (!error) {
+        alert('Job saved, but the haulage tick and point B could not be stored because the database is missing the haulage column.\n\nEverything else was saved. Tell whoever looks after the database.');
+      }
+    }
 
     if (error) throw error;
 
@@ -29735,6 +30070,66 @@ collection_date: updatedJob.collectionDate || null,
       }
     }
 
+    // An EWC code picked on a job part-way along a schedule. The code belongs
+    // to the waste, and the same product on the same schedule is the same
+    // waste, so it is copied to the recurring job, its series record, and the
+    // later open jobs — but only onto lines for that product that have no
+    // code. A code already there is never changed. Recurring schedules only.
+    let ewcCarriedTo = 0;
+    try {
+      const eOpened = updatedJob.__openedWith || null;
+      const eListed = (jobs || []).find(j => j.id === updatedJob.id) || {};
+      const eParentId = updatedJob.parentJobId || updatedJob.parent_job_id
+        || (eOpened && (eOpened.parentJobId || eOpened.parent_job_id))
+        || eListed.parentJobId || eListed.parent_job_id || null;
+      const myLines = ewcParseLines(updatedJob.lineItems);
+      const eDate = String(updatedJob.jobDate || updatedJob.job_date || '').slice(0, 10);
+      if (eParentId && myLines.some(l => ewcOfLine(l))) {
+        const { data: eTpl } = await window.supabase
+          .from('jobs').select('id, is_recurring, series_id, line_items, sage_line_items').eq('id', eParentId).maybeSingle();
+        if (eTpl && eTpl.is_recurring) {
+          const { data: eSibs, error: eErr } = await window.supabase
+            .from('jobs')
+            .select('id, job_date, line_items, sage_line_items')
+            .eq('parent_job_id', eParentId)
+            .eq('is_completed', false)
+            .eq('is_cancelled', false)
+            .is('invoice_number', null);
+          if (eErr) throw eErr;
+          const later = (eSibs || []).filter(j =>
+            j.id !== updatedJob.id && j.id !== eTpl.id && eDate && String(j.job_date || '').slice(0, 10) > eDate);
+          for (const target of [eTpl].concat(later)) {
+            const a = fillBlankEwc(target.line_items, myLines);
+            const b = fillBlankEwc(target.sage_line_items, myLines);
+            if (a.filled === 0 && b.filled === 0) continue;
+            const patch = {};
+            if (a.filled > 0) patch.line_items = JSON.stringify(a.items);
+            if (b.filled > 0) patch.sage_line_items = JSON.stringify(b.items);
+            const { error: wErr } = await window.supabase.from('jobs').update(patch).eq('id', target.id);
+            if (wErr) throw wErr;
+            if (target.id !== eTpl.id) ewcCarriedTo++;
+          }
+          // The series record overrides the recurring job when the next job
+          // is created, so it has to know the code as well.
+          if (eTpl.series_id) {
+            const series = await loadSeriesById(eTpl.series_id);
+            if (series) {
+              const sFill = fillBlankEwc(series.line_items, myLines);
+              if (sFill.filled > 0) {
+                await window.supabase.from(JOB_SERIES_TABLE)
+                  .update({ line_items: JSON.stringify(sFill.items), updated_at: new Date().toISOString() })
+                  .eq('id', eTpl.series_id);
+              }
+            }
+          }
+          if (ewcCarriedTo > 0) setTimeout(() => window.loadJobsFromSupabase(), 400);
+        }
+      }
+    } catch (ewcErr) {
+      console.error('[handleUpdateJob] could not carry the EWC code along the schedule:', ewcErr);
+      alert('The job was saved, but its EWC code could not be copied to the rest of the schedule: ' + (ewcErr.message || ewcErr));
+    }
+
     // A job part-way along a schedule is given a PO (or a new one): offer to
     // carry it onto every later open job on the same schedule, and onto the
     // recurring job itself so jobs created from now on have it too. Asked
@@ -29810,9 +30205,16 @@ collection_date: updatedJob.collectionDate || null,
       }
     }
 
+    // A saved job may now be complete enough for its transfer note. Run the
+    // automatic check again now, rather than waiting out the hour, so the
+    // note goes out and the dashboard list keeps up.
+    try {
+      setTimeout(() => { if (window.publishDueRecurringWtns) window.publishDueRecurringWtns(); }, 2000);
+    } catch (e) {}
     alert(((updatedJob.isRecurring || updatedJob.is_recurring) ? 'Job updated! Active child jobs updated with new pricing and products.' : 'Job updated successfully!') +
       (poCopiedTo > 0 ? '\n\nPO ' + templatePo + ' copied to ' + poCopiedTo + ' open job' + (poCopiedTo === 1 ? '' : 's') + ' on this schedule.' : '') +
-      (poFollowingValue ? '\n\nPO ' + poFollowingValue + ' copied to ' + poFollowing + ' later job' + (poFollowing === 1 ? '' : 's') + ' and will be used for new jobs on this schedule.' : ''));
+      (poFollowingValue ? '\n\nPO ' + poFollowingValue + ' copied to ' + poFollowing + ' later job' + (poFollowing === 1 ? '' : 's') + ' and will be used for new jobs on this schedule.' : '') +
+      (ewcCarriedTo > 0 ? '\n\nEWC code copied to ' + ewcCarriedTo + ' later job' + (ewcCarriedTo === 1 ? '' : 's') + ' on this schedule that had none.' : ''));
   } catch (error) {
     console.error('Error updating job:', error);
     alert('Error updating job: ' + error.message);
@@ -30741,15 +31143,21 @@ site_notes: fullJob?.site_notes || '',
             // fix27 — strip one-off line items when duplicating a job.
             // Same reasoning as the exchange flow above: one-offs apply to
             // the originating job only and must not propagate.
-            sage_line_items: (() => {
+            // Both line columns are written, from whichever has the products,
+            // with any EWC code found in either. Only one used to be copied:
+            // a code held in the other was lost, and a job whose lines were
+            // only ever in the other came out of a duplicate with no products.
+            ...(() => {
               try {
-                const raw = fullJob?.sage_line_items || jobTemplate.sage_line_items;
-                if (!raw) return null;
-                const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                if (!Array.isArray(arr)) return raw;
-                const filtered = arr.filter(item => !item.one_off && item.type !== 'one_off');
-                return JSON.stringify(filtered);
-              } catch(e) { return fullJob?.sage_line_items || jobTemplate.sage_line_items || null; }
+                const sageLines = ewcParseLines(fullJob?.sage_line_items || jobTemplate.sage_line_items);
+                const jobLines = ewcParseLines(fullJob?.line_items || jobTemplate.lineItems || jobTemplate.line_items);
+                const base = sageLines.length > 0 ? sageLines : jobLines;
+                if (base.length === 0) return { sage_line_items: fullJob?.sage_line_items || null, line_items: fullJob?.line_items || null };
+                const kept = fillBlankEwc(base, jobLines, sageLines).items
+                  .filter(item => item && !item.one_off && item.type !== 'one_off');
+                const json = JSON.stringify(kept);
+                return { sage_line_items: json, line_items: json };
+              } catch(e) { return { sage_line_items: fullJob?.sage_line_items || jobTemplate.sage_line_items || null, line_items: fullJob?.line_items || null }; }
             })(),
             sage_si_number: null,
             collection_date: null,
@@ -30775,6 +31183,7 @@ site_notes: fullJob?.site_notes || '',
             wtn_recurring_frequency: null,
             wtn_recurring_next_date: null,
             parent_job_id: null, // duplicates are standalone — parent_job_id is only for exchange/recurring jobs
+            ...(parseHaulage(fullJob) ? { haulage: parseHaulage(fullJob) } : {}),
         };
 
         
@@ -37982,7 +38391,9 @@ By approving this quotation and authorising us to commence services, you acknowl
                     <option value="Other">Other</option>
                     <option value="Grab Hire">Grab Hire</option>
                     <option value="Muck Away">Muck Away</option>
-                    <option value="Roll-on Roll-off">Roll-on Roll-off</option>
+                    <option value="Concrete">Concrete</option>
+                    {formData.jobType === 'Haulage' && <option value="Haulage">Haulage (removed type, pick another)</option>}
+                    {formData.jobType === 'Roll-on Roll-off' && <option value="Roll-on Roll-off">Roll-on Roll-off (old type, now under Skip Hire)</option>}
                   </select>
                 </div>
               </div>
@@ -38086,11 +38497,17 @@ By approving this quotation and authorising us to commence services, you acknowl
                                     grid below, where the names are legible: a text box in a
                                     column this narrow renders its suggestion list at the
                                     column width and truncates every name to a few letters. */}
-                                {item.supplier_name ? (
-                                  <span className="text-xs font-medium text-gray-800">{item.supplier_name}</span>
-                                ) : (
-                                  <span className="text-xs text-amber-700">set below</span>
-                                )}
+                                {/* The grid is on the Sourcing tab, not below this table,
+                                    so this is a button that goes there rather than a
+                                    label pointing at nothing. */}
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('sourcing')}
+                                  title="Suppliers and prices are set on the Sourcing tab"
+                                  className={'tws-quote-set-supplier text-left text-xs underline decoration-dotted ' + (item.supplier_name ? 'font-medium text-gray-800 hover:text-blue-700' : 'font-medium text-amber-700 hover:text-amber-900')}
+                                >
+                                  {item.supplier_name || 'Set supplier'}
+                                </button>
                               </td>
                               <td className="px-4 py-3">
                                 <textarea
@@ -38352,7 +38769,7 @@ By approving this quotation and authorising us to commence services, you acknowl
                 </div>
               )}
 
-              {(formData.jobType === 'Grab Hire' || formData.jobType === 'Muck Away' || formData.jobType === 'Other') && (
+              {['Grab Hire', 'Muck Away', 'Other', 'Concrete', 'Haulage'].includes(formData.jobType) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <SageProductSelector
