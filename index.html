@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-12 11:45';
+const BUILD_STAMP = '2026-10-13 09:30';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -21137,6 +21137,7 @@ const FullPageQuoteView = ({ quote, onClose, onMinimise, onSplit, isSplit, onEdi
   const [sendModalCc, setSendModalCc] = useState('');
   const [sendModalSubject, setSendModalSubject] = useState('');
   const [sendModalQuoteContacts, setSendModalQuoteContacts] = useState([]); // named Quotes contacts
+  const [savingContact, setSavingContact] = useState('');
 
   // Load attachments when component mounts
   useEffect(() => {
@@ -21523,6 +21524,53 @@ Total Waste Services Ltd`);
                       )}
                       {!sendModalTo && <p className="text-xs text-amber-600 mt-1">⚠️ No email address — add one above or edit the quote first</p>}
                     </div>
+                    {/* An address typed or pasted in here that the customer does
+                        not have on file can be saved to them, so next time it is
+                        one of the buttons above rather than a trip to Gmail. */}
+                    {(() => {
+                      const cust = customers?.find(c => (c.name || c.companyName) === quote.customerName);
+                      if (!cust || !cust.id || quote.customerName === WALK_IN_CUSTOMER_NAME) return null;
+                      const known = sendModalQuoteContacts.map(c => String(c.email || '').trim().toLowerCase());
+                      const typed = (String(sendModalTo || '') + ',' + String(sendModalCc || ''))
+                        .split(/[,;\s]+/).map(a => a.trim()).filter(a => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a));
+                      const unsaved = typed.filter((a, i) => typed.findIndex(b => b.toLowerCase() === a.toLowerCase()) === i && !known.includes(a.toLowerCase()));
+                      if (unsaved.length === 0) return null;
+                      return (
+                        <div className="tws-save-contact rounded-lg border border-blue-200 bg-blue-50 p-3">
+                          <p className="text-xs text-blue-900 mb-2">Not saved on {quote.customerName} yet:</p>
+                          <div className="space-y-1">
+                            {unsaved.map(addr => (
+                              <div key={addr} className="flex items-center justify-between gap-2">
+                                <span className="text-xs text-gray-800 truncate">{addr}</span>
+                                <button
+                                  type="button"
+                                  disabled={savingContact === addr}
+                                  onClick={async () => {
+                                    const guess = addr.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+                                    const name = window.prompt('Save ' + addr + ' to ' + quote.customerName + '.\n\nWhose address is it?', guess);
+                                    if (name === null) return;
+                                    setSavingContact(addr);
+                                    try {
+                                      const { error } = await window.supabase.from('customer_contacts')
+                                        .insert([{ customer_id: cust.id, name: (name || guess).trim(), email: addr, phone: '', role: 'Quotes', is_primary: false }]);
+                                      if (error) throw error;
+                                      setSendModalQuoteContacts(prev => prev.concat([{ name: (name || guess).trim() + ' (Quotes)', email: addr }]));
+                                    } catch (e) {
+                                      alert('Could not save the address: ' + (e.message || e));
+                                    } finally {
+                                      setSavingContact('');
+                                    }
+                                  }}
+                                  className="tws-save-contact-btn flex-shrink-0 px-2 py-1 rounded bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                  {savingContact === addr ? 'Saving...' : 'Save to customer'}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Cc <span className="font-normal text-gray-500">optional</span>
