@@ -644,7 +644,7 @@ function jobContentFingerprint(j) {
     text = JSON.stringify([
       j.jobDate, j.collectionDate, j.jobType, j.customerName, j.customerPO, j.supplierName,
       j.siteAddress1, j.sitePostcode, j.quantity, j.unit,
-      j.lineItems, j.haulage, j.isHazardous, j.consignmentNote, j.consignmentNoteReceived,
+      j.lineItems, j.haulage, j.isHazardous, j.consignmentNote, j.consignmentNoteReceived, j.purchaseInvoiceReceived,
       j.wtnPortalVisible, j.wtnSent,
       Array.isArray(j.wtns) ? j.wtns.map(w => [w && w.id, w && (w.portalVisible || w.portal_visible), w && w.sent, w && (w.listOfWasteCode || w.list_of_waste_code)]) : null,
     ]);
@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-13 09:30';
+const BUILD_STAMP = '2026-10-16 16:15';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -20810,6 +20810,47 @@ console.log(JSON.stringify(invoiceData, null, 2));
               );
             })()}
 
+            {/* Purchase invoice from the supplier. A tick, saved as soon as it
+                is clicked, with who ticked it and when. */}
+            {(() => {
+              const got = !!(job.purchaseInvoiceReceived || job.purchase_invoice_received);
+              const at = job.purchaseInvoiceReceivedAt || job.purchase_invoice_received_at;
+              const when = at ? new Date(at) : null;
+              const whenStr = when && !isNaN(when.getTime()) ? when.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+              return (
+                <div className={'tws-pinv rounded-lg border p-6 ' + (got ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200')}>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="tws-pinv-tick mt-1 w-4 h-4 text-green-600 rounded"
+                      checked={got}
+                      onChange={async (e) => {
+                        const on = e.target.checked;
+                        const patch = { purchase_invoice_received: on, purchase_invoice_received_at: on ? new Date().toISOString() : null };
+                        const { error } = await window.supabase.from('jobs').update(patch).eq('id', job.id);
+                        if (error) {
+                          if (/column .* does not exist|Could not find the .* column/i.test(error.message || '')) {
+                            alert('This cannot be saved yet: the database is missing the purchase_invoice_received columns. Tell whoever looks after the database.');
+                          } else {
+                            alert('Could not save: ' + error.message);
+                          }
+                          return;
+                        }
+                        if (onUpdateDisplay) onUpdateDisplay({ ...job, purchaseInvoiceReceived: on, purchase_invoice_received: on, purchaseInvoiceReceivedAt: patch.purchase_invoice_received_at, purchase_invoice_received_at: patch.purchase_invoice_received_at });
+                        if (onRefresh) onRefresh();
+                      }}
+                    />
+                    <span>
+                      <span className={'block text-sm font-semibold ' + (got ? 'text-green-800' : 'text-gray-800')}>Purchase invoice received</span>
+                      <span className={'block text-xs mt-0.5 ' + (got ? 'text-green-700' : 'text-gray-500')}>
+                        {got ? ('The supplier\'s invoice for this job is in' + (whenStr ? ', ticked on ' + whenStr : '') + '.') : 'Tick when the supplier\'s invoice for this job arrives.'}
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              );
+            })()}
+
             {/* Sage Integration - Send Invoice */}
             {user?.role === 'ADMIN' && (
               <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -28436,6 +28477,8 @@ collectionDate: job.collection_date,
   consignmentNote: job.consignment_note,
   isHazardous: job.is_hazardous || false,
   proformaOrder: job.proforma_order || false,
+  purchaseInvoiceReceived: !!job.purchase_invoice_received,
+  purchaseInvoiceReceivedAt: job.purchase_invoice_received_at || null,
   consignmentNoteReceived: job.consignment_note_received || false,
   invoiceNumber: job.invoice_number,
   invoiceStatus: job.invoice_status || 'Not Invoiced',
@@ -28571,6 +28614,8 @@ updatedAt: job.updated_at,
                 consignmentNote: job.consignment_note,
                 isHazardous: job.is_hazardous || false,
                 proformaOrder: job.proforma_order || false,
+                purchaseInvoiceReceived: !!job.purchase_invoice_received,
+                purchaseInvoiceReceivedAt: job.purchase_invoice_received_at || null,
                 consignmentNoteReceived: job.consignment_note_received || false,
                 invoiceNumber: job.invoice_number,
                 invoiceStatus: job.invoice_status || 'Not Invoiced',
