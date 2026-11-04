@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-04 13:20';
+const BUILD_STAMP = '2026-11-04 16:30';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -17681,6 +17681,194 @@ const CreditApplicationForm = ({ token }) => {
 
 window.CreditApplicationForm = CreditApplicationForm;
 
+// The supplier account form as a PDF, filed against the supplier when the
+// details are put onto the record. Same letterhead and layout as the credit
+// application, so the two sit together in Documents.
+function buildSupplierApplicationPdfDoc(app, ctx) {
+  ctx = ctx || {};
+  const company = ctx.company || {};
+  const d = app.form_data || {};
+  const jsPDFCtor = ctx.jsPDF || (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF);
+  if (!jsPDFCtor) throw new Error('jsPDF is not loaded');
+  const doc = new jsPDFCtor({ unit: 'mm', format: 'a4', compress: true });
+  const GREEN = [26, 92, 42], INK = [17, 24, 39], MUTED = [107, 114, 128], RULE = [209, 213, 219];
+  const PAGE_W = doc.internal.pageSize.getWidth(), PAGE_H = doc.internal.pageSize.getHeight();
+  const M = 16, CW = PAGE_W - M * 2;
+  let y = M;
+  const setFont = (style, size, colour) => { doc.setFont('helvetica', style || 'normal'); doc.setFontSize(size || 10); const c = colour || INK; doc.setTextColor(c[0], c[1], c[2]); };
+  const need = (h) => { if (y + h > PAGE_H - 20) { doc.addPage(); y = M; return true; } return false; };
+  const heading = (label) => { y += 3; need(14); setFont('bold', 10, GREEN); doc.text(String(label).toUpperCase(), M, y); y += 1.8; doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]); doc.setLineWidth(0.4); doc.line(M, y, M + CW, y); y += 5; };
+  const fmtDate = (v) => { if (!v) return '—'; const dt = new Date(v); return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }); };
+  const val = (v) => (v && String(v).trim()) ? String(v).trim() : '—';
+  const fields = (rows) => {
+    doc.autoTable({ startY: y, theme: 'plain', styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 1.4, bottom: 1.4, left: 0, right: 2 }, textColor: INK },
+      columnStyles: { 0: { cellWidth: 50, fontStyle: 'bold' }, 1: { cellWidth: CW - 50 } }, body: rows, margin: { left: M, right: M } });
+    y = doc.lastAutoTable.finalY + 2;
+  };
+  // Letterhead
+  doc.setFillColor(GREEN[0], GREEN[1], GREEN[2]); doc.rect(0, 0, PAGE_W, 3, 'F');
+  y = M + 2; let addrTop = y;
+  if (ctx.logoDataUrl) {
+    try { const props = doc.getImageProperties(ctx.logoDataUrl); const ratio = Math.min(46 / props.width, 18 / props.height); doc.addImage(ctx.logoDataUrl, M, y, props.width * ratio, props.height * ratio); addrTop = y + props.height * ratio + 3.5; }
+    catch (e) { setFont('bold', 15, GREEN); doc.text(company.name || 'Total Waste Services Ltd', M, y + 7); addrTop = y + 11; }
+  } else { setFont('bold', 15, GREEN); doc.text(company.name || 'Total Waste Services Ltd', M, y + 7); addrTop = y + 11; }
+  if (company.address) { setFont('normal', 8, MUTED); for (const line of doc.splitTextToSize(String(company.address), 70)) { doc.text(line, M, addrTop); addrTop += 3.4; } if (company.phone) { doc.text('T: ' + company.phone, M, addrTop); addrTop += 3.4; } }
+  const rx = PAGE_W - M;
+  setFont('bold', 16, GREEN); doc.text('SUPPLIER ACCOUNT FORM', rx, y + 7, { align: 'right' });
+  setFont('bold', 10, INK); doc.text(val(app.reference), rx, y + 13, { align: 'right' });
+  setFont('normal', 8.5, MUTED); doc.text('Submitted: ' + fmtDate(app.submitted_at), rx, y + 18, { align: 'right' });
+  y = Math.max(addrTop, y + 20) + 4;
+  doc.setDrawColor(RULE[0], RULE[1], RULE[2]); doc.setLineWidth(0.3); doc.line(M, y, M + CW, y); y += 6;
+
+  heading('The supplier');
+  fields([
+    ['Registered name', val(d.companyName || app.supplier_name)], ['Trading name', val(d.tradingName)],
+    ['Company registration', val(d.companyNumber)], ['VAT number', val(d.vatNumber)],
+    ['Registered address', [d.regAddress1, d.regAddress2, d.regTown, d.regPostcode].filter(Boolean).join(', ') || '—'],
+  ]);
+  heading('Contacts');
+  fields([
+    ['Main contact', [d.contactName, d.contactPosition].filter(Boolean).join(', ') || '—'], ['Telephone', [d.phone, d.mobile].filter(Boolean).join(' / ') || '—'], ['Email', val(d.email)],
+    ['Accounts contact', val(d.accountsName)], ['Accounts email', val(d.accountsEmail)], ['Accounts telephone', val(d.accountsPhone)],
+  ]);
+  heading('Services and coverage');
+  fields([
+    ['Services', (d.services || []).concat(d.servicesOther ? [d.servicesOther] : []).join(', ') || '—'],
+    ['Areas covered', (d.areas || []).join(', ') + (d.serviceAreas ? (d.areas && d.areas.length ? ' — ' : '') + d.serviceAreas : '') || '—'],
+    ['Accreditations', (d.certifications || []).join(', ') || '—'],
+  ]);
+  heading('Waste carrier registration and permits');
+  fields([
+    ['Carrier registration', val(d.carrierNumber)], ['Tier', val(d.carrierTier)], ['Expiry', d.carrierExpiry ? fmtDate(d.carrierExpiry) : '—'],
+    ['Permits / exemptions', val(d.permits)],
+  ]);
+  const sites = Array.isArray(d.sites) ? d.sites.filter(s => s && (s.siteName || s.address || s.postcode)) : [];
+  if (sites.length) {
+    doc.autoTable({ startY: y, theme: 'plain', styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2, textColor: INK },
+      headStyles: { fillColor: GREEN, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 }, alternateRowStyles: { fillColor: [250, 250, 250] },
+      head: [['Site', 'Address', 'Postcode', 'Permit no.', 'Carrier no.']],
+      body: sites.map(s => [val(s.siteName), val(s.address), val(s.postcode), val(s.permitNumber), val(s.cbduNumber)]), margin: { left: M, right: M } });
+    y = doc.lastAutoTable.finalY + 3;
+  }
+  heading('Insurance');
+  doc.autoTable({ startY: y, theme: 'plain', styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2, textColor: INK },
+    headStyles: { fillColor: GREEN, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 }, alternateRowStyles: { fillColor: [250, 250, 250] },
+    head: [['Cover', 'Insurer', 'Policy no.', 'Expiry', 'Amount']],
+    body: [
+      ['Public liability', val(d.plInsurer), val(d.plPolicy), d.plExpiry ? fmtDate(d.plExpiry) : '—', d.plCover ? '£' + d.plCover : '—'],
+      ["Employers' liability", val(d.elInsurer), val(d.elPolicy), d.elExpiry ? fmtDate(d.elExpiry) : '—', d.elCover ? '£' + d.elCover : '—'],
+      ['Motor / goods in transit', val(d.motorInsurer), val(d.motorPolicy), d.motorExpiry ? fmtDate(d.motorExpiry) : '—', '—'],
+    ], margin: { left: M, right: M } });
+  y = doc.lastAutoTable.finalY + 3;
+  heading('Payment details');
+  fields([
+    ['Bank', val(d.bankName)], ['Account name', val(d.bankAccountName)], ['Sort code', val(d.bankSortCode)], ['Account number', val(d.bankAccountNumber)], ['Their payment terms', d.paymentTerms ? d.paymentTerms + ' days' : '—'],
+  ]);
+  need(40);
+  heading('Declaration made by the supplier');
+  setFont('normal', 8.8, INK);
+  const decl = doc.splitTextToSize('I confirm the details given are correct, that the licences, permits and insurance listed are current, and that we will tell ' + (company.name || 'Total Waste Services Ltd') + ' if any of them lapse or change.', CW - 8);
+  doc.setFillColor(250, 250, 250); doc.setDrawColor(RULE[0], RULE[1], RULE[2]); doc.roundedRect(M, y, CW, decl.length * 4.2 + 12, 1.5, 1.5, 'FD');
+  let dy = y + 6; for (const line of decl) { doc.text(line, M + 4, dy); dy += 4.2; }
+  setFont('bold', 9, d.acceptTerms ? GREEN : [163, 45, 45]); doc.text(d.acceptTerms ? 'Declaration accepted' : 'Declaration NOT accepted', M + 4, dy + 1.5);
+  y = dy + 9;
+  fields([['Signed by', val(d.signName)], ['Position', val(d.signPosition)], ['Date submitted', fmtDate(app.submitted_at)], ['Submitted from', val(app.sent_to)]]);
+  need(20);
+  heading('Audit trail');
+  setFont('normal', 8.5, MUTED);
+  const trail = ['Form issued to ' + val(app.sent_to) + (app.sent_by ? ' by ' + app.sent_by : '') + (app.created_at ? ' on ' + fmtDate(app.created_at) : '') + '.',
+    'Completed and submitted' + (app.submitted_at ? ' on ' + fmtDate(app.submitted_at) : '') + ' via a unique single-use link.'];
+  if (app.decided_at) trail.push('Put onto the supplier record' + (app.decided_by ? ' by ' + app.decided_by : '') + ' on ' + fmtDate(app.decided_at) + '.');
+  for (const t of trail) for (const line of doc.splitTextToSize(t, CW)) { need(6); setFont('normal', 8.5, MUTED); doc.text(line, M, y); y += 3.8; }
+  const footerBits = [company.name, company.companyNo ? 'Reg. No. ' + company.companyNo : null, company.vat ? 'VAT No. ' + company.vat : null, company.carrierReg ? 'Waste Carrier ' + company.carrierReg : null].filter(Boolean).join('  |  ');
+  const pages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) { doc.setPage(p); doc.setDrawColor(RULE[0], RULE[1], RULE[2]); doc.setLineWidth(0.3); doc.line(M, PAGE_H - 12, M + CW, PAGE_H - 12); setFont('normal', 7, MUTED); doc.text(doc.splitTextToSize(footerBits, CW - 24)[0] || '', M, PAGE_H - 8); doc.text('Page ' + p + ' of ' + pages, M + CW, PAGE_H - 8, { align: 'right' }); }
+  return doc;
+}
+window.buildSupplierApplicationPdfDoc = buildSupplierApplicationPdfDoc;
+
+// Files a submitted supplier form as a PDF against the supplier. Returns the
+// public URL, or null if it could not be filed (the supplier is still saved).
+async function fileSupplierApplicationPdf(app, name, supplierId) {
+  try {
+    const pdf = buildSupplierApplicationPdfDoc(app, {
+      jsPDF: window.jspdf && window.jspdf.jsPDF,
+      logoDataUrl: await loadLogoDataUrl(),
+      company: {
+        name: localStorage.getItem('companyName') || 'Total Waste Services Ltd',
+        address: localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress,
+        phone: TWS_COMPANY.phone, vat: TWS_COMPANY.vat, companyNo: TWS_COMPANY.companyNo, carrierReg: TWS_COMPANY.carrierReg,
+      },
+    });
+    const blob = pdf.output('blob');
+    const safe = (name + '-' + (app.reference || '')).replace(/[^A-Za-z0-9._-]/g, '_');
+    const path = 'supplier/' + Date.now() + '_' + safe + '.pdf';
+    const { error: upErr } = await window.supabase.storage.from('documents').upload(path, blob, { contentType: 'application/pdf' });
+    if (upErr) throw upErr;
+    const { data: { publicUrl } } = window.supabase.storage.from('documents').getPublicUrl(path);
+    const row = { name: 'Supplier form ' + (app.reference || '') + ' — ' + name, file_path: path, file_url: publicUrl, file_type: 'application/pdf', file_size: blob.size, category: 'SUPPLIER_APPLICATION', supplier_name: name, supplier_id: supplierId || null };
+    let { error } = await window.supabase.from('documents').insert([row]);
+    if (error && /supplier_id/.test(error.message || '')) { delete row.supplier_id; ({ error } = await window.supabase.from('documents').insert([row])); }
+    if (error) throw error;
+    return publicUrl;
+  } catch (e) {
+    console.warn('[Supplier form] could not file the PDF:', e);
+    return null;
+  }
+}
+
+// Supplier forms that have come back and not yet been dealt with, shown across
+// the top like the credit banner.
+const SupplierFormBanner = ({ onReview }) => {
+  const [apps, setApps] = React.useState([]);
+  const [dismissed, setDismissed] = React.useState([]);
+  const check = React.useCallback(async () => {
+    try {
+      const { data, error } = await window.supabase.from('supplier_applications').select('id, supplier_name, form_data').eq('status', 'submitted');
+      if (error) return;
+      setApps(data || []);
+    } catch (e) { /* table may not exist yet */ }
+  }, []);
+  React.useEffect(() => {
+    check();
+    const id = setInterval(() => { if (document.visibilityState === 'visible') check(); }, 60 * 1000);
+    window.addEventListener('focus', check);
+    window.addEventListener('supplier-forms-changed', check);
+    let channel = null;
+    try {
+      channel = window.supabase.channel('supplier-applications-watch')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'supplier_applications' }, () => { check(); })
+        .subscribe(() => {});
+    } catch (e) {}
+    return () => { clearInterval(id); window.removeEventListener('focus', check); window.removeEventListener('supplier-forms-changed', check); if (channel) { try { window.supabase.removeChannel(channel); } catch (e) {} } };
+  }, [check]);
+  const outstanding = apps.filter(a => !dismissed.includes(a.id));
+  if (outstanding.length === 0) return null;
+  const names = outstanding.map(a => (a.form_data && a.form_data.companyName) || a.supplier_name).filter(Boolean);
+  const nameText = names.length <= 2 ? names.join(' and ') : names.slice(0, 2).join(', ') + ' and ' + (names.length - 2) + ' more';
+  return (
+    <div className="tws-supplier-banner bg-emerald-50 border-b border-emerald-200 px-4 sm:px-6 py-2.5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <LucideIcon icon="Truck" size={18} className="text-emerald-700 flex-shrink-0" />
+          <span className="text-sm text-emerald-900">
+            <strong>{outstanding.length} supplier form{outstanding.length === 1 ? '' : 's'}</strong>
+            {outstanding.length === 1 ? ' has' : ' have'} come back and {outstanding.length === 1 ? 'needs' : 'need'} checking{nameText ? ' — ' + nameText : ''}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => { if (onReview) onReview(); }} className="px-3 py-1.5 bg-emerald-700 text-white rounded-lg text-xs font-medium hover:bg-emerald-800">Review</button>
+          <button onClick={() => setDismissed(prev => prev.concat(outstanding.map(a => a.id)))} className="p-1.5 text-emerald-700 hover:bg-emerald-100 rounded-lg" title="Hide these until a new one arrives"><X size={16} /></button>
+        </div>
+      </div>
+    </div>
+  );
+};
+function notifySupplierFormsChanged() { try { window.dispatchEvent(new CustomEvent('supplier-forms-changed')); } catch (e) {} }
+
+// 123456 -> 12-34-56 as it is typed.
+const formatSortCode = (v) => String(v || '').replace(/\D/g, '').slice(0, 6).replace(/(\d{2})(?=\d)/g, '$1-');
+
 // ── Supplier onboarding form ────────────────────────────────────────────────
 // The supplier's equivalent of the credit application: a public page reached
 // from a link we email, that collects the company, contact, carrier licence,
@@ -17920,7 +18108,7 @@ const SupplierApplicationForm = ({ token }) => {
           <Two>
             <div><CreditL>Bank</CreditL><CreditI value={f.bankName} onChange={e => set('bankName', e.target.value)} /></div>
             <div><CreditL>Account name</CreditL><CreditI value={f.bankAccountName} onChange={e => set('bankAccountName', e.target.value)} /></div>
-            <div><CreditL>Sort code</CreditL><CreditI value={f.bankSortCode} onChange={e => set('bankSortCode', e.target.value)} placeholder="00-00-00" /></div>
+            <div><CreditL>Sort code</CreditL><CreditI value={f.bankSortCode} onChange={e => set('bankSortCode', formatSortCode(e.target.value))} placeholder="00-00-00" inputMode="numeric" /></div>
             <div><CreditL>Account number</CreditL><CreditI value={f.bankAccountNumber} onChange={e => set('bankAccountNumber', e.target.value)} /></div>
             <div><CreditL>Your payment terms (days)</CreditL><CreditI value={f.paymentTerms} onChange={e => set('paymentTerms', e.target.value)} /></div>
           </Two>
@@ -18005,6 +18193,7 @@ const SupplierApplicationsPanel = ({ user, suppliers, onClose, onSupplierSaved }
         throw new Error(describeError(result.error) || 'Gmail send failed');
       }
       await window.supabase.from('supplier_applications').update({ status: 'sent' }).eq('token', token);
+      notifySupplierFormsChanged();
       alert('✅ Supplier form sent to ' + email.trim() + '.');
       setCompany(''); setEmail('');
       await load();
@@ -18071,9 +18260,13 @@ const SupplierApplicationsPanel = ({ user, suppliers, onClose, onSupplierSaved }
         }
       }
       if (nErr) throw nErr;
-      await window.supabase.from('supplier_applications').update({ status: 'accepted', decided_at: new Date().toISOString(), decided_by: signOff, supplier_id: supplierId }).eq('id', app.id);
-      logAudit(user, 'supplier_form_applied', 'supplier', supplierId, name, { reference: app.reference, dropped });
+      const decidedAt = new Date().toISOString();
+      const filedUrl = await fileSupplierApplicationPdf({ ...app, decided_at: decidedAt, decided_by: signOff }, name, supplierId);
+      await window.supabase.from('supplier_applications').update({ status: 'accepted', decided_at: decidedAt, decided_by: signOff, supplier_id: supplierId, filed_pdf_url: filedUrl }).eq('id', app.id);
+      notifySupplierFormsChanged();
+      logAudit(user, 'supplier_form_applied', 'supplier', supplierId, name, { reference: app.reference, dropped, filedUrl });
       alert((existing ? 'Supplier updated' : 'Supplier created') + ': ' + name + '.' +
+        (filedUrl ? '\n\nThe completed form has been filed as a PDF on the supplier\'s Documents tab.' : '\n\nThe PDF could not be filed (see console).') +
         (dropped.length ? '\n\nThese could not be stored because the database is missing the columns (run the SQL for this build):\n  ' + dropped.join('\n  ') : ''));
       setOpen(null);
       await load();
@@ -18132,6 +18325,7 @@ const SupplierApplicationsPanel = ({ user, suppliers, onClose, onSupplierSaved }
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-semibold text-gray-900">{d.companyName || open.supplier_name} <span className="text-gray-500 font-normal text-sm">{open.reference}</span></h4>
                 <div className="flex gap-2">
+                  <button type="button" onClick={async () => { try { const pdf = buildSupplierApplicationPdfDoc(open, { jsPDF: window.jspdf && window.jspdf.jsPDF, logoDataUrl: await loadLogoDataUrl(), company: { name: localStorage.getItem('companyName') || 'Total Waste Services Ltd', address: localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress, phone: TWS_COMPANY.phone, vat: TWS_COMPANY.vat, companyNo: TWS_COMPANY.companyNo, carrierReg: TWS_COMPANY.carrierReg } }); pdf.save((open.reference || 'supplier-form') + '.pdf'); } catch (e) { alert('Could not make the PDF: ' + describeError(e)); } }} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">Download PDF</button>
                   {open.status === 'submitted' && <button type="button" disabled={applying} onClick={() => applyToSupplier(open)} className="tws-sf-apply px-3 py-1.5 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-50">{applying ? 'Saving…' : 'Put onto supplier record'}</button>}
                   <button type="button" onClick={() => setOpen(null)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">Close</button>
                 </div>
@@ -23704,6 +23898,7 @@ Total Waste Services Ltd`);
           const [showSyncDialog, setShowSyncDialog] = useState(false);
 const [syncResults, setSyncResults] = useState(null);
 const [syncing, setSyncing] = useState(false);
+const [showSyncTools, setShowSyncTools] = useState(false);
 // Add auto-sync interval after your other useEffect hooks
 useEffect(() => {
   // Run quick sync every 30 minutes
@@ -23977,6 +24172,16 @@ const { error } = await window.supabase
   <span className="sm:hidden">Add</span>
 </button>
 {user.role === 'ADMIN' && (
+  <button
+    type="button"
+    onClick={() => setShowSyncTools(v => !v)}
+    title="Show the Sage sync buttons (new records sync themselves every 30 minutes)"
+    className="tws-sync-toggle flex items-center px-2 py-2 text-gray-500 hover:text-gray-800 ml-2 text-sm"
+  >
+    {showSyncTools ? 'Hide Sage sync' : 'Sage \u22EF'}
+  </button>
+)}
+{user.role === 'ADMIN' && showSyncTools && (
   <>
     <button
       onClick={handleSyncFromSage}
@@ -24427,6 +24632,18 @@ const { error } = await window.supabase
         // Suppliers View Component
           const SuppliersView = ({ suppliers, onAddSupplier, onUpdateSupplier, onDeleteSupplier, user, onRefreshSuppliers }) => {
           const [showSupplierForms, setShowSupplierForms] = useState(false);
+          const [showSyncTools, setShowSyncTools] = useState(false);
+          const [supplierFormsPending, setSupplierFormsPending] = useState(0);
+          React.useEffect(() => {
+            const open = () => { window.__openSupplierForms = false; setShowSupplierForms(true); };
+            if (window.__openSupplierForms) open();
+            window.addEventListener('open-supplier-forms', open);
+            const count = async () => { try { const { data } = await window.supabase.from('supplier_applications').select('id').eq('status', 'submitted'); setSupplierFormsPending((data || []).length); } catch (e) {} };
+            count();
+            const id = setInterval(() => { if (document.visibilityState === 'visible') count(); }, 60 * 1000);
+            window.addEventListener('supplier-forms-changed', count);
+            return () => { window.removeEventListener('open-supplier-forms', open); window.removeEventListener('supplier-forms-changed', count); clearInterval(id); };
+          }, []);
           const { hasPermission } = useAuth();
           const [selectedSupplier, setSelectedSupplier] = useState(null);
           const [editingSupplier, setEditingSupplier] = useState(null);
@@ -24655,6 +24872,7 @@ const handleApplySync = async () => {
   >
     <span className="hidden sm:inline">Supplier forms</span>
     <span className="sm:hidden">Forms</span>
+    {supplierFormsPending > 0 && <span className="tws-sf-badge ml-2 px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-xs font-semibold">{supplierFormsPending}</span>}
   </button>
   {showSupplierForms && (
     <SupplierApplicationsPanel
@@ -24665,6 +24883,16 @@ const handleApplySync = async () => {
     />
   )}
   {user?.role === 'ADMIN' && (
+  <button
+    type="button"
+    onClick={() => setShowSyncTools(v => !v)}
+    title="Show the Sage sync buttons (new records sync themselves every 30 minutes)"
+    className="tws-sync-toggle flex items-center px-2 py-2 text-gray-500 hover:text-gray-800 ml-2 text-sm"
+  >
+    {showSyncTools ? 'Hide Sage sync' : 'Sage \u22EF'}
+  </button>
+)}
+  {user?.role === 'ADMIN' && showSyncTools && (
     <>
       <button
         onClick={handleQuickSyncSuppliers}
@@ -26817,7 +27045,7 @@ const DocumentsView = ({ user }) => {
         return;
       }
       
-      setDocuments(data || []);
+      setDocuments((data || []).filter(d => !d.supplier_name));
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -33221,6 +33449,10 @@ const CollectionCalendarModal = () => {
     } catch (e) { /* the tab switch below still happens */ }
     setActiveTab('customers');
   }} />
+  <SupplierFormBanner onReview={() => {
+    try { window.__openSupplierForms = true; window.dispatchEvent(new CustomEvent('open-supplier-forms')); } catch (e) {}
+    setActiveTab('suppliers');
+  }} />
 
   {/* Desktop tabs */}
   <div className="hidden sm:block px-6">
@@ -36826,6 +37058,21 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const [editingSiteIdx, setEditingSiteIdx] = useState(null);
           const emptySite = { siteName: '', address: '', postcode: '', permitNumber: '', cbduNumber: '' };
           const [siteForm, setSiteForm] = useState(emptySite);
+          const [supDocs, setSupDocs] = useState([]);
+          const [supDocsLoading, setSupDocsLoading] = useState(false);
+          const [supDocUploading, setSupDocUploading] = useState(false);
+          const loadSupDocs = React.useCallback(async () => {
+            const name = formData.companyName;
+            if (!name) return;
+            setSupDocsLoading(true);
+            try {
+              const { data, error } = await window.supabase.from('documents').select('*').eq('supplier_name', name).order('created_at', { ascending: false });
+              if (error) throw error;
+              setSupDocs(data || []);
+            } catch (e) { console.warn('[Supplier documents] load failed:', e.message); }
+            finally { setSupDocsLoading(false); }
+          }, [formData.companyName]);
+          React.useEffect(() => { if (activeTab === 'documents') loadSupDocs(); }, [activeTab, loadSupDocs]);
 
           const openNewSite = () => { setSiteForm(emptySite); setEditingSiteIdx(-1); };
           const openEditSite = (idx) => { setSiteForm({...formData.siteAddresses[idx]}); setEditingSiteIdx(idx); };
@@ -37685,9 +37932,58 @@ window.location.href = '/#sage-integration';  // Keep this line!
                     </div>
                   )}
 
-                  {/* Documents Tab */}
+                  {/* Documents Tab — anything filed against this supplier, including the completed supplier form. */}
                   {activeTab === 'documents' && (
-                    <div className="py-8 text-center text-gray-400 text-sm">Documents feature coming soon.</div>
+                    <div className="space-y-4 tws-supplier-docs">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                          <h4 className="font-medium text-gray-800">Documents on file</h4>
+                          <p className="text-xs text-gray-500 mt-0.5">Supplier forms and anything else filed against this supplier.</p>
+                        </div>
+                        <label className={`px-3 py-2 rounded-lg text-sm font-medium cursor-pointer ${supDocUploading ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                          {supDocUploading ? 'Uploading\u2026' : '+ Upload'}
+                          <input type="file" className="hidden" disabled={supDocUploading} onChange={async (e) => {
+                            const file = e.target.files && e.target.files[0];
+                            if (!file) return;
+                            e.target.value = '';
+                            const label = window.prompt('What is this document?', file.name.replace(/\.[^.]+$/, ''));
+                            if (label === null) return;
+                            setSupDocUploading(true);
+                            try {
+                              const safe = file.name.replace(/[^A-Za-z0-9._-]/g, '_');
+                              const path = 'supplier/' + Date.now() + '_' + safe;
+                              const { error: upErr } = await window.supabase.storage.from('documents').upload(path, file);
+                              if (upErr) throw upErr;
+                              const { data: { publicUrl } } = window.supabase.storage.from('documents').getPublicUrl(path);
+                              const { error: insErr } = await window.supabase.from('documents').insert([{ name: label || file.name, file_path: path, file_url: publicUrl, file_type: file.type || 'application/octet-stream', file_size: file.size, category: 'SUPPLIER', supplier_name: formData.companyName }]);
+                              if (insErr) throw insErr;
+                              await loadSupDocs();
+                            } catch (err) { alert('Could not upload: ' + (err.message || err)); }
+                            finally { setSupDocUploading(false); }
+                          }} />
+                        </label>
+                      </div>
+                      {supDocsLoading ? <p className="text-sm text-gray-500">Loading…</p>
+                       : supDocs.length === 0 ? <p className="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">Nothing filed against this supplier yet.</p>
+                       : (
+                        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+                          {supDocs.map(doc => (
+                            <div key={doc.id} className="flex items-center gap-3 px-3 py-2.5">
+                              <FileText size={18} className="text-blue-600 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-800 truncate">{doc.name}</div>
+                                <div className="text-xs text-gray-500">
+                                  {doc.category === 'SUPPLIER_APPLICATION' ? 'Supplier form' : 'Document'}
+                                  {doc.file_size ? ' \u00b7 ' + Math.round(doc.file_size / 1024) + ' KB' : ''}
+                                  {doc.created_at ? ' \u00b7 ' + new Date(doc.created_at).toLocaleDateString('en-GB') : ''}
+                                </div>
+                              </div>
+                              <a href={doc.file_url} onClick={(e) => { e.preventDefault(); openStoredFile(doc); }} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex-shrink-0">Open</a>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
 
                 </div>
