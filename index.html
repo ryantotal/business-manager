@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-04 16:30';
+const BUILD_STAMP = '2026-11-04 16:25';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -18276,6 +18276,20 @@ const SupplierApplicationsPanel = ({ user, suppliers, onClose, onSupplierSaved }
     } finally { setApplying(false); }
   };
 
+  // Remove a form that has gone nowhere: a test, a wrong address, a supplier
+  // who never came back. The supplier record (if one was made) is kept.
+  const removeApp = async (app) => {
+    const label = (app.form_data && app.form_data.companyName) || app.supplier_name;
+    if (!confirm('Delete the supplier form for ' + label + '?\n\nReference ' + (app.reference || '') + '. This cannot be undone, and any link already sent will stop working.' + (app.status === 'accepted' ? '\n\nThe supplier record and the filed PDF are kept.' : ''))) return;
+    try {
+      const { error } = await window.supabase.from('supplier_applications').delete().eq('id', app.id);
+      if (error) throw error;
+      logAudit(user, 'supplier_form_deleted', 'supplier_application', app.id, label, { reference: app.reference, status: app.status });
+      if (open && open.id === app.id) setOpen(null);
+      notifySupplierFormsChanged();
+      await load();
+    } catch (e) { alert('Could not delete: ' + describeError(e)); }
+  };
   const Row = SupplierFormRow;
   const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB') : '';
   const statusChip = (s) => ({ sent: 'bg-blue-100 text-blue-800', submitted: 'bg-amber-100 text-amber-800', accepted: 'bg-green-100 text-green-800', declined: 'bg-red-100 text-red-800' }[s] || 'bg-gray-100 text-gray-700');
@@ -18311,6 +18325,7 @@ const SupplierApplicationsPanel = ({ user, suppliers, onClose, onSupplierSaved }
                     <td className="py-2 text-right">
                       {a.status === 'sent' && <button type="button" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(a.token)); alert('Link copied.'); }} className="text-xs text-blue-700 underline">Copy link</button>}
                       {(a.status === 'submitted' || a.status === 'accepted') && <button type="button" onClick={() => setOpen(a)} className="tws-sf-view text-xs text-blue-700 underline">View</button>}
+                      <button type="button" onClick={() => removeApp(a)} title="Delete this form" className="tws-sf-delete ml-3 text-gray-400 hover:text-red-600 align-middle"><Trash2 size={14} /></button>
                     </td>
                   </tr>
                 ))}
