@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-10-21 12:30';
+const BUILD_STAMP = '2026-11-04 12:05';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -2024,6 +2024,9 @@ const buildWtnRowsFromJob = (job, { suppliers, customer, company, wtnNumber } = 
 };
 
 const WALK_IN_CUSTOMER_NAME = 'Walk-in customer';
+// The signed-in user, for audit entries written from helpers that have no
+// access to the auth context.
+window.__twsUser = null;
 
 // Searchable Dropdown Component
 const SearchableDropdown = ({ 
@@ -2889,6 +2892,7 @@ return (
           }, [user]);
 
 
+          try { window.__twsUser = user || null; } catch (e) {}
           const hasPermission = (permission) => {
             if (!user) return false;
             // The owner account is never restricted.
@@ -17676,6 +17680,484 @@ const CreditApplicationForm = ({ token }) => {
 };
 
 window.CreditApplicationForm = CreditApplicationForm;
+
+// ── Supplier onboarding form ────────────────────────────────────────────────
+// The supplier's equivalent of the credit application: a public page reached
+// from a link we email, that collects the company, contact, carrier licence,
+// permits, insurance and bank details, and lands on the suppliers screen for
+// a person to check and copy onto the supplier record. The token is the
+// credential, as it is for credit applications.
+const SUPPLIER_SERVICES = ['Skip Hire', 'Aggregates Supply', 'Hazardous Waste', 'Muck Away', 'Grab Hire', 'Roll-on Roll-off', 'Plant Hire', 'Haulage', 'Transport', 'Concrete'];
+const SUPPLIER_AREAS = ['London', 'South East', 'South West', 'Midlands', 'North West', 'North East', 'Scotland', 'Wales', 'Northern Ireland', 'National Coverage'];
+const SUPPLIER_CERTS = ['ISO 9001', 'ISO 14001', 'ISO 45001', 'FORS Bronze', 'FORS Silver', 'FORS Gold', 'CHAS', 'SafeContractor', 'Constructionline', 'CLOCS'];
+const SUPPLIER_FORM_SERVICES = SUPPLIER_SERVICES;
+const emptySupplierSite = () => ({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), siteName: '', address: '', postcode: '', permitNumber: '', cbduNumber: '' });
+
+const SupplierFormTwo = ({ children }) => <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>;
+const SupplierFormRow = ({ label, value }) => value ? <div><span className="text-xs text-gray-500">{label}</span><p className="text-sm text-gray-900">{value}</p></div> : null;
+
+const SupplierApplicationForm = ({ token }) => {
+  const [loading, setLoading] = React.useState(true);
+  const [record, setRecord] = React.useState(null);
+  const [error, setError] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  const [logo, setLogo] = React.useState('');
+  const [f, setF] = React.useState({
+    companyName: '', tradingName: '', companyNumber: '', vatNumber: '',
+    regAddress1: '', regAddress2: '', regTown: '', regPostcode: '',
+    contactName: '', contactPosition: '', phone: '', mobile: '', email: '',
+    accountsName: '', accountsEmail: '', accountsPhone: '',
+    services: [], servicesOther: '', areas: [], serviceAreas: '', certifications: [],
+    carrierNumber: '', carrierTier: '', carrierExpiry: '',
+    permits: '', sites: [emptySupplierSite()],
+    plInsurer: '', plPolicy: '', plExpiry: '', plCover: '',
+    elInsurer: '', elPolicy: '', elExpiry: '', elCover: '',
+    motorInsurer: '', motorPolicy: '', motorExpiry: '',
+    bankName: '', bankAccountName: '', bankSortCode: '', bankAccountNumber: '',
+    paymentTerms: '30',
+    signName: '', signPosition: '', acceptTerms: false,
+  });
+  const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+  const toggleIn = (key, s) => setF(prev => ({ ...prev, [key]: prev[key].includes(s) ? prev[key].filter(x => x !== s) : prev[key].concat([s]) }));
+  const toggleService = (s) => toggleIn('services', s);
+  const setSite = (i, k, v) => setF(prev => ({ ...prev, sites: prev.sites.map((st, j) => j === i ? { ...st, [k]: v } : st) }));
+  const addSite = () => setF(prev => ({ ...prev, sites: prev.sites.concat([emptySupplierSite()]) }));
+  const removeSite = (i) => setF(prev => ({ ...prev, sites: prev.sites.filter((_, j) => j !== i) }));
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { data: row, error: e } = await window.supabase.rpc('supplier_app_by_token', { p_token: token });
+        if (e) throw e;
+        if (!row) { setError('This link is not valid. Please ask us for a new one.'); return; }
+        if (row.status === 'submitted' || row.status === 'accepted' || row.status === 'declined') { setDone(true); setRecord(row); return; }
+        setRecord(row);
+        setF(prev => ({ ...prev, companyName: row.supplier_name || '' }));
+      } catch (err) {
+        setError('Could not load the form. Please try again, or contact us.');
+      } finally { setLoading(false); }
+    })();
+    try { const url = localStorage.getItem('companyLogo'); if (url) setLogo(url); } catch (e) {}
+  }, [token]);
+
+  const submit = async () => {
+    const missing = [];
+    if (!f.companyName.trim()) missing.push('Registered company name');
+    if (!f.regAddress1.trim()) missing.push('Registered address');
+    if (!f.regPostcode.trim()) missing.push('Postcode');
+    if (!f.contactName.trim()) missing.push('Main contact name');
+    if (!f.email.trim()) missing.push('Email');
+    if (!f.phone.trim() && !f.mobile.trim()) missing.push('A phone number');
+    if (f.services.length === 0 && !f.servicesOther.trim()) missing.push('At least one service');
+    if (f.areas.length === 0) missing.push('At least one area you cover');
+    if (!f.carrierNumber.trim()) missing.push('Waste carrier registration number');
+    if (!f.plInsurer.trim() || !f.plExpiry) missing.push('Public liability insurer and expiry date');
+    if (!f.signName.trim()) missing.push('Your name in the declaration');
+    if (!f.signPosition.trim()) missing.push('Your position in the declaration');
+    if (!f.acceptTerms) missing.push('The declaration tick box');
+    if (missing.length > 0) { alert('Please fill in:\n\n' + missing.map(m => '• ' + m).join('\n')); return; }
+    setSaving(true);
+    try {
+      const form = { ...f, sites: f.sites.filter(st => [st.siteName, st.address, st.postcode, st.permitNumber].some(v => String(v || '').trim())) };
+      const { error: e } = await window.supabase.rpc('supplier_app_submit', { p_token: token, p_form: form });
+      if (e) throw e;
+      setDone(true);
+    } catch (err) {
+      console.error('[Supplier form] submit failed:', err);
+      alert('Could not submit:\n\n' + describeError(err));
+    } finally { setSaving(false); }
+  };
+
+  const G = CREDIT_GREEN;
+  const companyName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
+  if (loading) return <div className="max-w-3xl mx-auto p-8 text-center text-gray-500">Loading…</div>;
+  if (error) {
+    return (
+      <div className="max-w-lg mx-auto mt-16 bg-white border border-gray-200 rounded-xl p-8 text-center">
+        <p className="text-gray-800 font-medium">{error}</p>
+        <p className="text-sm text-gray-500 mt-2">Call us on {TWS_COMPANY.phone} and we'll sort it out.</p>
+      </div>
+    );
+  }
+  if (done) {
+    return (
+      <div className="max-w-lg mx-auto mt-16 bg-white border border-gray-200 rounded-xl p-8 text-center">
+        <div style={{ color: G, fontSize: 40, lineHeight: 1 }}>✓</div>
+        <h1 className="text-xl font-semibold text-gray-900 mt-3">Details received</h1>
+        <p className="text-sm text-gray-600 mt-2">Thanks. We'll check them and be in touch if we need anything else.</p>
+        <p className="text-xs text-gray-400 mt-4">{companyName} · {TWS_COMPANY.phone}</p>
+      </div>
+    );
+  }
+  const Two = SupplierFormTwo;
+  return (
+    <div className="min-h-screen bg-gray-50 py-6 px-4">
+      <div className="max-w-3xl mx-auto bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div style={{ height: 5, background: G }} />
+        <div className="px-6 sm:px-10 pt-6 pb-4 border-b border-gray-200 flex justify-between items-start gap-4 flex-wrap">
+          <div>
+            {logo ? <img src={logo} alt="" style={{ maxHeight: 46 }} /> : <div style={{ color: G, fontWeight: 700, fontSize: 18 }}>{companyName}</div>}
+            <div className="text-xs text-gray-500 mt-2" style={{ lineHeight: 1.5 }}>
+              {localStorage.getItem('companyAddress') || TWS_COMPANY.fallbackAddress}<br />T: {TWS_COMPANY.phone}
+            </div>
+          </div>
+          <div className="text-right">
+            <div style={{ color: G, fontWeight: 700, fontSize: 20 }}>SUPPLIER ACCOUNT FORM</div>
+            <div className="text-sm font-semibold text-gray-800 mt-1">{record && record.reference}</div>
+            <div className="text-xs text-gray-500 mt-1">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+          </div>
+        </div>
+        <div className="px-6 sm:px-10 py-5">
+          <div className="rounded-lg px-4 py-3 text-sm" style={{ background: '#e8f3eb', border: '1px solid ' + G, color: '#144720' }}>
+            <strong>Setting you up as a supplier.</strong><br />
+            We need these details before we can place work with you. Fields marked * are required; the rest help us get it right first time.
+          </div>
+
+          <CreditH>Your company</CreditH>
+          <Two>
+            <div><CreditL>Registered company name *</CreditL><CreditI value={f.companyName} onChange={e => set('companyName', e.target.value)} /></div>
+            <div><CreditL>Trading name, if different</CreditL><CreditI value={f.tradingName} onChange={e => set('tradingName', e.target.value)} /></div>
+            <div><CreditL>Company registration no.</CreditL><CreditI value={f.companyNumber} onChange={e => set('companyNumber', e.target.value)} placeholder="12345678" /></div>
+            <div><CreditL>VAT number</CreditL><CreditI value={f.vatNumber} onChange={e => set('vatNumber', e.target.value)} placeholder="GB123456789" /></div>
+            <div className="sm:col-span-2"><CreditL>Registered address *</CreditL><CreditI value={f.regAddress1} onChange={e => set('regAddress1', e.target.value)} placeholder="Street number and name" /></div>
+            <div><CreditL>Address line 2</CreditL><CreditI value={f.regAddress2} onChange={e => set('regAddress2', e.target.value)} /></div>
+            <div><CreditL>Town</CreditL><CreditI value={f.regTown} onChange={e => set('regTown', e.target.value)} /></div>
+            <div><CreditL>Postcode *</CreditL><CreditI value={f.regPostcode} onChange={e => set('regPostcode', e.target.value)} /></div>
+          </Two>
+
+          <CreditH>Contacts</CreditH>
+          <Two>
+            <div><CreditL>Main contact name *</CreditL><CreditI value={f.contactName} onChange={e => set('contactName', e.target.value)} /></div>
+            <div><CreditL>Position</CreditL><CreditI value={f.contactPosition} onChange={e => set('contactPosition', e.target.value)} /></div>
+            <div><CreditL>Phone *</CreditL><CreditI value={f.phone} onChange={e => set('phone', e.target.value)} /></div>
+            <div><CreditL>Mobile</CreditL><CreditI value={f.mobile} onChange={e => set('mobile', e.target.value)} /></div>
+            <div><CreditL>Email *</CreditL><CreditI type="email" value={f.email} onChange={e => set('email', e.target.value)} /></div>
+            <div><CreditL>Accounts contact</CreditL><CreditI value={f.accountsName} onChange={e => set('accountsName', e.target.value)} /></div>
+            <div><CreditL>Accounts email</CreditL><CreditI type="email" value={f.accountsEmail} onChange={e => set('accountsEmail', e.target.value)} placeholder="Where remittances go" /></div>
+            <div><CreditL>Accounts phone</CreditL><CreditI value={f.accountsPhone} onChange={e => set('accountsPhone', e.target.value)} /></div>
+          </Two>
+
+          <CreditH>What you do</CreditH>
+          <CreditL>Services you provide *</CreditL>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+            {SUPPLIER_FORM_SERVICES.map(s => (
+              <label key={s} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={f.services.includes(s)} onChange={() => toggleService(s)} className="w-4 h-4" />{s}
+              </label>
+            ))}
+          </div>
+          <div className="mb-4"><CreditL>Anything else you do</CreditL><CreditI value={f.servicesOther} onChange={e => set('servicesOther', e.target.value)} /></div>
+          <CreditL>Areas you cover *</CreditL>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+            {SUPPLIER_AREAS.map(a => (
+              <label key={a} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={f.areas.includes(a)} onChange={() => toggleIn('areas', a)} className="w-4 h-4" />{a}
+              </label>
+            ))}
+          </div>
+          <div className="mb-4"><CreditL>More detail on where you work</CreditL><CreditI value={f.serviceAreas} onChange={e => set('serviceAreas', e.target.value)} placeholder="e.g. within 30 miles of B1, or towns / postcode areas" /></div>
+          <CreditL>Accreditations you hold</CreditL>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {SUPPLIER_CERTS.map(c => (
+              <label key={c} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={f.certifications.includes(c)} onChange={() => toggleIn('certifications', c)} className="w-4 h-4" />{c}
+              </label>
+            ))}
+          </div>
+
+          <CreditH>Waste carrier registration</CreditH>
+          <Two>
+            <div><CreditL>Registration number *</CreditL><CreditI value={f.carrierNumber} onChange={e => set('carrierNumber', e.target.value)} placeholder="CBDU123456" /></div>
+            <div><CreditL>Tier</CreditL>
+              <select value={f.carrierTier} onChange={e => set('carrierTier', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                <option value="">Select</option><option value="Upper">Upper tier</option><option value="Lower">Lower tier</option>
+              </select>
+            </div>
+            <div><CreditL>Expiry date</CreditL><CreditI type="date" value={f.carrierExpiry} onChange={e => set('carrierExpiry', e.target.value)} /></div>
+          </Two>
+
+          <CreditH>Permits and sites</CreditH>
+          <div className="space-y-4">
+            <div><CreditL>Environmental permit or exemption numbers</CreditL>
+              <textarea value={f.permits} onChange={e => set('permits', e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="One per line, with what it covers" /></div>
+            <div>
+              <CreditL>Sites waste can be taken to</CreditL>
+              <p className="text-xs text-gray-500 mb-2">Your transfer stations, tips or yards. Leave blank if you only collect.</p>
+              {f.sites.map((st, i) => (
+                <div key={st.id} className="tws-sf-site border border-gray-200 rounded-lg p-3 mb-2 bg-gray-50">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div><CreditL>Site name</CreditL><CreditI value={st.siteName} onChange={e => setSite(i, 'siteName', e.target.value)} placeholder="e.g. Oldbury Transfer Station" /></div>
+                    <div><CreditL>Postcode</CreditL><CreditI value={st.postcode} onChange={e => setSite(i, 'postcode', e.target.value)} /></div>
+                    <div className="sm:col-span-2"><CreditL>Address</CreditL><CreditI value={st.address} onChange={e => setSite(i, 'address', e.target.value)} /></div>
+                    <div><CreditL>Permit / exemption no.</CreditL><CreditI value={st.permitNumber} onChange={e => setSite(i, 'permitNumber', e.target.value)} /></div>
+                    <div><CreditL>Carrier no. at this site, if different</CreditL><CreditI value={st.cbduNumber} onChange={e => setSite(i, 'cbduNumber', e.target.value)} /></div>
+                  </div>
+                  {f.sites.length > 1 && <button type="button" onClick={() => removeSite(i)} className="text-xs text-red-600 mt-2">Remove this site</button>}
+                </div>
+              ))}
+              <button type="button" onClick={addSite} className="tws-sf-add-site text-sm font-medium" style={{ color: G }}>+ Add another site</button>
+            </div>
+          </div>
+
+          <CreditH>Insurance</CreditH>
+          <p className="text-xs text-gray-500 mb-3">Public liability is required. We only need the policy numbers and expiry dates, not copies of the certificates.</p>
+          <Two>
+            <div><CreditL>Public liability insurer *</CreditL><CreditI value={f.plInsurer} onChange={e => set('plInsurer', e.target.value)} /></div>
+            <div><CreditL>Policy number</CreditL><CreditI value={f.plPolicy} onChange={e => set('plPolicy', e.target.value)} /></div>
+            <div><CreditL>Expiry date *</CreditL><CreditI type="date" value={f.plExpiry} onChange={e => set('plExpiry', e.target.value)} /></div>
+            <div><CreditL>Cover amount (£)</CreditL><CreditI value={f.plCover} onChange={e => set('plCover', e.target.value)} placeholder="e.g. 5,000,000" /></div>
+            <div><CreditL>Employers' liability insurer</CreditL><CreditI value={f.elInsurer} onChange={e => set('elInsurer', e.target.value)} /></div>
+            <div><CreditL>Policy number</CreditL><CreditI value={f.elPolicy} onChange={e => set('elPolicy', e.target.value)} /></div>
+            <div><CreditL>Expiry date</CreditL><CreditI type="date" value={f.elExpiry} onChange={e => set('elExpiry', e.target.value)} /></div>
+            <div><CreditL>Cover amount (£)</CreditL><CreditI value={f.elCover} onChange={e => set('elCover', e.target.value)} /></div>
+            <div><CreditL>Motor / goods in transit insurer</CreditL><CreditI value={f.motorInsurer} onChange={e => set('motorInsurer', e.target.value)} /></div>
+            <div><CreditL>Policy number</CreditL><CreditI value={f.motorPolicy} onChange={e => set('motorPolicy', e.target.value)} /></div>
+            <div><CreditL>Expiry date</CreditL><CreditI type="date" value={f.motorExpiry} onChange={e => set('motorExpiry', e.target.value)} /></div>
+          </Two>
+
+          <CreditH>Payment details</CreditH>
+          <Two>
+            <div><CreditL>Bank</CreditL><CreditI value={f.bankName} onChange={e => set('bankName', e.target.value)} /></div>
+            <div><CreditL>Account name</CreditL><CreditI value={f.bankAccountName} onChange={e => set('bankAccountName', e.target.value)} /></div>
+            <div><CreditL>Sort code</CreditL><CreditI value={f.bankSortCode} onChange={e => set('bankSortCode', e.target.value)} placeholder="00-00-00" /></div>
+            <div><CreditL>Account number</CreditL><CreditI value={f.bankAccountNumber} onChange={e => set('bankAccountNumber', e.target.value)} /></div>
+            <div><CreditL>Your payment terms (days)</CreditL><CreditI value={f.paymentTerms} onChange={e => set('paymentTerms', e.target.value)} /></div>
+          </Two>
+
+          <CreditH>Declaration</CreditH>
+          <Two>
+            <div><CreditL>Your name *</CreditL><CreditI value={f.signName} onChange={e => set('signName', e.target.value)} /></div>
+            <div><CreditL>Position *</CreditL><CreditI value={f.signPosition} onChange={e => set('signPosition', e.target.value)} /></div>
+          </Two>
+          <label className="flex items-start gap-3 mt-4 text-sm cursor-pointer">
+            <input type="checkbox" checked={f.acceptTerms} onChange={e => set('acceptTerms', e.target.checked)} className="mt-1 w-4 h-4" />
+            <span>I confirm the details above are correct, that the licences, permits and insurance listed are current, and that we will tell {companyName} if any of them lapse or change. *</span>
+          </label>
+          <div className="mt-6 flex justify-end">
+            <button type="button" onClick={submit} disabled={saving} className="px-6 py-2.5 rounded-lg text-white font-medium disabled:opacity-50" style={{ background: G }}>
+              {saving ? 'Sending…' : 'Submit'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+window.SupplierApplicationForm = SupplierApplicationForm;
+
+// Staff side: send the link, see what has come back, copy it onto a supplier.
+const SupplierApplicationsPanel = ({ user, suppliers, onClose, onSupplierSaved }) => {
+  const [apps, setApps] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [company, setCompany] = React.useState('');
+  const [email, setEmail] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [open, setOpen] = React.useState(null);
+  const [applying, setApplying] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await window.supabase.from('supplier_applications').select('*').neq('status', 'draft').order('created_at', { ascending: false });
+      if (error) throw error;
+      setApps(data || []);
+    } catch (e) {
+      console.warn('[Supplier forms] load failed:', e.message);
+      if (/does not exist|schema cache/i.test(e.message || '')) alert('The supplier_applications table is not in the database yet. Run the SQL for this build first.');
+    } finally { setLoading(false); }
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const portalBase = (localStorage.getItem('portalUrl') || 'https://portal.totalwasteservicesltd.com').replace(/\/+$/, '');
+  const linkFor = (t) => portalBase + '/?supplier=' + t;
+  const signOff = [user && user.firstName, user && user.lastName].filter(Boolean).join(' ') || (user && user.email) || '';
+  const companyName = localStorage.getItem('companyName') || 'Total Waste Services Ltd';
+
+  const sendLink = async () => {
+    if (!company.trim()) { alert('Enter the supplier\'s company name.'); return; }
+    if (!email.trim()) { alert('Enter an email address to send it to.'); return; }
+    if (!user || !user.id) { alert('No logged-in user found. Please sign out and back in.'); return; }
+    setSending(true);
+    try {
+      const token = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 14));
+      const ref = 'SA-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random() * 9000) + 1000);
+      const { error: insErr } = await window.supabase.from('supplier_applications').insert([{
+        token, reference: ref, supplier_name: company.trim(), sent_to: email.trim(),
+        sent_by: signOff, sent_by_user_id: user.id, status: 'draft',
+      }]);
+      if (insErr) throw insErr;
+      const body = [
+        'Dear Sir/Madam,', '',
+        'Thanks for agreeing to work with us. Before we can place orders with you we need a few details on file.', '',
+        'Please complete our supplier form here:', linkFor(token), '',
+        'It takes about ten minutes. You will need your company and VAT numbers, your waste carrier registration,',
+        'any permit or exemption numbers, your insurance policy numbers and expiry dates, and your bank details.',
+        'We do not need copies of the certificates.', '',
+        'Kind regards,', signOff || companyName, companyName,
+      ].join('\n');
+      const res = await fetch('/api/gmail?action=send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id, to: email.trim(), subject: 'Supplier account form ' + ref + ' — ' + companyName, body, fromName: (signOff || 'Total Waste Services') + ' - Total Waste Services' }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        try { await window.supabase.from('supplier_applications').delete().eq('token', token); } catch (x) {}
+        throw new Error(describeError(result.error) || 'Gmail send failed');
+      }
+      await window.supabase.from('supplier_applications').update({ status: 'sent' }).eq('token', token);
+      alert('✅ Supplier form sent to ' + email.trim() + '.');
+      setCompany(''); setEmail('');
+      await load();
+    } catch (e) {
+      const msg = describeError(e);
+      if (/Gmail not connected|reconnect|token expired/i.test(msg)) alert('Could not send: your Gmail account is not connected.\n\nGo to Admin → User Management and connect it, then try again.');
+      else alert('Could not send the form:\n\n' + msg);
+    } finally { setSending(false); }
+  };
+
+  // Copy a submitted form onto the supplier record: an existing supplier of
+  // the same name, or a new one. Newer columns are dropped and reported if
+  // the database does not have them yet, so the supplier is never lost.
+  const applyToSupplier = async (app) => {
+    const d = app.form_data || {};
+    const name = String(d.companyName || app.supplier_name || '').trim();
+    if (!name) { alert('No company name on this form.'); return; }
+    const existing = (suppliers || []).find(s => String(s.companyName || s.name || '').trim().toLowerCase() === name.toLowerCase());
+    if (!confirm(existing ? 'Update the existing supplier "' + name + '" with the details on this form?' : 'Create a new supplier "' + name + '" from this form?')) return;
+    setApplying(true);
+    try {
+      const services = (d.services || []).concat(d.servicesOther ? [d.servicesOther] : []);
+      const core = {
+        name, email: d.email || '', phone: d.phone || d.mobile || '',
+        address: combinePartsToAddress({ line1: d.regAddress1 || '', line2: d.regAddress2 || '', city: d.regTown || '', postcode: d.regPostcode || '' }),
+        city: d.regTown || '', postcode: d.regPostcode || '', vat_number: d.vatNumber || '',
+        contact_person: d.contactName || '', accountsemail: d.accountsEmail || d.email || '',
+        credit_days: parseInt(d.paymentTerms) || 30,
+        primary_services: JSON.stringify(services),
+        service_areas: JSON.stringify((d.areas || []).concat(!d.areas && d.serviceAreas ? [d.serviceAreas] : [])),
+        site_addresses: JSON.stringify((d.sites || []).map(st => ({ id: st.id || Date.now().toString(36), siteName: st.siteName || '', address: st.address || '', postcode: st.postcode || '', permitNumber: st.permitNumber || '', cbduNumber: st.cbduNumber || d.carrierNumber || '' }))),
+        waste_carrier_license: d.carrierNumber || '', environmental_permit: d.permits || '',
+        accountstatus: 'Active',
+      };
+      const newer = {
+        company_number: d.companyNumber || '', trading_name: d.tradingName || '',
+        waste_carrier_expiry: d.carrierExpiry || null, waste_carrier_tier: d.carrierTier || '',
+        insurance_provider: d.plInsurer || '', insurance_policy: d.plPolicy || '', insurance_expiry: d.plExpiry || null, insurance_amount: d.plCover || '',
+        el_insurance_provider: d.elInsurer || '', el_insurance_policy: d.elPolicy || '', el_insurance_expiry: d.elExpiry || null,
+        motor_insurance_provider: d.motorInsurer || '', motor_insurance_policy: d.motorPolicy || '', motor_insurance_expiry: d.motorExpiry || null,
+        bank_name: d.bankName || '', bank_account_name: d.bankAccountName || '', bank_sort_code: d.bankSortCode || '', bank_account_number: d.bankAccountNumber || '',
+        onboarding_reference: app.reference || null, onboarding_submitted_at: app.submitted_at || null,
+        certifications: JSON.stringify(d.certifications || []), coverage_notes: d.serviceAreas || '',
+      };
+      let supplierId = existing ? existing.id : null;
+      if (existing) {
+        const { error } = await window.supabase.from('suppliers').update(core).eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { data, error } = await window.supabase.from('suppliers').insert([core]).select().single();
+        if (error) throw error;
+        supplierId = data.id;
+      }
+      let dropped = [];
+      let { error: nErr } = await window.supabase.from('suppliers').update(newer).eq('id', supplierId);
+      if (nErr && /column .* does not exist|Could not find the .* column/i.test(nErr.message || '')) {
+        // Drop whichever columns the database lacks, one at a time.
+        const retry = { ...newer };
+        for (let i = 0; i < 25 && nErr; i++) {
+          const m = (nErr.message || '').match(/column "?([a-z_]+)"?/i) || (nErr.message || '').match(/'([a-z_]+)' column/i);
+          if (!m || !(m[1] in retry)) break;
+          dropped.push(m[1]); delete retry[m[1]];
+          ({ error: nErr } = await window.supabase.from('suppliers').update(retry).eq('id', supplierId));
+        }
+      }
+      if (nErr) throw nErr;
+      await window.supabase.from('supplier_applications').update({ status: 'accepted', decided_at: new Date().toISOString(), decided_by: signOff, supplier_id: supplierId }).eq('id', app.id);
+      logAudit(user, 'supplier_form_applied', 'supplier', supplierId, name, { reference: app.reference, dropped });
+      alert((existing ? 'Supplier updated' : 'Supplier created') + ': ' + name + '.' +
+        (dropped.length ? '\n\nThese could not be stored because the database is missing the columns (run the SQL for this build):\n  ' + dropped.join('\n  ') : ''));
+      setOpen(null);
+      await load();
+      if (onSupplierSaved) onSupplierSaved(name);
+    } catch (e) {
+      alert('Could not save the supplier: ' + describeError(e));
+    } finally { setApplying(false); }
+  };
+
+  const Row = SupplierFormRow;
+  const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB') : '';
+  const statusChip = (s) => ({ sent: 'bg-blue-100 text-blue-800', submitted: 'bg-amber-100 text-amber-800', accepted: 'bg-green-100 text-green-800', declined: 'bg-red-100 text-red-800' }[s] || 'bg-gray-100 text-gray-700');
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="tws-supplier-forms bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Supplier forms</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        </div>
+        <div className="p-5 border-b border-gray-200 bg-gray-50">
+          <p className="text-sm font-medium text-gray-800 mb-2">Send a form to a new supplier</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Supplier company name" className="tws-sf-company flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Their email address" className="tws-sf-email flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <button type="button" onClick={sendLink} disabled={sending} className="tws-sf-send px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">{sending ? 'Sending…' : 'Send form'}</button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">They get a link by email from your Gmail. What they fill in appears below for you to check and put onto their supplier record.</p>
+        </div>
+        <div className="p-5">
+          {loading ? <p className="text-sm text-gray-500">Loading…</p> : apps.length === 0 ? <p className="text-sm text-gray-500">No forms sent yet.</p> : (
+            <table className="min-w-full text-sm">
+              <thead><tr className="text-left text-xs text-gray-500 uppercase"><th className="py-2 pr-4">Ref</th><th className="py-2 pr-4">Supplier</th><th className="py-2 pr-4">Sent to</th><th className="py-2 pr-4">Status</th><th className="py-2 pr-4">Received</th><th></th></tr></thead>
+              <tbody className="divide-y divide-gray-100">
+                {apps.map(a => (
+                  <tr key={a.id} className="tws-sf-row">
+                    <td className="py-2 pr-4 font-medium">{a.reference}</td>
+                    <td className="py-2 pr-4">{(a.form_data && a.form_data.companyName) || a.supplier_name}</td>
+                    <td className="py-2 pr-4 text-gray-600">{a.sent_to}</td>
+                    <td className="py-2 pr-4"><span className={'px-2 py-0.5 rounded-full text-xs font-medium ' + statusChip(a.status)}>{a.status}</span></td>
+                    <td className="py-2 pr-4 text-gray-600">{fmt(a.submitted_at)}</td>
+                    <td className="py-2 text-right">
+                      {a.status === 'sent' && <button type="button" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(a.token)); alert('Link copied.'); }} className="text-xs text-blue-700 underline">Copy link</button>}
+                      {(a.status === 'submitted' || a.status === 'accepted') && <button type="button" onClick={() => setOpen(a)} className="tws-sf-view text-xs text-blue-700 underline">View</button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {open && (() => {
+          const d = open.form_data || {};
+          return (
+            <div className="tws-sf-detail border-t border-gray-200 p-5 bg-gray-50">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-gray-900">{d.companyName || open.supplier_name} <span className="text-gray-500 font-normal text-sm">{open.reference}</span></h4>
+                <div className="flex gap-2">
+                  {open.status === 'submitted' && <button type="button" disabled={applying} onClick={() => applyToSupplier(open)} className="tws-sf-apply px-3 py-1.5 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-50">{applying ? 'Saving…' : 'Put onto supplier record'}</button>}
+                  <button type="button" onClick={() => setOpen(null)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">Close</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <Row label="Trading name" value={d.tradingName} /><Row label="Company no." value={d.companyNumber} /><Row label="VAT no." value={d.vatNumber} />
+                <Row label="Address" value={[d.regAddress1, d.regAddress2, d.regTown, d.regPostcode].filter(Boolean).join(', ')} />
+                <Row label="Contact" value={[d.contactName, d.contactPosition].filter(Boolean).join(', ')} /><Row label="Phone" value={[d.phone, d.mobile].filter(Boolean).join(' / ')} />
+                <Row label="Email" value={d.email} /><Row label="Accounts" value={[d.accountsName, d.accountsEmail, d.accountsPhone].filter(Boolean).join(', ')} />
+                <Row label="Services" value={(d.services || []).concat(d.servicesOther ? [d.servicesOther] : []).join(', ')} /><Row label="Areas" value={(d.areas || []).join(', ') + (d.serviceAreas ? (d.areas && d.areas.length ? ' \u2014 ' : '') + d.serviceAreas : '')} /><Row label="Accreditations" value={(d.certifications || []).join(', ')} />
+                <Row label="Carrier reg." value={[d.carrierNumber, d.carrierTier && d.carrierTier + ' tier', d.carrierExpiry && 'expires ' + fmt(d.carrierExpiry)].filter(Boolean).join(', ')} />
+                <Row label="Permits" value={d.permits} /><Row label="Sites" value={Array.isArray(d.sites) ? d.sites.map(st => [st.siteName, st.postcode, st.permitNumber && 'permit ' + st.permitNumber].filter(Boolean).join(' ')).join('; ') : d.sites} />
+                <Row label="Public liability" value={[d.plInsurer, d.plPolicy, d.plExpiry && 'expires ' + fmt(d.plExpiry), d.plCover && '£' + d.plCover].filter(Boolean).join(', ')} />
+                <Row label="Employers' liability" value={[d.elInsurer, d.elPolicy, d.elExpiry && 'expires ' + fmt(d.elExpiry), d.elCover && '£' + d.elCover].filter(Boolean).join(', ')} />
+                <Row label="Motor / GIT" value={[d.motorInsurer, d.motorPolicy, d.motorExpiry && 'expires ' + fmt(d.motorExpiry)].filter(Boolean).join(', ')} />
+                <Row label="Bank" value={[d.bankName, d.bankAccountName, d.bankSortCode, d.bankAccountNumber].filter(Boolean).join(', ')} /><Row label="Their terms" value={d.paymentTerms && d.paymentTerms + ' days'} />
+                <Row label="Signed by" value={[d.signName, d.signPosition].filter(Boolean).join(', ')} />
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+  );
+};
 window.TWS_SERVICES = TWS_SERVICES;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23944,7 +24426,8 @@ const { error } = await window.supabase
         };
 
         // Suppliers View Component
-          const SuppliersView = ({ suppliers, onAddSupplier, onUpdateSupplier, onDeleteSupplier, user }) => {
+          const SuppliersView = ({ suppliers, onAddSupplier, onUpdateSupplier, onDeleteSupplier, user, onRefreshSuppliers }) => {
+          const [showSupplierForms, setShowSupplierForms] = useState(false);
           const { hasPermission } = useAuth();
           const [selectedSupplier, setSelectedSupplier] = useState(null);
           const [editingSupplier, setEditingSupplier] = useState(null);
@@ -24165,6 +24648,23 @@ const handleApplySync = async () => {
     <span className="hidden sm:inline">Add Supplier</span>
     <span className="sm:hidden">Add</span>
   </button>
+  <button
+    type="button"
+    onClick={() => setShowSupplierForms(true)}
+    title="Send a new supplier a form to fill in, and see what has come back"
+    className="tws-supplier-forms-btn flex items-center px-3 py-2 sm:px-4 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 ml-2 text-sm sm:text-base"
+  >
+    <span className="hidden sm:inline">Supplier forms</span>
+    <span className="sm:hidden">Forms</span>
+  </button>
+  {showSupplierForms && (
+    <SupplierApplicationsPanel
+      user={user}
+      suppliers={suppliers}
+      onClose={() => setShowSupplierForms(false)}
+      onSupplierSaved={() => { if (onRefreshSuppliers) onRefreshSuppliers(); }}
+    />
+  )}
   {user?.role === 'ADMIN' && (
     <>
       <button
@@ -27593,6 +28093,7 @@ const loadSuppliersFromSupabase = async () => {
             if (Array.isArray(raw)) return raw;
             try { return JSON.parse(raw); } catch { return []; }
           })(),
+          certifications: (() => { const raw = s.certifications; if (!raw) return []; if (Array.isArray(raw)) return raw; try { return JSON.parse(raw); } catch { return []; } })(),
           isDraft: s.is_draft || s.isDraft || false,
         }));
         setSuppliers(mapped);
@@ -28550,6 +29051,20 @@ collectionDate: job.collection_date,
   // used to stay until some unrelated job happened to change.
   let screenDiffers = false;
   try { screenDiffers = jobsListKey(autoWtnDataRef.current.jobs) !== jobsListKey(enriched); } catch (e) {}
+  // A job this browser created in the last hour that the database no longer
+  // returns. Said out loud, and written to the audit log, so it cannot pass
+  // unnoticed again.
+  try {
+    const mine = (window.__twsJobsCreatedHere || []).filter(j => Date.now() - j.at < 60 * 60 * 1000);
+    const present = new Set(enriched.map(j => String(j.id)));
+    const gone = mine.filter(j => !present.has(String(j.id)));
+    if (gone.length > 0) {
+      window.__twsJobsCreatedHere = mine.filter(j => present.has(String(j.id)));
+      gone.forEach(j => logAudit(window.__twsUser || null, 'job_vanished', 'job', j.id, j.jobNumber, { createdAt: new Date(j.at).toISOString(), build: BUILD_STAMP }));
+      alert('Job' + (gone.length === 1 ? ' ' : 's ') + gone.map(j => j.jobNumber).join(', ') +
+        ' was created from this screen but is no longer in the database.\n\nIt has been recorded in the audit log. Please send this message on, with the time.');
+    }
+  } catch (e) {}
   if (newSig !== window.__lastJobsSignature || screenDiffers) {
     window.__lastJobsSignature = newSig;
     setJobs(enriched);
@@ -29842,13 +30357,35 @@ const setShowFullPageQuote = (v) => {
     }
 
     if (error) throw error;
+    if (!data || !data[0] || !data[0].id) throw new Error('The database did not confirm the new job.');
+
+    // Read the row straight back. Twice now a job has been written, shown
+    // in the list, and then not been in the database, with a quote marked
+    // off against its number. The insert reporting success is no longer
+    // taken as proof: the row has to be there when asked for by id.
+    const { data: check, error: checkErr } = await window.supabase
+      .from('jobs').select('id, job_number').eq('id', data[0].id).maybeSingle();
+    if (checkErr) throw checkErr;
+    if (!check) {
+      logAudit(window.__twsUser || null, 'job_vanished_on_create', 'job', data[0].id, data[0].job_number || newJob.jobNumber || '',
+        { stage: 'read back after insert', sent: newJob.jobNumber || null, returned: data[0].job_number || null, build: BUILD_STAMP });
+      throw new Error('The job was written as ' + (data[0].job_number || newJob.jobNumber) + ' but is not in the database a moment later. Nothing has been recorded against it. Send this message on.');
+    }
+    // The database's number, in case something on that side changed it.
+    const dbNumber = check.job_number || data[0].job_number || newJob.jobNumber;
+    if (dbNumber !== newJob.jobNumber) {
+      console.warn('[Jobs] job number changed on save:', newJob.jobNumber, '->', dbNumber);
+    }
+    logAudit(window.__twsUser || null, 'job_created', 'job', data[0].id, dbNumber, { sent: newJob.jobNumber || null, build: BUILD_STAMP });
 
     // Use the returned data which includes the generated UUID
     const savedJob = {
       ...newJob,
+      jobNumber: dbNumber,
       id: data[0].id,
       createdDate: data[0].created_at  // Store the created_at timestamp
     };
+    window.__twsJobsCreatedHere = (window.__twsJobsCreatedHere || []).concat([{ id: data[0].id, jobNumber: dbNumber, at: Date.now() }]);
 
     // Add to local jobs state with the proper ID
     setJobs(prevJobs => [savedJob, ...prevJobs]);
@@ -29858,7 +30395,7 @@ const setShowFullPageQuote = (v) => {
     if (newJob.isRecurring && window.checkRecurringJobs) {
       setTimeout(() => window.checkRecurringJobs(), 500);
     }
-    return true;
+    return savedJob;
   } catch (error) {
     console.error('Error adding job:', error);
     // Say so, and tell whoever called. Swallowing this quietly is how a quote
@@ -32438,6 +32975,7 @@ const handleRejectQuote = async (quote) => {
    // Save job using handleAddJob which handles field conversions
 const jobWasSaved = await handleAddJob(newJob);
 if (!jobWasSaved) throw new Error('The job was not created because another job was being saved at the same moment. Nothing on the quote has been changed. Try again.');
+if (jobWasSaved && jobWasSaved.jobNumber) jobNumber = jobWasSaved.jobNumber;
 
     // File the site against the customer if it is not already there. Reported
     // in the confirmation rather than silently, so it is obvious when the site
@@ -33034,6 +33572,7 @@ onClick={() => {
                   <SuppliersView 
                     suppliers={suppliers} 
                     onAddSupplier={() => setShowSupplierForm(true)}
+                    onRefreshSuppliers={() => { if (typeof loadSuppliersFromSupabase === 'function') loadSuppliersFromSupabase(); else if (window.loadSuppliersFromSupabase) window.loadSuppliersFromSupabase(); }}
                     onUpdateSupplier={handleUpdateSupplier}
                     onDeleteSupplier={handleDeleteSupplier}
                     user={user}
@@ -34576,6 +35115,17 @@ window.location.href = '/#sage-integration';  // Keep this line!
                         contact: {
                           name: formData.companyName,
                           email: formData.email || undefined,
+                          // Sage emails invoices to the main contact person,
+                          // not to the company's own email. Creating a customer
+                          // set both; updating one only set the company's, so a
+                          // corrected email never reached the address Sage
+                          // actually sends to.
+                          main_contact_person: {
+                            name: formData.primaryContact || formData.companyName,
+                            email: formData.email || undefined,
+                            telephone: formData.phone || undefined,
+                            mobile: formData.mobile || undefined,
+                          },
                           credit_limit: parseFloat(formData.creditLimit) || undefined,
                           credit_days: parseInt(formData.paymentTerms) || 30,
                           // fix32o — push VAT number on update too. Sage's API
@@ -34588,8 +35138,16 @@ window.location.href = '/#sage-integration';  // Keep this line!
                       }
                     })
                   });
-                  const contactResult = await contactRes.json();
+                  const contactResult = await contactRes.json().catch(() => ({}));
                   console.log('[CustomerForm] Contact update response:', contactRes.status, contactResult);
+                  // Sage refusing the change used to be logged and nothing more,
+                  // so the portal and Sage could disagree with nobody told.
+                  if (!contactRes.ok) {
+                    const detail = contactResult && (contactResult.details || contactResult.error)
+                      ? '\n\nSage said: ' + (typeof contactResult.details === 'string' ? contactResult.details : JSON.stringify(contactResult.details || contactResult.error))
+                      : '';
+                    throw new Error('Sage did not accept the customer details (status ' + contactRes.status + ').' + detail);
+                  }
                   
                   // Update the main address
                   const addrRes = await fetch('/api/sage-proxy', {
@@ -34624,8 +35182,11 @@ window.location.href = '/#sage-integration';  // Keep this line!
                         }
                       })
                     });
-                    const addrUpdateResult = await addrUpdateRes.json();
+                    const addrUpdateResult = await addrUpdateRes.json().catch(() => ({}));
                     console.log('[CustomerForm] Address update response:', addrUpdateRes.status, addrUpdateResult);
+                    if (!addrUpdateRes.ok) {
+                      throw new Error('Sage took the customer details but not the address (status ' + addrUpdateRes.status + ').');
+                    }
                   }
                   console.log('[CustomerForm] Sage contact updated successfully');
                 } catch (sageUpdateErr) {
@@ -39537,6 +40098,11 @@ By approving this quotation and authorising us to commence services, you acknowl
           const creditToken = new URLSearchParams(window.location.search).get('credit');
           if (creditToken) {
             return <CreditApplicationForm token={creditToken} />;
+          }
+          // A supplier filling in their account form, likewise with no login.
+          const supplierToken = new URLSearchParams(window.location.search).get('supplier');
+          if (supplierToken) {
+            return <SupplierApplicationForm token={supplierToken} />;
           }
 
           // An owner opening a customer's portal. Checked before the staff app,
