@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-04 12:05';
+const BUILD_STAMP = '2026-11-04 13:20';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -17901,7 +17901,7 @@ const SupplierApplicationForm = ({ token }) => {
           </div>
 
           <CreditH>Insurance</CreditH>
-          <p className="text-xs text-gray-500 mb-3">Public liability is required. We only need the policy numbers and expiry dates, not copies of the certificates.</p>
+          <p className="text-xs text-gray-500 mb-3">Public liability is required.</p>
           <Two>
             <div><CreditL>Public liability insurer *</CreditL><CreditI value={f.plInsurer} onChange={e => set('plInsurer', e.target.value)} /></div>
             <div><CreditL>Policy number</CreditL><CreditI value={f.plPolicy} onChange={e => set('plPolicy', e.target.value)} /></div>
@@ -17992,8 +17992,7 @@ const SupplierApplicationsPanel = ({ user, suppliers, onClose, onSupplierSaved }
         'Thanks for agreeing to work with us. Before we can place orders with you we need a few details on file.', '',
         'Please complete our supplier form here:', linkFor(token), '',
         'It takes about ten minutes. You will need your company and VAT numbers, your waste carrier registration,',
-        'any permit or exemption numbers, your insurance policy numbers and expiry dates, and your bank details.',
-        'We do not need copies of the certificates.', '',
+        'any permit or exemption numbers, your insurance policy numbers and expiry dates, and your bank details.', '',
         'Kind regards,', signOff || companyName, companyName,
       ].join('\n');
       const res = await fetch('/api/gmail?action=send', {
