@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-04 16:25';
+const BUILD_STAMP = '2026-11-05 12:05';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -28722,6 +28722,78 @@ function wtnFieldsToRows(wtnFields, jobId) {
   });
 }
 
+
+// An EWC code typed on a transfer note belongs to the waste, so it goes back
+// onto the job's product line (only where the line has none) and from there
+// along the recurring schedule: the template, its series record, and the
+// later open jobs. Before this, a code typed on each week's note never
+// reached the line, so every new job on the schedule started blank again.
+async function carryEwcAlongSchedule(jobId, lineCodes) {
+  const result = { lineFilled: 0, carriedTo: 0 };
+  const codes = (lineCodes || []).filter(c => c && String(c.code || '').trim());
+  if (!jobId || codes.length === 0) return result;
+  const { data: job, error } = await window.supabase.from('jobs')
+    .select('id, job_date, is_recurring, parent_job_id, series_id, line_items, sage_line_items').eq('id', jobId).maybeSingle();
+  if (error || !job) return result;
+  const stamp = (raw) => {
+    const lines = ewcParseLines(raw);
+    let n = 0;
+    const out = lines.map((it, i) => {
+      if (!it || ewcOfLine(it)) return it;
+      const hit = codes.find(c => Number(c.index) === i);
+      if (!hit) return it;
+      n++; return { ...it, ewc_code: String(hit.code).trim() };
+    });
+    return { items: out, filled: n };
+  };
+  const a = stamp(job.line_items), b = stamp(job.sage_line_items);
+  const patch = {};
+  if (a.filled > 0) patch.line_items = JSON.stringify(a.items);
+  if (b.filled > 0) patch.sage_line_items = JSON.stringify(b.items);
+  if (Object.keys(patch).length > 0) {
+    const { error: wErr } = await window.supabase.from('jobs').update(patch).eq('id', job.id);
+    if (wErr) throw wErr;
+    result.lineFilled = a.filled + b.filled;
+  }
+  const myLines = a.filled > 0 ? a.items : (b.filled > 0 ? b.items : ewcParseLines(job.line_items));
+  if (!myLines.some(l => ewcOfLine(l))) return result;
+  let tpl = null;
+  if (job.is_recurring) tpl = job;
+  else if (job.parent_job_id) {
+    const { data: t } = await window.supabase.from('jobs')
+      .select('id, is_recurring, series_id, line_items, sage_line_items').eq('id', job.parent_job_id).maybeSingle();
+    if (t && t.is_recurring) tpl = t;
+  }
+  if (!tpl) return result;
+  const { data: sibs } = await window.supabase.from('jobs')
+    .select('id, job_date, line_items, sage_line_items')
+    .eq('parent_job_id', tpl.id).eq('is_completed', false).eq('is_cancelled', false).is('invoice_number', null);
+  const myDate = String(job.job_date || '').slice(0, 10);
+  const later = (sibs || []).filter(s => s.id !== job.id && (job.is_recurring || !myDate || String(s.job_date || '').slice(0, 10) > myDate));
+  const targets = (tpl.id === job.id ? [] : [tpl]).concat(later);
+  for (const target of targets) {
+    const ta = fillBlankEwc(target.line_items, myLines), tb = fillBlankEwc(target.sage_line_items, myLines);
+    if (ta.filled === 0 && tb.filled === 0) continue;
+    const tp = {};
+    if (ta.filled > 0) tp.line_items = JSON.stringify(ta.items);
+    if (tb.filled > 0) tp.sage_line_items = JSON.stringify(tb.items);
+    const { error: tErr } = await window.supabase.from('jobs').update(tp).eq('id', target.id);
+    if (tErr) throw tErr;
+    if (target.id !== tpl.id) result.carriedTo++;
+  }
+  if (tpl.series_id) {
+    const series = await loadSeriesById(tpl.series_id);
+    if (series) {
+      const sf = fillBlankEwc(series.line_items, myLines);
+      if (sf.filled > 0) await window.supabase.from(JOB_SERIES_TABLE)
+        .update({ line_items: JSON.stringify(sf.items), updated_at: new Date().toISOString() }).eq('id', tpl.series_id);
+    }
+  }
+  if (result.lineFilled || result.carriedTo) { try { if (window.loadJobsFromSupabase) setTimeout(() => window.loadJobsFromSupabase(), 400); } catch (e) {} }
+  return result;
+}
+window.carryEwcAlongSchedule = carryEwcAlongSchedule;
+
 // `saveWtnsForJob(jobId, rows, opts)` — upserts rows into the `wtns`
 // table keyed on (job_id, line_item_index). Also deletes any existing
 // rows for this job whose line_item_index isn't in the new set, so
@@ -28833,10 +28905,26 @@ async function saveWtnsForJob(jobId, rows, opts = {}) {
     }
     console.log(`[saveWtnsForJob] fallback path saved ${results.length} WTN row(s) for job ${jobId} (${updates.length} updated, ${inserts.length} inserted)`);
     await cascadeToChildrenIfParent(jobId, upsertPayload, opts);
+  // Codes typed on the note go back to the job line and along the schedule.
+  // Not when cascading from a template to its children: the template's own
+  // save has already done it.
+  if (!opts.cascading) {
+    try {
+      await carryEwcAlongSchedule(jobId, upsertPayload.map(r => ({ index: r.line_item_index, code: r.list_of_waste_code })));
+    } catch (e) { console.warn('[saveWtnsForJob] could not carry the EWC code to the job line:', e); }
+  }
     return results;
   }
   console.log(`[saveWtnsForJob] upserted ${(data||[]).length} WTN row(s) for job ${jobId}`);
   await cascadeToChildrenIfParent(jobId, upsertPayload, opts);
+  // Codes typed on the note go back to the job line and along the schedule.
+  // Not when cascading from a template to its children: the template's own
+  // save has already done it.
+  if (!opts.cascading) {
+    try {
+      await carryEwcAlongSchedule(jobId, upsertPayload.map(r => ({ index: r.line_item_index, code: r.list_of_waste_code })));
+    } catch (e) { console.warn('[saveWtnsForJob] could not carry the EWC code to the job line:', e); }
+  }
   return data || [];
 }
 
@@ -37074,6 +37162,10 @@ window.location.href = '/#sage-integration';  // Keep this line!
           const emptySite = { siteName: '', address: '', postcode: '', permitNumber: '', cbduNumber: '' };
           const [siteForm, setSiteForm] = useState(emptySite);
           const [supDocs, setSupDocs] = useState([]);
+          // Names the Documents tab has filed uploads under during this edit.
+          // If the name is corrected before saving, the uploads are re-pointed
+          // so they do not end up filed under a spelling that no longer exists.
+          const supDocNamesRef = React.useRef([]);
           const [supDocsLoading, setSupDocsLoading] = useState(false);
           const [supDocUploading, setSupDocUploading] = useState(false);
           const loadSupDocs = React.useCallback(async () => {
@@ -37467,6 +37559,14 @@ window.location.href = '/#sage-integration';  // Keep this line!
                   alert('⚠️ Saved to portal but Sage update failed: ' + sageUpdateErr.message + '\n\nCheck the browser console for details.');
                 }
               }
+              try {
+                const finalName = (formData.companyName || '').trim();
+                const stale = supDocNamesRef.current.filter(n => n !== finalName);
+                if (finalName && stale.length > 0) {
+                  await window.supabase.from('documents').update({ supplier_name: finalName }).in('supplier_name', stale);
+                  supDocNamesRef.current = [finalName];
+                }
+              } catch (e) { console.warn('[SupplierForm] could not re-point documents to the new name:', e); }
               onSave({ ...formData, sage_id, is_draft: asDraft, isDraft: asDraft });
             } catch (err) {
               alert('Error saving supplier: ' + err.message);
@@ -37970,8 +38070,10 @@ window.location.href = '/#sage-integration';  // Keep this line!
                               const { error: upErr } = await window.supabase.storage.from('documents').upload(path, file);
                               if (upErr) throw upErr;
                               const { data: { publicUrl } } = window.supabase.storage.from('documents').getPublicUrl(path);
-                              const { error: insErr } = await window.supabase.from('documents').insert([{ name: label || file.name, file_path: path, file_url: publicUrl, file_type: file.type || 'application/octet-stream', file_size: file.size, category: 'SUPPLIER', supplier_name: formData.companyName }]);
+                              const filedAs = (formData.companyName || '').trim();
+                              const { error: insErr } = await window.supabase.from('documents').insert([{ name: label || file.name, file_path: path, file_url: publicUrl, file_type: file.type || 'application/octet-stream', file_size: file.size, category: 'SUPPLIER', supplier_name: filedAs, supplier_id: (supplier && supplier.id) || null }]);
                               if (insErr) throw insErr;
+                              if (filedAs && !supDocNamesRef.current.includes(filedAs)) supDocNamesRef.current.push(filedAs);
                               await loadSupDocs();
                             } catch (err) { alert('Could not upload: ' + (err.message || err)); }
                             finally { setSupDocUploading(false); }
