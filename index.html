@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-10 10:20';
+const BUILD_STAMP = '2026-11-10 10:50';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -1819,6 +1819,82 @@ const parseJobLineItems = (jobObj) => {
 // real supplier. A header reading "Multiple" is a label, not a carrier, and
 // must never reach a transfer note — that is what produced notes with a blank
 // carrier registration.
+
+// The newer supplier columns (company number, trading name, licence expiry,
+// insurance, accreditations, bank). Saved separately from the core record so
+// a database that has not had the columns added yet still saves the
+// supplier: whatever is missing is dropped and named, not fatal.
+const supplierExtraColumns = (sup) => ({
+  company_number: sup.companyNumber || '',
+  trading_name: sup.tradingName || '',
+  waste_carrier_expiry: sup.wasteCarrierExpiry || null,
+  insurance_provider: sup.publicLiabilityInsurance || sup.insuranceProvider || '',
+  insurance_policy: sup.insurancePolicy || '',
+  insurance_expiry: sup.insuranceExpiry || null,
+  insurance_amount: sup.insuranceAmount || '',
+  certifications: JSON.stringify(sup.certifications || []),
+  bank_name: sup.bankName || '',
+  bank_account_name: sup.bankAccountName || '',
+  bank_sort_code: sup.bankSortCode || '',
+  bank_account_number: sup.bankAccountNumber || '',
+});
+const saveSupplierExtras = async (id, sup) => {
+  const patch = supplierExtraColumns(sup);
+  const dropped = [];
+  let { error } = await window.supabase.from('suppliers').update(patch).eq('id', id);
+  for (let i = 0; i < 15 && error && /column|schema cache|PGRST204/i.test(error.message || ''); i++) {
+    const m = (error.message || '').match(/column "?([a-z_]+)"?/i) || (error.message || '').match(/'([a-z_]+)' column/i);
+    if (!m || !(m[1] in patch)) break;
+    dropped.push(m[1]); delete patch[m[1]];
+    if (Object.keys(patch).length === 0) { error = null; break; }
+    ({ error } = await window.supabase.from('suppliers').update(patch).eq('id', id));
+  }
+  if (error) throw error;
+  if (dropped.length > 0 && !window.__twsSupplierColsWarned) {
+    window.__twsSupplierColsWarned = true;
+    alert('Saved, but these supplier details could not be stored because the database is missing the columns:\n  ' + dropped.join('\n  ') + '\n\nRun the supplier SQL from the 4 Nov build.');
+  }
+  return dropped;
+};
+const supplierExtrasFromRow = (s) => ({
+  companyNumber: s.companyNumber || s.company_number || '',
+  tradingName: s.tradingName || s.trading_name || '',
+  wasteCarrierExpiry: s.wasteCarrierExpiry || s.waste_carrier_expiry || '',
+  publicLiabilityInsurance: s.publicLiabilityInsurance || s.insurance_provider || '',
+  insurancePolicy: s.insurancePolicy || s.insurance_policy || '',
+  insuranceExpiry: s.insuranceExpiry || s.insurance_expiry || '',
+  insuranceAmount: s.insuranceAmount || s.insurance_amount || '',
+  bankName: s.bankName || s.bank_name || '',
+  bankAccountName: s.bankAccountName || s.bank_account_name || '',
+  bankSortCode: s.bankSortCode || s.bank_sort_code || '',
+  bankAccountNumber: s.bankAccountNumber || s.bank_account_number || '',
+  certifications: (() => { const raw = s.certifications; if (!raw) return []; if (Array.isArray(raw)) return raw; try { return JSON.parse(raw); } catch (e) { return []; } })(),
+});
+
+
+// A supplier's address for a transfer note. Addresses that came in from Sage
+// often hold the whole thing in one field with the lines run together
+// ("CarnabyEast YorkshireYO15 3QY"), and the town, county and postcode are
+// then stored again in their own columns. Puts the separators back and drops
+// the repeats, so it reads as one address, once.
+const tidySupplierAddress = (s) => {
+  if (!s) return '';
+  let addr = String(s.address || '').trim();
+  const extras = [s.city, s.county, s.postcode].map(x => String(x || '').trim()).filter(Boolean);
+  for (const x of extras) {
+    const i = addr.toLowerCase().indexOf(x.toLowerCase());
+    if (i > 0 && !/[,\s]$/.test(addr.slice(0, i))) addr = addr.slice(0, i) + ', ' + addr.slice(i);
+  }
+  const seen = new Set(); const out = [];
+  for (const part of addr.split(',').map(p => p.trim()).filter(Boolean).concat(extras)) {
+    const k = part.toLowerCase().replace(/\s+/g, '');
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(part);
+  }
+  return out.join(', ');
+};
+window.tidySupplierAddress = tidySupplierAddress;
+
 const resolveLineTransferee = (jobObj, lineItemIndex, suppliersList) => {
   const meta = parseJobLineItems(jobObj);
   const lineMeta = meta.find(m => m.lineItemIndex === lineItemIndex);
@@ -1842,7 +1918,7 @@ const resolveLineTransferee = (jobObj, lineItemIndex, suppliersList) => {
   return {
     name,
     // Section C takes the supplier's registered address, never a site address.
-    address: match ? [match.address, match.city, match.county, match.postcode].filter(Boolean).join(', ') : '',
+    address: match ? tidySupplierAddress(match) : '',
     postcode: match?.postcode || '',
     carrierReg: match?.wasteCarrierLicense || match?.waste_carrier_license || firstSite?.cbduNumber || '',
     permitNumber: match?.environmentalPermit || match?.environmental_permit || '',
@@ -4621,7 +4697,7 @@ const WtnPortalModal = ({ job, onClose, logoUrl, companyName: companyNameProp, p
           // Phase 3 (post-fix11) — Section C address sources from the supplier's
           // MAIN address, never a site address. Site addresses (where the carrier
           // takes the waste) are now informational fields rendered in Section A.
-          transfereeAddress: prev.transfereeAddress && prev.transfereeAddress !== '—' ? prev.transfereeAddress : ([supp.address, supp.city, supp.county, supp.postcode].filter(Boolean).join(', ') || prev.transfereeAddress),
+          transfereeAddress: prev.transfereeAddress && prev.transfereeAddress !== '—' ? prev.transfereeAddress : (tidySupplierAddress(supp) || prev.transfereeAddress),
           transfereeSignature: prev.transfereeSignature && prev.transfereeSignature !== '—' ? prev.transfereeSignature : (supp.contact_name || supp.contactName || prev.transfereeSignature || ''),
         }));
       } catch(e) { console.warn('[WtnPortalModal] Supplier lookup failed:', e); }
@@ -6008,7 +6084,7 @@ React.useEffect(() => {
     const suppSites = ms?.siteAddresses || [];
     const parsedSites = typeof suppSites === 'string' ? (() => { try { return JSON.parse(suppSites); } catch { return []; } })() : (Array.isArray(suppSites) ? suppSites : []);
     // Always use the supplier's main address for Section C — never a site address.
-    const suppAddr = ms ? [ms.address, ms.city, ms.county, ms.postcode].filter(Boolean).join(', ') : '';
+    const suppAddr = ms ? tidySupplierAddress(ms) : '';
     // Carrier reg stays as the supplier's registered CBDU. If absent, fall back
     // to the first site's CBDU (these are usually the same anyway).
     const firstSite = parsedSites.length > 0 ? parsedSites[0] : null;
@@ -6358,7 +6434,7 @@ const [wtnFields, setWtnFields] = useState(() => {
       transfereeName: wtnHeaderSupplier(job) || savedWtn.transfereeName || '',
       transfereeAddress: (() => {
         const ms = suppliers?.find(s => (s.name || s.companyName) === wtnHeaderSupplier(job));
-        return ms ? [ms.address, ms.city, ms.county, ms.postcode].filter(Boolean).join(', ') : savedWtn.transfereeAddress || '';
+        return ms ? tidySupplierAddress(ms) : savedWtn.transfereeAddress || '';
       })(),
       transfereeRepresenting: wtnHeaderSupplier(job) || savedWtn.transfereeRepresenting || '',
       transferAddress: [job?.siteAddress1 || job?.site_address1, job?.siteAddress2 || job?.site_address2, job?.siteCity || job?.site_city, job?.sitePostcode || job?.site_postcode].filter(Boolean).join(', ') || savedWtn.transferAddress || '',
@@ -6410,7 +6486,7 @@ const [wtnFields, setWtnFields] = useState(() => {
   const supplierAddress = autoSite
     ? [autoSite.address, autoSite.postcode].filter(Boolean).join(', ')
     : matchedSupplier
-      ? [matchedSupplier.address, matchedSupplier.city, matchedSupplier.county, matchedSupplier.postcode].filter(Boolean).join(', ')
+      ? tidySupplierAddress(matchedSupplier)
       : '';
   const supplierCarrierReg = autoSite?.cbduNumber || matchedSupplier?.wasteCarrierLicense || matchedSupplier?.waste_carrier_license || '';
   // fix30 (supersedes fix29 priority swap) — Section C3 is the
@@ -6823,7 +6899,7 @@ useEffect(() => {
   // Rebuild addresses from current job (fixes stale addresses from duplicated/recurring jobs)
   const freshTransferorAddress = [job?.siteAddress1 || job?.site_address1, job?.siteAddress2 || job?.site_address2, job?.siteCity || job?.site_city, job?.sitePostcode || job?.site_postcode].filter(Boolean).join(', ');
   const matchedSupp = suppliers?.find(s => (s.name || s.companyName) === wtnHeaderSupplier(job));
-  const freshTransfereeAddress = matchedSupp ? [matchedSupp.address, matchedSupp.city, matchedSupp.county, matchedSupp.postcode].filter(Boolean).join(', ') : '';
+  const freshTransfereeAddress = matchedSupp ? tidySupplierAddress(matchedSupp) : '';
 
   setWtnFields(prev => {
     const updated = {
@@ -6960,7 +7036,7 @@ useEffect(() => {
           .from('suppliers').select('*').eq('name', wtnHeaderSupplier(job)).single();
         if (data) {
           const cbdu = data.waste_carrier_license || data.wasteCarrierLicense || '';
-          const addr = [data.address, data.city, data.county, data.postcode].filter(Boolean).join(', ');
+          const addr = tidySupplierAddress(data);
           setWtnFields(prev => ({
             ...prev,
             transfereeCarrierReg: cbdu || prev.transfereeCarrierReg,
@@ -28365,7 +28441,7 @@ const loadSuppliersFromSupabase = async () => {
             if (Array.isArray(raw)) return raw;
             try { return JSON.parse(raw); } catch { return []; }
           })(),
-          certifications: (() => { const raw = s.certifications; if (!raw) return []; if (Array.isArray(raw)) return raw; try { return JSON.parse(raw); } catch { return []; } })(),
+          ...supplierExtrasFromRow(s),
           isDraft: s.is_draft || s.isDraft || false,
         }));
         setSuppliers(mapped);
@@ -32796,6 +32872,7 @@ siteNotes: job.site_notes || job.siteNotes || '',
   }
 };
 
+
 const saveSupplierToDatabase = async (supplier) => {
   const supplierData = {
     name: supplier.companyName || supplier.name || 'Unknown Supplier',
@@ -32840,7 +32917,8 @@ const saveSupplierToDatabase = async (supplier) => {
     console.error('Error saving supplier:', error);
     throw error;
   }
-  return data;
+  try { await saveSupplierExtras(data.id, supplier); } catch (e) { console.warn('[supplier] extras not saved:', e); alert('Supplier saved, but the company number / insurance details were not: ' + (e.message || e)); }
+  return { ...data, ...supplierExtraColumns(supplier) };
 };
 
           const handleUpdateSupplier = async (updatedSupplier) => {
@@ -32875,6 +32953,7 @@ const saveSupplierToDatabase = async (supplier) => {
                 .update(supplierData)
                 .eq('id', updatedSupplier.id);
               if (error) throw error;
+              await saveSupplierExtras(updatedSupplier.id, updatedSupplier);
               // Merge DB column names alongside camelCase so both exist in-memory
               setSuppliers(suppliers.map(s => s.id === updatedSupplier.id ? {
                 ...s,
@@ -37198,7 +37277,7 @@ window.location.href = '/#sage-integration';  // Keep this line!
               creditLimit: s.creditLimit ?? s.credit_limit ?? 0,
               primaryServices: s.primaryServices || [],
               serviceAreas: s.serviceAreas || [],
-              certifications: s.certifications || [],
+              ...supplierExtrasFromRow(s),
               skipSizes: s.skipSizes || [],
               aggregateTypes: s.aggregateTypes || [],
               siteAddresses: (() => {
