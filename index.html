@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-05 12:05';
+const BUILD_STAMP = '2026-11-09 17:05';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -21859,7 +21859,7 @@ console.log(JSON.stringify(invoiceData, null, 2));
 );
 };
 // Full Page Quote View Component - UPDATED TO MATCH JOB LAYOUT
-const FullPageQuoteView = ({ quote, onClose, onMinimise, onSplit, isSplit, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, user, customers }) => {
+const FullPageQuoteView = ({ quote, onClose, onMinimise, onSplit, isSplit, onEdit, onDuplicate, onDelete, onSend, onAccept, onReject, onConvertToJob, onUndoConversion, user, customers }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [quoteAttachments, setQuoteAttachments] = useState([]);
   const [showSendModal, setShowSendModal] = useState(false);
@@ -22811,19 +22811,36 @@ Total Waste Services Ltd`);
               </div>
             )}
 
-            {quote.status === 'CONVERTED' && quote.job_reference && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <h3 className="font-semibold text-purple-900 mb-2">Conversion Information</h3>
-                <p className="text-purple-700">
-                  Converted to Job: <span className="font-semibold">{quote.job_reference}</span>
-                </p>
-                {quote.converted_date && (
-                  <p className="text-purple-600 text-sm mt-1">
-                    Converted on: {new Date(quote.converted_date).toLocaleDateString()}
-                  </p>
-                )}
-              </div>
-            )}
+            {(() => {
+              const lines = quote.lineItems || [];
+              const jobsOn = Array.from(new Set(lines.map(quoteLineJob).filter(Boolean)));
+              if (jobsOn.length === 0 && quote.status === 'CONVERTED' && quote.job_reference) jobsOn.push(quote.job_reference);
+              if (jobsOn.length === 0) return null;
+              return (
+                <div className="tws-conversion-info bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-purple-900 mb-2">Conversion Information</h3>
+                  {jobsOn.map(jn => {
+                    const n = lines.filter(it => quoteLineJob(it) === jn).length;
+                    return (
+                      <div key={jn} className="flex items-center justify-between gap-3 flex-wrap py-1">
+                        <p className="text-purple-700">
+                          {n > 0 && n < lines.length ? n + ' of ' + lines.length + ' lines on' : 'Converted to'} Job: <span className="font-semibold">{jn}</span>
+                        </p>
+                        {onUndoConversion && (
+                          <button type="button" onClick={() => onUndoConversion(quote, jn)} title="Put these lines back on the quote so it can be converted again"
+                                  className="tws-undo-convert text-xs px-2.5 py-1 border border-purple-300 text-purple-800 rounded-lg hover:bg-purple-100">
+                            Undo conversion
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {quote.converted_date && (
+                    <p className="text-purple-600 text-sm mt-1">Converted on: {new Date(quote.converted_date).toLocaleDateString()}</p>
+                  )}
+                </div>
+              );
+            })()}
 
           </div>
         )}
@@ -29387,9 +29404,18 @@ collectionDate: job.collection_date,
   try {
     const mine = (window.__twsJobsCreatedHere || []).filter(j => Date.now() - j.at < 60 * 60 * 1000);
     const present = new Set(enriched.map(j => String(j.id)));
-    const gone = mine.filter(j => !present.has(String(j.id)));
+    let gone = mine.filter(j => !present.has(String(j.id)));
     if (gone.length > 0) {
-      window.__twsJobsCreatedHere = mine.filter(j => present.has(String(j.id)));
+      // A load that started before the insert finished will not include the
+      // new job. Ask the database directly before saying anything.
+      try {
+        const { data: still } = await window.supabase.from('jobs').select('id').in('id', gone.map(j => j.id));
+        const found = new Set((still || []).map(r => String(r.id)));
+        gone = gone.filter(j => !found.has(String(j.id)));
+      } catch (e) { gone = []; }
+    }
+    if (gone.length > 0) {
+      window.__twsJobsCreatedHere = mine.filter(j => !gone.some(g => String(g.id) === String(j.id)));
       gone.forEach(j => logAudit(window.__twsUser || null, 'job_vanished', 'job', j.id, j.jobNumber, { createdAt: new Date(j.at).toISOString(), build: BUILD_STAMP }));
       alert('Job' + (gone.length === 1 ? ' ' : 's ') + gone.map(j => j.jobNumber).join(', ') +
         ' was created from this screen but is no longer in the database.\n\nIt has been recorded in the audit log. Please send this message on, with the time.');
@@ -32171,25 +32197,33 @@ const handleExchange = async (job) => {
       const quoteToRevert = quotes.find(q => q.quoteNumber === jobToDelete.quoteReference);
       
       if (quoteToRevert) {
-        // Update quote status back to PENDING in database
+        // Only the lines that went onto this job come back; lines on another
+        // job from the same quote stay where they are.
+        const jn = jobToDelete.jobNumber || jobToDelete.job_number || '';
+        const lines = quoteToRevert.lineItems || [];
+        const newLines = lines.map(it => {
+          if (!jn || quoteLineJob(it) !== jn) return it;
+          const copy = { ...it }; delete copy.converted_to_job; delete copy.convertedToJob; return copy;
+        });
+        const stillOn = Array.from(new Set(newLines.map(quoteLineJob).filter(Boolean)));
+        const backTo = quoteToRevert.accepted_date || quoteToRevert.acceptedDate ? 'ACCEPTED' : 'PENDING';
+        const qPatch = {
+          line_items: JSON.stringify(newLines),
+          job_reference: stillOn.length ? stillOn.join(', ') : null,
+          ...(stillOn.length === 0 ? { status: backTo, converted_date: null } : {}),
+        };
         const { error: quoteError } = await window.supabase
           .from('quotes')
-          .update({ 
-            status: 'PENDING',
-            converted_date: null,
-            job_reference: null
-          })
+          .update(qPatch)
           .eq('id', quoteToRevert.id);
         
         if (!quoteError) {
-          // Update local state
           setQuotes(quotes.map(q => 
             q.id === quoteToRevert.id 
-              ? { ...q, status: 'PENDING', converted_date: null, job_reference: null }
+              ? { ...q, lineItems: newLines, job_reference: qPatch.job_reference, ...(qPatch.status ? { status: qPatch.status, converted_date: null } : {}) }
               : q
           ));
-          
-          console.log(`Quote ${jobToDelete.quoteReference} reverted to PENDING status`);
+          console.log(`Quote ${jobToDelete.quoteReference}: lines from ${jn} released`);
         }
       }
     }
@@ -33193,6 +33227,61 @@ const handleRejectQuote = async (quote) => {
    // Convert to Job: pick the lines first. Lines already on a job are shown but
    // cannot be picked again. On a quote converted before lines were tracked,
    // nothing is pre-ticked, because it is not known which lines went.
+   // The wrong quote converted, or the wrong lines. Puts the lines that went
+   // onto that job back on the quote so it can be converted again, and offers
+   // to delete the job if nothing has happened to it yet.
+   const handleUndoQuoteConversion = async (quote, jobNumber) => {
+     if (!quote || !jobNumber) return;
+     const lines = quote.lineItems || [];
+     const onJob = lines.filter(it => quoteLineJob(it) === jobNumber).length;
+     const legacyWhole = onJob === 0 && quote.status === 'CONVERTED' && (quote.job_reference || '') === jobNumber;
+     if (onJob === 0 && !legacyWhole) { alert('No lines on this quote are marked as being on ' + jobNumber + '.'); return; }
+     if (!confirm('Undo the conversion to ' + jobNumber + '?\n\n' +
+         (legacyWhole ? 'The quote' : onJob + ' line' + (onJob === 1 ? '' : 's')) + ' will go back onto the quote so it can be converted again.' +
+         '\n\nThe job itself is not deleted by this step \u2014 you will be asked next.')) return;
+     try {
+       const newLines = lines.map(it => {
+         if (quoteLineJob(it) !== jobNumber) return it;
+         const copy = { ...it }; delete copy.converted_to_job; delete copy.convertedToJob; return copy;
+       });
+       const stillOn = Array.from(new Set(newLines.map(quoteLineJob).filter(Boolean)));
+       const backTo = quote.accepted_date || quote.acceptedDate ? 'ACCEPTED' : 'PENDING';
+       const patch = {
+         line_items: JSON.stringify(newLines),
+         job_reference: stillOn.length ? stillOn.join(', ') : null,
+         ...(stillOn.length === 0 ? { status: backTo, converted_date: null } : (quote.status === 'CONVERTED' ? { status: backTo, converted_date: null } : {})),
+       };
+       const { error } = await window.supabase.from('quotes').update(patch).eq('id', quote.id);
+       if (error) throw error;
+       const local = { ...quote, lineItems: newLines, job_reference: patch.job_reference, ...(patch.status ? { status: patch.status, converted_date: null } : {}) };
+       setQuotes(prev => prev.map(q => q.id === quote.id ? local : q));
+       setShowFullPageQuote(prev => (prev && prev.id === quote.id) ? local : prev);
+       logAudit(user, 'quote_conversion_undone', 'quote', quote.id, quote.quoteNumber, { jobNumber, lines: onJob });
+       // The job made by mistake.
+       const job = (jobs || []).find(j => (j.jobNumber || j.job_number) === jobNumber);
+       if (job) {
+         const locked = job.isCompleted || job.is_completed || job.invoiceNumber || job.invoice_number;
+         if (locked) {
+           alert('The lines are back on the quote.\n\nJob ' + jobNumber + ' has been ' + (job.invoiceNumber || job.invoice_number ? 'invoiced' : 'completed') + ', so it has been left alone.');
+         } else if (confirm('The lines are back on the quote.\n\nAlso delete job ' + jobNumber + '? It has not been completed or invoiced.')) {
+           const { error: dErr } = await window.supabase.from('jobs').delete().eq('id', job.id);
+           if (dErr) { alert('The quote is fixed but the job could not be deleted: ' + describeError(dErr)); }
+           else {
+             logAudit(user, 'job_deleted', 'job', job.id, jobNumber, { reason: 'conversion undone', quote: quote.quoteNumber });
+             setJobs(prev => prev.filter(j => j.id !== job.id));
+             window.__twsJobsCreatedHere = (window.__twsJobsCreatedHere || []).filter(j => String(j.id) !== String(job.id));
+             alert('Job ' + jobNumber + ' deleted. The quote can be converted again.');
+           }
+         }
+       } else {
+         alert('The lines are back on the quote. Job ' + jobNumber + ' is not in the list here \u2014 if it still exists, delete it from the Jobs screen.');
+       }
+     } catch (e) {
+       alert('Could not undo the conversion: ' + describeError(e));
+     }
+   };
+   window.handleUndoQuoteConversion = handleUndoQuoteConversion;
+
    const handleConvertQuoteToJob = (quote) => {
      const state = quoteConversionState(quote);
      const selected = (quote.lineItems || [])
@@ -33864,6 +33953,7 @@ onClick={() => {
     onAccept={handleAcceptQuote}
     onReject={handleRejectQuote}
     onConvertToJob={handleConvertQuoteToJob}
+    onUndoConversion={handleUndoQuoteConversion}
     user={user}
     customers={customers}
   />
