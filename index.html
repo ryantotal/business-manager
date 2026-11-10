@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-09 17:05';
+const BUILD_STAMP = '2026-11-10 10:20';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -1849,6 +1849,19 @@ const resolveLineTransferee = (jobObj, lineItemIndex, suppliersList) => {
     representing: name,
     onFile: !!match,
   };
+};
+
+// The supplier the transfer note's Section C starts from. A job whose lines
+// go to different suppliers has "Multiple" as its supplier, which is not a
+// carrier: the line's own supplier is used instead, and where every line
+// goes to the same one, that one. Never the word "Multiple".
+const wtnHeaderSupplier = (jobObj) => {
+  const header = String(jobObj?.supplierName || jobObj?.supplier_name || '').trim();
+  if (header && header !== MULTIPLE_SUPPLIERS) return header;
+  let meta = [];
+  try { meta = parseJobLineItems(jobObj); } catch (e) { meta = []; }
+  const names = Array.from(new Set(meta.map(m => String(m.supplierName || '').trim()).filter(Boolean)));
+  return names.length > 0 ? names[0] : '';
 };
 
 // Phase 3 — build the default `lines` state. One entry per job line item.
@@ -6261,7 +6274,7 @@ const [wtnFields, setWtnFields] = useState(() => {
     const savedCarrierReg = (newestWtnRow?.transfereeCarrierReg ?? savedWtn.transfereeCarrierReg) || '';
     const savedPermitNum = (newestWtnRow?.transfereePermitNumber ?? savedWtn.transfereePermitNumber) || '';
     const cbduInPermit = /^CBDU/i.test(savedPermitNum) && !savedCarrierReg;
-    const matchedSupplierForReg = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
+    const matchedSupplierForReg = suppliers?.find(s => (s.name || s.companyName) === wtnHeaderSupplier(job));
     // fix21b — carrier reg: saved value wins, supplier is the fallback.
     // Previously this always re-derived from the supplier record (overriding
     // any manual override saved per-WTN). The new rule matches the permit
@@ -6342,12 +6355,12 @@ const [wtnFields, setWtnFields] = useState(() => {
       transferorAddress: [job?.siteAddress1 || job?.site_address1, job?.siteAddress2 || job?.site_address2, job?.siteCity || job?.site_city, job?.sitePostcode || job?.site_postcode].filter(Boolean).join(', ') || savedWtn.transferorAddress || '',
       transferorPostcode: job?.sitePostcode || job?.site_postcode || savedWtn.transferorPostcode || '',
       transferorRepresenting: job?.customerName || savedWtn.transferorRepresenting || '',
-      transfereeName: job?.supplierName || savedWtn.transfereeName || '',
+      transfereeName: wtnHeaderSupplier(job) || savedWtn.transfereeName || '',
       transfereeAddress: (() => {
-        const ms = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
+        const ms = suppliers?.find(s => (s.name || s.companyName) === wtnHeaderSupplier(job));
         return ms ? [ms.address, ms.city, ms.county, ms.postcode].filter(Boolean).join(', ') : savedWtn.transfereeAddress || '';
       })(),
-      transfereeRepresenting: job?.supplierName || savedWtn.transfereeRepresenting || '',
+      transfereeRepresenting: wtnHeaderSupplier(job) || savedWtn.transfereeRepresenting || '',
       transferAddress: [job?.siteAddress1 || job?.site_address1, job?.siteAddress2 || job?.site_address2, job?.siteCity || job?.site_city, job?.sitePostcode || job?.site_postcode].filter(Boolean).join(', ') || savedWtn.transferAddress || '',
       // Preserve signatures from saved data
       transferorSignature: savedWtn.transferorSignature || '',
@@ -6387,7 +6400,7 @@ const [wtnFields, setWtnFields] = useState(() => {
   const wasteDesc = descParts.filter(Boolean).join(' — ') || job?.jobType || '';
 
   // Supplier = the carrier collecting the waste (Section C)
-  const matchedSupplier = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
+  const matchedSupplier = suppliers?.find(s => (s.name || s.companyName) === wtnHeaderSupplier(job));
   const supplierSites = matchedSupplier?.siteAddresses || [];
   // Auto-select the first site as a sensible default — applies for both single-site and
   // multi-site suppliers. The user can switch from the dropdown if needed. Without this
@@ -6461,14 +6474,14 @@ const [wtnFields, setWtnFields] = useState(() => {
     transferorRepresenting: job?.customerName || '',
     selectedTransferorSiteId: autoCustSite ? (autoCustSite.id || autoCustSite.siteName) : '',
     // Section C — Transferee (carrier collecting the waste = supplier)
-    transfereeName: job?.supplierName || '',
+    transfereeName: wtnHeaderSupplier(job) || '',
     transfereeAddress: supplierAddress,
     transfereePostcode: autoSite?.postcode || matchedSupplier?.postcode || '',
     transfereeCarrierReg: supplierCarrierReg,
     transfereePermitNumber: supplierPermitNumber,
     selectedSiteId: autoSite ? (autoSite.id || autoSite.siteName) : '',
     transfereeSignature: '',
-    transfereeRepresenting: job?.supplierName || '',
+    transfereeRepresenting: wtnHeaderSupplier(job) || '',
     // Section D — Transfer details & broker
     transferAddress: [job?.siteAddress1, job?.siteAddress2, job?.siteCity, job?.sitePostcode].filter(Boolean).join(', '),
     brokerName: companyName,
@@ -6809,7 +6822,7 @@ useEffect(() => {
 
   // Rebuild addresses from current job (fixes stale addresses from duplicated/recurring jobs)
   const freshTransferorAddress = [job?.siteAddress1 || job?.site_address1, job?.siteAddress2 || job?.site_address2, job?.siteCity || job?.site_city, job?.sitePostcode || job?.site_postcode].filter(Boolean).join(', ');
-  const matchedSupp = suppliers?.find(s => (s.name || s.companyName) === job?.supplierName);
+  const matchedSupp = suppliers?.find(s => (s.name || s.companyName) === wtnHeaderSupplier(job));
   const freshTransfereeAddress = matchedSupp ? [matchedSupp.address, matchedSupp.city, matchedSupp.county, matchedSupp.postcode].filter(Boolean).join(', ') : '';
 
   setWtnFields(prev => {
@@ -6826,9 +6839,9 @@ useEffect(() => {
       transferorAddress: freshTransferorAddress || prev.transferorAddress || '',
       transferorPostcode: job?.sitePostcode || job?.site_postcode || prev.transferorPostcode || '',
       transferorRepresenting: job?.customerName || prev.transferorRepresenting || '',
-      transfereeName: job?.supplierName || prev.transfereeName || '',
+      transfereeName: wtnHeaderSupplier(job) || prev.transfereeName || '',
       transfereeAddress: freshTransfereeAddress || prev.transfereeAddress || '',
-      transfereeRepresenting: job?.supplierName || prev.transfereeRepresenting || '',
+      transfereeRepresenting: wtnHeaderSupplier(job) || prev.transfereeRepresenting || '',
       transferAddress: freshTransferorAddress || prev.transferAddress || '',
     };
 
@@ -6940,11 +6953,11 @@ useEffect(() => {
     } catch(e) {}
   })();
   // Refresh supplier CBDU if blank
-  if (job?.supplierName) {
+  if (wtnHeaderSupplier(job)) {
     (async () => {
       try {
         const { data } = await window.supabase
-          .from('suppliers').select('*').eq('name', job.supplierName).single();
+          .from('suppliers').select('*').eq('name', wtnHeaderSupplier(job)).single();
         if (data) {
           const cbdu = data.waste_carrier_license || data.wasteCarrierLicense || '';
           const addr = [data.address, data.city, data.county, data.postcode].filter(Boolean).join(', ');
@@ -6995,7 +7008,7 @@ useEffect(() => {
   if (!alreadyHasWtn && !hasExistingWtnData && job?.customerName) {
     (async () => {
       try {
-        console.log('[WTN AutoSuggest] Looking up previous WTNs for', job.customerName, job.supplierName, job.wasteType);
+        console.log('[WTN AutoSuggest] Looking up previous WTNs for', job.customerName, wtnHeaderSupplier(job), job.wasteType);
         const suggestions = {};
 
         // Phase 2 helper: fetch the most recent N WTN rows from the new
@@ -7073,8 +7086,8 @@ useEffect(() => {
         }
 
         // 2. Supplier-specific lookup: carrier reg, permit, signature (Section C)
-        if (job.supplierName) {
-          const parsedSuppWtns = await fetchRecentWtns({ supplierName: job.supplierName, limit: 3 });
+        if (wtnHeaderSupplier(job)) {
+          const parsedSuppWtns = await fetchRecentWtns({ supplierName: wtnHeaderSupplier(job), limit: 3 });
           if (parsedSuppWtns.length > 0) {
             const latest = parsedSuppWtns[0];
             if (latest.transfereeCarrierReg) suggestions.transfereeCarrierReg = latest.transfereeCarrierReg;
@@ -7084,9 +7097,9 @@ useEffect(() => {
         }
 
         // 3. Customer + Supplier + Waste Type combo lookup: EWC code, processes
-        if (job.supplierName && job.wasteType) {
+        if (wtnHeaderSupplier(job) && job.wasteType) {
           const parsedComboWtns = await fetchRecentWtns({
-            customerName: job.customerName, supplierName: job.supplierName, wasteType: job.wasteType, limit: 3,
+            customerName: job.customerName, supplierName: wtnHeaderSupplier(job), wasteType: job.wasteType, limit: 3,
           });
           if (parsedComboWtns.length > 0) {
             const latest = parsedComboWtns[0];
