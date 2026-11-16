@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-16 10:45';
+const BUILD_STAMP = '2026-11-16 11:15';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -1232,6 +1232,47 @@ const scheduleOccurrenceOnOrAfter = (startStr, freq, fromStr, { strictlyAfterSta
 // date after the first job that is today or later.
 const firstNextDue = (startStr, freq, todayStr) =>
   scheduleOccurrenceOnOrAfter(startStr, freq, todayStr, { strictlyAfterStart: true });
+
+
+// Moving a weekly / fortnightly schedule to a different day of the week.
+// The schedule's day comes from its first job date, so the template is
+// re-anchored on the most recent past date on the new day (the next one due
+// is then the coming one), and jobs already booked that have not happened
+// are moved to the new day in their own week.
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const dateWeekday = (dateStr) => { const d = new Date(String(dateStr || '').slice(0, 10) + 'T00:00:00'); return isNaN(d.getTime()) ? null : d.getDay(); };
+const shiftDateDays = (dateStr, days) => { const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00'); d.setDate(d.getDate() + days); const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return z.toISOString().slice(0, 10); };
+// Same week, new day: Monday -> Friday is +4, Friday -> Monday is -4.
+const sameWeekOnDay = (dateStr, newDay) => { const cur = dateWeekday(dateStr); if (cur === null) return dateStr; return shiftDateDays(dateStr, newDay - cur); };
+const lastOccurrenceOnDay = (todayStr, newDay) => { const cur = dateWeekday(todayStr); let back = cur - newDay; if (back <= 0) back += 7; return shiftDateDays(todayStr, -back); };
+async function moveScheduleToWeekday(templateId, newDay, todayStr) {
+  const today = todayStr || new Date().toISOString().slice(0, 10);
+  const { data: tpl, error } = await window.supabase.from('jobs')
+    .select('id, recurring_frequency, recurring_start_date, job_date, recurring_next_date').eq('id', templateId).maybeSingle();
+  if (error || !tpl) throw new Error('Could not read the template job');
+  const freq = tpl.recurring_frequency || 'weekly';
+  if (!['weekly', 'fortnightly', 'daily'].includes(freq) && freq !== 'weekly') { /* monthly schedules keep their date */ }
+  const anchor = lastOccurrenceOnDay(today, newDay);
+  const nextDue = advanceSeriesDate(anchor, freq);
+  const { error: tErr } = await window.supabase.from('jobs')
+    .update({ recurring_start_date: anchor, recurring_next_date: nextDue }).eq('id', templateId);
+  if (tErr) throw tErr;
+  const { data: kids } = await window.supabase.from('jobs')
+    .select('id, job_date, job_number').eq('parent_job_id', templateId).eq('is_completed', false).eq('is_cancelled', false).is('invoice_number', null);
+  let moved = 0;
+  for (const k of (kids || [])) {
+    const d = String(k.job_date || '').slice(0, 10);
+    if (!d || d < today) continue;
+    let nd = sameWeekOnDay(d, newDay);
+    if (nd < today) nd = shiftDateDays(nd, 7);
+    if (nd === d) continue;
+    const { error: kErr } = await window.supabase.from('jobs').update({ job_date: nd, collection_date: nd }).eq('id', k.id);
+    if (kErr) throw kErr;
+    moved++;
+  }
+  return { anchor, nextDue, moved };
+}
+window.moveScheduleToWeekday = moveScheduleToWeekday;
 
 const loadSeriesById = async (seriesId) => {
   if (!seriesId) return null;
@@ -6028,7 +6069,7 @@ const [wtnSentOk, setWtnSentOk] = useState(false);
 const [wtnTouched, setWtnTouched] = useState(!!(job?.wtn_data || job?.wtnData || (Array.isArray(job?.wtns) && job.wtns.length > 0)));
 // The series editor on the Recurring tab. Held here because the tab is a
 // conditional render and hooks cannot live inside one.
-const [seriesDraft, setSeriesDraft] = useState({ supplier_name: '', is_paused: false });
+const [seriesDraft, setSeriesDraft] = useState({ supplier_name: '', is_paused: false, weekday: '' });
 const [seriesSaving, setSeriesSaving] = useState(false);
 const [seriesError, setSeriesError] = useState('');
 const [seriesSaved, setSeriesSaved] = useState('');
@@ -9963,6 +10004,30 @@ const [isEvent, setIsEvent] = useState(false);
                                 </p>
                               </div>
 
+                              {(() => {
+                                const tplForDay = job.parentJobId ? (jobs || []).find(j => j.id === job.parentJobId) : null;
+                                const srcDate = (tplForDay && (tplForDay.recurringStartDate || tplForDay.recurring_start_date || tplForDay.jobDate || tplForDay.job_date))
+                                  || formData.recurringStartDate || formData.jobDate || job.jobDate;
+                                const curDay = dateWeekday(srcDate);
+                                const freq = (tplForDay && (tplForDay.recurringFrequency || tplForDay.recurring_frequency)) || formData.recurringFrequency || 'weekly';
+                                if (freq === 'monthly' || freq === 'daily') return null;
+                                return (
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Day of the week</label>
+                                    <select
+                                      value={seriesDraft.weekday === '' ? (curDay === null ? '' : String(curDay)) : seriesDraft.weekday}
+                                      onChange={(e) => setSeriesDraft(prev => ({ ...prev, weekday: e.target.value }))}
+                                      className="tws-series-weekday w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                                    >
+                                      {[1, 2, 3, 4, 5, 6, 0].map(d => <option key={d} value={String(d)}>{WEEKDAY_NAMES[d]}</option>)}
+                                    </select>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                      Currently {curDay === null ? 'not set' : WEEKDAY_NAMES[curDay] + 's'}. Changing it moves the jobs already booked to the new day in the same week, and new ones are created on that day.
+                                    </p>
+                                  </div>
+                                );
+                              })()}
+
                               <label className="flex items-center gap-2">
                                 <input
                                   type="checkbox"
@@ -10018,10 +10083,24 @@ const [isEvent, setIsEvent] = useState(false);
                                         setSeriesError(outcome.error || 'Could not save the series.');
                                         return;
                                       }
+                                      let dayNote = '';
+                                      if (seriesDraft.weekday !== '') {
+                                        const tplId = template ? template.id : job.id;
+                                        const srcDate = template
+                                          ? (template.recurringStartDate || template.recurring_start_date || template.jobDate || template.job_date)
+                                          : (formData.recurringStartDate || formData.jobDate || job.jobDate);
+                                        const curDay = dateWeekday(srcDate);
+                                        const newDay = parseInt(seriesDraft.weekday, 10);
+                                        if (!isNaN(newDay) && newDay !== curDay) {
+                                          const mv = await moveScheduleToWeekday(tplId, newDay);
+                                          dayNote = ' Now on ' + WEEKDAY_NAMES[newDay] + 's' + (mv.moved > 0 ? '; ' + mv.moved + ' booked job' + (mv.moved === 1 ? '' : 's') + ' moved' : '') + ', next due ' + new Date(mv.nextDue + 'T00:00:00').toLocaleDateString('en-GB') + '.';
+                                          if (!template) setFormData(prev => ({ ...prev, recurringStartDate: mv.anchor, recurringNextDate: mv.nextDue }));
+                                        }
+                                      }
                                       setSeriesSaved(
-                                        outcome.updated > 0
+                                        (outcome.updated > 0
                                           ? 'Saved. ' + outcome.updated + ' job' + (outcome.updated === 1 ? '' : 's') + ' already booked were updated too.'
-                                          : 'Saved. It applies from the next job created.'
+                                          : 'Saved. It applies from the next job created.') + dayNote
                                       );
                                       if (window.loadJobsFromSupabase) await window.loadJobsFromSupabase();
                                     } catch (e) {
