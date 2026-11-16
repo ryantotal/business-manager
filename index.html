@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-10 10:50';
+const BUILD_STAMP = '2026-11-16 10:45';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -22311,8 +22311,8 @@ Total Waste Services Ltd`);
             {/* Send Quote Modal */}
             {showSendModal && (
               <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
-                  <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+                <div className="tws-send-quote bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                  <div className="p-5 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
                     <h3 className="text-lg font-semibold">Send Quote via Gmail</h3>
                     <button onClick={() => setShowSendModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
                   </div>
