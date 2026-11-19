@@ -909,7 +909,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-16 11:15';
+const BUILD_STAMP = '2026-11-19 13:35';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
@@ -27190,6 +27190,7 @@ const loadUsers = async () => {
 const DocumentsView = ({ user }) => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('date'); // 'date' or 'name'
   const [filteredDocuments, setFilteredDocuments] = useState([]);
@@ -27234,20 +27235,28 @@ const DocumentsView = ({ user }) => {
   const loadDocuments = async () => {
     try {
       setLoading(true);
-      const { data, error } = await window.supabase
+      setLoadError('');
+      // A request that never comes back used to leave the spinner for ever,
+      // with nothing to say why. Give it 20 seconds, then say so and offer
+      // to try again.
+      const query = window.supabase
         .from('documents')
         .select('*')
         .is('customer_name', null)
         .order('created_at', { ascending: false });
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('The server did not answer in 20 seconds')), 20000));
+      const { data, error } = await Promise.race([query, timeout]);
       
       if (error) {
         console.error('Error loading documents:', error);
+        setLoadError(describeError(error));
         return;
       }
       
       setDocuments((data || []).filter(d => !d.supplier_name));
     } catch (error) {
       console.error('Error:', error);
+      setLoadError(describeError(error));
     } finally {
       setLoading(false);
     }
@@ -27579,6 +27588,15 @@ const DocumentsView = ({ user }) => {
         </div>
       )}
       
+      {!loading && loadError && (
+        <div className="tws-docs-error bg-red-50 border border-red-200 rounded-lg p-4 mb-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm font-medium text-red-800">Could not load the documents list.</p>
+            <p className="text-xs text-red-700 mt-0.5">{loadError}</p>
+          </div>
+          <button type="button" onClick={loadDocuments} className="px-3 py-1.5 bg-red-700 text-white rounded-lg text-sm">Try again</button>
+        </div>
+      )}
       {loading ? (
         <div className="text-center py-8">
           <Loader className="mx-auto h-8 w-8 animate-spin text-blue-500" />
