@@ -14,6 +14,62 @@
     <link rel="manifest" href="/manifest.json">
     <title>TWS Portal</title>
     <script>
+      // Connection watchdog. Safari sometimes drops every request from a site
+      // (a stalled service-worker helper process) until the browser is
+      // restarted: the page looks fine but nothing loads, saves or sends, and
+      // each screen fails in its own way. This counts failed requests to our
+      // own server and the database, and once two fail in quick succession
+      // puts a bar across the top saying what is going on and what to do.
+      (function () {
+        if (!window.fetch) return;
+        var realFetch = window.fetch;
+        var failures = [];
+        var bar = null;
+        var ours = function (url) {
+          try {
+            var u = new URL(String(url), window.location.href);
+            return u.origin === window.location.origin || /supabase\.co$/.test(u.hostname);
+          } catch (e) { return false; }
+        };
+        var show = function () {
+          if (bar || !document.body) return;
+          bar = document.createElement('div');
+          bar.id = 'tws-net-banner';
+          bar.setAttribute('style', 'position:fixed;top:0;left:0;right:0;z-index:100000;background:#991b1b;color:#fff;padding:10px 16px;font:14px system-ui,sans-serif;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;box-shadow:0 2px 8px rgba(0,0,0,.3)');
+          bar.innerHTML = '<span><strong>The connection to the server has dropped.</strong> Things will spin or say "Load failed" until it is back. Reload the page — if it keeps happening, quit Safari completely (⌘Q) and open it again.</span>' +
+            '<button type="button" id="tws-net-reload" style="background:#fff;color:#991b1b;border:0;border-radius:6px;padding:6px 12px;font-weight:600;cursor:pointer">Reload</button>' +
+            '<button type="button" id="tws-net-hide" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.6);border-radius:6px;padding:6px 10px;cursor:pointer">Hide</button>';
+          document.body.appendChild(bar);
+          document.getElementById('tws-net-reload').onclick = function () { window.location.reload(); };
+          document.getElementById('tws-net-hide').onclick = function () { bar.remove(); bar = null; failures = []; };
+        };
+        var hide = function () { if (bar) { bar.remove(); bar = null; } failures = []; };
+        var note = function (url) {
+          if (!ours(url)) return;
+          var now = Date.now();
+          failures.push(now);
+          failures = failures.filter(function (t) { return now - t < 60000; });
+          if (failures.length >= 2) {
+            try { console.warn('[connection] ' + failures.length + ' requests to the server failed in the last minute; last: ' + url); } catch (e) {}
+            show();
+          }
+        };
+        window.fetch = function (input, init) {
+          var url = (input && input.url) || input;
+          return realFetch.apply(this, arguments).then(function (res) {
+            if (ours(url)) hide();
+            return res;
+          }, function (err) {
+            // A TypeError is the network failing; anything else is the
+            // request being cancelled or a bug, and not the connection.
+            if (err && err.name === 'TypeError') note(url);
+            throw err;
+          });
+        };
+        window.__twsConnectionWatchdog = { note: note, hide: hide };
+      })();
+    </script>
+    <script>
       // Register the service worker so the portal can be installed as an app on phones.
       // Failures are silent — if it doesn't work (e.g. Safari incognito) the portal still
       // functions normally, just without the offline-cache and install prompt.
@@ -909,7 +965,7 @@ function mapWtnRowToCamel(row) { return row ? ({
 // Which build this is. Updated by hand each time the file is handed over, so
 // "is this deployed?" is answerable at a glance instead of by guesswork — the
 // service worker caches hard and a stale build looks exactly like a bug.
-const BUILD_STAMP = '2026-11-19 13:35';
+const BUILD_STAMP = '2026-11-19 14:30';
 try { window.BUILD_STAMP = BUILD_STAMP; } catch (e) { /* no window yet */ }
 
 // Several jobs and quotes can be mounted at once (minimised forms stay
